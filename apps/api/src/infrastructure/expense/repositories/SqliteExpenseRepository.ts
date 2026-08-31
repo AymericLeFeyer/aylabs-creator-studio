@@ -10,7 +10,7 @@ import type {
   ExpenseEntryFilter,
   ExpenseRepository,
 } from '../../../domain/expense/repositories/ExpenseRepository.ts';
-import { buildEntryWhere } from '../../db/filters.ts';
+import { buildEntryWhere, placeholders } from '../../db/filters.ts';
 import { newId } from '../../../shared/id.ts';
 import { conflict, notFound } from '../../../shared/errors.ts';
 
@@ -18,6 +18,7 @@ interface ExpenseRow {
   id: string;
   channel_id: string | null;
   category_id: string;
+  video_id: string | null;
   date: string;
   amount_cents: number;
   label: string;
@@ -30,12 +31,14 @@ interface ExpenseViewRow extends ExpenseRow {
   category_name: string;
   category_color: string;
   channel_name: string | null;
+  video_title: string | null;
 }
 
 const toDomain = (row: ExpenseRow): ExpenseEntry => ({
   id: row.id,
   channelId: row.channel_id,
   categoryId: row.category_id,
+  videoId: row.video_id,
   date: row.date,
   amountCents: row.amount_cents,
   label: row.label,
@@ -73,10 +76,12 @@ export class SqliteExpenseRepository implements ExpenseRepository {
       SELECT e.*,
              c.name  AS category_name,
              c.color AS category_color,
-             ch.name AS channel_name
+             ch.name AS channel_name,
+             v.title AS video_title
         FROM expense_entries e
         JOIN categories c ON c.id = e.category_id
         LEFT JOIN channels ch ON ch.id = e.channel_id
+        LEFT JOIN videos v ON v.id = e.video_id
         ${clause}`;
 
     if (categoryIds.length > 0) {
@@ -93,6 +98,7 @@ export class SqliteExpenseRepository implements ExpenseRepository {
       categoryName: row.category_name,
       categoryColor: row.category_color,
       channelName: row.channel_name,
+      videoTitle: row.video_title,
     }));
   }
 
@@ -110,13 +116,15 @@ export class SqliteExpenseRepository implements ExpenseRepository {
     this.db
       .prepare(
         `INSERT INTO expense_entries
-           (id, channel_id, category_id, date, amount_cents, label, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, channel_id, category_id, video_id, date, amount_cents, label, notes,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.channelId ?? null,
         input.categoryId,
+        input.videoId ?? null,
         input.date,
         input.amountCents,
         input.label,
@@ -142,6 +150,7 @@ export class SqliteExpenseRepository implements ExpenseRepository {
 
     if (input.channelId !== undefined) set('channel_id', input.channelId);
     if (input.categoryId !== undefined) set('category_id', input.categoryId);
+    if (input.videoId !== undefined) set('video_id', input.videoId);
     if (input.date !== undefined) set('date', input.date);
     if (input.amountCents !== undefined) set('amount_cents', input.amountCents);
     if (input.label !== undefined) set('label', input.label);
@@ -196,5 +205,20 @@ export class SqliteExpenseRepository implements ExpenseRepository {
       .all(...(params as never[])) as unknown as Array<{ category_id: string; total: number }>;
 
     return rows.map((r) => ({ categoryId: r.category_id, totalCents: r.total }));
+  }
+
+  sumByVideo(videoIds: string[]): Array<{ videoId: string; totalCents: number }> {
+    if (videoIds.length === 0) return [];
+
+    const rows = this.db
+      .prepare(
+        `SELECT e.video_id AS video_id, SUM(e.amount_cents) AS total
+           FROM expense_entries e
+          WHERE e.video_id IN (${placeholders(videoIds.length)})
+          GROUP BY e.video_id`,
+      )
+      .all(...(videoIds as never[])) as unknown as Array<{ video_id: string; total: number }>;
+
+    return rows.map((r) => ({ videoId: r.video_id, totalCents: r.total }));
   }
 }

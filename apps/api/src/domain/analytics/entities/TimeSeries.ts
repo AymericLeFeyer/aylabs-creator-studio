@@ -107,6 +107,40 @@ export interface VideoMarker {
   bucket: IsoDate;
 }
 
+/**
+ * Une ligne du tableau de performance par vidéo.
+ *
+ * Les compteurs (`views`, `subscribersGained`…) sont des CUMULS depuis la sortie,
+ * relevés par la collecte : ils ne se comparent pas aux totaux de la période et ne
+ * s'additionnent pas avec eux. Les montants réutilisent les noms de `MoneyParts`
+ * pour que le front applique la même règle CA / bénéfice qu'ailleurs.
+ */
+export interface VideoPerformanceRow {
+  videoId: string;
+  externalId: string;
+  channelId: string;
+  channelName: string;
+  channelColor: string;
+  title: string;
+  thumbnailUrl: string | null;
+  date: IsoDate;
+
+  views: number;
+  watchHours: number;
+  subscribersGained: number;
+  likes: number;
+  comments: number;
+  /** `false` tant qu'aucune collecte n'a mesuré cette vidéo : « — » plutôt que « 0 ». */
+  hasStats: boolean;
+
+  /** AdSense attribué à la vidéo par YouTube Analytics. */
+  adsenseCents: Cents;
+  /** Revenus manuels `cash` rattachés à la vidéo, quelle que soit leur date. */
+  manualCashCents: Cents;
+  inKindCents: Cents;
+  expenseCents: Cents;
+}
+
 export interface AnalyticsResult {
   query: AnalyticsQuery;
   series: TimeSeriesPoint[];
@@ -118,6 +152,8 @@ export interface AnalyticsResult {
   byChannel: ChannelBreakdownItem[];
   /** Sorties de vidéo de la période, pour les repères du graphique. */
   videos: VideoMarker[];
+  /** Performance de chaque vidéo sortie dans la période, argent rattaché compris. */
+  videoPerformance: VideoPerformanceRow[];
   /** Cumuls sur la période immédiatement précédente, de même longueur, pour les variations. */
   previousTotals: AnalyticsTotals | null;
 }

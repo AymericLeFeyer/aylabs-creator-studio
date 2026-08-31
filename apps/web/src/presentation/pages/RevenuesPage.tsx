@@ -16,7 +16,6 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table.tsx';
-import { FiltersBar } from '../components/FiltersBar.tsx';
 import { RevenueDialog } from '../components/forms/RevenueDialog.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 
@@ -54,8 +53,6 @@ export const RevenuesPage = () => {
 
   return (
     <div className="space-y-4">
-      <FiltersBar />
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-4 text-sm">
           <span>
@@ -98,6 +95,7 @@ export const RevenuesPage = () => {
                 <TableHead>Libellé</TableHead>
                 <TableHead>Catégorie</TableHead>
                 <TableHead>Chaîne</TableHead>
+                <TableHead>Vidéo</TableHead>
                 <TableHead className="text-right">Montant</TableHead>
                 <TableHead className="w-20" />
               </TableRow>
@@ -131,6 +129,11 @@ export const RevenuesPage = () => {
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {entry.channelName ?? 'Global'}
+                  </TableCell>
+                  <TableCell className="max-w-[14rem] text-muted-foreground">
+                    <span className="line-clamp-1" title={entry.videoTitle ?? undefined}>
+                      {entry.videoTitle ?? '—'}
+                    </span>
                   </TableCell>
                   <TableCell className="text-right tabular font-medium">
                     {formatMoney(entry.amountCents)}

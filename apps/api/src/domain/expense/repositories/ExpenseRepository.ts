@@ -28,4 +28,6 @@ export interface ExpenseRepository {
   }>;
   /** Somme par catégorie sur la période, pour la répartition du dashboard. */
   sumByCategory(filter: ExpenseEntryFilter): Array<{ categoryId: string; totalCents: number }>;
+  /** Somme par vidéo rattachée, sans filtre de date (voir `RevenueEntryRepository.sumByVideo`). */
+  sumByVideo(videoIds: string[]): Array<{ videoId: string; totalCents: number }>;
 }

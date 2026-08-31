@@ -60,4 +60,6 @@ export interface CollectResult {
   snapshotDate?: IsoDate;
   /** Sorties de vidéo enregistrées au passage, pour les repères des graphiques. */
   videosUpserted?: number;
+  /** Vidéos dont les compteurs (vues, abonnés, AdSense) ont été rafraîchis. */
+  videoStatsUpdated?: number;
 }

@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import { upstream } from '../../../shared/errors.ts';
 import type { IsoDate } from '../../../shared/dates.ts';
 import { fetchUploads, type UploadItem } from './uploads.ts';
+import { fetchPublicVideoStats, type VideoStatRow } from './videoStats.ts';
 
 export interface PublicChannelStats {
   channelId: string;
@@ -113,6 +114,19 @@ export class YouTubeDataClient {
     } catch (error) {
       if (error instanceof Error && error.name === 'AppError') throw error;
       throw upstream(`YouTube Data API (vidéos) : ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Compteurs publics d'une liste de vidéos : vues, likes, commentaires.
+   * Ni abonnés gagnés ni revenus — ils n'existent que dans YouTube Analytics.
+   */
+  async fetchVideoStats(videoIds: string[]): Promise<VideoStatRow[]> {
+    try {
+      return await fetchPublicVideoStats(this.client, videoIds);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AppError') throw error;
+      throw upstream(`YouTube Data API (stats vidéo) : ${(error as Error).message}`);
     }
   }
 

@@ -19,6 +19,7 @@ import {
 import { Input, Textarea } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
+import { NO_VIDEO, VideoSelect } from './VideoSelect.tsx';
 
 /** Valeur du Select pour « aucune chaîne » : Radix refuse une valeur vide. */
 const NO_CHANNEL = '__none__';
@@ -43,6 +44,7 @@ export const ExpenseDialog = ({ open, onOpenChange, entry }: ExpenseDialogProps)
     amount: '',
     label: '',
     channelId: NO_CHANNEL,
+    videoId: NO_VIDEO,
     notes: '',
   });
 
@@ -59,6 +61,7 @@ export const ExpenseDialog = ({ open, onOpenChange, entry }: ExpenseDialogProps)
       amount: entry ? String(entry.amountCents / 100) : '',
       label: entry?.label ?? '',
       channelId: entry?.channelId ?? NO_CHANNEL,
+      videoId: entry?.videoId ?? NO_VIDEO,
       notes: entry?.notes ?? '',
     });
   }
@@ -83,6 +86,7 @@ export const ExpenseDialog = ({ open, onOpenChange, entry }: ExpenseDialogProps)
       amount,
       label: form.label.trim(),
       channelId: form.channelId === NO_CHANNEL ? null : form.channelId,
+      videoId: form.videoId === NO_VIDEO ? null : form.videoId,
       notes: form.notes.trim() || null,
     };
 
@@ -134,7 +138,14 @@ export const ExpenseDialog = ({ open, onOpenChange, entry }: ExpenseDialogProps)
               <Label htmlFor="expense-channel">Chaîne</Label>
               <Select
                 value={form.channelId}
-                onValueChange={(value) => setForm((f) => ({ ...f, channelId: value }))}
+                onValueChange={(value) =>
+                  setForm((f) => ({
+                    // Une vidéo appartient à une chaîne : changer de chaîne la détache.
+                    ...f,
+                    channelId: value,
+                    videoId: value === f.channelId ? f.videoId : NO_VIDEO,
+                  }))
+                }
               >
                 <SelectTrigger id="expense-channel">
                   <SelectValue />
@@ -176,6 +187,19 @@ export const ExpenseDialog = ({ open, onOpenChange, entry }: ExpenseDialogProps)
               />
             </div>
           </div>
+
+          <VideoSelect
+            id="expense-video"
+            value={form.videoId}
+            channelId={form.channelId === NO_CHANNEL ? null : form.channelId}
+            onChange={(value, video) =>
+              setForm((f) => ({
+                ...f,
+                videoId: value,
+                channelId: video ? video.channelId : f.channelId,
+              }))
+            }
+          />
 
           <div className="space-y-1.5">
             <Label htmlFor="expense-label">Libellé</Label>

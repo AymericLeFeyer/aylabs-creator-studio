@@ -20,6 +20,7 @@ import {
 import { Input, Textarea } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
+import { NO_VIDEO, VideoSelect } from './VideoSelect.tsx';
 
 /** Valeur du Select pour « aucune chaîne » : Radix refuse une valeur vide. */
 const NO_CHANNEL = '__none__';
@@ -44,6 +45,7 @@ export const RevenueDialog = ({ open, onOpenChange, entry }: RevenueDialogProps)
   const [form, setForm] = useState({
     categoryId: '',
     channelId: NO_CHANNEL,
+    videoId: NO_VIDEO,
     date: toIsoDate(new Date()),
     amount: '',
     label: '',
@@ -61,6 +63,7 @@ export const RevenueDialog = ({ open, onOpenChange, entry }: RevenueDialogProps)
     setForm({
       categoryId: entry?.categoryId ?? selectable[0]?.id ?? '',
       channelId: entry?.channelId ?? NO_CHANNEL,
+      videoId: entry?.videoId ?? NO_VIDEO,
       date: entry?.date ?? toIsoDate(new Date()),
       amount: entry ? String(entry.amountCents / 100) : '',
       label: entry?.label ?? '',
@@ -87,6 +90,7 @@ export const RevenueDialog = ({ open, onOpenChange, entry }: RevenueDialogProps)
     const payload = {
       categoryId: form.categoryId,
       channelId: form.channelId === NO_CHANNEL ? null : form.channelId,
+      videoId: form.videoId === NO_VIDEO ? null : form.videoId,
       date: form.date,
       amount,
       label: form.label.trim(),
@@ -141,7 +145,15 @@ export const RevenueDialog = ({ open, onOpenChange, entry }: RevenueDialogProps)
               <Label htmlFor="revenue-channel">Chaîne</Label>
               <Select
                 value={form.channelId}
-                onValueChange={(value) => setForm((f) => ({ ...f, channelId: value }))}
+                onValueChange={(value) =>
+                  setForm((f) => ({
+                    // Changer de chaîne invalide la vidéo rattachée : elle appartient
+                    // forcément à la chaîne précédente.
+                    ...f,
+                    channelId: value,
+                    videoId: value === f.channelId ? f.videoId : NO_VIDEO,
+                  }))
+                }
               >
                 <SelectTrigger id="revenue-channel">
                   <SelectValue />
@@ -182,6 +194,21 @@ export const RevenueDialog = ({ open, onOpenChange, entry }: RevenueDialogProps)
               />
             </div>
           </div>
+
+          {/* Le rattachement force la chaîne : une vidéo appartient à une seule chaîne,
+              et un revenu global rattaché à une vidéo n'aurait pas de sens. */}
+          <VideoSelect
+            id="revenue-video"
+            value={form.videoId}
+            channelId={form.channelId === NO_CHANNEL ? null : form.channelId}
+            onChange={(value, video) =>
+              setForm((f) => ({
+                ...f,
+                videoId: value,
+                channelId: video ? video.channelId : f.channelId,
+              }))
+            }
+          />
 
           {selectedCategory?.nature === 'in_kind' && (
             <p className="rounded-md bg-[var(--in-kind)]/10 px-3 py-2 text-xs text-[var(--in-kind)]">

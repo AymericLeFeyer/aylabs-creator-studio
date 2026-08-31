@@ -11,6 +11,8 @@ export interface ExpenseEntry {
   /** `null` = dépense globale, non imputable à une chaîne précise. */
   channelId: string | null;
   categoryId: string;
+  /** Vidéo à laquelle cette dépense est rattachée. `null` = dépense non imputée. */
+  videoId: string | null;
   date: IsoDate;
   amountCents: Cents;
   label: string;
@@ -22,6 +24,7 @@ export interface ExpenseEntry {
 export interface CreateExpenseEntryInput {
   channelId?: string | null;
   categoryId: string;
+  videoId?: string | null;
   date: IsoDate;
   amountCents: Cents;
   label: string;
@@ -34,4 +37,5 @@ export interface ExpenseEntryView extends ExpenseEntry {
   categoryName: string;
   categoryColor: string;
   channelName: string | null;
+  videoTitle: string | null;
 }

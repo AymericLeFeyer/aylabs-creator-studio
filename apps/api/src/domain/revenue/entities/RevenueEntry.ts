@@ -10,6 +10,8 @@ export interface RevenueEntry {
   /** `null` = revenu non rattaché à une chaîne (compte dans le cumulé uniquement). */
   channelId: string | null;
   categoryId: string;
+  /** Vidéo à laquelle ce revenu est rattaché. `null` = revenu non imputé à une sortie. */
+  videoId: string | null;
   date: IsoDate;
   amountCents: Cents;
   label: string;
@@ -21,6 +23,7 @@ export interface RevenueEntry {
 export interface CreateRevenueEntryInput {
   channelId?: string | null;
   categoryId: string;
+  videoId?: string | null;
   date: IsoDate;
   amountCents: Cents;
   label: string;
@@ -35,4 +38,5 @@ export interface RevenueEntryView extends RevenueEntry {
   categoryNature: 'cash' | 'in_kind';
   categoryColor: string;
   channelName: string | null;
+  videoTitle: string | null;
 }

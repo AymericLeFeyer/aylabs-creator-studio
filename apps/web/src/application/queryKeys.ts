@@ -10,6 +10,7 @@ export const queryKeys = {
   categories: (params: CategoryListParams) => ['categories', params] as const,
   revenues: (params: unknown) => ['revenues', params] as const,
   expenses: (params: unknown) => ['expenses', params] as const,
+  videos: (params: unknown) => ['videos', params] as const,
   analytics: (params: AnalyticsParams) => ['analytics', params] as const,
 };
 

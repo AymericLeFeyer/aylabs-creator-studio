@@ -90,6 +90,37 @@ export interface VideoMarker {
   bucket: string;
 }
 
+/**
+ * Une ligne du tableau de performance par vidéo.
+ *
+ * Les compteurs sont des CUMULS depuis la sortie : ils ne s'additionnent pas avec
+ * les totaux de la période. Les montants portent les noms de `MoneyParts`, ce qui
+ * permet de leur appliquer `moneyValue` comme à n'importe quel point de série.
+ */
+export interface VideoPerformanceRow {
+  videoId: string;
+  externalId: string;
+  channelId: string;
+  channelName: string;
+  channelColor: string;
+  title: string;
+  thumbnailUrl: string | null;
+  date: string;
+
+  views: number;
+  watchHours: number;
+  subscribersGained: number;
+  likes: number;
+  comments: number;
+  /** `false` tant qu'aucune collecte n'a mesuré cette vidéo. */
+  hasStats: boolean;
+
+  adsenseCents: number;
+  manualCashCents: number;
+  inKindCents: number;
+  expenseCents: number;
+}
+
 export interface AnalyticsQuery {
   from: string;
   to: string;
@@ -109,5 +140,7 @@ export interface AnalyticsResult {
   byChannel: ChannelBreakdownItem[];
   /** Sorties de vidéo de la période, pour les repères du graphique. */
   videos: VideoMarker[];
+  /** Performance de chaque vidéo sortie dans la période, argent rattaché compris. */
+  videoPerformance: VideoPerformanceRow[];
   previousTotals: AnalyticsTotals | null;
 }

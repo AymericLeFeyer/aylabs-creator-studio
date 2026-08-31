@@ -6,6 +6,7 @@ import { channelsRouter } from './routes/channels.ts';
 import { categoriesRouter, revenuesRouter } from './routes/revenues.ts';
 import { expensesRouter } from './routes/expenses.ts';
 import { analyticsRouter } from './routes/analytics.ts';
+import { videosRouter } from './routes/videos.ts';
 
 export const createServer = (container: Container): express.Express => {
   const app = express();
@@ -27,6 +28,7 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/categories', categoriesRouter(container));
   app.use('/api/revenues', revenuesRouter(container));
   app.use('/api/expenses', expensesRouter(container));
+  app.use('/api/videos', videosRouter(container));
   app.use('/api/analytics', analyticsRouter(container));
 
   app.use((_req, res) => {

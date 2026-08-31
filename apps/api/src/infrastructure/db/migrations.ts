@@ -162,6 +162,32 @@ const migrations: Migration[] = [
       CREATE INDEX idx_videos_date ON videos(date);
     `,
   },
+  {
+    version: 4,
+    name: 'video_stats_and_links',
+    // Deux ajouts d'un coup, parce qu'ils servent le meme ecran :
+    // - les videos portent desormais leurs propres compteurs (collectes par chaine) ;
+    // - un revenu ou une depense peut etre rattache a une video precise.
+    // La cle etrangere est ajoutable par ALTER TABLE tant que le defaut vaut NULL.
+    up: `
+      ALTER TABLE videos ADD COLUMN views INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE videos ADD COLUMN watch_minutes REAL NOT NULL DEFAULT 0;
+      ALTER TABLE videos ADD COLUMN subscribers_gained INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE videos ADD COLUMN likes INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE videos ADD COLUMN comments INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE videos ADD COLUMN estimated_revenue_cents INTEGER NOT NULL DEFAULT 0;
+      -- NULL tant qu'aucune collecte de statistiques n'a abouti sur cette video :
+      -- distingue « zero vue » de « pas encore mesure ».
+      ALTER TABLE videos ADD COLUMN stats_updated_at TEXT;
+
+      ALTER TABLE revenue_entries ADD COLUMN video_id TEXT
+        REFERENCES videos(id) ON DELETE SET NULL;
+      ALTER TABLE expense_entries ADD COLUMN video_id TEXT
+        REFERENCES videos(id) ON DELETE SET NULL;
+      CREATE INDEX idx_revenue_entries_video ON revenue_entries(video_id);
+      CREATE INDEX idx_expense_entries_video ON expense_entries(video_id);
+    `,
+  },
 ];
 
 /**

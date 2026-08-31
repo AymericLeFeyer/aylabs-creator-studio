@@ -6,6 +6,8 @@ export interface RevenueEntry {
   id: string;
   channelId: string | null;
   categoryId: string;
+  /** Vidéo rattachée, `null` si le revenu n'est imputé à aucune sortie. */
+  videoId: string | null;
   date: string;
   amountCents: number;
   label: string;
@@ -14,6 +16,7 @@ export interface RevenueEntry {
   categoryNature: CategoryNature;
   categoryColor: string;
   channelName: string | null;
+  videoTitle: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,6 +25,7 @@ export interface RevenueEntry {
 export interface RevenueEntryInput {
   channelId?: string | null;
   categoryId: string;
+  videoId?: string | null;
   date: string;
   amount: number;
   label: string;

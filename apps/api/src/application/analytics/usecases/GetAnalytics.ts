@@ -14,7 +14,9 @@ import type {
   ChannelBreakdownItem,
   TimeSeriesPoint,
   VideoMarker,
+  VideoPerformanceRow,
 } from '../../../domain/analytics/entities/TimeSeries.ts';
+import type { Video } from '../../../domain/video/entities/Video.ts';
 import { emptyTotals } from '../../../domain/analytics/services/revenueMath.ts';
 
 const emptyPoint = (date: IsoDate): TimeSeriesPoint => ({
@@ -81,6 +83,13 @@ export class GetAnalytics {
         ? query.channelIds
         : allChannels.filter((c) => !c.isArchived).map((c) => c.id);
 
+    // Une seule lecture des vidéos de la période : les repères et le tableau de
+    // performance décrivent les mêmes sorties.
+    const videos = this.videos.findAll({
+      range: { from: query.from, to: query.to },
+      channelIds: activeIds,
+    });
+
     const series = this.buildSeries(activeIds, query.from, query.to, query.granularity, query);
     const totals = this.sumTotals(series);
 
@@ -94,7 +103,8 @@ export class GetAnalytics {
       byCategory: this.buildCategoryBreakdown(activeIds, query),
       byExpenseCategory: this.buildExpenseBreakdown(activeIds, query),
       byChannel: this.buildChannelBreakdown(activeIds, allChannels, query),
-      videos: this.buildVideoMarkers(activeIds, allChannels, query),
+      videos: this.buildVideoMarkers(videos, allChannels, query),
+      videoPerformance: this.buildVideoPerformance(videos, allChannels),
       previousTotals: this.buildPreviousTotals(activeIds, query),
     };
   }
@@ -343,28 +353,77 @@ export class GetAnalytics {
    * (semaine ISO commençant le lundi) n'existe qu'une fois, dans `shared/dates`.
    */
   private buildVideoMarkers(
-    channelIds: string[],
+    videos: Video[],
     allChannels: ReturnType<ChannelRepository['findAll']>,
     query: AnalyticsQuery,
   ): VideoMarker[] {
-    return this.videos
-      .findAll({ range: { from: query.from, to: query.to }, channelIds })
+    return videos.flatMap((video) => {
+      const channel = allChannels.find((c) => c.id === video.channelId);
+      if (!channel) return [];
+      return [
+        {
+          id: video.id,
+          channelId: video.channelId,
+          channelName: channel.name,
+          channelColor: channel.color,
+          title: video.title,
+          thumbnailUrl: video.thumbnailUrl,
+          date: video.date,
+          bucket: bucketStart(video.date, query.granularity),
+        } satisfies VideoMarker,
+      ];
+    });
+  }
+
+  /**
+   * Tableau de performance par vidéo : compteurs collectés + argent rattaché.
+   *
+   * L'argent rattaché ignore volontairement les bornes de la période : une sponso
+   * encaissée deux mois après la sortie reste imputée à la vidéo qui l'a rapportée.
+   * C'est aussi pour ça que ces montants ne se recoupent pas avec `totals`.
+   */
+  private buildVideoPerformance(
+    videos: Video[],
+    allChannels: ReturnType<ChannelRepository['findAll']>,
+  ): VideoPerformanceRow[] {
+    if (videos.length === 0) return [];
+
+    const ids = videos.map((video) => video.id);
+    const revenueByVideo = new Map(this.revenues.sumByVideo(ids).map((row) => [row.videoId, row]));
+    const expenseByVideo = new Map(
+      this.expenses.sumByVideo(ids).map((row) => [row.videoId, row.totalCents]),
+    );
+
+    return videos
       .flatMap((video) => {
         const channel = allChannels.find((c) => c.id === video.channelId);
         if (!channel) return [];
+
+        const revenue = revenueByVideo.get(video.id);
         return [
           {
-            id: video.id,
+            videoId: video.id,
+            externalId: video.externalId,
             channelId: video.channelId,
             channelName: channel.name,
             channelColor: channel.color,
             title: video.title,
             thumbnailUrl: video.thumbnailUrl,
             date: video.date,
-            bucket: bucketStart(video.date, query.granularity),
-          } satisfies VideoMarker,
+            views: video.stats.views,
+            watchHours: Math.round((video.stats.watchMinutes / 60) * 100) / 100,
+            subscribersGained: video.stats.subscribersGained,
+            likes: video.stats.likes,
+            comments: video.stats.comments,
+            hasStats: video.stats.updatedAt !== null,
+            adsenseCents: video.stats.estimatedRevenueCents,
+            manualCashCents: revenue?.cashCents ?? 0,
+            inKindCents: revenue?.inKindCents ?? 0,
+            expenseCents: expenseByVideo.get(video.id) ?? 0,
+          } satisfies VideoPerformanceRow,
         ];
-      });
+      })
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   }
 
   /** Détail par chaîne, pour comparer les chaînes entre elles sur la période. */

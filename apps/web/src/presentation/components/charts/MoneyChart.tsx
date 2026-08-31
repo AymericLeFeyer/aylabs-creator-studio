@@ -1,9 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Bar,
   CartesianGrid,
   ComposedChart,
-  Legend,
   Line,
   ReferenceLine,
   ResponsiveContainer,
@@ -14,15 +13,24 @@ import {
 import type {
   AnalyticsResult,
   CategoryBreakdownItem,
-  VideoMarker,
 } from '../../../domain/analytics/entities/Analytics.ts';
-import { cashRevenue, moneyValue } from '../../../domain/analytics/services/revenueMath.ts';
+import { cashRevenue } from '../../../domain/analytics/services/revenueMath.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
 import { formatBucketLabel, formatMoney, formatMoneyCompact } from '../../../shared/format.ts';
+import { cn } from '../../../shared/cn.ts';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
 import { Label } from '../ui/label.tsx';
 import { Switch } from '../ui/switch.tsx';
 import { Checkbox } from '../ui/checkbox.tsx';
+import {
+  groupVideosByBucket,
+  videoMarkerLines,
+  type MarkerRow,
+  type TooltipVideo,
+} from './videoMarkers.tsx';
+import { VideoMarkersToggle } from './VideoMarkersToggle.tsx';
+import { VideoTooltipList } from './VideoTooltipList.tsx';
+import { SYNC_ID } from './syncId.ts';
 
 interface MoneyChartProps {
   data: AnalyticsResult;
@@ -38,26 +46,19 @@ interface ChartSeries {
   name: string;
   color: string;
   categoryId: string;
+  /** Identité stable de la série, indépendante de son rang : clé du masquage. */
+  toggleId: string;
 }
 
-interface ChartRow {
-  label: string;
-  /** Début du bucket, pour retrouver les vidéos publiées dedans. */
-  bucket: string;
+interface ChartRow extends MarkerRow {
   net: number;
-  /** Vidéos sorties dans ce bucket, reprises dans l'infobulle avec leur miniature. */
-  videos: TooltipVideo[];
   [key: string]: number | string | TooltipVideo[];
 }
 
-/** Ce que l'infobulle a besoin de savoir d'une vidéo. */
-interface TooltipVideo {
-  id: string;
-  title: string;
-  thumbnailUrl: string | null;
-}
-
-/** `r` pour les revenus, `e` pour les dépenses : une catégorie des deux côtés reste distincte. */
+/**
+ * `r` pour les revenus, `e` pour les dépenses : une catégorie présente des deux côtés
+ * (portée `both`) reste deux séries distinctes, une au-dessus de l'axe et une en dessous.
+ */
 const seriesFrom = (items: CategoryBreakdownItem[], prefix: string): ChartSeries[] =>
   items
     .filter((item) => item.totalCents !== 0)
@@ -66,12 +67,14 @@ const seriesFrom = (items: CategoryBreakdownItem[], prefix: string): ChartSeries
       name: item.categoryName,
       color: item.color,
       categoryId: item.categoryId,
+      toggleId: `${prefix}:${item.categoryId}`,
     }));
 
 /**
- * Graphique d'argent, avec les deux réglages demandés :
+ * Graphique d'argent, avec les réglages demandés :
  * - un interrupteur CA / Bénéfices (le bénéfice retranche les dépenses saisies) ;
- * - une coche pour compter ou non les avantages en nature.
+ * - une coche pour compter ou non les avantages en nature ;
+ * - une légende cliquable pour retirer une catégorie de la vue.
  *
  * Les barres montrent la décomposition par catégorie — chacune avec sa propre couleur,
  * celle de la page Catégories — et la ligne montre la valeur retenue par les réglages :
@@ -80,6 +83,20 @@ const seriesFrom = (items: CategoryBreakdownItem[], prefix: string): ChartSeries
 export const MoneyChart = ({ data }: MoneyChartProps) => {
   const filters = useFilters();
   const isProfit = filters.moneyMode === 'profit';
+
+  /**
+   * Catégories retirées de la vue, par identité stable (`r:id` / `e:id`) et non par
+   * rang : un changement de période réordonne les barres sans dépareiller le masquage.
+   * L'état est volontairement local — c'est un réglage de lecture, pas un filtre.
+   */
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const toggle = (toggleId: string) =>
+    setHidden((current) => {
+      const next = new Set(current);
+      if (next.has(toggleId)) next.delete(toggleId);
+      else next.add(toggleId);
+      return next;
+    });
 
   // Les avantages en nature passent en fin de pile, pour rester lisibles au-dessus du cash.
   const revenueSeries = useMemo(() => {
@@ -96,58 +113,52 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
     [data.byExpenseCategory, isProfit],
   );
 
-  // Une seule marque par bucket : deux vidéos le même jour donneraient deux traits confondus.
-  const videosByBucket = useMemo(() => {
-    const map = new Map<string, VideoMarker[]>();
-    if (!filters.showVideos) return map;
-    for (const video of data.videos) {
-      const existing = map.get(video.bucket);
-      if (existing) existing.push(video);
-      else map.set(video.bucket, [video]);
-    }
-    return map;
-  }, [data.videos, filters.showVideos]);
+  const visibleRevenue = revenueSeries.filter((serie) => !hidden.has(serie.toggleId));
+  const visibleExpense = expenseSeries.filter((serie) => !hidden.has(serie.toggleId));
+  const hiddenCount = [...revenueSeries, ...expenseSeries].filter((serie) =>
+    hidden.has(serie.toggleId),
+  ).length;
 
+  const videosByBucket = useMemo(
+    () => groupVideosByBucket(data.videos, filters.showVideos),
+    [data.videos, filters.showVideos],
+  );
+
+  /**
+   * La ligne suit les catégories **visibles** : masquer « Sponsors » doit retirer les
+   * sponsors du total lu, sinon la ligne resterait au-dessus de la pile qui la porte.
+   * Tant que rien n'est masqué, la somme est celle de `moneyValue`.
+   */
   const rows = useMemo<ChartRow[]>(
     () =>
       data.series.map((point) => {
         const row: ChartRow = {
           label: formatBucketLabel(point.date, data.query.granularity),
           bucket: point.date,
-          net:
-            moneyValue(point, { mode: filters.moneyMode, includeInKind: filters.includeInKind }) /
-            100,
-          videos: (videosByBucket.get(point.date) ?? []).map((video) => ({
-            id: video.id,
-            title: video.title,
-            thumbnailUrl: video.thumbnailUrl,
-          })),
+          net: 0,
+          videos: videosByBucket.get(point.date) ?? [],
         };
-        for (const serie of revenueSeries) {
-          row[serie.key] = (point.revenueByCategory[serie.categoryId] ?? 0) / 100;
+
+        let net = 0;
+        for (const serie of visibleRevenue) {
+          const cents = point.revenueByCategory[serie.categoryId] ?? 0;
+          row[serie.key] = cents / 100;
+          net += cents;
         }
         // Négatif : les dépenses se lisent sous l'axe, en retrait du chiffre d'affaires.
-        for (const serie of expenseSeries) {
-          row[serie.key] = -(point.expenseByCategory[serie.categoryId] ?? 0) / 100;
+        for (const serie of visibleExpense) {
+          const cents = point.expenseByCategory[serie.categoryId] ?? 0;
+          row[serie.key] = -cents / 100;
+          net -= cents;
         }
+        row.net = net / 100;
         return row;
       }),
-    [
-      data.series,
-      data.query.granularity,
-      expenseSeries,
-      filters.includeInKind,
-      filters.moneyMode,
-      revenueSeries,
-      videosByBucket,
-    ],
+    [data.series, data.query.granularity, videosByBucket, visibleRevenue, visibleExpense],
   );
 
   const totals = data.totals;
-  const displayedTotal = moneyValue(totals, {
-    mode: filters.moneyMode,
-    includeInKind: filters.includeInKind,
-  });
+  const displayedTotal = rows.reduce((sum, row) => sum + row.net, 0) * 100;
 
   return (
     <Card>
@@ -156,9 +167,25 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
           <CardTitle>{isProfit ? 'Bénéfices' : "Chiffre d'affaires"}</CardTitle>
           <p className="mt-1 text-2xl font-semibold tabular">{formatMoney(displayedTotal)}</p>
           <p className="text-xs text-muted-foreground">
-            {formatMoney(cashRevenue(totals))} encaissés
-            {totals.inKindCents > 0 && ` · ${formatMoney(totals.inKindCents)} en nature`}
-            {totals.expenseCents > 0 && ` · ${formatMoney(totals.expenseCents)} de dépenses`}
+            {hiddenCount > 0 ? (
+              <>
+                {hiddenCount} catégorie{hiddenCount > 1 ? 's' : ''} masquée
+                {hiddenCount > 1 ? 's' : ''} ·{' '}
+                <button
+                  type="button"
+                  onClick={() => setHidden(new Set())}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  tout afficher
+                </button>
+              </>
+            ) : (
+              <>
+                {formatMoney(cashRevenue(totals))} encaissés
+                {totals.inKindCents > 0 && ` · ${formatMoney(totals.inKindCents)} en nature`}
+                {totals.expenseCents > 0 && ` · ${formatMoney(totals.expenseCents)} de dépenses`}
+              </>
+            )}
           </p>
         </div>
 
@@ -196,31 +223,19 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
             </Label>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="show-videos"
-              checked={filters.showVideos}
-              onCheckedChange={(checked) => filters.set({ showVideos: checked === true })}
-            />
-            <Label
-              htmlFor="show-videos"
-              className="text-xs font-normal text-muted-foreground"
-              title={
-                data.videos.length === 0
-                  ? 'Aucune sortie connue sur la période. Les vidéos sont enregistrées à chaque collecte.'
-                  : undefined
-              }
-            >
-              Marquer les sorties de vidéo
-              {data.videos.length > 0 && ` (${data.videos.length})`}
-            </Label>
-          </div>
+          <VideoMarkersToggle id="show-videos-money" count={data.videos.length} />
         </div>
       </CardHeader>
 
       <CardContent>
         <ResponsiveContainer width="100%" height={320}>
-          <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+          {/* `syncId` aligne le survol sur celui du graphique d'audience : même abscisse,
+              donc même point lu des deux côtés en même temps. */}
+          <ComposedChart
+            data={rows}
+            syncId={SYNC_ID}
+            margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
             <XAxis
               dataKey="label"
@@ -236,26 +251,24 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
               width={64}
               tickFormatter={(value: number) => formatMoneyCompact(value * 100)}
             />
-            <Tooltip content={<MoneyTooltip />} />
-            <Legend
-              wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
-              formatter={(value: string) => <span className="text-muted-foreground">{value}</span>}
+            <Tooltip
+              content={<MoneyTooltip title={isProfit ? 'Bénéfice' : "Chiffre d'affaires"} />}
             />
             {/* Repère du zéro : indispensable dès que les dépenses creusent sous l'axe. */}
             <ReferenceLine y={0} stroke="var(--color-border)" />
 
-            {revenueSeries.map((serie, index) => (
+            {visibleRevenue.map((serie, index) => (
               <Bar
                 key={serie.key}
                 dataKey={serie.key}
                 name={serie.name}
                 stackId="revenue"
                 fill={serie.color}
-                radius={index === revenueSeries.length - 1 ? [3, 3, 0, 0] : undefined}
+                radius={index === visibleRevenue.length - 1 ? [3, 3, 0, 0] : undefined}
               />
             ))}
 
-            {expenseSeries.map((serie, index) => (
+            {visibleExpense.map((serie, index) => (
               <Bar
                 key={serie.key}
                 dataKey={serie.key}
@@ -263,28 +276,12 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
                 stackId="expense"
                 fill={serie.color}
                 fillOpacity={0.75}
-                radius={index === expenseSeries.length - 1 ? [0, 0, 3, 3] : undefined}
+                radius={index === visibleExpense.length - 1 ? [0, 0, 3, 3] : undefined}
               />
             ))}
 
             {/* Un trait par bucket contenant au moins une sortie ; le détail est dans l'infobulle. */}
-            {rows
-              .filter((row) => row.videos.length > 0)
-              .map((row) => (
-                <ReferenceLine
-                  key={row.bucket}
-                  x={row.label}
-                  stroke="var(--color-muted-foreground)"
-                  strokeDasharray="4 4"
-                  strokeOpacity={0.65}
-                  label={{
-                    value: row.videos.length > 1 ? `▾ ${row.videos.length}` : '▾',
-                    position: 'top',
-                    fontSize: 10,
-                    fill: 'var(--color-muted-foreground)',
-                  }}
-                />
-              ))}
+            {videoMarkerLines(rows)}
 
             <Line
               type="monotone"
@@ -297,8 +294,61 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
             />
           </ComposedChart>
         </ResponsiveContainer>
+
+        <ChartLegend
+          series={[...revenueSeries, ...expenseSeries]}
+          hidden={hidden}
+          onToggle={toggle}
+        />
       </CardContent>
     </Card>
+  );
+};
+
+/**
+ * Légende cliquable, en HTML plutôt qu'avec la légende de Recharts : une cible de clic
+ * confortable, et le masquage retire vraiment la série du graphique et de l'infobulle
+ * au lieu de la laisser dans les données.
+ */
+const ChartLegend = ({
+  series,
+  hidden,
+  onToggle,
+}: {
+  series: ChartSeries[];
+  hidden: Set<string>;
+  onToggle: (toggleId: string) => void;
+}) => {
+  if (series.length === 0) return null;
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+      {series.map((serie) => {
+        const isHidden = hidden.has(serie.toggleId);
+        return (
+          <button
+            key={serie.toggleId}
+            type="button"
+            onClick={() => onToggle(serie.toggleId)}
+            aria-pressed={!isHidden}
+            title={isHidden ? `Afficher ${serie.name}` : `Masquer ${serie.name}`}
+            className={cn(
+              'flex items-center gap-1.5 rounded px-1 py-0.5 text-xs transition-colors',
+              isHidden
+                ? 'text-muted-foreground/50 line-through'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-sm"
+              style={{ backgroundColor: serie.color, opacity: isHidden ? 0.3 : 1 }}
+              aria-hidden
+            />
+            {serie.name}
+          </button>
+        );
+      })}
+    </div>
   );
 };
 
@@ -309,24 +359,38 @@ interface TooltipEntry {
   dataKey?: string;
 }
 
+/**
+ * Infobulle du graphique d'argent : le montant du bucket d'abord, en gros et en gras,
+ * puis le détail par catégorie. Sans ça le total se lisait comme une ligne de plus.
+ */
 const MoneyTooltip = ({
   active,
   payload,
   label,
+  title,
 }: {
   active?: boolean;
-  payload?: (TooltipEntry & { payload?: { videos?: TooltipVideo[] } })[];
+  payload?: (TooltipEntry & { payload?: ChartRow })[];
   label?: string;
+  title: string;
 }) => {
   if (!active || !payload?.length) return null;
 
-  const videos = payload[0]?.payload?.videos ?? [];
+  const row = payload[0]?.payload;
+  const videos = row?.videos ?? [];
 
   return (
     <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
-      <p className="mb-1.5 font-medium text-popover-foreground">{label}</p>
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="mb-1.5 text-base font-semibold tabular leading-tight text-popover-foreground">
+        {formatMoney((row?.net ?? 0) * 100)}
+        <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">{title}</span>
+      </p>
+
       {payload
-        .filter((entry) => entry.value !== undefined && entry.value !== 0)
+        .filter(
+          (entry) => entry.dataKey !== 'net' && entry.value !== undefined && entry.value !== 0,
+        )
         .map((entry) => (
           <div key={entry.dataKey} className="flex items-center justify-between gap-4">
             <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -343,32 +407,7 @@ const MoneyTooltip = ({
           </div>
         ))}
 
-      {videos.length > 0 && (
-        <div className="mt-2 space-y-1.5 border-t border-border pt-2">
-          <p className="text-[11px] font-medium text-popover-foreground">
-            {videos.length} vidéo{videos.length > 1 ? 's' : ''} publiée
-            {videos.length > 1 ? 's' : ''}
-          </p>
-          {videos.slice(0, 3).map((video) => (
-            <div key={video.id} className="flex items-center gap-2">
-              {video.thumbnailUrl && (
-                <img
-                  src={video.thumbnailUrl}
-                  alt=""
-                  loading="lazy"
-                  className="h-9 w-16 shrink-0 rounded object-cover"
-                />
-              )}
-              <span className="line-clamp-2 text-muted-foreground" style={{ maxWidth: 180 }}>
-                {video.title}
-              </span>
-            </div>
-          ))}
-          {videos.length > 3 && (
-            <p className="text-muted-foreground">et {videos.length - 3} de plus…</p>
-          )}
-        </div>
-      )}
+      <VideoTooltipList videos={videos} />
     </div>
   );
 };

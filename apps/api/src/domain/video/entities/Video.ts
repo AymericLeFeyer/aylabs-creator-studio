@@ -1,9 +1,31 @@
 import type { IsoDate } from '../../../shared/dates.ts';
+import type { Cents } from '../../../shared/money.ts';
 
 /**
- * Une vidéo publiée, gardée uniquement comme **repère temporel** : elle sert à poser un
- * trait sur les graphiques au jour de sa sortie. Aucune statistique par vidéo n'est
- * stockée — ça resterait à construire si le besoin apparaît.
+ * Compteurs propres à une vidéo, cumulés depuis sa sortie.
+ *
+ * Ce sont des CUMULS, pas des flux : ils ne s'additionnent jamais dans le temps,
+ * chaque collecte remplace la valeur précédente. Ils cohabitent avec `daily_metrics`
+ * sans jamais s'y mélanger — la somme des vues des vidéos d'une période ne vaut pas
+ * les vues de la chaîne sur cette période (une vieille vidéo continue de tourner).
+ */
+export interface VideoStats {
+  views: number;
+  watchMinutes: number;
+  /** Abonnés gagnés attribués à cette vidéo. Mode OAuth uniquement. */
+  subscribersGained: number;
+  likes: number;
+  comments: number;
+  /** AdSense estimé attribué à cette vidéo. Mode OAuth monétisé uniquement. */
+  estimatedRevenueCents: Cents;
+  /** `null` tant qu'aucune collecte n'a abouti : distingue « 0 vue » de « pas mesuré ». */
+  updatedAt: string | null;
+}
+
+/**
+ * Une vidéo publiée. Elle sert de **repère temporel** sur les graphiques (un trait au
+ * jour de sortie) et de **porte-clé** : les revenus et dépenses peuvent s'y rattacher,
+ * et la collecte y dépose ses compteurs pour le tableau de performance par vidéo.
  */
 export interface Video {
   id: string;
@@ -16,6 +38,20 @@ export interface Video {
   /** Jour de publication, en UTC comme le reste des séries. */
   date: IsoDate;
   thumbnailUrl: string | null;
+  stats: VideoStats;
 }
 
-export type UpsertVideoInput = Omit<Video, 'id'>;
+/** Vue enrichie du nom de la chaîne, pour les listes et les sélecteurs du front. */
+export interface VideoView extends Video {
+  channelName: string;
+  channelColor: string;
+}
+
+export type UpsertVideoInput = Omit<Video, 'id' | 'stats'>;
+
+/** Mise à jour des compteurs, adressée par la clé naturelle `(channelId, externalId)`. */
+export interface VideoStatsUpdate {
+  channelId: string;
+  externalId: string;
+  stats: Omit<VideoStats, 'updatedAt'>;
+}

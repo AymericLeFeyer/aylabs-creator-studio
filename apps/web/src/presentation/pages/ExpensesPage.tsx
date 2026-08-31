@@ -14,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table.tsx';
-import { FiltersBar } from '../components/FiltersBar.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 import { ExpenseDialog } from '../components/forms/ExpenseDialog.tsx';
 
@@ -39,8 +38,6 @@ export const ExpensesPage = () => {
 
   return (
     <div className="space-y-4">
-      <FiltersBar />
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
           <span className="text-muted-foreground">Total sur la période : </span>
@@ -74,6 +71,7 @@ export const ExpensesPage = () => {
                 <TableHead>Libellé</TableHead>
                 <TableHead>Catégorie</TableHead>
                 <TableHead>Chaîne</TableHead>
+                <TableHead>Vidéo</TableHead>
                 <TableHead className="text-right">Montant</TableHead>
                 <TableHead className="w-20" />
               </TableRow>
@@ -104,6 +102,11 @@ export const ExpensesPage = () => {
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {expense.channelName ?? 'Global'}
+                  </TableCell>
+                  <TableCell className="max-w-[14rem] text-muted-foreground">
+                    <span className="line-clamp-1" title={expense.videoTitle ?? undefined}>
+                      {expense.videoTitle ?? '—'}
+                    </span>
                   </TableCell>
                   <TableCell className="text-right tabular font-medium text-[var(--expense)]">
                     −{formatMoney(expense.amountCents)}

@@ -6,6 +6,7 @@ import type { MetricsRepository } from '../../../domain/metrics/repositories/Met
 import type { DailyMetric } from '../../../domain/metrics/entities/DailyMetric.ts';
 import type { VideoRepository } from '../../../domain/video/repositories/VideoRepository.ts';
 import type { UploadItem } from '../../../infrastructure/youtube/api/uploads.ts';
+import type { VideoStatRow } from '../../../infrastructure/youtube/api/videoStats.ts';
 import { YouTubeDataClient } from '../../../infrastructure/youtube/api/YouTubeDataClient.ts';
 import { YouTubeAnalyticsClient } from '../../../infrastructure/youtube/api/YouTubeAnalyticsClient.ts';
 
@@ -29,6 +30,12 @@ const MAX_DAYS_PER_QUERY = 365;
 
 /** Marge de re-lecture de la playlist d'uploads, pour rattraper une date corrigée. */
 const VIDEO_REVISION_WINDOW_DAYS = 7;
+
+/**
+ * Profondeur de rafraîchissement des compteurs par vidéo. Au-delà d'un an, une vidéo
+ * ne bouge plus assez pour justifier le quota d'un appel supplémentaire à chaque heure.
+ */
+const VIDEO_STATS_WINDOW_DAYS = 365;
 
 export class CollectMetrics {
   private readonly channels: ChannelRepository;
@@ -155,8 +162,11 @@ export class CollectMetrics {
     const videosUpserted = await this.collectVideos(channel.id, (since) =>
       client.fetchUploads(since),
     );
+    const videoStatsUpdated = await this.collectVideoStats(channel.id, (ids, since) =>
+      client.fetchVideoStats(ids, since, to),
+    );
 
-    return { ...base, status: 'ok', daysUpserted, snapshotDate, videosUpserted };
+    return { ...base, status: 'ok', daysUpserted, snapshotDate, videosUpserted, videoStatsUpdated };
   }
 
   /**
@@ -235,8 +245,11 @@ export class CollectMetrics {
     const videosUpserted = await this.collectVideos(channel.id, (since) =>
       client.fetchUploads(channel.externalId!, since),
     );
+    const videoStatsUpdated = await this.collectVideoStats(channel.id, (ids) =>
+      client.fetchVideoStats(ids),
+    );
 
-    return { ...base, status: 'ok', daysUpserted, snapshotDate, videosUpserted };
+    return { ...base, status: 'ok', daysUpserted, snapshotDate, videosUpserted, videoStatsUpdated };
   }
 
   /**
@@ -274,6 +287,54 @@ export class CollectMetrics {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[collect] vidéos non collectées (${channelId}) : ${message}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Rafraîchit les compteurs des vidéos récentes de la chaîne.
+   *
+   * Ce sont des CUMULS depuis la sortie, jamais des flux : chaque passage remplace la
+   * valeur précédente. La fenêtre part du jour de sortie de la plus ancienne vidéo du
+   * lot, pour qu'aucune vue ne soit tronquée côté YouTube Analytics.
+   *
+   * Comme la collecte des sorties, l'échec est **avalé** : un tableau de performance
+   * incomplet vaut mieux qu'une collecte de métriques annulée.
+   */
+  private async collectVideoStats(
+    channelId: string,
+    fetch: (videoIds: string[], since: IsoDate) => Promise<VideoStatRow[]>,
+  ): Promise<number> {
+    const to = today();
+    const recent = this.videos.findAll({
+      channelIds: [channelId],
+      range: { from: addDays(to, -VIDEO_STATS_WINDOW_DAYS), to },
+    });
+    if (recent.length === 0) return 0;
+
+    try {
+      // `findAll` trie par date de publication croissante : la première est la plus ancienne.
+      const stats = await fetch(
+        recent.map((video) => video.externalId),
+        recent[0]!.date,
+      );
+      return this.videos.upsertStats(
+        stats.map((row) => ({
+          channelId,
+          externalId: row.externalId,
+          stats: {
+            views: row.views,
+            watchMinutes: row.watchMinutes,
+            subscribersGained: row.subscribersGained,
+            likes: row.likes,
+            comments: row.comments,
+            estimatedRevenueCents: row.estimatedRevenueCents,
+          },
+        })),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[collect] stats vidéo non collectées (${channelId}) : ${message}`);
       return 0;
     }
   }

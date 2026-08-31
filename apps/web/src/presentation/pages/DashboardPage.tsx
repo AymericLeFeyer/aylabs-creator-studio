@@ -8,11 +8,11 @@ import {
   moneyValue,
 } from '../../domain/analytics/services/revenueMath.ts';
 import { formatHours, formatMoney, formatNumber, formatSigned } from '../../shared/format.ts';
-import { FiltersBar } from '../components/FiltersBar.tsx';
 import { StatCard } from '../components/StatCard.tsx';
 import { MoneyChart } from '../components/charts/MoneyChart.tsx';
 import { AudienceChart } from '../components/charts/AudienceChart.tsx';
 import { CategoryBreakdown } from '../components/charts/CategoryBreakdown.tsx';
+import { VideoPerformanceChart } from '../components/charts/VideoPerformanceChart.tsx';
 import { ChannelBreakdown } from '../components/ChannelBreakdown.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 
@@ -35,8 +35,6 @@ export const DashboardPage = () => {
 
   return (
     <div className="space-y-4">
-      <FiltersBar />
-
       {error && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
           {error instanceof Error ? error.message : 'Erreur de chargement des statistiques'}
@@ -117,6 +115,8 @@ export const DashboardPage = () => {
           </div>
 
           <ChannelBreakdown data={data} />
+
+          <VideoPerformanceChart data={data} />
         </>
       )}
     </div>

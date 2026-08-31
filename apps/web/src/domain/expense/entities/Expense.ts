@@ -10,6 +10,9 @@ export interface ExpenseEntry {
   categoryId: string;
   categoryName: string;
   categoryColor: string;
+  /** Vidéo rattachée, `null` si la dépense n'est imputée à aucune sortie. */
+  videoId: string | null;
+  videoTitle: string | null;
   date: string;
   amountCents: number;
   label: string;
@@ -22,6 +25,7 @@ export interface ExpenseEntry {
 export interface ExpenseEntryInput {
   channelId?: string | null;
   categoryId: string;
+  videoId?: string | null;
   date: string;
   amount: number;
   label: string;

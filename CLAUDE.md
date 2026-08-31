@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-08-31
+> Dernière mise à jour : 2026-09-01
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée.
 
@@ -152,27 +152,42 @@ Catégories créées au premier démarrage (`SeedDefaultCategories`, identifiant
 
 ### `revenue`
 
-`RevenueEntry { id, channelId, categoryId, date, amountCents, label, notes }` — `channelId: null` = revenu global.
+`RevenueEntry { id, channelId, categoryId, videoId, date, amountCents, label, notes }` — `channelId: null` = revenu global, `videoId: null` = non imputé à une sortie. `RevenueEntryView` ajoute `videoTitle`.
 
 ### `expense`
 
-`ExpenseEntry { id, channelId, categoryId, date, amountCents, label, notes }` — table `expense_entries`, ex-`tax_entries`. Montant **toujours positif** : c'est le calcul du bénéfice qui soustrait. Les impôts n'ont plus de statut à part, ils sont une catégorie de dépense parmi d'autres.
+`ExpenseEntry { id, channelId, categoryId, videoId, date, amountCents, label, notes }` — table `expense_entries`, ex-`tax_entries`. Montant **toujours positif** : c'est le calcul du bénéfice qui soustrait. Les impôts n'ont plus de statut à part, ils sont une catégorie de dépense parmi d'autres.
 
 ### `video`
 
-`Video { id, channelId, externalId, title, publishedAt, date, thumbnailUrl }` — table `videos`, clé unique `(channel_id, external_id)`.
+`Video { id, channelId, externalId, title, publishedAt, date, thumbnailUrl, stats }` — table `videos`, clé unique `(channel_id, external_id)`. `VideoView` y ajoute `channelName` / `channelColor`.
 
-Sert **uniquement de repère temporel** : un trait vertical au jour de sortie sur le graphique d'argent. Aucune statistique par vidéo n'est stockée.
+`stats: { views, watchMinutes, subscribersGained, likes, comments, estimatedRevenueCents, updatedAt }` sont des **CUMULS depuis la sortie**, pas des flux : chaque collecte les remplace, ils ne s'additionnent jamais dans le temps et ne se recoupent pas avec `daily_metrics` (une vieille vidéo continue de faire des vues). `updatedAt` vaut `null` tant qu'aucune collecte n'a mesuré la vidéo — c'est ce qui distingue « 0 vue » de « pas encore mesuré », et le front affiche « — » dans ce cas.
+
+La vidéo sert donc à trois choses : **repère temporel** (trait vertical au jour de sortie sur les graphiques d'argent et d'audience), **porte-clé** (les revenus et dépenses s'y rattachent par `video_id`) et **support de mesure** (tableau de performance par vidéo).
+
+`VideoRepository` : `findAll`, `findAllWithChannel`, `findById`, `upsertMany` (titre/miniature, jamais les compteurs), `upsertStats` (compteurs seuls, **UPDATE sans INSERT** : une stat sans ligne de vidéo n'a nulle part où aller), `findLatestDate`, `countByChannel`.
 
 La collecte passe par la **playlist « uploads »** de la chaîne (`infrastructure/youtube/api/uploads.ts`, partagé par les deux clients) et non par `search.list` : 1 unité de quota par page de 50 contre 100 pour une recherche, et l'ordre antéchronologique garanti permet de s'arrêter dès qu'on dépasse la date voulue. Fonctionne en mode `public` (clé API) comme en mode `oauth` (`mine: true`). Les Shorts en font partie, YouTube ne les distingue pas à ce niveau.
 
 `CollectMetrics.collectVideos()` repart de la dernière vidéo connue moins 7 jours ; sans historique, il remonte `BACKFILL_DAYS`. Son échec est **avalé** (`console.warn`) : un repère d'affichage ne doit pas faire échouer une collecte de métriques déjà écrites. Le nombre de vidéos enregistrées revient dans `CollectResult.videosUpserted`.
 
+`CollectMetrics.collectVideoStats()` rafraîchit ensuite les compteurs des vidéos sorties depuis `VIDEO_STATS_WINDOW_DAYS` (365). Son échec est avalé de la même façon, et le compte revient dans `CollectResult.videoStatsUpdated`. Deux sources selon le mode :
+
+| Mode     | Appel                                                        | Ce qu'on obtient                            |
+| -------- | ------------------------------------------------------------ | ------------------------------------------- |
+| `oauth`  | `reports.query` `dimensions=video`, `filters=video==id1,id2` | vues, minutes, **abonnés gagnés**, likes, commentaires, **AdSense** |
+| `public` | `videos.list` `part=statistics` (50 ids max par appel)        | vues, likes, commentaires. **Rien d'autre** |
+
+La fenêtre Analytics part du jour de sortie de la plus ancienne vidéo du lot, pour qu'aucune vue ne soit tronquée. `filters=video==` plafonne à 500 identifiants : les lots font 200.
+
 ### `analytics`
 
-`GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
+`GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
 
 `videos` liste les sorties de la période sous forme de `VideoMarker { id, channelId, channelName, channelColor, title, thumbnailUrl, date, bucket }`. **`bucket` est calculé côté API** (`bucketStart`) et tombe exactement sur un `series[].date` : la règle de découpage (semaine ISO commençant le lundi) n'existe qu'à un seul endroit.
+
+`videoPerformance` est une ligne par vidéo sortie dans la période : les compteurs collectés (`views`, `watchHours`, `subscribersGained`, `hasStats`) et l'argent, décomposé en `adsenseCents` / `manualCashCents` / `inKindCents` / `expenseCents` — les mêmes noms que `MoneyParts`, pour que le front y applique `moneyValue` comme à n'importe quel point de série. **L'argent rattaché ignore les bornes de la période** (`sumByVideo` n'a pas de filtre de date) : une sponso encaissée deux mois après la sortie appartient quand même à la vidéo qui l'a rapportée. C'est pour ça que ces montants ne se recoupent pas avec `totals`.
 
 Chaque `TimeSeriesPoint` porte aussi `revenueByCategory` et `expenseByCategory` (`Record<categoryId, cents>`, les zéros omis) : c'est ce qui permet au `MoneyChart` d'empiler une barre par catégorie avec **sa** couleur. Deux dictionnaires séparés, sinon une catégorie `both` mélangerait ce qui rentre et ce qui sort le même jour.
 
@@ -194,16 +209,17 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `PUT`    | `/api/channels/:id/metrics`       | Saisie manuelle d'une journée (`source = manual`)           |
 | `DELETE` | `/api/channels/:id/metrics/:date` | Supprimer une journée                                       |
 | `PUT`    | `/api/channels/:id/snapshots`     | Saisie manuelle d'un total d'abonnés                        |
+| `GET`    | `/api/videos`                     | Sorties de vidéo. Params `from`, `to`, `channelIds`, `limit` (200 par défaut). Période **facultative** : le sélecteur de rattachement doit proposer des vidéos plus anciennes que la période affichée |
 | `GET`    | `/api/categories`                 | Params `includeArchived`, `scope` (`revenue|expense|both` ; `both` répond toujours) |
 | `POST`   | `/api/categories`                 | Créer (`scope` défaut `revenue`)                             |
 | `PATCH`  | `/api/categories/:id`             | Modifier / archiver                                         |
 | `DELETE` | `/api/categories/:id`             | Refusé si `isAuto` ou si des revenus/dépenses y sont rattachés |
 | `GET`    | `/api/revenues`                   | Params `from`, `to`, `channelIds`                            |
-| `POST`   | `/api/revenues`                   | `amount` **en euros**. Refusé sur une catégorie `isAuto` ou `scope: expense` |
+| `POST`   | `/api/revenues`                   | `amount` **en euros**, `videoId` facultatif. Refusé sur une catégorie `isAuto` ou `scope: expense` |
 | `PATCH`  | `/api/revenues/:id`               | Modifier                                                     |
 | `DELETE` | `/api/revenues/:id`               | Supprimer                                                    |
 | `GET`    | `/api/expenses`                   | Params `from`, `to`, `channelIds`                            |
-| `POST`   | `/api/expenses`                   | `amount` **en euros**, positif. `categoryId` obligatoire, refusé sur `scope: revenue` |
+| `POST`   | `/api/expenses`                   | `amount` **en euros**, positif, `videoId` facultatif. `categoryId` obligatoire, refusé sur `scope: revenue` |
 | `PATCH`  | `/api/expenses/:id`               | Modifier                                                     |
 | `DELETE` | `/api/expenses/:id`               | Supprimer                                                    |
 
@@ -213,11 +229,13 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 
 | Route         | Page              | Contenu                                                    |
 | ------------- | ----------------- | ---------------------------------------------------------- |
-| `/`           | `DashboardPage`   | 4 cartes de stats, graphique d'argent, audience, répartitions revenus + dépenses |
-| `/revenus`    | `RevenuesPage`    | Liste + saisie des revenus manuels                          |
-| `/depenses`   | `ExpensesPage`    | Liste + saisie des dépenses, avec catégorie                 |
+| `/`           | `DashboardPage`   | 4 cartes de stats, graphique d'argent, audience, répartitions revenus + dépenses, détail par chaîne, performance par vidéo |
+| `/revenus`    | `RevenuesPage`    | Liste + saisie des revenus manuels, avec vidéo rattachée    |
+| `/depenses`   | `ExpensesPage`    | Liste + saisie des dépenses, avec catégorie et vidéo rattachée |
 | `/chaines`    | `ChannelsPage`    | Cartes des chaînes, collecte, saisie manuelle               |
 | `/categories` | `CategoriesPage`  | Gestion des catégories : portée (revenus/dépenses/les deux), nature, couleur |
+
+`AppLayout` porte la navigation : Dashboard / Revenus / Dépenses dans la barre, **Chaînes et Catégories dans le menu ⚙ Paramètres** en haut à droite (ce sont des écrans de configuration, pas de lecture). La `FiltersBar` vit **dans l'en-tête collant**, sous la navigation, et n'apparaît pas sur les deux routes de `ROUTES_WITHOUT_FILTERS` (`/chaines`, `/categories`) : configurer une chaîne ne dépend d'aucune période. Les pages ne rendent donc plus `<FiltersBar />` elles-mêmes ; l'en-tête restant visible en permanence, chaque pixel de hauteur qu'on lui ajoute se paie sur toutes les pages — d'où la rangée unique qui se replie.
 
 ## Hooks
 
@@ -228,6 +246,7 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 | `useAnalytics`, `useCollectAll`          | `application/analytics/usecases/useAnalytics.ts`   | Requête principale du dashboard              |
 | `useChannels`, `useCreateChannel`, `useCollectChannel`, `useSaveManualMetrics`, `useSaveManualSnapshot`, `useResolveChannel` | `application/channel/usecases/useChannels.ts` | CRUD chaînes + collecte |
 | `useCategories`, `useCreateCategory`, … | `application/category/usecases/useCategories.ts`  | Catégories (param `{ includeArchived, scope }`) |
+| `useVideos`                              | `application/video/usecases/useVideos.ts`         | Sorties de vidéo pour le sélecteur de rattachement (cache 5 min) |
 | `useRevenues`, `useCreateRevenue`, …    | `application/revenue/usecases/useRevenues.ts`     | Revenus                                      |
 | `useExpenses`, `useCreateExpense`, …    | `application/expense/usecases/useExpenses.ts`     | Dépenses                                     |
 | `useTheme`, `useLocalStorage`            | `presentation/hooks/`                              | Thème clair/sombre, stockage protégé          |
@@ -240,7 +259,7 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 - **Repositories** : interfaces dans `domain/`, implémentations SQLite dans `infrastructure/`, assemblage dans `container.ts`.
 - **Validation** : tous les corps de requête passent par un schéma zod de `presentation/validation.ts`. Les erreurs `ZodError` sont converties en 422 par `errorHandler`.
 - **Params de route** : toujours via `param(req, 'id')` (`presentation/helpers.ts`) — Express 5 type `req.params` en `string | string[] | undefined`.
-- **Migrations** : tableau ordonné dans `infrastructure/db/migrations.ts`, suivi par `PRAGMA user_version`, appliquées en transaction au démarrage. **Ajouter une migration, ne jamais modifier une existante.** La migration 3 ajoute la table `videos`. La migration 2 renomme `revenue_categories` en `categories` (SQLite réécrit les clés étrangères des autres tables toute seule), ajoute `scope`, et transforme `tax_entries` en `expense_entries` en rattachant l'existant à la catégorie `impots`.
+- **Migrations** : tableau ordonné dans `infrastructure/db/migrations.ts`, suivi par `PRAGMA user_version`, appliquées en transaction au démarrage. **Ajouter une migration, ne jamais modifier une existante.** La migration 3 ajoute la table `videos`. La migration 4 ajoute les compteurs par vidéo et les colonnes `video_id` de `revenue_entries` / `expense_entries` — une clé étrangère n'est ajoutable par `ALTER TABLE` que si son défaut vaut `NULL`, ce qui est le cas ici. La migration 2 renomme `revenue_categories` en `categories` (SQLite réécrit les clés étrangères des autres tables toute seule), ajoute `scope`, et transforme `tax_entries` en `expense_entries` en rattachant l'existant à la catégorie `impots`.
 - **Couleurs de chaîne** attribuées en rotation à la création (`DEFAULT_COLORS`).
 
 ## Points d'attention
@@ -263,6 +282,12 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 - **Une catégorie de portée `both` apparaît deux fois dans le graphique**, une barre au-dessus de l'axe et une en dessous, avec la même couleur. C'est voulu : ce sont deux mouvements différents, et les fondre ferait disparaître l'un des deux.
 - **`byChannel` n'inclut pas les revenus globaux** (`channelId: null`). La somme des lignes peut donc être inférieure au total du dashboard : c'est volontaire.
 - **Le graphique d'argent est en euros**, pas en centimes : `MoneyChart` divise par 100 pour Recharts et reformate dans le tooltip.
+- **La légende du graphique d'argent est en HTML, pas celle de Recharts.** Cliquer une catégorie la retire de la vue : les séries masquées sont filtrées **avant** d'être passées aux `<Bar>`, elles disparaissent donc aussi de l'infobulle, ce que la prop `hide` de Recharts ne garantit pas. Le masquage est indexé par `r:<categoryId>` / `e:<categoryId>` et non par rang, sinon un changement de période réordonnerait les barres et dépareillerait le masquage. **La ligne « net » et le total du titre suivent les catégories visibles** — masquer « Sponsors » doit les retirer du total lu, sinon la ligne flotterait au-dessus de la pile qui la porte. Sans rien de masqué, la somme retombe exactement sur `moneyValue`.
+- **Le survol est synchronisé entre le graphique d'argent et celui d'audience** par un `syncId` commun (`charts/syncId.ts`). Ça ne fonctionne que parce que les deux sont construits sur `data.series`, donc avec la même abscisse et le même nombre de points : Recharts synchronise **par index**. Ne jamais poser ce `syncId` sur un graphique aux points différents — le graphique de performance par vidéo, par exemple, désignerait n'importe quoi.
+- **La coche « Marquer les sorties de vidéo » est unique** (`filters.showVideos`), rendue deux fois par `VideoMarkersToggle` : la cocher d'un côté l'active de l'autre. Les helpers de repères sont scindés en trois fichiers (`videoMarkers.tsx` sans composant, `VideoMarkersToggle.tsx`, `VideoTooltipList.tsx`) pour ne pas déclencher `react-refresh/only-export-components` — la règle ne s'applique qu'aux fichiers qui exportent **à la fois** un composant et autre chose.
+- **Le tableau de performance par vidéo ne se compare pas aux totaux de la période.** Ses compteurs sont des cumuls depuis la sortie de chaque vidéo, et son argent rattaché n'a pas de borne de date ; les totaux du dashboard, eux, comptent ce qui s'est passé pendant la période, vieilles vidéos comprises. Les deux chiffres sont justes et différents.
+- **Onglets plutôt que double axe** dans le graphique par vidéo : vues, abonnés et euros n'ont pas la même échelle, et un second axe y ferait lire des corrélations inventées.
+- **Rattacher une vidéo force la chaîne** du revenu ou de la dépense (une vidéo appartient à une seule chaîne), et changer de chaîne détache la vidéo. `VideoSelect` garde en tête de liste la vidéo déjà rattachée même si elle sort du filtre courant, sinon une édition l'effacerait silencieusement.
 
 ## Déploiement
 

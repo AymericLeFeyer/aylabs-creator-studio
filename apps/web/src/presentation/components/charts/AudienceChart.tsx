@@ -13,6 +13,7 @@ import {
   YAxis,
 } from 'recharts';
 import type { AnalyticsResult } from '../../../domain/analytics/entities/Analytics.ts';
+import { useFilters } from '../../hooks/useFilters.tsx';
 import {
   formatBucketLabel,
   formatNumber,
@@ -21,6 +22,15 @@ import {
 } from '../../../shared/format.ts';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs.tsx';
+import {
+  groupVideosByBucket,
+  videoMarkerLines,
+  type MarkerRow,
+  type TooltipVideo,
+} from './videoMarkers.tsx';
+import { VideoMarkersToggle } from './VideoMarkersToggle.tsx';
+import { VideoTooltipList } from './VideoTooltipList.tsx';
+import { SYNC_ID } from './syncId.ts';
 
 type Metric = 'views' | 'subscribers' | 'subscribersTotal' | 'watchHours';
 
@@ -35,24 +45,42 @@ interface AudienceChartProps {
   data: AnalyticsResult;
 }
 
+interface AudienceRow extends MarkerRow {
+  views: number;
+  subscribers: number;
+  subscribersTotal: number | null;
+  watchHours: number;
+}
+
 /**
  * Graphique d'audience. Le type de tracé suit la nature de la métrique :
  * un flux se lit en barres, un total cumulé en aire — mélanger les deux
  * laisserait croire qu'on peut additionner des abonnés cumulés entre deux jours.
+ *
+ * Les repères de sortie de vidéo y sont posés comme sur le graphique d'argent, avec la
+ * même coche : une sortie explique souvent un pic de vues autant qu'un pic de revenus.
  */
 export const AudienceChart = ({ data }: AudienceChartProps) => {
+  const filters = useFilters();
   const [metric, setMetric] = useState<Metric>('views');
 
-  const rows = useMemo(
+  const videosByBucket = useMemo(
+    () => groupVideosByBucket(data.videos, filters.showVideos),
+    [data.videos, filters.showVideos],
+  );
+
+  const rows = useMemo<AudienceRow[]>(
     () =>
       data.series.map((point) => ({
         label: formatBucketLabel(point.date, data.query.granularity),
+        bucket: point.date,
+        videos: videosByBucket.get(point.date) ?? [],
         views: point.views,
         subscribers: point.subscribersNet,
         subscribersTotal: point.subscribersTotal,
         watchHours: point.watchHours,
       })),
-    [data.series, data.query.granularity],
+    [data.series, data.query.granularity, videosByBucket],
   );
 
   const axisProps = {
@@ -75,20 +103,30 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
       content={({ active, payload, label }) => {
         if (!active || !payload?.length) return null;
         const value = payload[0]?.value;
+        const videos = (payload[0]?.payload as AudienceRow | undefined)?.videos ?? [];
         return (
           <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
-            <p className="font-medium text-popover-foreground">{label}</p>
-            <p className="tabular text-muted-foreground">
-              {METRIC_LABELS[metric]} :{' '}
-              <span className="text-popover-foreground">
-                {typeof value === 'number' ? formatNumber(value) : '—'}
+            <p className="text-[11px] text-muted-foreground">{label}</p>
+            <p className="text-base font-semibold tabular leading-tight text-popover-foreground">
+              {typeof value === 'number' ? formatNumber(value) : '—'}
+              <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
+                {METRIC_LABELS[metric]}
               </span>
             </p>
+            <VideoTooltipList videos={videos as TooltipVideo[]} />
           </div>
         );
       }}
     />
   );
+
+  // Même `syncId` que le graphique d'argent : les deux abscisses sont identiques,
+  // survoler l'une positionne l'autre.
+  const chartProps = {
+    data: rows,
+    syncId: SYNC_ID,
+    margin: { top: 8, right: 8, bottom: 0, left: 8 },
+  } as const;
 
   return (
     <Card>
@@ -104,21 +142,25 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
           </p>
         </div>
 
-        <Tabs value={metric} onValueChange={(value) => setMetric(value as Metric)}>
-          <TabsList>
-            {(Object.keys(METRIC_LABELS) as Metric[]).map((key) => (
-              <TabsTrigger key={key} value={key} className="text-xs">
-                {METRIC_LABELS[key]}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <div className="flex flex-col items-end gap-2.5">
+          <Tabs value={metric} onValueChange={(value) => setMetric(value as Metric)}>
+            <TabsList>
+              {(Object.keys(METRIC_LABELS) as Metric[]).map((key) => (
+                <TabsTrigger key={key} value={key} className="text-xs">
+                  {METRIC_LABELS[key]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+
+          <VideoMarkersToggle id="show-videos-audience" count={data.videos.length} />
+        </div>
       </CardHeader>
 
       <CardContent>
         <ResponsiveContainer width="100%" height={280}>
           {metric === 'subscribersTotal' ? (
-            <AreaChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+            <AreaChart {...chartProps}>
               <defs>
                 <linearGradient id="subsGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--color-cash)" stopOpacity={0.4} />
@@ -134,6 +176,7 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
                 {...axisProps}
               />
               {tooltip}
+              {videoMarkerLines(rows)}
               <Area
                 type="monotone"
                 dataKey="subscribersTotal"
@@ -144,11 +187,12 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
               />
             </AreaChart>
           ) : metric === 'subscribers' ? (
-            <LineChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+            <LineChart {...chartProps}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis dataKey="label" minTickGap={16} {...axisProps} />
               <YAxis width={56} tickFormatter={formatNumberCompact} {...axisProps} />
               {tooltip}
+              {videoMarkerLines(rows)}
               <Line
                 type="monotone"
                 dataKey="subscribers"
@@ -158,11 +202,12 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
               />
             </LineChart>
           ) : (
-            <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+            <BarChart {...chartProps}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis dataKey="label" minTickGap={16} {...axisProps} />
               <YAxis width={56} tickFormatter={formatNumberCompact} {...axisProps} />
               {tooltip}
+              {videoMarkerLines(rows)}
               <Bar
                 dataKey={metric}
                 fill="var(--color-cash)"

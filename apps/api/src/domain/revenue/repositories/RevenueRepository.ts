@@ -34,4 +34,14 @@ export interface RevenueEntryRepository {
     categoryId: string;
     totalCents: number;
   }>;
+  /**
+   * Somme par vidéo rattachée, séparée par nature. Volontairement **sans filtre de
+   * date** : une sponso encaissée deux mois après la sortie appartient quand même à
+   * cette vidéo, et le tableau de performance mesure la vidéo, pas la période.
+   */
+  sumByVideo(videoIds: string[]): Array<{
+    videoId: string;
+    cashCents: number;
+    inKindCents: number;
+  }>;
 }
