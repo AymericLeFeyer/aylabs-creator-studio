@@ -29,6 +29,8 @@ export interface RevenueEntryRepository {
     nature: 'cash' | 'in_kind';
     totalCents: number;
   }>;
+  /** Nombre d'entrées en nature (produits reçus) sur la période, pas leur montant. */
+  countInKind(filter: RevenueEntryFilter): number;
   /** Somme par catégorie sur la période, pour la répartition du dashboard. */
   sumByCategory(filter: RevenueEntryFilter): Array<{
     categoryId: string;

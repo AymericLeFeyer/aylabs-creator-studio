@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { IsoDate } from '../../../shared/dates.ts';
+import type { DateRange } from '../../../domain/metrics/repositories/MetricsRepository.ts';
 import type {
   UpsertVideoInput,
   Video,
@@ -198,6 +199,17 @@ export class SqliteVideoRepository implements VideoRepository {
       count += Number(result.changes);
     }
     return count;
+  }
+
+  countInRange(channelIds: string[], range: DateRange): number {
+    const { clause, params } = this.buildWhere({ channelIds, range }, 'v');
+    return (
+      this.db
+        .prepare(`SELECT COUNT(*) AS n FROM videos v ${clause}`)
+        .get(...(params as never[])) as {
+        n: number;
+      }
+    ).n;
   }
 
   findLatestDate(channelId: string): IsoDate | null {

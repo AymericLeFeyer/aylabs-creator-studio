@@ -49,6 +49,10 @@ export interface AnalyticsTotals {
   comments: number;
   shares: number;
   subscribersTotal: number | null;
+  /** Nombre de vidéos publiées pendant la période. */
+  videosPublished: number;
+  /** Nombre de revenus en nature saisis (produits reçus), pas leur montant. */
+  inKindEntries: number;
   adsenseCents: number;
   manualCashCents: number;
   inKindCents: number;

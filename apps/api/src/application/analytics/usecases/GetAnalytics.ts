@@ -95,6 +95,7 @@ export class GetAnalytics {
 
     // Abonnés en fin de période : la dernière valeur connue, pas la somme des buckets.
     totals.subscribersTotal = this.sumLatestSubscribers(activeIds, query.to);
+    this.applyCounts(totals, activeIds, query);
 
     return {
       query,
@@ -226,6 +227,23 @@ export class GetAnalytics {
         point.viewsTotal = [...lastKnownViews.values()].reduce((a, b) => a + b, 0);
       }
     }
+  }
+
+  /**
+   * Compteurs de cardinalité des cartes du dashboard : combien de vidéos sont sorties,
+   * combien de produits ont été reçus. Ce ne sont pas des sommes de série — les compter
+   * bucket par bucket les ferait doubler dès qu'une entrée tombe à cheval sur un découpage.
+   */
+  private applyCounts(totals: AnalyticsTotals, channelIds: string[], query: AnalyticsQuery): void {
+    totals.videosPublished = this.videos.countInRange(channelIds, {
+      from: query.from,
+      to: query.to,
+    });
+    totals.inKindEntries = this.revenues.countInKind({
+      range: { from: query.from, to: query.to },
+      channelIds,
+      includeUnassigned: query.includeUnassigned,
+    });
   }
 
   private sumLatestSubscribers(channelIds: string[], at: IsoDate): number | null {
@@ -495,6 +513,11 @@ export class GetAnalytics {
     });
     const totals = this.sumTotals(series);
     totals.subscribersTotal = this.sumLatestSubscribers(channelIds, previousTo);
+    this.applyCounts(totals, channelIds, {
+      ...query,
+      from: previousFrom,
+      to: previousTo,
+    });
     return totals;
   }
 }

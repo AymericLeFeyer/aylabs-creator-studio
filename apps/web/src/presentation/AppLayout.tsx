@@ -12,6 +12,9 @@ import {
 import { FiltersBar } from './components/FiltersBar.tsx';
 import { cn } from '../shared/cn.ts';
 
+/** Largeur du site, généreuse sur grand écran : les graphiques côte à côte en ont besoin. */
+const CONTAINER = 'mx-auto w-full max-w-[1800px] px-3 sm:px-5';
+
 /** Les écrans de lecture : ceux qui portent la barre de filtres. */
 const NAV = [
   { to: '/', label: 'Dashboard', icon: BarChart3, end: true },
@@ -44,10 +47,10 @@ export const AppLayout = () => {
       {/* La barre de filtres vit dans l'en-tête collant : période et chaînes restent
           sous la main quand on descend dans un long tableau. */}
       <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
-          <span className="flex items-center gap-2 font-semibold">
+        <div className={cn(CONTAINER, 'flex h-14 items-center gap-2 sm:gap-4')}>
+          <span className="flex shrink-0 items-center gap-2 font-semibold">
             <BarChart3 className="h-5 w-5" />
-            Creator Studio
+            <span className="hidden sm:inline">Creator Studio</span>
           </span>
 
           <nav className="flex flex-1 items-center gap-1 overflow-x-auto">
@@ -58,7 +61,7 @@ export const AppLayout = () => {
                 end={end}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                    'flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors sm:px-3',
                     isActive
                       ? 'bg-secondary text-secondary-foreground'
                       : 'text-muted-foreground hover:text-foreground',
@@ -104,15 +107,13 @@ export const AppLayout = () => {
         </div>
 
         {showFilters && (
-          <div className="border-t border-border">
-            <div className="mx-auto max-w-7xl px-4">
-              <FiltersBar />
-            </div>
+          <div className={CONTAINER}>
+            <FiltersBar />
           </div>
         )}
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className={cn(CONTAINER, 'py-4 sm:py-6')}>
         <Outlet />
       </main>
     </div>

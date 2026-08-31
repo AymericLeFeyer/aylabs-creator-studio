@@ -21,14 +21,12 @@ import { cn } from '../../../shared/cn.ts';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
 import { Label } from '../ui/label.tsx';
 import { Switch } from '../ui/switch.tsx';
-import { Checkbox } from '../ui/checkbox.tsx';
 import {
   groupVideosByBucket,
   videoMarkerLines,
   type MarkerRow,
   type TooltipVideo,
 } from './videoMarkers.tsx';
-import { VideoMarkersToggle } from './VideoMarkersToggle.tsx';
 import { VideoTooltipList } from './VideoTooltipList.tsx';
 import { SYNC_ID } from './syncId.ts';
 
@@ -189,41 +187,28 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
           </p>
         </div>
 
-        <div className="flex flex-col gap-2.5">
-          <div className="flex items-center gap-2.5">
-            <Label
-              htmlFor="money-mode"
-              className={!isProfit ? 'text-foreground' : 'text-muted-foreground'}
-            >
-              CA
-            </Label>
-            <Switch
-              id="money-mode"
-              checked={isProfit}
-              onCheckedChange={(checked) =>
-                filters.set({ moneyMode: checked ? 'profit' : 'revenue' })
-              }
-            />
-            <Label
-              htmlFor="money-mode"
-              className={isProfit ? 'text-foreground' : 'text-muted-foreground'}
-            >
-              Bénéfices
-            </Label>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="include-in-kind"
-              checked={filters.includeInKind}
-              onCheckedChange={(checked) => filters.set({ includeInKind: checked === true })}
-            />
-            <Label htmlFor="include-in-kind" className="text-xs font-normal text-muted-foreground">
-              Compter les avantages en nature
-            </Label>
-          </div>
-
-          <VideoMarkersToggle id="show-videos-money" count={data.videos.length} />
+        {/* Les avantages en nature et les repères de sortie sont réglés dans l'en-tête :
+            ils pilotent tous les graphiques, pas seulement celui-ci. */}
+        <div className="flex items-center gap-2.5">
+          <Label
+            htmlFor="money-mode"
+            className={!isProfit ? 'text-foreground' : 'text-muted-foreground'}
+          >
+            CA
+          </Label>
+          <Switch
+            id="money-mode"
+            checked={isProfit}
+            onCheckedChange={(checked) =>
+              filters.set({ moneyMode: checked ? 'profit' : 'revenue' })
+            }
+          />
+          <Label
+            htmlFor="money-mode"
+            className={isProfit ? 'text-foreground' : 'text-muted-foreground'}
+          >
+            Bénéfices
+          </Label>
         </div>
       </CardHeader>
 
@@ -248,7 +233,7 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
               tick={{ fontSize: 11, fill: 'var(--color-muted-foreground)' }}
               tickLine={false}
               axisLine={false}
-              width={64}
+              width={56}
               tickFormatter={(value: number) => formatMoneyCompact(value * 100)}
             />
             <Tooltip

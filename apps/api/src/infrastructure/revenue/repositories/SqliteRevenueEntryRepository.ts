@@ -217,6 +217,21 @@ export class SqliteRevenueEntryRepository implements RevenueEntryRepository {
     }));
   }
 
+  countInKind(filter: RevenueEntryFilter): number {
+    const { clause, params } = buildEntryWhere(filter, 'e');
+    const where = clause ? `${clause} AND c.nature = 'in_kind'` : "WHERE c.nature = 'in_kind'";
+    return (
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS n
+             FROM revenue_entries e
+             JOIN categories c ON c.id = e.category_id
+             ${where}`,
+        )
+        .get(...(params as never[])) as { n: number }
+    ).n;
+  }
+
   sumByCategory(filter: RevenueEntryFilter): Array<{ categoryId: string; totalCents: number }> {
     const { clause, params } = buildEntryWhere(filter, 'e');
     const rows = this.db

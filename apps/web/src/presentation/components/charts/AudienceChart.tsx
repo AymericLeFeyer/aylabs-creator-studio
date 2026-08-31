@@ -28,7 +28,6 @@ import {
   type MarkerRow,
   type TooltipVideo,
 } from './videoMarkers.tsx';
-import { VideoMarkersToggle } from './VideoMarkersToggle.tsx';
 import { VideoTooltipList } from './VideoTooltipList.tsx';
 import { SYNC_ID } from './syncId.ts';
 
@@ -82,6 +81,27 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
       })),
     [data.series, data.query.granularity, videosByBucket],
   );
+
+  /**
+   * Domaine calculé ici, en nombres.
+   *
+   * `subscribersTotal` vaut `null` sur les buckets antérieurs au premier relevé. Passer
+   * `['dataMin - 100', 'dataMax + 100']` à Recharts lui fait alors calculer ses bornes
+   * sur une série contenant des `null` : le domaine part en `NaN` et **l'aire ne se
+   * dessine plus du tout**. On borne donc sur les seules valeurs connues.
+   */
+  const subscribersDomain = useMemo<[number, number]>(() => {
+    const values = rows
+      .map((row) => row.subscribersTotal)
+      .filter((value): value is number => typeof value === 'number');
+    if (values.length === 0) return [0, 1];
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    // Une courbe plate doit rester au milieu, pas collée à un bord.
+    const padding = Math.max(Math.round((max - min) * 0.1), 10);
+    return [Math.max(0, min - padding), max + padding];
+  }, [rows]);
 
   const axisProps = {
     tick: { fontSize: 11, fill: 'var(--color-muted-foreground)' },
@@ -142,19 +162,15 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
           </p>
         </div>
 
-        <div className="flex flex-col items-end gap-2.5">
-          <Tabs value={metric} onValueChange={(value) => setMetric(value as Metric)}>
-            <TabsList>
-              {(Object.keys(METRIC_LABELS) as Metric[]).map((key) => (
-                <TabsTrigger key={key} value={key} className="text-xs">
-                  {METRIC_LABELS[key]}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-
-          <VideoMarkersToggle id="show-videos-audience" count={data.videos.length} />
-        </div>
+        <Tabs value={metric} onValueChange={(value) => setMetric(value as Metric)}>
+          <TabsList className="flex-wrap">
+            {(Object.keys(METRIC_LABELS) as Metric[]).map((key) => (
+              <TabsTrigger key={key} value={key} className="text-xs">
+                {METRIC_LABELS[key]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </CardHeader>
 
       <CardContent>
@@ -170,8 +186,9 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis dataKey="label" minTickGap={16} {...axisProps} />
               <YAxis
-                width={56}
-                domain={['dataMin - 100', 'dataMax + 100']}
+                width={52}
+                domain={subscribersDomain}
+                allowDataOverflow={false}
                 tickFormatter={formatNumberCompact}
                 {...axisProps}
               />
@@ -190,7 +207,7 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
             <LineChart {...chartProps}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis dataKey="label" minTickGap={16} {...axisProps} />
-              <YAxis width={56} tickFormatter={formatNumberCompact} {...axisProps} />
+              <YAxis width={52} tickFormatter={formatNumberCompact} {...axisProps} />
               {tooltip}
               {videoMarkerLines(rows)}
               <Line
@@ -205,7 +222,7 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
             <BarChart {...chartProps}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis dataKey="label" minTickGap={16} {...axisProps} />
-              <YAxis width={56} tickFormatter={formatNumberCompact} {...axisProps} />
+              <YAxis width={52} tickFormatter={formatNumberCompact} {...axisProps} />
               {tooltip}
               {videoMarkerLines(rows)}
               <Bar

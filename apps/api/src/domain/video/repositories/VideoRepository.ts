@@ -19,6 +19,8 @@ export interface VideoRepository {
   upsertMany(videos: UpsertVideoInput[]): number;
   /** Remplace les compteurs d'une vidéo. Les compteurs sont des cumuls, jamais additionnés. */
   upsertStats(updates: VideoStatsUpdate[]): number;
+  /** Compte les sorties de la période, sans les charger (le `limit` de `findAll` fausserait). */
+  countInRange(channelIds: string[], range: DateRange): number;
   /** Jour de la dernière vidéo connue, pour ne re-parcourir que le nécessaire. */
   findLatestDate(channelId: string): IsoDate | null;
   countByChannel(channelId: string): number;

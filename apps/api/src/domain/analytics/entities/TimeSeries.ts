@@ -66,6 +66,10 @@ export interface AnalyticsTotals {
   shares: number;
   /** Abonnés cumulés à la fin de la période (somme des chaînes sélectionnées). */
   subscribersTotal: number | null;
+  /** Nombre de vidéos publiées pendant la période. */
+  videosPublished: number;
+  /** Nombre de revenus en nature saisis (produits reçus), pas leur montant. */
+  inKindEntries: number;
   adsenseCents: Cents;
   manualCashCents: Cents;
   inKindCents: Cents;

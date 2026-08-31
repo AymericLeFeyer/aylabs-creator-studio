@@ -46,6 +46,8 @@ export const emptyTotals = (): AnalyticsTotals => ({
   comments: 0,
   shares: 0,
   subscribersTotal: null,
+  videosPublished: 0,
+  inKindEntries: 0,
   adsenseCents: 0,
   manualCashCents: 0,
   inKindCents: 0,
