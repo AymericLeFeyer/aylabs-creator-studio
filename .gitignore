@@ -1,0 +1,27 @@
+node_modules/
+dist/
+build/
+*.local
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Data (base SQLite + volumes)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/

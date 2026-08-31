@@ -1,0 +1,54 @@
+name: CI
+
+# Appelé directement sur les PR, et comme prérequis de `release.yml` sur `main` :
+# une image n'est publiée que si ces vérifications passent.
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+jobs:
+  check:
+    name: Typage et build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier le typage de l'API
+        run: npm run typecheck --workspace=@acs/api
+
+      - name: Lint
+        run: npm run lint --workspaces --if-present
+
+      - name: Vérifier le format
+        run: npx prettier --check "apps/*/src/**/*.{ts,tsx,css}"
+
+      - name: Builder le front
+        run: npm run build --workspace=@acs/web
+
+      # Vérifie que l'API démarre, migre sa base et répond, sans aucune clé API.
+      - name: Démarrer l'API et interroger /health
+        env:
+          PORT: 3001
+          DATABASE_PATH: ./data/ci.db
+        run: |
+          npm start --workspace=@acs/api &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/health > /dev/null; then
+              echo "API démarrée"
+              curl -sf http://localhost:3001/api/categories | head -c 200
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "L'API n'a pas répondu dans les temps"
+          exit 1

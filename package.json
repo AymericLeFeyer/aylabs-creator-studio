@@ -1,0 +1,28 @@
+{
+  "name": "aylabs-creator-studio",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Suivi des stats de createur (vues, abonnes, revenus) dans le temps, multi-chaines",
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev -w @acs/api",
+    "dev:web": "npm run dev -w @acs/web",
+    "build": "npm run build -w @acs/api && npm run build -w @acs/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "format": "prettier --write \"apps/*/src/**/*.{ts,tsx,css}\"",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3"
+  }
+}

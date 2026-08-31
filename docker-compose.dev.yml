@@ -1,0 +1,15 @@
+# Variante qui construit les images localement au lieu de les tirer depuis GHCR.
+# Usage : docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+services:
+  api:
+    image: aylabs-creator-studio-api:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+
+  web:
+    image: aylabs-creator-studio-web:local
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile

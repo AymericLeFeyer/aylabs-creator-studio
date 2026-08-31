@@ -1,0 +1,42 @@
+# Stack Portainer : deux services, un volume pour la base.
+#
+# Déploiement : créer une stack depuis ce dépôt GitHub, renseigner les variables
+# d'environnement, puis déployer. Les images sont construites par la CI et publiées
+# sur GHCR ; en local, remplacer `image:` par `build:` (voir docker-compose.dev.yml).
+
+services:
+  api:
+    image: ghcr.io/aymericlefeyer/aylabs-creator-studio-api:${TAG:-latest}
+    container_name: creator-studio-api
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+      DATABASE_PATH: /app/data/creator-studio.db
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      GCP_CLIENT_ID: ${GCP_CLIENT_ID:-}
+      GCP_CLIENT_SECRET: ${GCP_CLIENT_SECRET:-}
+      COLLECT_CRON: ${COLLECT_CRON:-0 * * * *}
+      COLLECT_AT_STARTUP: ${COLLECT_AT_STARTUP:-true}
+      BACKFILL_DAYS: ${BACKFILL_DAYS:-730}
+      # Le front appelle /api en relatif via nginx : aucune origine tierce à autoriser.
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    volumes:
+      - creator-studio-data:/app/data
+    # Pas de ports exposés : seul nginx parle à l'API, sur le réseau interne.
+    expose:
+      - '3001'
+
+  web:
+    image: ghcr.io/aymericlefeyer/aylabs-creator-studio-web:${TAG:-latest}
+    container_name: creator-studio-web
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://api:3001
+    ports:
+      - '${WEB_PORT:-8080}:80'
+    depends_on:
+      - api
+
+volumes:
+  creator-studio-data:
+    name: creator-studio-data

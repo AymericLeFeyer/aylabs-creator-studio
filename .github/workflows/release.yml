@@ -1,0 +1,82 @@
+name: Release
+
+# Publie les images sur GHCR, prêtes à être tirées par la stack Portainer du VPS.
+# Déclenchement : chaque push sur `main`, un tag `v*`, ou manuellement.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag de l'image (par défaut : latest)"
+        required: false
+        default: latest
+
+# Deux pushes rapprochés sur main : seul le dernier va au bout, pour ne pas faire
+# gagner la course à la build la plus ancienne sur le tag `latest`.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # Aucune image n'est publiée si le typage, le lint, le format ou le build échouent.
+  check:
+    name: Vérifications
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build:
+    name: Image ${{ matrix.app }}
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        app: [api, web]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Se connecter à GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculer les tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}-${{ matrix.app }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            # Chaque push sur main laisse une image traçable jusqu'au commit,
+            # pour pouvoir revenir en arrière sans avoir posé de tag de version.
+            type=sha,prefix=main-,enable=${{ github.ref == 'refs/heads/main' }}
+            # `latest` suit le dernier état publié — main comme tag de version —
+            # puisque c'est ce que la stack Portainer tire par défaut.
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref_type == 'tag' }}
+            type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Construire et publier
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
