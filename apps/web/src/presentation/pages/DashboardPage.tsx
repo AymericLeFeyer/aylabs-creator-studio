@@ -87,14 +87,17 @@ export const DashboardPage = () => {
               change={compareTotals(data.totals, data.previousTotals, (t) => t.views)}
               icon={<Eye className="h-4 w-4" />}
             />
+            {/* Le gain en gros, le total en petit : sur une période, ce qui se pilote
+                c'est la progression — le cumul, lui, ne bouge qu'à la marge. */}
             <StatCard
-              label="Abonnés"
-              value={
+              label="Abonnés gagnés"
+              value={formatSigned(data.totals.subscribersNet)}
+              change={compareTotals(data.totals, data.previousTotals, (t) => t.subscribersNet)}
+              hint={
                 data.totals.subscribersTotal === null
-                  ? '—'
-                  : formatNumber(data.totals.subscribersTotal)
+                  ? 'total inconnu'
+                  : `${formatNumber(data.totals.subscribersTotal)} au total`
               }
-              hint={`${formatSigned(data.totals.subscribersNet)} sur la période`}
               icon={<Users className="h-4 w-4" />}
               accent={data.totals.subscribersNet < 0 ? 'var(--color-negative)' : undefined}
             />

@@ -16,8 +16,9 @@ type SortKey =
   | 'adsenseCents'
   | 'manualCashCents'
   | 'inKindCents'
+  | 'revenueCents'
   | 'expenseCents'
-  | 'moneyCents';
+  | 'profitCents';
 
 interface Column {
   key: SortKey;
@@ -26,6 +27,10 @@ interface Column {
   numeric: boolean;
 }
 
+/**
+ * Les colonnes se lisent de gauche à droite comme le calcul se fait : les trois
+ * composantes du CA, puis le CA, puis ce qu'on en retranche, puis le bénéfice.
+ */
 const COLUMNS: Column[] = [
   { key: 'date', label: 'Vidéo', numeric: false },
   { key: 'views', label: 'Vues', numeric: true },
@@ -33,8 +38,9 @@ const COLUMNS: Column[] = [
   { key: 'adsenseCents', label: 'AdSense', numeric: true },
   { key: 'manualCashCents', label: 'Revenus liés', numeric: true },
   { key: 'inKindCents', label: 'En nature', numeric: true },
+  { key: 'revenueCents', label: 'CA', numeric: true },
   { key: 'expenseCents', label: 'Dépenses liées', numeric: true },
-  { key: 'moneyCents', label: 'Total', numeric: true },
+  { key: 'profitCents', label: 'Bénéfices', numeric: true },
 ];
 
 interface VideoPerformanceTableProps {
@@ -45,6 +51,11 @@ interface VideoPerformanceTableProps {
  * Le détail chiffré, une colonne par nature d'argent plutôt qu'un seul montant :
  * l'AdSense collecté, les revenus saisis, les avantages en nature et les dépenses ne
  * se remplacent pas et ne se lisent pas de la même façon.
+ *
+ * `CA` et `Bénéfices` sont tous deux affichés, quel que soit l'interrupteur du
+ * graphique d'argent : ici la soustraction se lit sur la ligne, `Bénéfices = CA −
+ * Dépenses liées`. Les avantages en nature ne comptent dans le CA que si la case de
+ * l'en-tête est cochée — même règle que partout ailleurs (`revenueMath`).
  *
  * Chaque en-tête trie au clic. Le premier clic part du plus grand — sur des vues ou
  * des euros, c'est presque toujours ce qu'on cherche ; la date fait exception et part
@@ -188,11 +199,17 @@ export const VideoPerformanceTable = ({ data }: VideoPerformanceTableProps) => {
               <TableCell className="text-right tabular text-[var(--in-kind)]">
                 {formatMoney(row.inKindCents)}
               </TableCell>
+              <TableCell className="text-right tabular">{formatMoney(row.revenueCents)}</TableCell>
               <TableCell className="text-right tabular text-[var(--expense)]">
                 {row.expenseCents === 0 ? formatMoney(0) : `−${formatMoney(row.expenseCents)}`}
               </TableCell>
-              <TableCell className="text-right tabular font-medium">
-                {formatMoney(row.moneyCents)}
+              <TableCell
+                className={cn(
+                  'text-right tabular font-medium',
+                  row.profitCents < 0 && 'text-[var(--negative)]',
+                )}
+              >
+                {formatMoney(row.profitCents)}
               </TableCell>
             </TableRow>
           ))}
@@ -212,10 +229,18 @@ export const VideoPerformanceTable = ({ data }: VideoPerformanceTableProps) => {
             <TableCell className="text-right tabular text-[var(--in-kind)]">
               {formatMoney(totals.inKindCents)}
             </TableCell>
+            <TableCell className="text-right tabular">{formatMoney(totals.revenueCents)}</TableCell>
             <TableCell className="text-right tabular text-[var(--expense)]">
               {totals.expenseCents === 0 ? formatMoney(0) : `−${formatMoney(totals.expenseCents)}`}
             </TableCell>
-            <TableCell className="text-right tabular">{formatMoney(totals.moneyCents)}</TableCell>
+            <TableCell
+              className={cn(
+                'text-right tabular',
+                totals.profitCents < 0 && 'text-[var(--negative)]',
+              )}
+            >
+              {formatMoney(totals.profitCents)}
+            </TableCell>
           </TableRow>
         </tfoot>
       </Table>

@@ -1,13 +1,23 @@
 import type { VideoPerformanceRow } from '../../../domain/analytics/entities/Analytics.ts';
-import { moneyValue, type MoneyOptions } from '../../../domain/analytics/services/revenueMath.ts';
+import {
+  grossRevenue,
+  netProfit,
+  type MoneyOptions,
+} from '../../../domain/analytics/services/revenueMath.ts';
 
 /**
- * Une ligne de performance augmentée du montant retenu par les réglages d'argent.
+ * Une ligne de performance augmentée de ses deux montants composés.
  *
  * Le calcul vit ici plutôt que dans chacun des deux composants (les barres et le
- * tableau) : ils doivent afficher exactement le même total pour la même vidéo.
+ * tableau) : ils doivent afficher exactement le même total pour la même vidéo. La
+ * règle elle-même reste dans `revenueMath`, seul endroit où CA et bénéfice sont définis.
  */
 export interface VideoRow extends VideoPerformanceRow {
+  /** CA de la vidéo : AdSense + revenus liés, avantages en nature si la case est cochée. */
+  revenueCents: number;
+  /** Bénéfice = CA − dépenses rattachées à la vidéo. */
+  profitCents: number;
+  /** Ce que retient l'interrupteur CA / Bénéfices, pour le classement en barres. */
   moneyCents: number;
 }
 
@@ -17,12 +27,23 @@ export interface VideoTotals {
   adsenseCents: number;
   manualCashCents: number;
   inKindCents: number;
+  revenueCents: number;
   expenseCents: number;
+  profitCents: number;
   moneyCents: number;
 }
 
 export const withMoney = (rows: VideoPerformanceRow[], options: MoneyOptions): VideoRow[] =>
-  rows.map((row) => ({ ...row, moneyCents: moneyValue(row, options) }));
+  rows.map((row) => {
+    const revenueCents = grossRevenue(row, options.includeInKind);
+    const profitCents = netProfit(row, options.includeInKind);
+    return {
+      ...row,
+      revenueCents,
+      profitCents,
+      moneyCents: options.mode === 'profit' ? profitCents : revenueCents,
+    };
+  });
 
 export const sumVideoRows = (rows: VideoRow[]): VideoTotals =>
   rows.reduce<VideoTotals>(
@@ -32,7 +53,9 @@ export const sumVideoRows = (rows: VideoRow[]): VideoTotals =>
       adsenseCents: sum.adsenseCents + row.adsenseCents,
       manualCashCents: sum.manualCashCents + row.manualCashCents,
       inKindCents: sum.inKindCents + row.inKindCents,
+      revenueCents: sum.revenueCents + row.revenueCents,
       expenseCents: sum.expenseCents + row.expenseCents,
+      profitCents: sum.profitCents + row.profitCents,
       moneyCents: sum.moneyCents + row.moneyCents,
     }),
     {
@@ -41,7 +64,9 @@ export const sumVideoRows = (rows: VideoRow[]): VideoTotals =>
       adsenseCents: 0,
       manualCashCents: 0,
       inKindCents: 0,
+      revenueCents: 0,
       expenseCents: 0,
+      profitCents: 0,
       moneyCents: 0,
     },
   );

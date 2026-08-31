@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react';
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -12,12 +10,17 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { AnalyticsResult } from '../../../domain/analytics/entities/Analytics.ts';
+import type {
+  AnalyticsResult,
+  AnalyticsTotals,
+} from '../../../domain/analytics/entities/Analytics.ts';
+import { compareTotals } from '../../../domain/analytics/services/revenueMath.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
 import {
   formatBucketLabel,
   formatNumber,
   formatNumberCompact,
+  formatPercent,
   formatSigned,
 } from '../../../shared/format.ts';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
@@ -31,12 +34,18 @@ import {
 import { VideoTooltipList } from './VideoTooltipList.tsx';
 import { SYNC_ID } from './syncId.ts';
 
-type Metric = 'views' | 'subscribers' | 'subscribersTotal' | 'watchHours';
+/**
+ * Uniquement des FLUX.
+ *
+ * Le cumul d'abonnés a été retiré : il vaut `null` sur tous les buckets antérieurs au
+ * premier relevé de la chaîne, et une courbe pleine de trous n'apprend rien de plus que
+ * la carte « Abonnés gagnés », qui affiche déjà le total en sous-titre.
+ */
+type Metric = 'views' | 'subscribers' | 'watchHours';
 
 const METRIC_LABELS: Record<Metric, string> = {
   views: 'Vues',
   subscribers: 'Abonnés gagnés',
-  subscribersTotal: 'Abonnés cumulés',
   watchHours: 'Heures vues',
 };
 
@@ -47,14 +56,12 @@ interface AudienceChartProps {
 interface AudienceRow extends MarkerRow {
   views: number;
   subscribers: number;
-  subscribersTotal: number | null;
   watchHours: number;
 }
 
 /**
- * Graphique d'audience. Le type de tracé suit la nature de la métrique :
- * un flux se lit en barres, un total cumulé en aire — mélanger les deux
- * laisserait croire qu'on peut additionner des abonnés cumulés entre deux jours.
+ * Graphique d'audience. Le type de tracé suit la nature de la métrique : un volume se
+ * lit en barres, un solde qui peut passer sous zéro en ligne.
  *
  * Les repères de sortie de vidéo y sont posés comme sur le graphique d'argent, avec la
  * même coche : une sortie explique souvent un pic de vues autant qu'un pic de revenus.
@@ -76,47 +83,27 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
         videos: videosByBucket.get(point.date) ?? [],
         views: point.views,
         subscribers: point.subscribersNet,
-        subscribersTotal: point.subscribersTotal,
         watchHours: point.watchHours,
       })),
     [data.series, data.query.granularity, videosByBucket],
   );
 
-  /**
-   * Domaine calculé ici, en nombres.
-   *
-   * `subscribersTotal` vaut `null` sur les buckets antérieurs au premier relevé. Passer
-   * `['dataMin - 100', 'dataMax + 100']` à Recharts lui fait alors calculer ses bornes
-   * sur une série contenant des `null` : le domaine part en `NaN` et **l'aire ne se
-   * dessine plus du tout**. On borne donc sur les seules valeurs connues.
-   */
-  const subscribersDomain = useMemo<[number, number]>(() => {
-    const values = rows
-      .map((row) => row.subscribersTotal)
-      .filter((value): value is number => typeof value === 'number');
-    if (values.length === 0) return [0, 1];
+  /** Ce que la métrique courante va chercher dans les cumuls, période précédente comprise. */
+  const pick = (totals: AnalyticsTotals): number =>
+    metric === 'views'
+      ? totals.views
+      : metric === 'subscribers'
+        ? totals.subscribersNet
+        : totals.watchHours;
 
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    // Une courbe plate doit rester au milieu, pas collée à un bord.
-    const padding = Math.max(Math.round((max - min) * 0.1), 10);
-    return [Math.max(0, min - padding), max + padding];
-  }, [rows]);
+  const total = pick(data.totals);
+  const change = compareTotals(data.totals, data.previousTotals, pick);
 
   const axisProps = {
     tick: { fontSize: 11, fill: 'var(--color-muted-foreground)' },
     tickLine: false,
     axisLine: false,
   } as const;
-
-  const total =
-    metric === 'subscribersTotal'
-      ? data.totals.subscribersTotal
-      : metric === 'views'
-        ? data.totals.views
-        : metric === 'subscribers'
-          ? data.totals.subscribersNet
-          : data.totals.watchHours;
 
   const tooltip = (
     <Tooltip
@@ -154,16 +141,20 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
         <div>
           <CardTitle>Audience</CardTitle>
           <p className="mt-1 text-2xl font-semibold tabular">
-            {total === null
-              ? '—'
-              : metric === 'subscribers'
-                ? formatSigned(total)
-                : formatNumber(total)}
+            {metric === 'subscribers' ? formatSigned(total) : formatNumber(total)}
+          </p>
+          {/* Toujours rendue, même sans point de comparaison : c'est cette troisième
+              ligne qui donne à l'en-tête la hauteur de celui du graphique d'argent,
+              pour que les deux tracés démarrent au même niveau côte à côte. */}
+          <p className="text-xs text-muted-foreground">
+            {change === null
+              ? 'pas de période de comparaison'
+              : `${formatPercent(change)} vs période précédente`}
           </p>
         </div>
 
         <Tabs value={metric} onValueChange={(value) => setMetric(value as Metric)}>
-          <TabsList className="flex-wrap">
+          <TabsList className="h-auto flex-wrap">
             {(Object.keys(METRIC_LABELS) as Metric[]).map((key) => (
               <TabsTrigger key={key} value={key} className="text-xs">
                 {METRIC_LABELS[key]}
@@ -174,36 +165,8 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
       </CardHeader>
 
       <CardContent>
-        <ResponsiveContainer width="100%" height={280}>
-          {metric === 'subscribersTotal' ? (
-            <AreaChart {...chartProps}>
-              <defs>
-                <linearGradient id="subsGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--color-cash)" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="var(--color-cash)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-              <XAxis dataKey="label" minTickGap={16} {...axisProps} />
-              <YAxis
-                width={52}
-                domain={subscribersDomain}
-                allowDataOverflow={false}
-                tickFormatter={formatNumberCompact}
-                {...axisProps}
-              />
-              {tooltip}
-              {videoMarkerLines(rows)}
-              <Area
-                type="monotone"
-                dataKey="subscribersTotal"
-                stroke="var(--color-cash)"
-                strokeWidth={2}
-                fill="url(#subsGradient)"
-                connectNulls
-              />
-            </AreaChart>
-          ) : metric === 'subscribers' ? (
+        <ResponsiveContainer width="100%" height={320}>
+          {metric === 'subscribers' ? (
             <LineChart {...chartProps}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis dataKey="label" minTickGap={16} {...axisProps} />
