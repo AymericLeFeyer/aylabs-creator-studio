@@ -19,8 +19,6 @@ import { useFilters } from '../../hooks/useFilters.tsx';
 import { formatBucketLabel, formatMoney, formatMoneyCompact } from '../../../shared/format.ts';
 import { cn } from '../../../shared/cn.ts';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
-import { Label } from '../ui/label.tsx';
-import { Switch } from '../ui/switch.tsx';
 import {
   groupVideosByBucket,
   videoMarkerLines,
@@ -69,10 +67,11 @@ const seriesFrom = (items: CategoryBreakdownItem[], prefix: string): ChartSeries
     }));
 
 /**
- * Graphique d'argent, avec les réglages demandés :
- * - un interrupteur CA / Bénéfices (le bénéfice retranche les dépenses saisies) ;
- * - une coche pour compter ou non les avantages en nature ;
- * - une légende cliquable pour retirer une catégorie de la vue.
+ * Graphique d'argent.
+ *
+ * Ses trois réglages vivent dans l'en-tête collant — CA / Bénéfices, produits reçus,
+ * repères de sortie — parce qu'ils pilotent aussi les cartes et les autres graphiques.
+ * Il ne garde que la légende cliquable, qui ne concerne que lui.
  *
  * Les barres montrent la décomposition par catégorie — chacune avec sa propre couleur,
  * celle de la page Catégories — et la ligne montre la valeur retenue par les réglages :
@@ -96,7 +95,7 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
       return next;
     });
 
-  // Les avantages en nature passent en fin de pile, pour rester lisibles au-dessus du cash.
+  // Les produits reçus passent en fin de pile, pour rester lisibles au-dessus du cash.
   const revenueSeries = useMemo(() => {
     const items = data.byCategory.filter(
       (item) => filters.includeInKind || item.nature !== 'in_kind',
@@ -160,7 +159,7 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
 
   return (
     <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-4">
+      <CardHeader>
         <div>
           <CardTitle>{isProfit ? 'Bénéfices' : "Chiffre d'affaires"}</CardTitle>
           <p className="mt-1 text-2xl font-semibold tabular">{formatMoney(displayedTotal)}</p>
@@ -180,35 +179,13 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
             ) : (
               <>
                 {formatMoney(cashRevenue(totals))} encaissés
-                {totals.inKindCents > 0 && ` · ${formatMoney(totals.inKindCents)} en nature`}
+                {filters.includeInKind &&
+                  totals.inKindCents > 0 &&
+                  ` · ${formatMoney(totals.inKindCents)} de produits reçus`}
                 {totals.expenseCents > 0 && ` · ${formatMoney(totals.expenseCents)} de dépenses`}
               </>
             )}
           </p>
-        </div>
-
-        {/* Les avantages en nature et les repères de sortie sont réglés dans l'en-tête :
-            ils pilotent tous les graphiques, pas seulement celui-ci. */}
-        <div className="flex items-center gap-2.5">
-          <Label
-            htmlFor="money-mode"
-            className={!isProfit ? 'text-foreground' : 'text-muted-foreground'}
-          >
-            CA
-          </Label>
-          <Switch
-            id="money-mode"
-            checked={isProfit}
-            onCheckedChange={(checked) =>
-              filters.set({ moneyMode: checked ? 'profit' : 'revenue' })
-            }
-          />
-          <Label
-            htmlFor="money-mode"
-            className={isProfit ? 'text-foreground' : 'text-muted-foreground'}
-          >
-            Bénéfices
-          </Label>
         </div>
       </CardHeader>
 

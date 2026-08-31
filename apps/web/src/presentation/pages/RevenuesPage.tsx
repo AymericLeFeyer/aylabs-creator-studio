@@ -60,7 +60,7 @@ export const RevenuesPage = () => {
             <span className="tabular font-semibold">{formatMoney(totals.cash)}</span>
           </span>
           <span>
-            <span className="text-muted-foreground">En nature : </span>
+            <span className="text-muted-foreground">{NATURE_LABELS.in_kind} : </span>
             <span className="tabular font-semibold text-[var(--in-kind)]">
               {formatMoney(totals.inKind)}
             </span>

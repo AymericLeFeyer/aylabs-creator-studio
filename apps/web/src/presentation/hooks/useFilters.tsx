@@ -1,17 +1,18 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { subDays, subMonths, subYears, startOfYear } from 'date-fns';
+import { subDays, subMonths, subYears, startOfMonth, startOfYear } from 'date-fns';
 import { useLocalStorage } from './useLocalStorage.ts';
 import { toIsoDate } from '../../shared/format.ts';
 import type { Granularity } from '../../domain/analytics/entities/Analytics.ts';
 import type { MoneyMode } from '../../domain/analytics/services/revenueMath.ts';
 
-export type PeriodPreset = '7d' | '30d' | '90d' | '12m' | 'ytd' | 'all' | 'custom';
+export type PeriodPreset = '7d' | '30d' | '90d' | '12m' | 'mtd' | 'ytd' | 'all' | 'custom';
 
 export const PERIOD_LABELS: Record<PeriodPreset, string> = {
   '7d': '7 jours',
   '30d': '30 jours',
   '90d': '90 jours',
   '12m': '12 mois',
+  mtd: 'Ce mois',
   ytd: 'Cette année',
   all: 'Tout',
   custom: 'Personnalisé',
@@ -23,6 +24,7 @@ const DEFAULT_GRANULARITY: Record<PeriodPreset, Granularity> = {
   '30d': 'day',
   '90d': 'week',
   '12m': 'month',
+  mtd: 'day',
   ytd: 'month',
   all: 'month',
   custom: 'day',
@@ -68,6 +70,10 @@ const resolveRange = (state: FiltersState): { from: string; to: string } => {
       return { from: toIsoDate(subDays(today, 89)), to };
     case '12m':
       return { from: toIsoDate(subMonths(today, 12)), to };
+    case 'mtd':
+      // Depuis le 1er du mois en cours, pas « les 30 derniers jours » : c'est la borne
+      // qui compte pour un bilan mensuel.
+      return { from: toIsoDate(startOfMonth(today)), to };
     case 'ytd':
       return { from: toIsoDate(startOfYear(today)), to };
     case 'all':

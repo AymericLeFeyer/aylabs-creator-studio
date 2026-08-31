@@ -29,7 +29,7 @@ export interface CategoryInput {
 
 export const NATURE_LABELS: Record<CategoryNature, string> = {
   cash: 'Encaissé',
-  in_kind: 'En nature',
+  in_kind: 'Produits reçus',
 };
 
 export const NATURE_HINTS: Record<CategoryNature, string> = {

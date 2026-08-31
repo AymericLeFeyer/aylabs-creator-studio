@@ -57,7 +57,7 @@ export const CategoriesPage = () => {
           <h1 className="text-lg font-semibold">Catégories</h1>
           <p className="text-sm text-muted-foreground">
             Chaque catégorie sert aux revenus, aux dépenses, ou aux deux. La nature ne concerne que
-            les revenus : elle dit si l'argent est encaissé ou reçu en nature.
+            les revenus : elle dit si l'argent est encaissé ou reçu sous forme de produit.
           </p>
         </div>
         <Button size="sm" onClick={() => setDialogOpen(true)}>

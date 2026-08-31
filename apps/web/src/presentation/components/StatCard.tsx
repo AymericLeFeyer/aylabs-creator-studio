@@ -12,14 +12,25 @@ interface StatCardProps {
   hint?: string;
   icon?: ReactNode;
   accent?: string;
+  /**
+   * Détail déplié au survol : ce que le chiffre agrège. Rendu dans un panneau flottant,
+   * pas dans la carte — le tableau de bord doit rester une grille de chiffres lisible
+   * d'un coup d'œil, et le détail ne se lit que quand on le cherche.
+   */
+  details?: ReactNode;
 }
 
-export const StatCard = ({ label, value, change, hint, icon, accent }: StatCardProps) => {
+export const StatCard = ({ label, value, change, hint, icon, accent, details }: StatCardProps) => {
   const hasChange = change !== undefined && change !== null && Number.isFinite(change);
   const positive = hasChange && change > 0;
 
   return (
-    <Card className="p-4">
+    <Card
+      className={cn('group relative p-4', details && 'cursor-help')}
+      // Focusable seulement quand il y a quelque chose à déplier : le panneau s'ouvre
+      // aussi au clavier, pas uniquement à la souris.
+      tabIndex={details ? 0 : undefined}
+    >
       <div className="flex items-start justify-between gap-2">
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {label}
@@ -48,6 +59,14 @@ export const StatCard = ({ label, value, change, hint, icon, accent }: StatCardP
         )}
         {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
       </div>
+
+      {details && (
+        // Centré sous la carte plutôt qu'aligné à un bord : la même classe convient à
+        // la première comme à la dernière colonne de la grille.
+        <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 w-72 max-w-[90vw] -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-xs opacity-0 shadow-lg transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+          {details}
+        </div>
+      )}
     </Card>
   );
 };

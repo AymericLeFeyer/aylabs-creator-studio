@@ -12,10 +12,11 @@ import { Button } from './ui/button.tsx';
 import { Checkbox } from './ui/checkbox.tsx';
 import { Input } from './ui/input.tsx';
 import { Label } from './ui/label.tsx';
+import { Switch } from './ui/switch.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select.tsx';
 import { cn } from '../../shared/cn.ts';
 
-const PRESETS: PeriodPreset[] = ['7d', '30d', '90d', '12m', 'ytd', 'all'];
+const PRESETS: PeriodPreset[] = ['7d', '30d', '90d', '12m', 'mtd', 'ytd', 'all'];
 const GRANULARITIES: Array<{ value: Granularity | 'auto'; label: string }> = [
   { value: 'auto', label: 'Auto' },
   { value: 'day', label: 'Jour' },
@@ -27,9 +28,10 @@ const GRANULARITIES: Array<{ value: Granularity | 'auto'; label: string }> = [
  * Barre de filtres du dashboard et des listes, posée dans l'en-tête collant.
  *
  * Deux rangées, dans l'ordre où on s'en sert : d'abord *quand* (période, pas, collecte),
- * puis *quoi* (chaînes) et *comment le lire* (avantages en nature, repères de sortie).
- * Ces deux dernières coches pilotent tous les graphiques : les laisser dans une carte
- * obligeait à remonter en haut de page pour changer d'avis.
+ * puis *quoi* (chaînes) et *comment le lire* (CA ou bénéfices, produits reçus, repères
+ * de sortie). Ces trois derniers réglages pilotent tous les graphiques et toutes les
+ * cartes : les laisser dans l'un des graphiques obligeait à remonter pour changer d'avis.
+ * Le titre du graphique d'argent suit l'interrupteur, il n'a pas à le porter.
  */
 export const FiltersBar = () => {
   const filters = useFilters();
@@ -166,13 +168,41 @@ export const FiltersBar = () => {
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:ml-auto">
           <div className="flex items-center gap-2">
+            <Label
+              htmlFor="money-mode"
+              className={cn(
+                'text-xs font-normal',
+                filters.moneyMode === 'revenue' ? 'text-foreground' : 'text-muted-foreground',
+              )}
+            >
+              CA
+            </Label>
+            <Switch
+              id="money-mode"
+              checked={filters.moneyMode === 'profit'}
+              onCheckedChange={(checked) =>
+                filters.set({ moneyMode: checked ? 'profit' : 'revenue' })
+              }
+            />
+            <Label
+              htmlFor="money-mode"
+              className={cn(
+                'text-xs font-normal',
+                filters.moneyMode === 'profit' ? 'text-foreground' : 'text-muted-foreground',
+              )}
+            >
+              Bénéfices
+            </Label>
+          </div>
+
+          <div className="flex items-center gap-2">
             <Checkbox
               id="include-in-kind"
               checked={filters.includeInKind}
               onCheckedChange={(checked) => filters.set({ includeInKind: checked === true })}
             />
             <Label htmlFor="include-in-kind" className="text-xs font-normal text-muted-foreground">
-              Compter les avantages en nature
+              Compter les produits reçus
             </Label>
           </div>
 

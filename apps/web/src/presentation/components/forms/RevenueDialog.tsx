@@ -212,8 +212,8 @@ export const RevenueDialog = ({ open, onOpenChange, entry }: RevenueDialogProps)
 
           {selectedCategory?.nature === 'in_kind' && (
             <p className="rounded-md bg-[var(--in-kind)]/10 px-3 py-2 text-xs text-[var(--in-kind)]">
-              Avantage en nature : compté dans les gains, mais jamais dans l'argent encaissé ni
-              déduit par les dépenses.
+              Produit reçu : compté dans les gains, mais jamais dans l'argent encaissé ni déduit par
+              les dépenses.
             </p>
           )}
 

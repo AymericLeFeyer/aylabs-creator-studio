@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { AnalyticsResult } from '../../../domain/analytics/entities/Analytics.ts';
+import { NATURE_LABELS } from '../../../domain/category/entities/Category.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
 import {
   formatDate,
@@ -135,7 +136,7 @@ export const VideoPerformanceChart = ({ data }: VideoPerformanceChartProps) => {
                 />
                 <Tooltip
                   cursor={{ fill: 'var(--color-muted)', fillOpacity: 0.4 }}
-                  content={<VideoTooltip metric={metric} />}
+                  content={<VideoTooltip metric={metric} includeInKind={includeInKind} />}
                 />
                 <Bar dataKey={value} radius={[0, 3, 3, 0]} maxBarSize={18}>
                   {bars.map((row) => (
@@ -161,10 +162,13 @@ const VideoTooltip = ({
   active,
   payload,
   metric,
+  includeInKind,
 }: {
   active?: boolean;
   payload?: Array<{ payload?: VideoRow }>;
   metric: Metric;
+  /** Décochée, la case retire les produits reçus du total : ils sortent aussi du détail. */
+  includeInKind: boolean;
 }) => {
   const row = payload?.[0]?.payload;
   if (!active || !row) return null;
@@ -191,7 +195,7 @@ const VideoTooltip = ({
         <div className="mt-1 space-y-0.5 border-t border-border pt-1.5 text-muted-foreground">
           <MoneyLine label="AdSense" value={row.adsenseCents} />
           <MoneyLine label="Revenus liés" value={row.manualCashCents} />
-          <MoneyLine label="En nature" value={row.inKindCents} />
+          {includeInKind && <MoneyLine label={NATURE_LABELS.in_kind} value={row.inKindCents} />}
           <MoneyLine label="Dépenses liées" value={-row.expenseCents} />
         </div>
       )}

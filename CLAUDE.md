@@ -65,6 +65,8 @@ Les revenus AdSense vivent dans `daily_metrics.estimated_revenue_cents`, aliment
 - `cash` : l'argent arrive sur le compte (AdSense, affiliation, sponsors).
 - `in_kind` : produits offerts valorisés en €. Comptent dans ce qui est « gagné », jamais dans le cash, jamais taxés.
 
+**Le domaine dit `in_kind`, l'interface dit « Produits reçus ».** Le libellé vit à un seul endroit, `NATURE_LABELS` (`apps/web/src/domain/category/entities/Category.ts`) : le renommer là suffit, et rien en base ni dans le contrat d'API ne bouge.
+
 L'API expose les composantes **brutes** (`adsenseCents`, `manualCashCents`, `inKindCents`, `expenseCents`) et ne calcule ni CA ni bénéfice : c'est le consommateur qui compose, pour qu'il n'existe qu'une seule règle. Voir `domain/analytics/services/revenueMath.ts`, dupliqué à l'identique côté API et côté front.
 
 ```
@@ -241,10 +243,12 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 
 La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/chaines`, `/categories`) — configurer une chaîne ne dépend d'aucune période — et les pages ne la rendent donc plus elles-mêmes. Deux rangées, dans l'ordre où on s'en sert :
 
-1. **quand** : préréglages de période, dates personnalisées, pas d'agrégation, et le bouton « Collecter » à l'autre bout de cette même rangée ;
-2. **quoi et comment le lire** : puces de chaînes, puis les coches « Compter les avantages en nature » et « Marquer les sorties de vidéo ».
+1. **quand** : préréglages de période (dont `mtd`, « Ce mois », qui part du 1er du mois en cours), dates personnalisées, pas d'agrégation, et le bouton « Collecter » à l'autre bout de cette même rangée ;
+2. **quoi et comment le lire** : puces de chaînes, puis l'interrupteur **CA / Bénéfices** et les coches « Compter les produits reçus » et « Marquer les sorties de vidéo ».
 
-Ces deux coches pilotent **tous** les graphiques : les laisser dans une carte obligeait à remonter en haut de page pour changer d'avis. `FiltersBar` lit le nombre de sorties via `useAnalytics(useAnalyticsParams())` — même clé de cache que le dashboard, donc requête partagée et non dupliquée.
+Ces trois réglages pilotent **tous** les graphiques et toutes les cartes : les laisser dans l'un des graphiques obligeait à remonter pour changer d'avis. Le titre du graphique d'argent suit l'interrupteur, il ne le porte plus. `FiltersBar` lit le nombre de sorties via `useAnalytics(useAnalyticsParams())` — même clé de cache que le dashboard, donc requête partagée et non dupliquée.
+
+Deux cartes déplient un panneau au survol (prop `details` de `StatCard`, ouvert aussi au clavier via `focus-within`) : « Vidéos publiées » montre les miniatures des sorties, « Produits reçus » la liste des produits et leur valeur. Le détail des produits ne vient pas d'`analytics`, qui n'expose que des agrégats, mais de `useRevenues` borné **exactement** comme le dashboard — sans quoi le panneau contredirait le total juste au-dessus.
 
 La carte « Abonnés gagnés » met le **gain** en grand et le total en sous-titre : sur une période, ce qui se pilote est la progression, pas un cumul qui ne bouge qu'à la marge.
 
@@ -292,6 +296,7 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 - **Les vidéos n'arrivent qu'avec une collecte.** Sur une base qui n'a jamais collecté depuis la migration 3, la case « Marquer les sorties de vidéo » n'a aucun effet : c'est `POST /api/channels/:id/collect` (ou le cron horaire) qui remplit la table. Le libellé de la case affiche le nombre de sorties connues sur la période.
 - **Recharts n'a pas d'événement de survol sur une `ReferenceLine`** : ce qui s'affiche au survol du trait est en réalité l'infobulle du bucket. Les vidéos sont donc portées par la ligne de données (`ChartRow.videos`), pas par la `ReferenceLine`.
 - **Le graphique d'argent lit `byCategory` pour savoir quoi empiler, et `revenueByCategory` pour les valeurs.** Les `dataKey` Recharts sont des clés plates (`r0`, `e1`…) et non les identifiants de catégorie : Recharts résout un `dataKey` texte comme un chemin, un identifiant contenant un point casserait la lecture.
+- **La case « Compter les produits reçus » masque, elle ne grise pas.** Décochée, les catégories `in_kind` disparaissent des barres du graphique d'argent, de l'anneau des revenus, de la colonne « Produits reçus » du tableau des vidéos et du détail de son infobulle — parce que ces montants ne sont alors plus dans le CA, et qu'une colonne visible ferait lire une addition qui ne tombe pas juste. `VideoPerformanceTable` retombe sur un tri par date si la colonne triée vient de disparaître.
 - **Une catégorie de portée `both` apparaît deux fois dans le graphique**, une barre au-dessus de l'axe et une en dessous, avec la même couleur. C'est voulu : ce sont deux mouvements différents, et les fondre ferait disparaître l'un des deux.
 - **Les répartitions sont des anneaux, pas des barres** (`DonutBreakdown`) : le trou porte le total, qui est la valeur lue en premier, et le survol d'une tranche y remplace le total par cette tranche et sa part. La légende est en HTML sous le graphique — sur trois anneaux côte à côte, des étiquettes posées sur les tranches se chevaucheraient.
 - **L'anneau « Revenus par chaîne » n'a pas le même total que celui des revenus.** `byChannel` exclut les revenus globaux (`channelId: null`), et l'anneau est en euros pour être comparable à ses deux voisins — pas en vues, qui n'ont pas la même unité.

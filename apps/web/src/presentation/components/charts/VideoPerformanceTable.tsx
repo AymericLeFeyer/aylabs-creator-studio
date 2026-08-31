@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronsUpDown, ExternalLink } from 'lucide-react';
 import type { AnalyticsResult } from '../../../domain/analytics/entities/Analytics.ts';
+import { NATURE_LABELS } from '../../../domain/category/entities/Category.ts';
 import { youtubeUrl } from '../../../domain/video/entities/Video.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
 import { formatDate, formatMoney, formatNumber, formatSigned } from '../../../shared/format.ts';
@@ -28,20 +29,27 @@ interface Column {
 }
 
 /**
- * Les colonnes se lisent de gauche à droite comme le calcul se fait : les trois
- * composantes du CA, puis le CA, puis ce qu'on en retranche, puis le bénéfice.
+ * Les colonnes se lisent de gauche à droite comme le calcul se fait : les composantes
+ * du CA, puis le CA, puis ce qu'on en retranche, puis le bénéfice.
+ *
+ * La colonne « Produits reçus » n'apparaît que si la case de l'en-tête est cochée :
+ * décochée, ces montants ne sont plus dans le CA, et les laisser en colonne ferait
+ * lire une addition qui ne tombe pas juste.
  */
-const COLUMNS: Column[] = [
-  { key: 'date', label: 'Vidéo', numeric: false },
-  { key: 'views', label: 'Vues', numeric: true },
-  { key: 'subscribersGained', label: 'Abonnés', numeric: true },
-  { key: 'adsenseCents', label: 'AdSense', numeric: true },
-  { key: 'manualCashCents', label: 'Revenus liés', numeric: true },
-  { key: 'inKindCents', label: 'En nature', numeric: true },
-  { key: 'revenueCents', label: 'CA', numeric: true },
-  { key: 'expenseCents', label: 'Dépenses liées', numeric: true },
-  { key: 'profitCents', label: 'Bénéfices', numeric: true },
-];
+const columnsFor = (includeInKind: boolean): Column[] =>
+  [
+    { key: 'date', label: 'Vidéo', numeric: false },
+    { key: 'views', label: 'Vues', numeric: true },
+    { key: 'subscribersGained', label: 'Abonnés', numeric: true },
+    { key: 'adsenseCents', label: 'AdSense', numeric: true },
+    { key: 'manualCashCents', label: 'Revenus liés', numeric: true },
+    ...(includeInKind
+      ? [{ key: 'inKindCents' as const, label: NATURE_LABELS.in_kind, numeric: true }]
+      : []),
+    { key: 'revenueCents', label: 'CA', numeric: true },
+    { key: 'expenseCents', label: 'Dépenses liées', numeric: true },
+    { key: 'profitCents', label: 'Bénéfices', numeric: true },
+  ] satisfies Column[];
 
 interface VideoPerformanceTableProps {
   data: AnalyticsResult;
@@ -52,10 +60,10 @@ interface VideoPerformanceTableProps {
  * l'AdSense collecté, les revenus saisis, les avantages en nature et les dépenses ne
  * se remplacent pas et ne se lisent pas de la même façon.
  *
- * `CA` et `Bénéfices` sont tous deux affichés, quel que soit l'interrupteur du
- * graphique d'argent : ici la soustraction se lit sur la ligne, `Bénéfices = CA −
- * Dépenses liées`. Les avantages en nature ne comptent dans le CA que si la case de
- * l'en-tête est cochée — même règle que partout ailleurs (`revenueMath`).
+ * `CA` et `Bénéfices` sont tous deux affichés, quel que soit l'interrupteur CA /
+ * Bénéfices de l'en-tête : ici la soustraction se lit sur la ligne, `Bénéfices = CA −
+ * Dépenses liées`. Les produits reçus ne comptent dans le CA — et n'ont donc leur
+ * colonne — que si la case de l'en-tête est cochée (même règle que partout, `revenueMath`).
  *
  * Chaque en-tête trie au clic. Le premier clic part du plus grand — sur des vues ou
  * des euros, c'est presque toujours ce qu'on cherche ; la date fait exception et part
@@ -70,18 +78,30 @@ export const VideoPerformanceTable = ({ data }: VideoPerformanceTableProps) => {
     [data.videoPerformance, moneyMode, includeInKind],
   );
 
+  const columns = useMemo(() => columnsFor(includeInKind), [includeInKind]);
+
+  // Décocher la case fait disparaître la colonne « Produits reçus » : sans ce repli, le
+  // tableau resterait trié sur une colonne devenue invisible, sans moyen d'en changer.
+  const activeSort = useMemo(
+    () =>
+      columns.some((column) => column.key === sort.key)
+        ? sort
+        : { key: 'date' as SortKey, desc: true },
+    [columns, sort],
+  );
+
   const sorted = useMemo(() => {
     const compare = (a: VideoRow, b: VideoRow): number =>
-      sort.key === 'date'
+      activeSort.key === 'date'
         ? a.date < b.date
           ? -1
           : a.date > b.date
             ? 1
             : 0
-        : a[sort.key] - b[sort.key];
+        : a[activeSort.key] - b[activeSort.key];
 
-    return [...rows].sort((a, b) => (sort.desc ? compare(b, a) : compare(a, b)));
-  }, [rows, sort]);
+    return [...rows].sort((a, b) => (activeSort.desc ? compare(b, a) : compare(a, b)));
+  }, [rows, activeSort]);
 
   const totals = useMemo(() => sumVideoRows(rows), [rows]);
 
@@ -115,14 +135,14 @@ export const VideoPerformanceTable = ({ data }: VideoPerformanceTableProps) => {
       <Table>
         <TableHeader>
           <TableRow>
-            {COLUMNS.map((column) => {
-              const isActive = sort.key === column.key;
+            {columns.map((column) => {
+              const isActive = activeSort.key === column.key;
               return (
                 <TableHead key={column.key} className={cn(column.numeric && 'text-right')}>
                   <button
                     type="button"
                     onClick={() => toggleSort(column.key)}
-                    aria-sort={isActive ? (sort.desc ? 'descending' : 'ascending') : 'none'}
+                    aria-sort={isActive ? (activeSort.desc ? 'descending' : 'ascending') : 'none'}
                     className={cn(
                       'inline-flex items-center gap-1 whitespace-nowrap rounded transition-colors hover:text-foreground',
                       column.numeric && 'flex-row-reverse',
@@ -131,7 +151,7 @@ export const VideoPerformanceTable = ({ data }: VideoPerformanceTableProps) => {
                   >
                     {column.label}
                     {isActive ? (
-                      sort.desc ? (
+                      activeSort.desc ? (
                         <ArrowDown className="h-3 w-3" />
                       ) : (
                         <ArrowUp className="h-3 w-3" />
@@ -196,9 +216,11 @@ export const VideoPerformanceTable = ({ data }: VideoPerformanceTableProps) => {
               <TableCell className="text-right tabular text-muted-foreground">
                 {formatMoney(row.manualCashCents)}
               </TableCell>
-              <TableCell className="text-right tabular text-[var(--in-kind)]">
-                {formatMoney(row.inKindCents)}
-              </TableCell>
+              {includeInKind && (
+                <TableCell className="text-right tabular text-[var(--in-kind)]">
+                  {formatMoney(row.inKindCents)}
+                </TableCell>
+              )}
               <TableCell className="text-right tabular">{formatMoney(row.revenueCents)}</TableCell>
               <TableCell className="text-right tabular text-[var(--expense)]">
                 {row.expenseCents === 0 ? formatMoney(0) : `−${formatMoney(row.expenseCents)}`}
@@ -226,9 +248,11 @@ export const VideoPerformanceTable = ({ data }: VideoPerformanceTableProps) => {
             <TableCell className="text-right tabular">
               {formatMoney(totals.manualCashCents)}
             </TableCell>
-            <TableCell className="text-right tabular text-[var(--in-kind)]">
-              {formatMoney(totals.inKindCents)}
-            </TableCell>
+            {includeInKind && (
+              <TableCell className="text-right tabular text-[var(--in-kind)]">
+                {formatMoney(totals.inKindCents)}
+              </TableCell>
+            )}
             <TableCell className="text-right tabular">{formatMoney(totals.revenueCents)}</TableCell>
             <TableCell className="text-right tabular text-[var(--expense)]">
               {totals.expenseCents === 0 ? formatMoney(0) : `−${formatMoney(totals.expenseCents)}`}

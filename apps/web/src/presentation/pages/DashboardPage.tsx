@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Clock, Eye, Gift, Heart, Receipt, Users, Video, Wallet } from 'lucide-react';
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
 import { useChannels } from '../../application/channel/usecases/useChannels.ts';
+import { useRevenues } from '../../application/revenue/usecases/useRevenues.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
 import {
   cashRevenue,
@@ -11,6 +12,7 @@ import {
 import { NATURE_LABELS } from '../../domain/category/entities/Category.ts';
 import { formatHours, formatMoney, formatNumber, formatSigned } from '../../shared/format.ts';
 import { StatCard } from '../components/StatCard.tsx';
+import { InKindList, VideoList } from '../components/StatCardLists.tsx';
 import { MoneyChart } from '../components/charts/MoneyChart.tsx';
 import { AudienceChart } from '../components/charts/AudienceChart.tsx';
 import { DonutBreakdown, type DonutSlice } from '../components/charts/DonutBreakdown.tsx';
@@ -23,6 +25,18 @@ export const DashboardPage = () => {
   const params = useAnalyticsParams();
   const { data, isLoading, error } = useAnalytics(params);
   const { data: channels = [], isLoading: channelsLoading } = useChannels();
+
+  // Le détail des produits reçus n'est pas dans `analytics`, qui n'expose que des
+  // agrégats : on relit la liste des revenus, bornée exactement comme le dashboard.
+  const { data: revenues = [] } = useRevenues({
+    from: filters.from,
+    to: filters.to,
+    channelIds: filters.channelIds,
+  });
+  const inKindEntries = useMemo(
+    () => revenues.filter((entry) => entry.categoryNature === 'in_kind'),
+    [revenues],
+  );
 
   const moneyOptions = { mode: filters.moneyMode, includeInKind: filters.includeInKind };
 
@@ -114,6 +128,7 @@ export const DashboardPage = () => {
               change={compareTotals(data.totals, data.previousTotals, (t) => t.videosPublished)}
               hint="sorties sur la période"
               icon={<Video className="h-4 w-4" />}
+              details={<VideoList videos={data.videoPerformance} />}
             />
             <StatCard
               label={NATURE_LABELS.in_kind}
@@ -121,6 +136,7 @@ export const DashboardPage = () => {
               hint={`${formatMoney(data.totals.inKindCents)} valorisés`}
               icon={<Gift className="h-4 w-4" />}
               accent={data.totals.inKindEntries > 0 ? 'var(--in-kind)' : undefined}
+              details={<InKindList entries={inKindEntries} />}
             />
             <StatCard
               label="Dépenses"
@@ -147,17 +163,21 @@ export const DashboardPage = () => {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {/* Décoché, l'anneau ne montre pas les produits reçus : son total doit
+                rester celui du CA affiché partout ailleurs. */}
             <DonutBreakdown
               title="Répartition des revenus"
-              slices={data.byCategory.map((item) => ({
-                id: `r-${item.categoryId}`,
-                label: item.categoryName,
-                color: item.color,
-                cents: item.totalCents,
-                badge: item.nature === 'in_kind' ? NATURE_LABELS.in_kind : undefined,
-              }))}
+              slices={data.byCategory
+                .filter((item) => filters.includeInKind || item.nature !== 'in_kind')
+                .map((item) => ({
+                  id: `r-${item.categoryId}`,
+                  label: item.categoryName,
+                  color: item.color,
+                  cents: item.totalCents,
+                  badge: item.nature === 'in_kind' ? NATURE_LABELS.in_kind : undefined,
+                }))}
               emptyLabel="Aucun revenu sur cette période."
-              totalHint="nature comprise"
+              totalHint={filters.includeInKind ? 'produits reçus compris' : undefined}
             />
             <DonutBreakdown
               title="Répartition des dépenses"
