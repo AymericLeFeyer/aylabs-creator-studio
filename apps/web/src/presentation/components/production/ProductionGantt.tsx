@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, DollarSign, Package } from 'lucide-react';
 import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Production } from '../../../domain/production/entities/Production.ts';
 import { STATUS_LABELS } from '../../../domain/production/entities/Production.ts';
+import { PRODUCT_STATUS_LABELS } from '../../../domain/product/entities/Product.ts';
+import { SPONSORSHIP_STATUS_LABELS } from '../../../domain/sponsorship/entities/Sponsorship.ts';
+import { formatMoney } from '../../../shared/format.ts';
+import type { ProductionStep } from '../../../domain/production/entities/ProductionStep.ts';
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
 import { formatSlotTime } from '../../../domain/production/entities/ProductionSlot.ts';
 import { toIsoDate } from '../../../shared/format.ts';
@@ -27,9 +31,50 @@ const COLLAPSED_ROWS = 5;
 /** Couleur de repli quand la vidéo n'a pas encore de chaîne : neutre, jamais transparente. */
 const NO_CHANNEL_COLOR = '#64748b';
 
+/** Part d'étapes cochées, en pourcentage entier. */
+const progressPercent = (production: Production, total: number): number =>
+  total === 0 ? 0 : Math.round((production.steps.length / total) * 100);
+
+/** Infobulle de la barre : tout ce que le rognage a pu manger. */
+const barTitle = (production: Production, total: number): string =>
+  [
+    production.title,
+    STATUS_LABELS[production.status],
+    production.channelName,
+    total > 0 ? `${progressPercent(production, total)} % d'avancement` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+/**
+ * Détail des sponsos et des produits d'une barre.
+ *
+ * Une infobulle native et non le panneau HTML des cartes : le planning défile
+ * horizontalement dans un conteneur qui rogne, un panneau positionné en absolu y serait
+ * coupé dès qu'on approche du bord. Le texte multi-ligne fait le travail sans ça.
+ */
+const sponsorshipsTitle = (production: Production): string =>
+  [
+    `Sponsos (${production.sponsorships.length}) :`,
+    ...production.sponsorships.map(
+      (s) =>
+        `· ${s.label} — ${formatMoney(s.amountCents)} — ${SPONSORSHIP_STATUS_LABELS[s.status]}`,
+    ),
+  ].join('\n');
+
+const productsTitle = (production: Production): string =>
+  [
+    `Produits (${production.products.length}) :`,
+    ...production.products.map(
+      (p) => `· ${p.name} — ${formatMoney(p.valueCents)} — ${PRODUCT_STATUS_LABELS[p.status]}`,
+    ),
+  ].join('\n');
+
 interface ProductionGanttProps {
   productions: Production[];
   slots: ProductionSlot[];
+  /** Sert à calculer l'avancement : le pourcentage n'a de sens que rapporté au total. */
+  steps: ProductionStep[];
 }
 
 /**
@@ -42,12 +87,18 @@ interface ProductionGanttProps {
  * occupe le seul jour visé : une vidéo qu'on n'a pas encore commencé à planifier ne
  * doit pas paraître étalée sur trois semaines.
  *
- * **La couleur dit la chaîne, le texte dit l'état.** Répéter le nom de la chaîne dans
- * la barre serait redondant avec sa couleur, alors que l'avancement ne se lit nulle part
- * ailleurs sur cette vue. La couleur du texte est calculée pour chaque fond (`readableTextColor`) :
- * du blanc sur un vert clair ne se lit pas.
+ * **La couleur dit la chaîne, le contenu dit l'avancement.** Répéter le nom de la chaîne
+ * dans la barre serait redondant avec sa couleur ; l'état, les pastilles d'argent et le
+ * pourcentage, eux, ne se lisent nulle part ailleurs sur cette vue.
+ *
+ * L'ordre dans la barre suit ce qui doit survivre au rognage : les icônes et le
+ * pourcentage sont `shrink-0`, c'est le libellé d'état qui se tronque en premier — sur
+ * une barre d'un jour, savoir qu'il y a une sponso vaut mieux que lire « En cours ».
+ *
+ * La couleur du texte est calculée pour chaque fond (`readableTextColor`) : du blanc sur
+ * un vert clair ne se lit pas.
  */
-export const ProductionGantt = ({ productions, slots }: ProductionGanttProps) => {
+export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttProps) => {
   const [zoom, setZoom] = useState<Zoom>('month');
   const [expanded, setExpanded] = useState(false);
   const { before, after, cell } = ZOOM[zoom];
@@ -206,18 +257,33 @@ export const ProductionGantt = ({ productions, slots }: ProductionGanttProps) =>
                               de la ligne, et celle qu'on vise naturellement. */}
                           <Link
                             to={`/production/${production.id}`}
-                            className="z-10 flex h-5 items-center overflow-hidden rounded px-1.5 text-[11px] font-medium transition-opacity hover:opacity-80"
+                            className="z-10 flex h-5 items-center gap-1 overflow-hidden rounded px-1.5 text-[11px] font-medium transition-opacity hover:opacity-80"
                             style={{
                               gridColumn: `${from + 1} / span ${span}`,
                               backgroundColor: color,
                               color: readableTextColor(color),
                               opacity: done ? 0.55 : 1,
                             }}
-                            title={`${production.title} — ${STATUS_LABELS[production.status]}${
-                              production.channelName ? ` · ${production.channelName}` : ''
-                            }`}
+                            title={barTitle(production, steps.length)}
                           >
+                            {production.sponsorships.length > 0 && (
+                              <span className="shrink-0" title={sponsorshipsTitle(production)}>
+                                <DollarSign className="h-3 w-3" aria-hidden />
+                                <span className="sr-only">{sponsorshipsTitle(production)}</span>
+                              </span>
+                            )}
+                            {production.products.length > 0 && (
+                              <span className="shrink-0" title={productsTitle(production)}>
+                                <Package className="h-3 w-3" aria-hidden />
+                                <span className="sr-only">{productsTitle(production)}</span>
+                              </span>
+                            )}
                             <span className="truncate">{STATUS_LABELS[production.status]}</span>
+                            {steps.length > 0 && (
+                              <span className="ml-auto shrink-0 tabular">
+                                {progressPercent(production, steps.length)} %
+                              </span>
+                            )}
                           </Link>
 
                           {(slotsByProduction.get(production.id) ?? [])

@@ -1,5 +1,11 @@
 /** Contrat de `/api/productions`. */
 
+import { PENDING_PRODUCT_STATUSES, type ProductStatus } from '../../product/entities/Product.ts';
+import {
+  PENDING_SPONSORSHIP_STATUSES,
+  type SponsorshipStatus,
+} from '../../sponsorship/entities/Sponsorship.ts';
+
 export type ProductionStatus = 'idea' | 'in_progress' | 'paused' | 'done';
 
 export const PRODUCTION_STATUSES: ProductionStatus[] = ['idea', 'in_progress', 'paused', 'done'];
@@ -26,6 +32,27 @@ export const STATUS_COLORS: Record<ProductionStatus, string> = {
   paused: 'var(--expense)',
   done: 'var(--in-kind)',
 };
+
+/**
+ * Version courte d'un produit ou d'une sponso rattachés.
+ *
+ * La vue porte les **listes** et non des compteurs : « 2 produits » ne dit pas lesquels,
+ * et c'est précisément ce qu'on veut au survol d'une carte. Compteurs et montants en
+ * attente se dérivent (`partnerCounts`) — une seule source, rien à resynchroniser.
+ */
+export interface ProductionProductRef {
+  id: string;
+  name: string;
+  status: ProductStatus;
+  valueCents: number;
+}
+
+export interface ProductionSponsorshipRef {
+  id: string;
+  label: string;
+  status: SponsorshipStatus;
+  amountCents: number;
+}
 
 export interface ProductionStepCheck {
   stepId: string;
@@ -58,10 +85,8 @@ export interface Production {
   steps: ProductionStepCheck[];
   nextSlotDate: string | null;
   slotsCount: number;
-  productsCount: number;
-  productsPendingCount: number;
-  sponsorshipsCount: number;
-  sponsorshipsPendingCents: number;
+  products: ProductionProductRef[];
+  sponsorships: ProductionSponsorshipRef[];
 }
 
 export interface ProductionInput {
@@ -82,3 +107,21 @@ export const stepProgress = (production: Production, totalSteps: number): number
 
 export const isStepChecked = (production: Production, stepId: string): boolean =>
   production.steps.some((step) => step.stepId === stepId);
+
+/**
+ * Ce que les cartes et les barres résument des partenaires rattachés.
+ * Dérivé des listes : deux affichages qui comptent différemment finiraient par se
+ * contredire sur la même vidéo.
+ */
+export const partnerCounts = (production: Production) => ({
+  products: production.products.length,
+  /** Produits pas encore reçus : ce sont eux qui bloquent une production. */
+  productsPending: production.products.filter((product) =>
+    PENDING_PRODUCT_STATUSES.includes(product.status),
+  ).length,
+  sponsorships: production.sponsorships.length,
+  /** Sponsos rattachées pas encore encaissées, en centimes. */
+  sponsorshipsPendingCents: production.sponsorships
+    .filter((sponsorship) => PENDING_SPONSORSHIP_STATUSES.includes(sponsorship.status))
+    .reduce((total, sponsorship) => total + sponsorship.amountCents, 0),
+});

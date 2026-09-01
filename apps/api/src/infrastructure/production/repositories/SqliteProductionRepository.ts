@@ -3,6 +3,8 @@ import { today } from '../../../shared/dates.ts';
 import type {
   CreateProductionInput,
   Production,
+  ProductionProductRef,
+  ProductionSponsorshipRef,
   ProductionStatus,
   ProductionStepCheck,
   ProductionView,
@@ -41,10 +43,6 @@ interface ProductionViewRow extends ProductionRow {
   video_thumbnail_url: string | null;
   slots_count: number;
   next_slot_date: string | null;
-  products_count: number;
-  products_pending: number;
-  sponsorships_count: number;
-  sponsorships_pending_cents: number;
 }
 
 const toDomain = (row: ProductionRow): Production => ({
@@ -65,11 +63,12 @@ const toDomain = (row: ProductionRow): Production => ({
 });
 
 /**
- * Tout ce qu'une carte de file d'attente affiche, en une seule requête.
+ * Les colonnes propres à la production.
  *
- * Les compteurs sont des sous-requêtes corrélées plutôt que des jointures : joindre
- * produits et sponsos sur la même ligne produirait un produit cartésien, et trois
- * produits face à deux sponsos donneraient six lignes à dédupliquer en mémoire.
+ * Les produits et les sponsos ne sont **pas** joints ici : les joindre sur la même ligne
+ * produirait un produit cartésien, et trois produits face à deux sponsos donneraient six
+ * lignes à dédupliquer en mémoire. Ils sont chargés à part, en une requête pour tout le
+ * lot (`loadPartners`), comme les étapes cochées.
  */
 const VIEW_COLUMNS = `
   p.*,
@@ -80,15 +79,7 @@ const VIEW_COLUMNS = `
   v.thumbnail_url AS video_thumbnail_url,
   (SELECT COUNT(*) FROM production_slots s WHERE s.production_id = p.id) AS slots_count,
   (SELECT MIN(s.date) FROM production_slots s
-    WHERE s.production_id = p.id AND s.done = 0 AND s.date >= ?) AS next_slot_date,
-  (SELECT COUNT(*) FROM products pr WHERE pr.production_id = p.id) AS products_count,
-  (SELECT COUNT(*) FROM products pr
-    WHERE pr.production_id = p.id
-      AND pr.status IN ('discussion','confirmed','shipped')) AS products_pending,
-  (SELECT COUNT(*) FROM sponsorships sp WHERE sp.production_id = p.id) AS sponsorships_count,
-  (SELECT COALESCE(SUM(sp.amount_cents), 0) FROM sponsorships sp
-    WHERE sp.production_id = p.id
-      AND sp.status IN ('discussion','todo','in_progress')) AS sponsorships_pending_cents
+    WHERE s.production_id = p.id AND s.done = 0 AND s.date >= ?) AS next_slot_date
 `;
 
 const VIEW_JOINS = `
@@ -165,7 +156,81 @@ export class SqliteProductionRepository implements ProductionRepository {
     return byProduction;
   }
 
-  private toView(row: ProductionViewRow, checks: ProductionStepCheck[]): ProductionView {
+  /**
+   * Charge les produits et les sponsos des productions données, en deux requêtes pour
+   * tout le lot. Deux lectures et non une jointure, pour la même raison que ci-dessus.
+   */
+  private loadPartners(productionIds: string[]): {
+    products: Map<string, ProductionProductRef[]>;
+    sponsorships: Map<string, ProductionSponsorshipRef[]>;
+  } {
+    const products = new Map<string, ProductionProductRef[]>();
+    const sponsorships = new Map<string, ProductionSponsorshipRef[]>();
+    if (productionIds.length === 0) return { products, sponsorships };
+
+    const holes = placeholders(productionIds.length);
+
+    const productRows = this.db
+      .prepare(
+        `SELECT production_id, id, name, status, value_cents
+           FROM products
+          WHERE production_id IN (${holes})
+          ORDER BY name COLLATE NOCASE`,
+      )
+      .all(...(productionIds as never[])) as unknown as Array<{
+      production_id: string;
+      id: string;
+      name: string;
+      status: string;
+      value_cents: number;
+    }>;
+
+    for (const row of productRows) {
+      const list = products.get(row.production_id) ?? [];
+      list.push({
+        id: row.id,
+        name: row.name,
+        status: row.status as ProductionProductRef['status'],
+        valueCents: row.value_cents,
+      });
+      products.set(row.production_id, list);
+    }
+
+    const sponsorshipRows = this.db
+      .prepare(
+        `SELECT production_id, id, label, status, amount_cents
+           FROM sponsorships
+          WHERE production_id IN (${holes})
+          ORDER BY label COLLATE NOCASE`,
+      )
+      .all(...(productionIds as never[])) as unknown as Array<{
+      production_id: string;
+      id: string;
+      label: string;
+      status: string;
+      amount_cents: number;
+    }>;
+
+    for (const row of sponsorshipRows) {
+      const list = sponsorships.get(row.production_id) ?? [];
+      list.push({
+        id: row.id,
+        label: row.label,
+        status: row.status as ProductionSponsorshipRef['status'],
+        amountCents: row.amount_cents,
+      });
+      sponsorships.set(row.production_id, list);
+    }
+
+    return { products, sponsorships };
+  }
+
+  private toView(
+    row: ProductionViewRow,
+    checks: ProductionStepCheck[],
+    products: ProductionProductRef[],
+    sponsorships: ProductionSponsorshipRef[],
+  ): ProductionView {
     return {
       ...toDomain(row),
       channelName: row.channel_name,
@@ -176,10 +241,8 @@ export class SqliteProductionRepository implements ProductionRepository {
       steps: checks,
       nextSlotDate: row.next_slot_date,
       slotsCount: row.slots_count,
-      productsCount: row.products_count,
-      productsPendingCount: row.products_pending,
-      sponsorshipsCount: row.sponsorships_count,
-      sponsorshipsPendingCents: row.sponsorships_pending_cents,
+      products,
+      sponsorships,
     };
   }
 
@@ -192,8 +255,18 @@ export class SqliteProductionRepository implements ProductionRepository {
       .prepare(`SELECT ${VIEW_COLUMNS} ${VIEW_JOINS} ${clause} ORDER BY p.sort_order, p.created_at`)
       .all(today(), ...(params as never[])) as unknown as ProductionViewRow[];
 
-    const checks = this.loadChecks(rows.map((row) => row.id));
-    return rows.map((row) => this.toView(row, checks.get(row.id) ?? []));
+    const ids = rows.map((row) => row.id);
+    const checks = this.loadChecks(ids);
+    const partners = this.loadPartners(ids);
+
+    return rows.map((row) =>
+      this.toView(
+        row,
+        checks.get(row.id) ?? [],
+        partners.products.get(row.id) ?? [],
+        partners.sponsorships.get(row.id) ?? [],
+      ),
+    );
   }
 
   findById(id: string): Production | null {
@@ -207,7 +280,13 @@ export class SqliteProductionRepository implements ProductionRepository {
       .prepare(`SELECT ${VIEW_COLUMNS} ${VIEW_JOINS} WHERE p.id = ?`)
       .get(today(), id) as ProductionViewRow | undefined;
     if (!row) return null;
-    return this.toView(row, this.loadChecks([id]).get(id) ?? []);
+    const partners = this.loadPartners([id]);
+    return this.toView(
+      row,
+      this.loadChecks([id]).get(id) ?? [],
+      partners.products.get(id) ?? [],
+      partners.sponsorships.get(id) ?? [],
+    );
   }
 
   create(input: CreateProductionInput): Production {

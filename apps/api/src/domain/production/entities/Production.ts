@@ -1,4 +1,7 @@
 import type { IsoDate } from '../../../shared/dates.ts';
+import type { Cents } from '../../../shared/money.ts';
+import type { ProductStatus } from '../../product/entities/Product.ts';
+import type { SponsorshipStatus } from '../../sponsorship/entities/Sponsorship.ts';
 
 /**
  * Où en est une vidéo, indépendamment des cases cochées.
@@ -44,6 +47,27 @@ export interface Production {
   updatedAt: string;
 }
 
+/**
+ * Version courte d'un produit ou d'une sponso rattachés.
+ *
+ * La vue porte les **listes** et non des compteurs : « 2 produits » ne dit pas lesquels,
+ * et c'est précisément ce qu'on veut savoir au survol d'une carte. Les compteurs et les
+ * montants en attente se dérivent de la liste — une seule source, rien à resynchroniser.
+ */
+export interface ProductionProductRef {
+  id: string;
+  name: string;
+  status: ProductStatus;
+  valueCents: Cents;
+}
+
+export interface ProductionSponsorshipRef {
+  id: string;
+  label: string;
+  status: SponsorshipStatus;
+  amountCents: Cents;
+}
+
 /** Étape cochée sur une production, avec la date à laquelle elle l'a été. */
 export interface ProductionStepCheck {
   stepId: string;
@@ -66,13 +90,9 @@ export interface ProductionView extends Production {
   /** Prochain créneau non fait à venir, `null` s'il n'y en a pas de planifié. */
   nextSlotDate: IsoDate | null;
   slotsCount: number;
-  /** Produits et sponsos rattachés : de quoi afficher les pastilles de la carte. */
-  productsCount: number;
-  /** Produits rattachés pas encore reçus : c'est eux qui bloquent une production. */
-  productsPendingCount: number;
-  sponsorshipsCount: number;
-  /** Sponsos rattachées pas encore encaissées, en centimes. */
-  sponsorshipsPendingCents: number;
+  /** Produits et sponsos rattachés, en version courte. Les compteurs s'en dérivent. */
+  products: ProductionProductRef[];
+  sponsorships: ProductionSponsorshipRef[];
 }
 
 export interface CreateProductionInput {

@@ -1,13 +1,26 @@
 import { Link } from 'react-router-dom';
 import { CalendarClock, ChevronDown, ChevronUp, Gift, Handshake, Pause, Radio } from 'lucide-react';
 import type { Production } from '../../../domain/production/entities/Production.ts';
-import { STATUS_COLORS, STATUS_LABELS } from '../../../domain/production/entities/Production.ts';
+import {
+  partnerCounts,
+  STATUS_COLORS,
+  STATUS_LABELS,
+} from '../../../domain/production/entities/Production.ts';
+import {
+  PENDING_PRODUCT_STATUSES,
+  PRODUCT_STATUS_LABELS,
+} from '../../../domain/product/entities/Product.ts';
+import {
+  PENDING_SPONSORSHIP_STATUSES,
+  SPONSORSHIP_STATUS_LABELS,
+} from '../../../domain/sponsorship/entities/Sponsorship.ts';
 import type { ProductionStep } from '../../../domain/production/entities/ProductionStep.ts';
 import { formatDate, formatMoney } from '../../../shared/format.ts';
 import { Badge } from '../ui/badge.tsx';
 import { Button } from '../ui/button.tsx';
 import { Card } from '../ui/card.tsx';
 import { StepChips, StepProgress } from './StepChips.tsx';
+import { PartnerHoverList } from './PartnerHoverList.tsx';
 import { cn } from '../../../shared/cn.ts';
 
 interface ProductionCardProps {
@@ -48,6 +61,7 @@ export const ProductionCard = ({
   onMoveDown,
   highlighted,
 }: ProductionCardProps) => {
+  const counts = partnerCounts(production);
   const late =
     production.plannedDate !== null &&
     days(production.plannedDate) < 0 &&
@@ -134,29 +148,51 @@ export const ProductionCard = ({
         <StepChips production={production} steps={steps} onToggle={onToggleStep} />
         <StepProgress production={production} steps={steps} />
 
-        {(production.productsCount > 0 || production.sponsorshipsCount > 0) && (
+        {(counts.products > 0 || counts.sponsorships > 0) && (
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            {production.productsCount > 0 && (
-              <span className="flex items-center gap-1">
-                <Gift className="h-3 w-3" aria-hidden />
-                {production.productsCount} produit(s)
-                {production.productsPendingCount > 0 && (
-                  <span className="text-[var(--expense)]">
-                    · {production.productsPendingCount} en attente
-                  </span>
-                )}
-              </span>
+            {counts.products > 0 && (
+              <PartnerHoverList
+                title="Produits rattachés"
+                items={production.products.map((product) => ({
+                  id: product.id,
+                  label: product.name,
+                  meta: `${formatMoney(product.valueCents)} · ${PRODUCT_STATUS_LABELS[product.status]}`,
+                  pending: PENDING_PRODUCT_STATUSES.includes(product.status),
+                }))}
+                trigger={
+                  <>
+                    <Gift className="h-3 w-3" aria-hidden />
+                    {counts.products} produit(s)
+                    {counts.productsPending > 0 && (
+                      <span className="text-[var(--expense)]">
+                        · {counts.productsPending} en attente
+                      </span>
+                    )}
+                  </>
+                }
+              />
             )}
-            {production.sponsorshipsCount > 0 && (
-              <span className="flex items-center gap-1">
-                <Handshake className="h-3 w-3" aria-hidden />
-                {production.sponsorshipsCount} sponso(s)
-                {production.sponsorshipsPendingCents > 0 && (
-                  <span className="text-[var(--positive)]">
-                    · {formatMoney(production.sponsorshipsPendingCents)} à encaisser
-                  </span>
-                )}
-              </span>
+            {counts.sponsorships > 0 && (
+              <PartnerHoverList
+                title="Sponsos rattachées"
+                items={production.sponsorships.map((sponsorship) => ({
+                  id: sponsorship.id,
+                  label: sponsorship.label,
+                  meta: `${formatMoney(sponsorship.amountCents)} · ${SPONSORSHIP_STATUS_LABELS[sponsorship.status]}`,
+                  pending: PENDING_SPONSORSHIP_STATUSES.includes(sponsorship.status),
+                }))}
+                trigger={
+                  <>
+                    <Handshake className="h-3 w-3" aria-hidden />
+                    {counts.sponsorships} sponso(s)
+                    {counts.sponsorshipsPendingCents > 0 && (
+                      <span className="text-[var(--positive)]">
+                        · {formatMoney(counts.sponsorshipsPendingCents)} à encaisser
+                      </span>
+                    )}
+                  </>
+                }
+              />
             )}
           </div>
         )}

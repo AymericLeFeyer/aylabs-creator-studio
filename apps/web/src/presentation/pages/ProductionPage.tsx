@@ -11,7 +11,7 @@ import {
 } from '../../application/production/usecases/useProductions.ts';
 import { useDeleteIdea } from '../../application/idea/usecases/useIdeas.ts';
 import type { Idea } from '../../domain/idea/entities/Idea.ts';
-import { formatDate } from '../../shared/format.ts';
+import { formatDate, toIsoDate } from '../../shared/format.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.tsx';
@@ -21,6 +21,7 @@ import { AlertsBanner } from '../components/production/AlertsBanner.tsx';
 import { ProductionCard } from '../components/production/ProductionCard.tsx';
 import { ProductionGantt } from '../components/production/ProductionGantt.tsx';
 import { IdeaBox } from '../components/production/IdeaBox.tsx';
+import { cn } from '../../shared/cn.ts';
 import { SlotSummary } from '../components/production/SlotSummary.tsx';
 import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
 
@@ -46,6 +47,7 @@ export const ProductionPage = () => {
   const [promoted, setPromoted] = useState<Idea | null>(null);
 
   const queue = overview?.queue ?? [];
+  const today = toIsoDate(new Date());
 
   const openCreate = () => {
     setPromoted(null);
@@ -105,7 +107,7 @@ export const ProductionPage = () => {
       {/* Le planning se lit à l'arrivée, pas derrière un onglet : c'est la vue qui
           répond à « qu'est-ce qui sort quand », la première question de la page. Il se
           replie à cinq lignes pour ne pas repousser la file d'attente sous le pli. */}
-      <ProductionGantt productions={[...queue, ...done]} slots={slots} />
+      <ProductionGantt productions={[...queue, ...done]} slots={slots} steps={steps} />
 
       <Tabs defaultValue="queue">
         <TabsList>
@@ -155,7 +157,14 @@ export const ProductionPage = () => {
                       <Link
                         key={slot.id}
                         to={`/production/${slot.productionId}`}
-                        className="flex items-start gap-2 rounded-md p-1.5 text-sm transition-colors hover:bg-muted/60"
+                        // Le créneau du jour se détache de la pile : c'est le seul de la
+                        // liste sur lequel on peut encore agir maintenant.
+                        className={cn(
+                          'flex items-start gap-2 rounded-md p-1.5 text-sm transition-colors',
+                          slot.date === today
+                            ? 'border-l-2 border-[var(--negative)] bg-accent/60 pl-2 hover:bg-accent'
+                            : 'hover:bg-muted/60',
+                        )}
                       >
                         <span
                           className="mt-1.5 h-2 w-2 shrink-0 rounded-full"

@@ -1,6 +1,6 @@
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
 import { formatSlotTime } from '../../../domain/production/entities/ProductionSlot.ts';
-import { formatDate } from '../../../shared/format.ts';
+import { formatDate, toIsoDate } from '../../../shared/format.ts';
 import { cn } from '../../../shared/cn.ts';
 
 interface SlotSummaryProps {
@@ -18,21 +18,35 @@ interface SlotSummaryProps {
  * quasi-totalité des cas. L'intitulé libre ne fait que préciser, il passe en dessous ;
  * date, horaire et vidéo ferment la ligne de contexte.
  *
+ * Un créneau **du jour** dit « Aujourd'hui » au lieu de sa date, dans la couleur qui
+ * marque déjà le présent sur le planning : lire « 02 sept. » demande de le comparer
+ * mentalement à la date du jour, ce qui est exactement le travail qu'une liste de
+ * prochains créneaux doit éviter.
+ *
  * Extrait parce que deux écrans l'affichent — les prochains créneaux de la page
  * production et l'onglet Créneaux d'une fiche. Dupliqué, le rendu finissait par diverger
  * dès la première retouche.
  */
-export const SlotSummary = ({ slot, showProduction, strikeWhenDone }: SlotSummaryProps) => (
-  <span className="min-w-0 flex-1">
-    <span
-      className={cn('block truncate font-medium', strikeWhenDone && slot.done && 'line-through')}
-    >
-      {slot.stepName ?? 'Créneau'}
+export const SlotSummary = ({ slot, showProduction, strikeWhenDone }: SlotSummaryProps) => {
+  const isToday = slot.date === toIsoDate(new Date());
+
+  return (
+    <span className="min-w-0 flex-1">
+      <span
+        className={cn('block truncate font-medium', strikeWhenDone && slot.done && 'line-through')}
+      >
+        {slot.stepName ?? 'Créneau'}
+      </span>
+      {slot.label && <span className="block truncate text-xs">{slot.label}</span>}
+      <span className="block truncate text-xs text-muted-foreground">
+        {isToday ? (
+          <span className="font-medium text-[var(--negative)]">Aujourd'hui</span>
+        ) : (
+          formatDate(slot.date)
+        )}{' '}
+        · {formatSlotTime(slot)}
+        {showProduction ? ` · ${slot.productionTitle}` : ''}
+      </span>
     </span>
-    {slot.label && <span className="block truncate text-xs">{slot.label}</span>}
-    <span className="block truncate text-xs text-muted-foreground">
-      {formatDate(slot.date)} · {formatSlotTime(slot)}
-      {showProduction ? ` · ${slot.productionTitle}` : ''}
-    </span>
-  </span>
-);
+  );
+};
