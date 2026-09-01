@@ -41,6 +41,24 @@ const toDomain = (row: BrandRow): Brand => ({
 });
 
 /**
+ * Couleurs attribuées en rotation à la création, comme pour les chaînes.
+ *
+ * Une couleur par défaut unique rendrait les classements du dashboard illisibles : six
+ * barres grises ne se distinguent pas. La rotation garantit une palette variée sans
+ * jamais rien demander à la création — le nom suffit.
+ */
+const DEFAULT_COLORS = [
+  '#ef4444',
+  '#3b82f6',
+  '#22c55e',
+  '#f59e0b',
+  '#a855f7',
+  '#ec4899',
+  '#14b8a6',
+  '#f97316',
+];
+
+/**
  * Restriction de chaîne commune aux produits et aux sponsos.
  *
  * Même convention que `buildEntryWhere` pour les revenus : une sélection de chaînes
@@ -80,6 +98,8 @@ export class SqliteBrandRepository implements BrandRepository {
   create(input: CreateBrandInput): Brand {
     const id = newId();
     const now = new Date().toISOString();
+    const count = (this.db.prepare('SELECT COUNT(*) AS n FROM brands').get() as { n: number }).n;
+    const color = input.color ?? DEFAULT_COLORS[count % DEFAULT_COLORS.length]!;
 
     this.db
       .prepare(
@@ -94,7 +114,7 @@ export class SqliteBrandRepository implements BrandRepository {
         input.website ?? null,
         input.contactName ?? null,
         input.contactEmail ?? null,
-        input.color ?? '#64748b',
+        color,
         input.notes ?? null,
         now,
         now,

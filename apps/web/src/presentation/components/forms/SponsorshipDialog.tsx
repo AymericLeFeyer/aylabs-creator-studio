@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useBrands } from '../../../application/brand/usecases/useBrands.ts';
 import { useChannels } from '../../../application/channel/usecases/useChannels.ts';
 import { useProductions } from '../../../application/production/usecases/useProductions.ts';
 import { useVideos } from '../../../application/video/usecases/useVideos.ts';
@@ -31,6 +30,7 @@ import { Input, Textarea } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { fromSelectValue, NONE, toSelectValue } from './selectNone.ts';
+import { BrandCombobox } from './BrandCombobox.tsx';
 import { VideoTargetSelect } from './VideoTargetSelect.tsx';
 import { fromTargetValue, PRODUCTION_PREFIX, targetToValue, toTargetValue } from './videoTarget.ts';
 import { ProductLinkField } from './ProductLinkField.tsx';
@@ -65,7 +65,6 @@ export const SponsorshipDialog = ({
   sponsorship,
   defaultProductionId,
 }: SponsorshipDialogProps) => {
-  const { data: brands = [] } = useBrands();
   const { data: channels = [] } = useChannels();
   const { data: productions = [] } = useProductions();
   const { data: videos = [] } = useVideos();
@@ -175,25 +174,11 @@ export const SponsorshipDialog = ({
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="sponsorship-brand">Marque</Label>
-              <Select
-                value={form.brandId}
-                onValueChange={(value) => setForm((f) => ({ ...f, brandId: value }))}
-              >
-                <SelectTrigger id="sponsorship-brand">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>Sans marque</SelectItem>
-                  {brands.map((brand) => (
-                    <SelectItem key={brand.id} value={brand.id}>
-                      {brand.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <BrandCombobox
+              id="sponsorship-brand"
+              value={fromSelectValue(form.brandId)}
+              onChange={(brandId) => setForm((f) => ({ ...f, brandId: toSelectValue(brandId) }))}
+            />
 
             <div className="space-y-1.5">
               <Label htmlFor="sponsorship-status">Statut</Label>

@@ -30,7 +30,6 @@ import {
 } from '../../application/sponsorship/usecases/useSponsorships.ts';
 import { STATUS_COLORS, STATUS_LABELS } from '../../domain/production/entities/Production.ts';
 import type { ProductionSlot } from '../../domain/production/entities/ProductionSlot.ts';
-import { formatSlotTime } from '../../domain/production/entities/ProductionSlot.ts';
 import { PRODUCT_STATUS_LABELS } from '../../domain/product/entities/Product.ts';
 import { SPONSORSHIP_STATUS_LABELS } from '../../domain/sponsorship/entities/Sponsorship.ts';
 import { formatDate, formatMoney } from '../../shared/format.ts';
@@ -40,6 +39,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { StepChips, StepProgress } from '../components/production/StepChips.tsx';
 import { ScriptEditor } from '../components/production/ScriptEditor.tsx';
+import { SlotSummary } from '../components/production/SlotSummary.tsx';
 import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
 import { ProductDialog } from '../components/forms/ProductDialog.tsx';
 import { SponsorshipDialog } from '../components/forms/SponsorshipDialog.tsx';
@@ -280,15 +280,7 @@ export const ProductionDetailPage = () => {
                       <span className="sr-only">{slot.done ? 'Fait' : 'À faire'}</span>
                     </button>
 
-                    <span className="min-w-0 flex-1">
-                      <span className={cn('block font-medium', slot.done && 'line-through')}>
-                        {slot.label || slot.stepName || 'Créneau'}
-                      </span>
-                      <span className="block text-xs text-muted-foreground">
-                        {formatDate(slot.date)} · {formatSlotTime(slot)}
-                        {slot.stepName && slot.label ? ` · ${slot.stepName}` : ''}
-                      </span>
-                    </span>
+                    <SlotSummary slot={slot} strikeWhenDone />
 
                     <div className="flex gap-1">
                       <Button

@@ -21,8 +21,8 @@ import { AlertsBanner } from '../components/production/AlertsBanner.tsx';
 import { ProductionCard } from '../components/production/ProductionCard.tsx';
 import { ProductionGantt } from '../components/production/ProductionGantt.tsx';
 import { IdeaBox } from '../components/production/IdeaBox.tsx';
+import { SlotSummary } from '../components/production/SlotSummary.tsx';
 import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
-import { formatSlotTime } from '../../domain/production/entities/ProductionSlot.ts';
 
 /** « 4 h 30 » — la charge d'une semaine se lit en heures, pas en minutes. */
 const formatLoad = (minutes: number): string => {
@@ -164,20 +164,7 @@ export const ProductionPage = () => {
                           }}
                           aria-hidden
                         />
-                        {/* L'étape en titre : c'est elle qui dit ce qu'on va faire.
-                            L'intitulé, quand il existe, précise juste en dessous. */}
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium">
-                            {slot.stepName ?? 'Créneau'}
-                          </span>
-                          {slot.label && (
-                            <span className="block truncate text-xs">{slot.label}</span>
-                          )}
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {formatDate(slot.date)} · {formatSlotTime(slot)} ·{' '}
-                            {slot.productionTitle}
-                          </span>
-                        </span>
+                        <SlotSummary slot={slot} showProduction />
                       </Link>
                     ))
                   )}
