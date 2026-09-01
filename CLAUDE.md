@@ -2,20 +2,21 @@
 
 > Dernière mise à jour : 2026-09-01
 
-Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée.
+Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
 ## Stack
 
-| Élément     | Choix                                                                         |
-| ----------- | ----------------------------------------------------------------------------- |
-| Monorepo    | npm workspaces (`apps/*`)                                                     |
-| API         | Node 24 + Express 5 + TypeScript **exécuté nativement** (type stripping)      |
-| Base        | SQLite via `node:sqlite` (module natif, aucune dépendance à compiler)         |
-| Front       | React 19 + Vite 6 + TypeScript strict                                        |
-| Design      | **shadcn/ui + Tailwind v4** — seul design system du projet, ne pas en mêler d'autre |
-| Graphiques  | Recharts 3                                                                    |
-| Données     | TanStack Query 5                                                              |
-| CI/CD       | GitHub Actions → images GHCR → stack Portainer sur VPS                        |
+| Élément    | Choix                                                                               |
+| ---------- | ----------------------------------------------------------------------------------- |
+| Monorepo   | npm workspaces (`apps/*`)                                                           |
+| API        | Node 24 + Express 5 + TypeScript **exécuté nativement** (type stripping)            |
+| Base       | SQLite via `node:sqlite` (module natif, aucune dépendance à compiler)               |
+| Front      | React 19 + Vite 6 + TypeScript strict                                               |
+| Design     | **shadcn/ui + Tailwind v4** — seul design system du projet, ne pas en mêler d'autre |
+| Graphiques | Recharts 3                                                                          |
+| Markdown   | `react-markdown` + `remark-gfm` (éditeur de script uniquement, chunk isolé)         |
+| Données    | TanStack Query 5                                                                    |
+| CI/CD      | GitHub Actions → images GHCR → stack Portainer sur VPS                              |
 
 ### Commandes
 
@@ -47,10 +48,10 @@ Les imports relatifs portent l'extension `.ts` (obligatoire pour Node).
 
 ### 3. Flux vs cumuls : deux natures de données qui ne s'agrègent pas pareil
 
-| Table               | Nature | Agrégation                                                        |
-| ------------------- | ------ | ----------------------------------------------------------------- |
-| `daily_metrics`     | FLUX   | se somment dans le bucket **et** entre chaînes                    |
-| `channel_snapshots` | CUMUL  | dernière valeur connue du bucket, puis somme entre chaînes        |
+| Table               | Nature | Agrégation                                                 |
+| ------------------- | ------ | ---------------------------------------------------------- |
+| `daily_metrics`     | FLUX   | se somment dans le bucket **et** entre chaînes             |
+| `channel_snapshots` | CUMUL  | dernière valeur connue du bucket, puis somme entre chaînes |
 
 Sommer des `subscribers` de deux jours n'a aucun sens. `GetAnalytics.applyCumulativeTotals()` reporte la dernière valeur connue (forward-fill) pour qu'un jour sans collecte ne fasse pas plonger la courbe à zéro.
 
@@ -74,13 +75,33 @@ CA        = adsense + manualCash + (includeInKind ? inKind : 0)
 Bénéfice  = CA - dépenses
 ```
 
+### 6. Un revenu généré n'a qu'un seul point d'écriture
+
+Un produit passé à `received` et une sponso passée à `paid` **créent** l'entrée de revenu
+correspondante (`produits` en nature, `sponsors` en cash) et la gardent liée par
+`revenue_entry_id`. `revenue_entries.origin` (`manual` | `product` | `sponsorship`)
+porte la trace, et `SqliteRevenueEntryRepository.update/delete` refuse en **409** toute
+entrée non `manual` : deux points d'écriture sur la même ligne la feraient diverger en
+silence — le montant corrigé côté Revenus ne remonterait jamais dans la fiche produit.
+
+Les use cases `ManageProducts` / `ManageSponsorships` sont les seuls à passer par
+`updateLinked` / `deleteLinked`, qui contournent la garde. **Les routes ne parlent jamais
+directement aux dépôts `products` / `sponsorships` / `productions`** : un chemin
+d'écriture qui les court-circuiterait oublierait la synchronisation.
+
+La règle tient en une phrase par côté, et chaque écriture y ramène l'entrée quel que soit
+le chemin emprunté : _un produit `received` valorisé a une entrée de revenu, tous les
+autres n'en ont pas_ ; _une sponso `paid` a une entrée de revenu cash, toutes les autres
+n'en ont pas._
+
 ## Structure DDD
 
 Les deux applications suivent la même découpe.
 
 ```
 apps/api/src/
-├── domain/          channel, metrics, category, revenue, expense, video, analytics
+├── domain/          channel, metrics, category, revenue, expense, video, analytics,
+│                    brand, production, product, sponsorship
 │   └── <domaine>/{entities,repositories,services}    # repositories = interfaces seules
 ├── application/<domaine>/usecases/
 ├── infrastructure/
@@ -109,11 +130,11 @@ Les types du front **dupliquent** le contrat de l'API plutôt que de passer par 
 
 `mode` détermine ce qui est collectable :
 
-| Mode     | Source                            | Données obtenues                                  |
-| -------- | --------------------------------- | ------------------------------------------------- |
-| `public` | `YOUTUBE_API_KEY` (partagée)      | abonnés, vues totales, nb vidéos. **Aucun revenu** |
-| `oauth`  | refresh token **propre à la chaîne** | historique jour par jour + revenus AdSense      |
-| `manual` | —                                 | saisie à la main uniquement                       |
+| Mode     | Source                               | Données obtenues                                   |
+| -------- | ------------------------------------ | -------------------------------------------------- |
+| `public` | `YOUTUBE_API_KEY` (partagée)         | abonnés, vues totales, nb vidéos. **Aucun revenu** |
+| `oauth`  | refresh token **propre à la chaîne** | historique jour par jour + revenus AdSense         |
+| `manual` | —                                    | saisie à la main uniquement                        |
 
 `toChannelView()` retire `refreshToken` et le remplace par `hasCredentials: boolean`. **Le token ne sort jamais de l'API.**
 
@@ -132,11 +153,11 @@ Les types du front **dupliquent** le contrat de l'API plutôt que de passer par 
 
 `scope` dit de quel côté du grand livre la catégorie a le droit d'exister :
 
-| `scope`   | Utilisable en revenu | Utilisable en dépense | Exemple                |
-| --------- | -------------------- | --------------------- | ---------------------- |
-| `revenue` | oui                  | non                   | Affiliation, Sponsors  |
-| `expense` | non                  | oui                   | Impôts, Matériel       |
-| `both`    | oui                  | oui                   | du matériel revendu    |
+| `scope`   | Utilisable en revenu | Utilisable en dépense | Exemple               |
+| --------- | -------------------- | --------------------- | --------------------- |
+| `revenue` | oui                  | non                   | Affiliation, Sponsors |
+| `expense` | non                  | oui                   | Impôts, Matériel      |
+| `both`    | oui                  | oui                   | du matériel revendu   |
 
 `nature` (`cash` / `in_kind`) ne s'applique qu'aux revenus ; une catégorie de dépense pure la porte à `cash` sans que ça ne serve.
 
@@ -176,12 +197,63 @@ La collecte passe par la **playlist « uploads »** de la chaîne (`infrastructu
 
 `CollectMetrics.collectVideoStats()` rafraîchit ensuite les compteurs des vidéos sorties depuis `VIDEO_STATS_WINDOW_DAYS` (365). Son échec est avalé de la même façon, et le compte revient dans `CollectResult.videoStatsUpdated`. Deux sources selon le mode :
 
-| Mode     | Appel                                                        | Ce qu'on obtient                            |
-| -------- | ------------------------------------------------------------ | ------------------------------------------- |
+| Mode     | Appel                                                        | Ce qu'on obtient                                                    |
+| -------- | ------------------------------------------------------------ | ------------------------------------------------------------------- |
 | `oauth`  | `reports.query` `dimensions=video`, `filters=video==id1,id2` | vues, minutes, **abonnés gagnés**, likes, commentaires, **AdSense** |
-| `public` | `videos.list` `part=statistics` (50 ids max par appel)        | vues, likes, commentaires. **Rien d'autre** |
+| `public` | `videos.list` `part=statistics` (50 ids max par appel)       | vues, likes, commentaires. **Rien d'autre**                         |
 
 La fenêtre Analytics part du jour de sortie de la plus ancienne vidéo du lot, pour qu'aucune vue ne soit tronquée. `filters=video==` plafonne à 500 identifiants : les lots font 200.
+
+### `brand`
+
+`Brand { id, name, website, contactName, contactEmail, color, notes, isArchived }` — table `brands`.
+
+Référentiel **commun aux produits et aux sponsos** : sans identifiant partagé, « la marque qui me donne le plus » ne serait pas calculable (trois orthographes du même nom feraient trois lignes de classement). Suppression refusée en 409 dès qu'un produit ou une sponso s'y rattache — l'archivage est là pour ça.
+
+`stats(range, channelIds)` renvoie une `BrandStats` par marque : produits **reçus** sur la période (comptés à `received_at`), sponsos **encaissées** (comptées à `paid_at`), et `sponsorshipsPendingCents` — de l'argent promis, donc **hors période**, sinon une sponso signée sans échéance disparaîtrait du « à encaisser ». Les lignes sans marque sont regroupées sous `__none__` / « Sans marque » : les ignorer donnerait un classement dont la somme ne retombe pas sur les totaux. Trois lectures agrégées et non une jointure triple : les tables et les colonnes de date diffèrent, et une seule requête produirait un produit cartésien entre produits et sponsos.
+
+### `production`
+
+`Production { id, channelId, videoId, title, status, pausedReason, pausedAt, startDate, plannedDate, script, notes, sortOrder }` — table `productions`.
+
+C'est **la vidéo avant sa publication**. Le jour de la sortie, elle se rattache à la ligne `videos` collectée sur YouTube (`video_id`, index unique partiel : une sortie n'appartient qu'à une production). Rien n'est supprimé à ce moment-là : elle quitte la file d'attente pour les terminées, script et créneaux intacts.
+
+| `status`      | Sens                                                                                                                              |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `idea`        | notée, pas commencée                                                                                                              |
+| `in_progress` | le travail est lancé                                                                                                              |
+| `paused`      | bloquée par **quelqu'un d'autre** (retour de marque, produit qui n'arrive pas) — `pausedReason` dit quoi, `pausedAt` depuis quand |
+| `done`        | publiée                                                                                                                           |
+
+`paused_at` est posé par le **passage** en pause, pas par la mise à jour de la raison : corriger le libellé d'un blocage ne doit pas remettre le compteur « en pause depuis X jours » à zéro.
+
+`sortOrder` porte l'ordre de la file, **entièrement manuel** — l'outil ne déduit aucune priorité. `POST /api/productions/reorder` le réécrit en une transaction : un classement à moitié appliqué afficherait deux rangs identiques.
+
+`ProductionView` embarque tout ce qu'une carte de file affiche (chaîne, vidéo, étapes cochées, prochain créneau, compteurs de produits et de sponsos) en **une** requête ; les compteurs sont des sous-requêtes corrélées et non des jointures, sinon trois produits face à deux sponsos donneraient six lignes à dédupliquer.
+
+`ManageProductions` possède les écritures : changer `channelId` ou `videoId` **re-synchronise** les revenus de tous les produits et sponsos rattachés (voir contrainte 6). `publish(id, videoId)` rattache la sortie, coche l'étape `publication` (si elle existe encore) et passe en `done`.
+
+### `productionStep` et `productionSlot`
+
+`ProductionStep { id, name, color, sortOrder, isArchived }` — table `production_steps`, seedée par `seedDefaultSteps` avec `ecriture`, `tournage`, `montage`, `miniature`, `publication` (identifiants fixes). **Ce sont des lignes, pas des colonnes** : ajouter une étape ne demande aucune migration. `sortOrder` est un ordre d'**affichage** ; les cases se cochent dans n'importe quel sens.
+
+Table `production_step_checks` (PK `(production_id, step_id)`, colonne `checked_at`) : **la présence de la ligne vaut « coché »**. Cocher/décocher est un INSERT `DO NOTHING` / DELETE, et la date de complétion vient gratuitement. Recocher ne repousse pas la date.
+
+`ProductionSlot { id, productionId, stepId, date, startTime, endTime, label, done, notes }` — table `production_slots`. **Les heures sont facultatives** : « samedi » est un créneau valable, et les exiger ferait renoncer à en poser un. `slotMinutes()` renvoie `0` sans horaire complet — mieux vaut sous-estimer la charge que d'inventer une durée par défaut. Le helper est dupliqué à l'identique côté front.
+
+### `product`
+
+`Product { id, brandId, productionId, channelId, revenueEntryId, name, url, valueCents, status, requestedAt, deadline, receivedAt, notes }` — table `products`.
+
+`status` ∈ `discussion | confirmed | shipped | received | returned | cancelled`. Seul `received` compte en argent : c'est lui qui déclenche le revenu **en nature**. `returned` et `cancelled` existent pour que le pipeline se vide — une négo morte laissée en « en discussion » pollue la vue pour toujours.
+
+Le revenu généré reprend la **chaîne et la vidéo de la production** : c'est ce qui fait remonter le produit dans la ligne de la bonne vidéo du tableau de performance, sans saisie de plus.
+
+### `sponsorship`
+
+`Sponsorship { id, brandId, productionId, channelId, revenueEntryId, label, amountCents, status, deadline, paidAt, notes }` — table `sponsorships`.
+
+`status` ∈ `discussion | todo | in_progress | paid | cancelled` (les quatre demandés + l'abandon, sans quoi une négo morte fausse le montant « à encaisser » à vie). Seul `paid` crée le revenu **cash**. Tant qu'elle n'est pas payée, la sponso vit dans le « à encaisser » du dashboard et **jamais dans le CA**.
 
 ### `analytics`
 
@@ -199,49 +271,85 @@ Chaque `TimeSeriesPoint` porte aussi `revenueByCategory` et `expenseByCategory` 
 
 Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneur API.
 
-| Méthode  | Route                             | Rôle                                                       |
-| -------- | --------------------------------- | ---------------------------------------------------------- |
-| `GET`    | `/health`                         | Sonde du conteneur                                         |
-| `GET`    | `/api/analytics`                  | Séries + cumuls. Params : `from`, `to`, `granularity` (`day\|week\|month`), `channelIds` (CSV, vide = cumulé), `includeUnassigned` |
-| `POST`   | `/api/analytics/collect`          | Collecte immédiate de toutes les chaînes                   |
-| `GET`    | `/api/channels`                   | Liste + `latestSnapshot` + `lastMetricDate`. Param `includeArchived` |
-| `POST`   | `/api/channels`                   | Créer                                                      |
-| `POST`   | `/api/channels/resolve`           | `{ query }` (@handle / URL / UC…) → identifiant + stats     |
-| `PATCH`  | `/api/channels/:id`               | Modifier (`refreshToken: ""` efface, absent = conserve)     |
-| `DELETE` | `/api/channels/:id`               | Supprimer                                                   |
-| `POST`   | `/api/channels/:id/collect`       | Collecter cette chaîne                                      |
-| `PUT`    | `/api/channels/:id/metrics`       | Saisie manuelle d'une journée (`source = manual`)           |
-| `DELETE` | `/api/channels/:id/metrics/:date` | Supprimer une journée                                       |
-| `PUT`    | `/api/channels/:id/snapshots`     | Saisie manuelle d'un total d'abonnés                        |
-| `GET`    | `/api/videos`                     | Sorties de vidéo. Params `from`, `to`, `channelIds`, `limit` (200 par défaut). Période **facultative** : le sélecteur de rattachement doit proposer des vidéos plus anciennes que la période affichée |
-| `GET`    | `/api/categories`                 | Params `includeArchived`, `scope` (`revenue|expense|both` ; `both` répond toujours) |
-| `POST`   | `/api/categories`                 | Créer (`scope` défaut `revenue`)                             |
-| `PATCH`  | `/api/categories/:id`             | Modifier / archiver                                         |
-| `DELETE` | `/api/categories/:id`             | Refusé si `isAuto` ou si des revenus/dépenses y sont rattachés |
-| `GET`    | `/api/revenues`                   | Params `from`, `to`, `channelIds`                            |
-| `POST`   | `/api/revenues`                   | `amount` **en euros**, `videoId` facultatif. Refusé sur une catégorie `isAuto` ou `scope: expense` |
-| `PATCH`  | `/api/revenues/:id`               | Modifier                                                     |
-| `DELETE` | `/api/revenues/:id`               | Supprimer                                                    |
-| `GET`    | `/api/expenses`                   | Params `from`, `to`, `channelIds`                            |
-| `POST`   | `/api/expenses`                   | `amount` **en euros**, positif, `videoId` facultatif. `categoryId` obligatoire, refusé sur `scope: revenue` |
-| `PATCH`  | `/api/expenses/:id`               | Modifier                                                     |
-| `DELETE` | `/api/expenses/:id`               | Supprimer                                                    |
+| Méthode  | Route                                | Rôle                                                                                                                                                                                                  |
+| -------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/health`                            | Sonde du conteneur                                                                                                                                                                                    |
+| `GET`    | `/api/analytics`                     | Séries + cumuls. Params : `from`, `to`, `granularity` (`day\|week\|month`), `channelIds` (CSV, vide = cumulé), `includeUnassigned`                                                                    |
+| `POST`   | `/api/analytics/collect`             | Collecte immédiate de toutes les chaînes                                                                                                                                                              |
+| `GET`    | `/api/channels`                      | Liste + `latestSnapshot` + `lastMetricDate`. Param `includeArchived`                                                                                                                                  |
+| `POST`   | `/api/channels`                      | Créer                                                                                                                                                                                                 |
+| `POST`   | `/api/channels/resolve`              | `{ query }` (@handle / URL / UC…) → identifiant + stats                                                                                                                                               |
+| `PATCH`  | `/api/channels/:id`                  | Modifier (`refreshToken: ""` efface, absent = conserve)                                                                                                                                               |
+| `DELETE` | `/api/channels/:id`                  | Supprimer                                                                                                                                                                                             |
+| `POST`   | `/api/channels/:id/collect`          | Collecter cette chaîne                                                                                                                                                                                |
+| `PUT`    | `/api/channels/:id/metrics`          | Saisie manuelle d'une journée (`source = manual`)                                                                                                                                                     |
+| `DELETE` | `/api/channels/:id/metrics/:date`    | Supprimer une journée                                                                                                                                                                                 |
+| `PUT`    | `/api/channels/:id/snapshots`        | Saisie manuelle d'un total d'abonnés                                                                                                                                                                  |
+| `GET`    | `/api/videos`                        | Sorties de vidéo. Params `from`, `to`, `channelIds`, `limit` (200 par défaut). Période **facultative** : le sélecteur de rattachement doit proposer des vidéos plus anciennes que la période affichée |
+| `GET`    | `/api/categories`                    | Params `includeArchived`, `scope` (`revenue                                                                                                                                                           | expense | both`;`both` répond toujours) |
+| `POST`   | `/api/categories`                    | Créer (`scope` défaut `revenue`)                                                                                                                                                                      |
+| `PATCH`  | `/api/categories/:id`                | Modifier / archiver                                                                                                                                                                                   |
+| `DELETE` | `/api/categories/:id`                | Refusé si `isAuto` ou si des revenus/dépenses y sont rattachés                                                                                                                                        |
+| `GET`    | `/api/revenues`                      | Params `from`, `to`, `channelIds`                                                                                                                                                                     |
+| `POST`   | `/api/revenues`                      | `amount` **en euros**, `videoId` facultatif. Refusé sur une catégorie `isAuto` ou `scope: expense`                                                                                                    |
+| `PATCH`  | `/api/revenues/:id`                  | Modifier                                                                                                                                                                                              |
+| `DELETE` | `/api/revenues/:id`                  | Supprimer                                                                                                                                                                                             |
+| `GET`    | `/api/expenses`                      | Params `from`, `to`, `channelIds`                                                                                                                                                                     |
+| `POST`   | `/api/expenses`                      | `amount` **en euros**, positif, `videoId` facultatif. `categoryId` obligatoire, refusé sur `scope: revenue`                                                                                           |
+| `PATCH`  | `/api/expenses/:id`                  | Modifier                                                                                                                                                                                              |
+| `DELETE` | `/api/expenses/:id`                  | Supprimer                                                                                                                                                                                             |
+| `GET`    | `/api/brands`                        | Param `includeArchived`                                                                                                                                                                               |
+| `GET`    | `/api/brands/stats`                  | Classements du dashboard. Params `from`, `to`, `channelIds`. **Déclaré avant `/:id`**                                                                                                                 |
+| `POST`   | `/api/brands`                        | Créer                                                                                                                                                                                                 |
+| `PATCH`  | `/api/brands/:id`                    | Modifier / archiver                                                                                                                                                                                   |
+| `DELETE` | `/api/brands/:id`                    | Refusé en 409 si des produits ou sponsos y sont rattachés                                                                                                                                             |
+| `GET`    | `/api/productions`                   | Params `statuses` (CSV), `channelIds`, `from`/`to` (sur `plannedDate`), `search`                                                                                                                      |
+| `GET`    | `/api/productions/overview`          | File d'attente + alertes + suggestions + créneaux. **Déclaré avant `/:id`**                                                                                                                           |
+| `GET`    | `/api/productions/:id`               | Une production (`ProductionView`)                                                                                                                                                                     |
+| `POST`   | `/api/productions`                   | Créer (entre en **fin** de file)                                                                                                                                                                      |
+| `POST`   | `/api/productions/reorder`           | `{ ids }` → l'ordre manuel de la file, le rang est l'index                                                                                                                                            |
+| `PATCH`  | `/api/productions/:id`               | Modifier (dont `script`)                                                                                                                                                                              |
+| `DELETE` | `/api/productions/:id`               | Supprimer ; produits et sponsos sont **détachés**, pas supprimés                                                                                                                                      |
+| `POST`   | `/api/productions/:id/publish`       | `{ videoId }` → rattache la sortie, coche la publication, passe en `done`                                                                                                                             |
+| `PUT`    | `/api/productions/:id/steps/:stepId` | Cocher une étape (idempotent)                                                                                                                                                                         |
+| `DELETE` | `/api/productions/:id/steps/:stepId` | Décocher                                                                                                                                                                                              |
+| `GET`    | `/api/production-steps`              | Référentiel des étapes. Param `includeArchived`                                                                                                                                                       |
+| `POST`   | `/api/production-steps`              | Créer                                                                                                                                                                                                 |
+| `PATCH`  | `/api/production-steps/:id`          | Modifier / archiver / réordonner                                                                                                                                                                      |
+| `DELETE` | `/api/production-steps/:id`          | Supprimer (les cases cochées partent en cascade)                                                                                                                                                      |
+| `GET`    | `/api/production-slots`              | Params `productionIds`, `from`, `to`, `includeDone`                                                                                                                                                   |
+| `POST`   | `/api/production-slots`              | `productionId` dans le corps                                                                                                                                                                          |
+| `PATCH`  | `/api/production-slots/:id`          | Modifier / marquer fait                                                                                                                                                                               |
+| `DELETE` | `/api/production-slots/:id`          | Supprimer                                                                                                                                                                                             |
+| `GET`    | `/api/products`                      | Params `statuses`, `brandIds`, `productionIds`, `channelIds`                                                                                                                                          |
+| `POST`   | `/api/products`                      | `value` **en euros**. `received` déclenche le revenu en nature                                                                                                                                        |
+| `PATCH`  | `/api/products/:id`                  | Modifier (re-synchronise le revenu)                                                                                                                                                                   |
+| `DELETE` | `/api/products/:id`                  | Supprimer (le revenu lié part avec)                                                                                                                                                                   |
+| `GET`    | `/api/sponsorships`                  | Mêmes params que les produits                                                                                                                                                                         |
+| `POST`   | `/api/sponsorships`                  | `amount` **en euros**. `paid` déclenche le revenu cash                                                                                                                                                |
+| `PATCH`  | `/api/sponsorships/:id`              | Modifier (re-synchronise le revenu)                                                                                                                                                                   |
+| `DELETE` | `/api/sponsorships/:id`              | Supprimer (le revenu lié part avec)                                                                                                                                                                   |
 
 Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube.
 
 ## Routes front
 
-| Route         | Page              | Contenu                                                    |
-| ------------- | ----------------- | ---------------------------------------------------------- |
-| `/`           | `DashboardPage`   | 4 cartes de stats, graphique d'argent, audience, répartitions revenus + dépenses, détail par chaîne, performance par vidéo |
-| `/revenus`    | `RevenuesPage`    | Liste + saisie des revenus manuels, avec vidéo rattachée    |
-| `/depenses`   | `ExpensesPage`    | Liste + saisie des dépenses, avec catégorie et vidéo rattachée |
-| `/chaines`    | `ChannelsPage`    | Cartes des chaînes, collecte, saisie manuelle               |
-| `/categories` | `CategoriesPage`  | Gestion des catégories : portée (revenus/dépenses/les deux), nature, couleur |
+| Route             | Page                   | Contenu                                                                                                                                                  |
+| ----------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`               | `DashboardPage`        | 10 cartes de stats, graphique d'argent, audience, répartitions revenus + dépenses, détail par chaîne, classements des partenaires, performance par vidéo |
+| `/production`     | `ProductionPage`       | Alertes, suggestions de rattachement, puis 3 onglets : file d'attente / planning / terminées                                                             |
+| `/production/:id` | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / Créneaux / Produits & sponsos / Notes                                                           |
+| `/partenariats`   | `PartnersPage`         | Deux onglets, Produits et Sponsors (onglet dans `?onglet=`)                                                                                              |
+| `/revenus`        | `RevenuesPage`         | Liste + saisie des revenus manuels, avec vidéo rattachée                                                                                                 |
+| `/depenses`       | `ExpensesPage`         | Liste + saisie des dépenses, avec catégorie et vidéo rattachée                                                                                           |
+| `/chaines`        | `ChannelsPage`         | Cartes des chaînes, collecte, saisie manuelle                                                                                                            |
+| `/categories`     | `CategoriesPage`       | Gestion des catégories : portée, nature, couleur                                                                                                         |
+| `/marques`        | `BrandsPage`           | Référentiel des marques (paramètres)                                                                                                                     |
+| `/etapes`         | `StepsPage`            | Référentiel des étapes de production (paramètres)                                                                                                        |
 
-`AppLayout` porte la navigation : Dashboard / Revenus / Dépenses dans la barre, **Chaînes et Catégories dans le menu ⚙ Paramètres** en haut à droite (ce sont des écrans de configuration, pas de lecture). La largeur du site est fixée une fois pour toutes par la constante `CONTAINER` (`max-w-[1800px]`), partagée par l'en-tête et le contenu.
+`AppLayout` porte la navigation : Dashboard / Production / Partenariats / Revenus / Dépenses dans la barre, **Chaînes, Catégories, Marques et Étapes dans le menu ⚙ Paramètres** en haut à droite (ce sont des écrans de configuration, pas de lecture). Le bouton ⚙ s'allume sur `SETTINGS_NAV`, pas sur l'absence de filtres : `/production` n'a pas de barre de filtres sans être pour autant un écran de configuration. La largeur du site est fixée une fois pour toutes par la constante `CONTAINER` (`max-w-[1800px]`), partagée par l'en-tête et le contenu.
 
-La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/chaines`, `/categories`) — configurer une chaîne ne dépend d'aucune période — et les pages ne la rendent donc plus elles-mêmes. Deux rangées, dans l'ordre où on s'en sert :
+La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/chaines`, `/categories`, `/marques`, `/etapes`, `/production`, `/partenariats` — une vidéo à écrire n'appartient à aucune fenêtre de temps) — configurer une chaîne ne dépend d'aucune période — et les pages ne la rendent donc plus elles-mêmes. Deux rangées, dans l'ordre où on s'en sert :
 
 1. **quand** : préréglages de période (dont `mtd`, « Ce mois », qui part du 1er du mois en cours), dates personnalisées, pas d'agrégation, et le bouton « Collecter » à l'autre bout de cette même rangée ;
 2. **quoi et comment le lire** : puces de chaînes, puis l'interrupteur **CA / Bénéfices** et les coches « Compter les produits reçus » et « Marquer les sorties de vidéo ».
@@ -252,23 +360,33 @@ Deux cartes déplient un panneau au survol (prop `details` de `StatCard`, ouvert
 
 La carte « Abonnés gagnés » met le **gain** en grand et le total en sous-titre : sur une période, ce qui se pilote est la progression, pas un cumul qui ne bouge qu'à la marge.
 
-Disposition du dashboard, de haut en bas : 8 cartes de stats (2 colonnes en mobile, 4 à partir de `lg`), les graphiques d'argent et d'audience **côte à côte** à partir de `2xl`, trois anneaux (revenus / dépenses / revenus par chaîne), puis le classement des vidéos à gauche et le tableau complet à droite.
+Disposition du dashboard, de haut en bas : 10 cartes de stats (2 colonnes en mobile, 5 à partir de `lg`), les graphiques d'argent et d'audience **côte à côte** à partir de `2xl`, trois anneaux (revenus / dépenses / revenus par chaîne), les deux classements de partenaires, puis le classement des vidéos à gauche et le tableau complet à droite.
+
+Les deux dernières cartes de stats — « Sponsos en cours » et « Produits attendus » — **ne suivent pas la période** : ce sont des états du pipeline, pas des flux. Une sponso signée en mars et pas encore payée est toujours à encaisser en juin. Leur sous-titre le dit, pour qu'on ne les lise pas comme un cumul de période.
 
 ## Hooks
 
-| Hook                                     | Fichier                                            | Rôle                                        |
-| ---------------------------------------- | -------------------------------------------------- | ------------------------------------------- |
-| `useFilters` / `FiltersProvider`         | `presentation/hooks/useFilters.tsx`                | Période, chaînes, mode CA/bénéfice, en nature, repères de sortie de vidéo. Persisté en localStorage |
-| `useAnalyticsParams`                     | idem                                                | Paramètres prêts pour `useAnalytics`         |
-| `useAnalytics`, `useCollectAll`          | `application/analytics/usecases/useAnalytics.ts`   | Requête principale du dashboard              |
-| `useChannels`, `useCreateChannel`, `useCollectChannel`, `useSaveManualMetrics`, `useSaveManualSnapshot`, `useResolveChannel` | `application/channel/usecases/useChannels.ts` | CRUD chaînes + collecte |
-| `useCategories`, `useCreateCategory`, … | `application/category/usecases/useCategories.ts`  | Catégories (param `{ includeArchived, scope }`) |
-| `useVideos`                              | `application/video/usecases/useVideos.ts`         | Sorties de vidéo pour le sélecteur de rattachement (cache 5 min) |
-| `useRevenues`, `useCreateRevenue`, …    | `application/revenue/usecases/useRevenues.ts`     | Revenus                                      |
-| `useExpenses`, `useCreateExpense`, …    | `application/expense/usecases/useExpenses.ts`     | Dépenses                                     |
-| `useTheme`, `useLocalStorage`            | `presentation/hooks/`                              | Thème clair/sombre, stockage protégé          |
+| Hook                                                                                                                                                                                              | Fichier                                               | Rôle                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `useFilters` / `FiltersProvider`                                                                                                                                                                  | `presentation/hooks/useFilters.tsx`                   | Période, chaînes, mode CA/bénéfice, en nature, repères de sortie de vidéo. Persisté en localStorage |
+| `useAnalyticsParams`                                                                                                                                                                              | idem                                                  | Paramètres prêts pour `useAnalytics`                                                                |
+| `useAnalytics`, `useCollectAll`                                                                                                                                                                   | `application/analytics/usecases/useAnalytics.ts`      | Requête principale du dashboard                                                                     |
+| `useChannels`, `useCreateChannel`, `useCollectChannel`, `useSaveManualMetrics`, `useSaveManualSnapshot`, `useResolveChannel`                                                                      | `application/channel/usecases/useChannels.ts`         | CRUD chaînes + collecte                                                                             |
+| `useCategories`, `useCreateCategory`, …                                                                                                                                                           | `application/category/usecases/useCategories.ts`      | Catégories (param `{ includeArchived, scope }`)                                                     |
+| `useVideos`                                                                                                                                                                                       | `application/video/usecases/useVideos.ts`             | Sorties de vidéo pour le sélecteur de rattachement (cache 5 min)                                    |
+| `useRevenues`, `useCreateRevenue`, …                                                                                                                                                              | `application/revenue/usecases/useRevenues.ts`         | Revenus                                                                                             |
+| `useExpenses`, `useCreateExpense`, …                                                                                                                                                              | `application/expense/usecases/useExpenses.ts`         | Dépenses                                                                                            |
+| `useTheme`, `useLocalStorage`                                                                                                                                                                     | `presentation/hooks/`                                 | Thème clair/sombre, stockage protégé                                                                |
+| `useBrands`, `useBrandStats`, `useCreateBrand`, …                                                                                                                                                 | `application/brand/usecases/useBrands.ts`             | Marques + classements du dashboard                                                                  |
+| `useProductions`, `useProduction`, `useProductionOverview`, `useCreateProduction`, `useUpdateProduction`, `useDeleteProduction`, `useReorderProductions`, `usePublishProduction`, `useToggleStep` | `application/production/usecases/useProductions.ts`   | Vidéos en préparation                                                                               |
+| `useProductionSteps`, `useCreateStep`, `useUpdateStep`, `useDeleteStep`                                                                                                                           | idem                                                  | Référentiel des étapes (cache 5 min)                                                                |
+| `useProductionSlots`, `useCreateSlot`, `useUpdateSlot`, `useDeleteSlot`                                                                                                                           | idem                                                  | Créneaux de travail                                                                                 |
+| `useProducts`, `useCreateProduct`, …                                                                                                                                                              | `application/product/usecases/useProducts.ts`         | Produits reçus                                                                                      |
+| `useSponsorships`, `useCreateSponsorship`, …                                                                                                                                                      | `application/sponsorship/usecases/useSponsorships.ts` | Sponsos                                                                                             |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
+
+`PRODUCTION_ROOTS` couvre le module de production, et `PARTNER_ROOTS` y ajoute `MONEY_ROOTS` + `brandStats` : **une écriture de produit ou de sponso crée, modifie ou supprime un revenu**, les vues d'argent doivent donc repartir en même temps. Le découpage n'est pas plus fin volontairement — un seul changement de statut peut faire bouger les alertes, les compteurs de la file et les classements, et le module est assez petit pour que le refetch soit indolore.
 
 ## Patterns
 
@@ -278,6 +396,10 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 - **Params de route** : toujours via `param(req, 'id')` (`presentation/helpers.ts`) — Express 5 type `req.params` en `string | string[] | undefined`.
 - **Migrations** : tableau ordonné dans `infrastructure/db/migrations.ts`, suivi par `PRAGMA user_version`, appliquées en transaction au démarrage. **Ajouter une migration, ne jamais modifier une existante.** La migration 3 ajoute la table `videos`. La migration 4 ajoute les compteurs par vidéo et les colonnes `video_id` de `revenue_entries` / `expense_entries` — une clé étrangère n'est ajoutable par `ALTER TABLE` que si son défaut vaut `NULL`, ce qui est le cas ici. La migration 2 renomme `revenue_categories` en `categories` (SQLite réécrit les clés étrangères des autres tables toute seule), ajoute `scope`, et transforme `tax_entries` en `expense_entries` en rattachant l'existant à la catégorie `impots`.
 - **Couleurs de chaîne** attribuées en rotation à la création (`DEFAULT_COLORS`).
+- **Use case propriétaire d'une écriture** : dès qu'une écriture a un effet de bord ailleurs (les revenus générés), elle vit dans un use case (`ManageProducts`, `ManageSponsorships`, `ManageProductions`) et la route ne touche plus le dépôt. Le dépôt garde une méthode technique (`setRevenueEntryId`) réservée à ce use case.
+- **Sentinelle des `Select` facultatifs** : `NONE` / `toSelectValue` / `fromSelectValue` (`presentation/components/forms/selectNone.ts`). Radix refuse une `SelectItem` de valeur vide ; la sentinelle est partagée pour que trois formulaires n'en inventent pas trois différentes.
+- **Référentiel plutôt que colonnes** : les étapes de production sont des lignes (`production_steps`) et l'état « coché » est la **présence** d'une ligne dans `production_step_checks`. En ajouter une ne demande aucune migration, et la date de complétion vient gratuitement.
+- **Migration 5** ajoute `brands`, `production_steps`, `productions`, `production_step_checks`, `production_slots`, `products`, `sponsorships`, et la colonne `revenue_entries.origin`.
 
 ## Points d'attention
 
@@ -309,6 +431,17 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 - **Le tableau de vidéos est trié par en-tête cliquable** (`VideoPerformanceTable`), premier clic décroissant : sur des vues ou des euros, c'est presque toujours ce qu'on cherche. Ses colonnes suivent l'ordre du calcul : AdSense, Revenus liés, En nature, **CA**, Dépenses liées, **Bénéfices** — la soustraction se lit sur la ligne. Les deux montants composés sont affichés en même temps, indépendamment de l'interrupteur CA/Bénéfices du graphique d'argent ; seule la case « avantages en nature » les fait bouger. Le calcul vit dans `charts/videoPerformance.ts` (`withMoney`, `sumVideoRows`) et délègue la règle à `revenueMath` : les barres et le tableau doivent afficher le même montant pour la même vidéo.
 - **Le tableau de performance par vidéo ne se compare pas aux totaux de la période.** Ses compteurs sont des cumuls depuis la sortie de chaque vidéo, et son argent rattaché n'a pas de borne de date ; les totaux du dashboard, eux, comptent ce qui s'est passé pendant la période, vieilles vidéos comprises. Les deux chiffres sont justes et différents.
 - **Onglets plutôt que double axe** dans le graphique par vidéo : vues, abonnés et euros n'ont pas la même échelle, et un second axe y ferait lire des corrélations inventées.
+- **Un revenu généré ne se modifie pas depuis l'écran Revenus.** L'API répond 409 et `RevenuesPage` grise les deux boutons en affichant un badge cliquable vers la fiche : sans ce badge, le bouton grisé serait vécu comme une panne. Corriger le montant se fait sur le produit ou la sponso, et la mise à jour redescend toute seule.
+- **La production porte la chaîne et la vidéo, pas le produit.** Changer l'une des deux sur une production re-synchronise les revenus de tous ses produits et sponsos (`ManageProductions.update` → `resyncProduction`). Sans ça, une sponso resterait rattachée à l'ancienne vidéo et fausserait son tableau de performance.
+- **Supprimer une production ne supprime pas ses produits ni ses sponsos** (`ON DELETE SET NULL`), mais `ManageProductions.remove` les re-synchronise après coup : leurs revenus doivent perdre le rattachement à la vidéo qui vient de disparaître. Les identifiants sont collectés **avant** la suppression, sinon plus rien ne les relierait.
+- **Les suggestions de rattachement se font sur la chaîne et la date, jamais sur le titre.** Un titre de travail ressemble rarement au titre final, et une correspondance textuelle approximative proposerait des rattachements faux avec assurance. Elles sont toujours **proposées**, jamais appliquées seules.
+- **Les vidéos n'arrivent qu'avec une collecte** — donc « Marquer publiée » n'a rien à proposer sur une base qui n'a jamais collecté. Même piège que la case « Marquer les sorties de vidéo ».
+- **`PublishDialog` trie les sorties par proximité avec la date visée**, pas par date : celle qu'on cherche est presque toujours sortie près du jour prévu, et elle doit être en tête sans faire défiler des mois d'historique.
+- **L'éditeur de script n'enregistre pas tout seul.** Perdre une version d'un script coûte plus cher qu'un clic, et une sauvegarde continue écraserait un brouillon en cours de réflexion. L'indicateur « Non enregistré » rend l'oubli visible. Le compteur affiche la **durée de lecture** (150 mots/min) plutôt que des caractères : c'est la seule mesure qui compte quand on écrit pour être dit à l'oral.
+- **Le rendu markdown est stylé à la main** (`.prose-script` dans `index.css`), sans `@tailwindcss/typography` : un script n'a besoin que de titres, listes, gras et tableaux, et la palette doit rester celle du thème plutôt qu'un gris importé qui jurerait en mode sombre. `react-markdown` est isolé dans son propre chunk (`manualChunks.markdown`) : il n'est téléchargé que par ceux qui ouvrent une fiche de production.
+- **Le Gantt est une grille CSS maison**, sans bibliothèque : une barre par production, une colonne par jour, rien d'autre que des jours à compter. Sans `startDate`, la barre occupe le seul jour visé — une vidéo qu'on n'a pas commencé à planifier ne doit pas paraître étalée sur trois semaines.
+- **Les classements de partenaires sont des barres, pas des anneaux.** Sur un top-N ordonné, ce qui se lit est le rang et l'écart au premier : une longueur le donne, un angle non. Les barres sont proportionnelles au **maximum** de la liste et non au total — un classement n'est pas une répartition, et rapporter au total écraserait tout le bas de liste.
+- **`StepsPage` édite en champs non contrôlés, validés à la sortie** (`defaultValue` + `onBlur`) : un `onChange` branché sur la mutation enverrait une requête par lettre tapée.
 - **Rattacher une vidéo force la chaîne** du revenu ou de la dépense (une vidéo appartient à une seule chaîne), et changer de chaîne détache la vidéo. `VideoSelect` garde en tête de liste la vidéo déjà rattachée même si elle sort du filtre courant, sinon une édition l'effacerait silencieusement.
 
 ## Déploiement
@@ -316,11 +449,11 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 Images publiées sur GHCR par `.github/workflows/release.yml` :
 `ghcr.io/aymericlefeyer/aylabs-creator-studio-api` et `-web`.
 
-| Déclencheur              | Tags d'image produits                     |
-| ------------------------ | ----------------------------------------- |
-| push sur `main`          | `latest` + `main-sha-<court>`             |
-| tag `v1.2.3`             | `1.2.3`, `1.2`, `latest`                  |
-| déclenchement manuel     | le tag saisi (`latest` par défaut)        |
+| Déclencheur          | Tags d'image produits              |
+| -------------------- | ---------------------------------- |
+| push sur `main`      | `latest` + `main-sha-<court>`      |
+| tag `v1.2.3`         | `1.2.3`, `1.2`, `latest`           |
+| déclenchement manuel | le tag saisi (`latest` par défaut) |
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 

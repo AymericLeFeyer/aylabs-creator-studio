@@ -188,6 +188,145 @@ const migrations: Migration[] = [
       CREATE INDEX idx_expense_entries_video ON expense_entries(video_id);
     `,
   },
+  {
+    version: 5,
+    name: 'production',
+    // Le module de production : ce qui se passe AVANT la publication.
+    // Une `production` est une vidéo en préparation ; le jour où elle sort, elle se
+    // rattache à la ligne `videos` collectée sur YouTube (`video_id`) et son travail
+    // reste consultable au lieu d'être perdu.
+    up: `
+      -- Referentiel commun aux produits et aux sponsos : sans lui, « la marque qui
+      -- donne le plus » ne serait qu'un champ texte impossible a regrouper.
+      CREATE TABLE brands (
+        id            TEXT PRIMARY KEY,
+        name          TEXT NOT NULL,
+        website       TEXT,
+        contact_name  TEXT,
+        contact_email TEXT,
+        color         TEXT NOT NULL DEFAULT '#64748b',
+        notes         TEXT,
+        is_archived   INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      );
+      CREATE INDEX idx_brands_name ON brands(name);
+
+      -- Etapes configurables (ecriture, montage, miniature...). Ajouter une etape ne
+      -- doit pas demander une migration : c'est une ligne, pas une colonne.
+      CREATE TABLE production_steps (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        color       TEXT NOT NULL DEFAULT '#64748b',
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        is_archived INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+
+      CREATE TABLE productions (
+        id            TEXT PRIMARY KEY,
+        channel_id    TEXT REFERENCES channels(id) ON DELETE SET NULL,
+        -- Sortie reelle correspondante, renseignee a la publication.
+        video_id      TEXT REFERENCES videos(id) ON DELETE SET NULL,
+        title         TEXT NOT NULL,
+        status        TEXT NOT NULL DEFAULT 'idea'
+                      CHECK (status IN ('idea','in_progress','paused','done')),
+        -- Pourquoi ca n'avance pas (attente d'un retour de marque, d'un produit...).
+        paused_reason TEXT,
+        paused_at     TEXT,
+        start_date    TEXT,
+        planned_date  TEXT,
+        script        TEXT NOT NULL DEFAULT '',
+        notes         TEXT,
+        -- Ordre manuel de la file d'attente : l'outil ne deduit aucune priorite.
+        sort_order    INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      );
+      CREATE INDEX idx_productions_status ON productions(status);
+      CREATE INDEX idx_productions_sort ON productions(sort_order);
+      -- Une sortie ne peut representer qu'une seule production.
+      CREATE UNIQUE INDEX idx_productions_video
+        ON productions(video_id) WHERE video_id IS NOT NULL;
+
+      -- La PRESENCE de la ligne vaut « case cochee » : cocher/decocher est un
+      -- INSERT/DELETE, et la date de completion vient gratuitement avec.
+      CREATE TABLE production_step_checks (
+        production_id TEXT NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+        step_id       TEXT NOT NULL REFERENCES production_steps(id) ON DELETE CASCADE,
+        checked_at    TEXT NOT NULL,
+        PRIMARY KEY (production_id, step_id)
+      );
+
+      -- Creneaux de travail. Les heures sont facultatives : « mardi » est un creneau.
+      CREATE TABLE production_slots (
+        id            TEXT PRIMARY KEY,
+        production_id TEXT NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+        step_id       TEXT REFERENCES production_steps(id) ON DELETE SET NULL,
+        date          TEXT NOT NULL,
+        start_time    TEXT,
+        end_time      TEXT,
+        label         TEXT NOT NULL DEFAULT '',
+        done          INTEGER NOT NULL DEFAULT 0,
+        notes         TEXT,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      );
+      CREATE INDEX idx_production_slots_date ON production_slots(date);
+      CREATE INDEX idx_production_slots_production ON production_slots(production_id);
+
+      CREATE TABLE products (
+        id               TEXT PRIMARY KEY,
+        brand_id         TEXT REFERENCES brands(id) ON DELETE SET NULL,
+        production_id    TEXT REFERENCES productions(id) ON DELETE SET NULL,
+        channel_id       TEXT REFERENCES channels(id) ON DELETE SET NULL,
+        -- Revenu en nature genere quand le produit passe a « recu ».
+        revenue_entry_id TEXT REFERENCES revenue_entries(id) ON DELETE SET NULL,
+        name             TEXT NOT NULL,
+        url              TEXT,
+        value_cents      INTEGER NOT NULL DEFAULT 0,
+        status           TEXT NOT NULL DEFAULT 'discussion'
+                         CHECK (status IN ('discussion','confirmed','shipped','received','returned','cancelled')),
+        requested_at     TEXT,
+        deadline         TEXT,
+        received_at      TEXT,
+        notes            TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+      CREATE INDEX idx_products_status ON products(status);
+      CREATE INDEX idx_products_brand ON products(brand_id);
+      CREATE INDEX idx_products_production ON products(production_id);
+      CREATE INDEX idx_products_deadline ON products(deadline);
+
+      CREATE TABLE sponsorships (
+        id               TEXT PRIMARY KEY,
+        brand_id         TEXT REFERENCES brands(id) ON DELETE SET NULL,
+        production_id    TEXT REFERENCES productions(id) ON DELETE SET NULL,
+        channel_id       TEXT REFERENCES channels(id) ON DELETE SET NULL,
+        -- Revenu cash genere quand la sponso passe a « payee ».
+        revenue_entry_id TEXT REFERENCES revenue_entries(id) ON DELETE SET NULL,
+        label            TEXT NOT NULL,
+        amount_cents     INTEGER NOT NULL DEFAULT 0,
+        status           TEXT NOT NULL DEFAULT 'discussion'
+                         CHECK (status IN ('discussion','todo','in_progress','paid','cancelled')),
+        deadline         TEXT,
+        paid_at          TEXT,
+        notes            TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+      CREATE INDEX idx_sponsorships_status ON sponsorships(status);
+      CREATE INDEX idx_sponsorships_brand ON sponsorships(brand_id);
+      CREATE INDEX idx_sponsorships_production ON sponsorships(production_id);
+      CREATE INDEX idx_sponsorships_deadline ON sponsorships(deadline);
+
+      -- D'ou vient un revenu. Une entree generee par un produit ou une sponso ne se
+      -- modifie plus depuis l'ecran Revenus, sinon les deux cotes divergent en silence.
+      ALTER TABLE revenue_entries ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual';
+    `,
+  },
 ];
 
 /**

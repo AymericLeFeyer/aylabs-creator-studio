@@ -1,5 +1,18 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Moon, Radio, Receipt, Settings, Sun, Tags, Wallet } from 'lucide-react';
+import {
+  BarChart3,
+  Building2,
+  Clapperboard,
+  Handshake,
+  ListChecks,
+  Moon,
+  Radio,
+  Receipt,
+  Settings,
+  Sun,
+  Tags,
+  Wallet,
+} from 'lucide-react';
 import { useTheme } from './hooks/useTheme.ts';
 import { Button } from './components/ui/button.tsx';
 import {
@@ -18,6 +31,8 @@ const CONTAINER = 'mx-auto w-full max-w-[1800px] px-3 sm:px-5';
 /** Les écrans de lecture : ceux qui portent la barre de filtres. */
 const NAV = [
   { to: '/', label: 'Dashboard', icon: BarChart3, end: true },
+  { to: '/production', label: 'Production', icon: Clapperboard, end: false },
+  { to: '/partenariats', label: 'Partenariats', icon: Handshake, end: false },
   { to: '/revenus', label: 'Revenus', icon: Wallet, end: false },
   { to: '/depenses', label: 'Dépenses', icon: Receipt, end: false },
 ];
@@ -26,13 +41,24 @@ const NAV = [
 const SETTINGS_NAV = [
   { to: '/chaines', label: 'Chaînes', icon: Radio },
   { to: '/categories', label: 'Catégories', icon: Tags },
+  { to: '/marques', label: 'Marques', icon: Building2 },
+  { to: '/etapes', label: 'Étapes', icon: ListChecks },
 ];
 
 /**
- * Routes sans barre de filtres : configurer une chaîne ou une catégorie ne dépend
- * ni d'une période ni d'une sélection de chaînes.
+ * Routes sans barre de filtres : configurer une chaîne ou une catégorie ne dépend ni
+ * d'une période ni d'une sélection de chaînes. Le module de production non plus — une
+ * vidéo à écrire n'appartient à aucune fenêtre de temps, et les écrans concernés
+ * portent leurs propres filtres (statut, onglet).
  */
-const ROUTES_WITHOUT_FILTERS = ['/chaines', '/categories'];
+const ROUTES_WITHOUT_FILTERS = [
+  '/chaines',
+  '/categories',
+  '/marques',
+  '/etapes',
+  '/production',
+  '/partenariats',
+];
 
 export const AppLayout = () => {
   const { theme, toggle } = useTheme();
@@ -40,7 +66,9 @@ export const AppLayout = () => {
   const navigate = useNavigate();
 
   const showFilters = !ROUTES_WITHOUT_FILTERS.some((route) => location.pathname.startsWith(route));
-  const inSettings = !showFilters;
+  // « Dans les paramètres » se déduit du menu lui-même : /production n'a pas de filtres
+  // sans pour autant être un écran de configuration.
+  const inSettings = SETTINGS_NAV.some((item) => location.pathname.startsWith(item.to));
 
   return (
     <div className="min-h-screen bg-background">

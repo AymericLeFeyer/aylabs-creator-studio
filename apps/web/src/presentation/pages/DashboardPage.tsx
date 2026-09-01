@@ -1,8 +1,24 @@
 import { useMemo } from 'react';
-import { Clock, Eye, Gift, Heart, Receipt, Users, Video, Wallet } from 'lucide-react';
+import {
+  Clock,
+  Eye,
+  Gift,
+  Handshake,
+  Heart,
+  PackageOpen,
+  Receipt,
+  Users,
+  Video,
+  Wallet,
+} from 'lucide-react';
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
 import { useChannels } from '../../application/channel/usecases/useChannels.ts';
 import { useRevenues } from '../../application/revenue/usecases/useRevenues.ts';
+import { useBrandStats } from '../../application/brand/usecases/useBrands.ts';
+import { useProducts } from '../../application/product/usecases/useProducts.ts';
+import { useSponsorships } from '../../application/sponsorship/usecases/useSponsorships.ts';
+import { PENDING_PRODUCT_STATUSES } from '../../domain/product/entities/Product.ts';
+import { PENDING_SPONSORSHIP_STATUSES } from '../../domain/sponsorship/entities/Sponsorship.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
 import {
   cashRevenue,
@@ -10,12 +26,19 @@ import {
   moneyValue,
 } from '../../domain/analytics/services/revenueMath.ts';
 import { NATURE_LABELS } from '../../domain/category/entities/Category.ts';
-import { formatHours, formatMoney, formatNumber, formatSigned } from '../../shared/format.ts';
+import {
+  formatHours,
+  formatMoney,
+  formatNumber,
+  formatSigned,
+  toIsoDate,
+} from '../../shared/format.ts';
 import { StatCard } from '../components/StatCard.tsx';
 import { InKindList, VideoList } from '../components/StatCardLists.tsx';
 import { MoneyChart } from '../components/charts/MoneyChart.tsx';
 import { AudienceChart } from '../components/charts/AudienceChart.tsx';
 import { DonutBreakdown, type DonutSlice } from '../components/charts/DonutBreakdown.tsx';
+import { RankingBars, type RankingRow } from '../components/charts/RankingBars.tsx';
 import { VideoPerformanceChart } from '../components/charts/VideoPerformanceChart.tsx';
 import { VideoPerformanceTable } from '../components/charts/VideoPerformanceTable.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
@@ -36,6 +59,66 @@ export const DashboardPage = () => {
   const inKindEntries = useMemo(
     () => revenues.filter((entry) => entry.categoryNature === 'in_kind'),
     [revenues],
+  );
+
+  // Classements des partenaires : mêmes bornes que le reste de l'écran, sans quoi ils
+  // contrediraient les cartes du dessus.
+  const { data: brandStats = [] } = useBrandStats({
+    from: filters.from,
+    to: filters.to,
+    channelIds: filters.channelIds,
+  });
+
+  // Le pipeline, lui, n'est **pas** borné par la période : une sponso signée en mars et
+  // pas encore payée reste à encaisser en juin. C'est un état, pas un flux.
+  const { data: products = [] } = useProducts();
+  const { data: sponsorships = [] } = useSponsorships();
+
+  const pipeline = useMemo(() => {
+    const today = toIsoDate(new Date());
+    const pendingProducts = products.filter((product) =>
+      PENDING_PRODUCT_STATUSES.includes(product.status),
+    );
+    const pendingSponsorships = sponsorships.filter((sponsorship) =>
+      PENDING_SPONSORSHIP_STATUSES.includes(sponsorship.status),
+    );
+    return {
+      productsPending: pendingProducts.length,
+      productsLate: pendingProducts.filter(
+        (product) => product.deadline !== null && product.deadline < today,
+      ).length,
+      sponsorshipsPending: pendingSponsorships.length,
+      sponsorshipsPendingCents: pendingSponsorships.reduce(
+        (total, sponsorship) => total + sponsorship.amountCents,
+        0,
+      ),
+    };
+  }, [products, sponsorships]);
+
+  const brandRows = useMemo<RankingRow[]>(
+    () =>
+      brandStats.map((brand) => ({
+        id: brand.brandId,
+        label: brand.brandName,
+        color: brand.color,
+        value: brand.productsValueCents,
+        formatted: formatMoney(brand.productsValueCents),
+        hint: `${brand.productsCount} produit(s)`,
+      })),
+    [brandStats],
+  );
+
+  const sponsorRows = useMemo<RankingRow[]>(
+    () =>
+      brandStats.map((brand) => ({
+        id: brand.brandId,
+        label: brand.brandName,
+        color: brand.color,
+        value: brand.sponsorshipsPaidCents,
+        formatted: formatMoney(brand.sponsorshipsPaidCents),
+        hint: `${brand.sponsorshipsPaidCount} sponso(s)`,
+      })),
+    [brandStats],
   );
 
   const moneyOptions = { mode: filters.moneyMode, includeInKind: filters.includeInKind };
@@ -85,7 +168,7 @@ export const DashboardPage = () => {
 
       {data && (
         <>
-          <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
             <StatCard
               label={filters.moneyMode === 'profit' ? 'Bénéfices' : "Chiffre d'affaires"}
               value={formatMoney(moneyValue(data.totals, moneyOptions))}
@@ -153,6 +236,25 @@ export const DashboardPage = () => {
               hint={`${formatNumber(data.totals.comments)} commentaires`}
               icon={<Heart className="h-4 w-4" />}
             />
+
+            {/* Ces deux-là ne suivent pas la période : ce sont des états du pipeline,
+                pas des flux. Le sous-titre le dit plutôt que de laisser croire à un cumul. */}
+            <StatCard
+              label="Sponsos en cours"
+              value={formatMoney(pipeline.sponsorshipsPendingCents)}
+              hint={`${pipeline.sponsorshipsPending} en attente de paiement`}
+              icon={<Handshake className="h-4 w-4" />}
+              accent={pipeline.sponsorshipsPendingCents > 0 ? 'var(--color-positive)' : undefined}
+            />
+            <StatCard
+              label="Produits attendus"
+              value={formatNumber(pipeline.productsPending)}
+              hint={
+                pipeline.productsLate > 0 ? `${pipeline.productsLate} en retard` : 'aucun retard'
+              }
+              icon={<PackageOpen className="h-4 w-4" />}
+              accent={pipeline.productsLate > 0 ? 'var(--color-negative)' : undefined}
+            />
           </div>
 
           {/* Même abscisse, survol synchronisé : côte à côte, une bosse de vues et un
@@ -196,6 +298,23 @@ export const DashboardPage = () => {
               slices={channelSlices}
               emptyLabel="Aucun revenu rattaché à une chaîne sur cette période."
               totalHint="hors revenus globaux"
+            />
+          </div>
+
+          {/* Barres horizontales et non anneaux : sur un top-N ordonné, c'est le rang et
+              l'écart au premier qu'on lit, deux choses qu'une longueur donne d'un coup. */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <RankingBars
+              title="Marques les plus généreuses"
+              description="Valeur des produits reçus sur la période."
+              rows={brandRows}
+              emptyLabel="Aucun produit reçu sur cette période."
+            />
+            <RankingBars
+              title="Sponsors qui paient le plus"
+              description="Sponsos encaissées sur la période."
+              rows={sponsorRows}
+              emptyLabel="Aucune sponso encaissée sur cette période."
             />
           </div>
 

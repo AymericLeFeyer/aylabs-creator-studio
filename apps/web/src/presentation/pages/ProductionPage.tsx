@@ -1,0 +1,264 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { CalendarClock, Clock, ExternalLink, Plus, Sparkles } from 'lucide-react';
+import {
+  useProductionOverview,
+  useProductions,
+  useProductionSlots,
+  useProductionSteps,
+  usePublishProduction,
+  useReorderProductions,
+  useToggleStep,
+} from '../../application/production/usecases/useProductions.ts';
+import { formatDate } from '../../shared/format.ts';
+import { Badge } from '../components/ui/badge.tsx';
+import { Button } from '../components/ui/button.tsx';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.tsx';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
+import { EmptyState } from '../components/EmptyState.tsx';
+import { AlertsBanner } from '../components/production/AlertsBanner.tsx';
+import { ProductionCard } from '../components/production/ProductionCard.tsx';
+import { ProductionGantt } from '../components/production/ProductionGantt.tsx';
+import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
+import { formatSlotTime } from '../../domain/production/entities/ProductionSlot.ts';
+
+/** « 4 h 30 » — la charge d'une semaine se lit en heures, pas en minutes. */
+const formatLoad = (minutes: number): string => {
+  if (minutes === 0) return 'aucun horaire posé';
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} h` : `${hours} h ${String(rest).padStart(2, '0')}`;
+};
+
+export const ProductionPage = () => {
+  const { data: overview, isLoading } = useProductionOverview();
+  const { data: steps = [] } = useProductionSteps();
+  const { data: done = [] } = useProductions({ statuses: ['done'] });
+  const { data: slots = [] } = useProductionSlots();
+
+  const reorder = useReorderProductions();
+  const toggleStep = useToggleStep();
+  const publish = usePublishProduction();
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const queue = overview?.queue ?? [];
+
+  /** Déplace une carte d'un cran et réécrit l'ordre complet de la file. */
+  const move = (index: number, direction: -1 | 1) => {
+    const next = [...queue];
+    const target = index + direction;
+    const current = next[index];
+    const other = next[target];
+    if (!current || !other) return;
+    next[index] = other;
+    next[target] = current;
+    reorder.mutate(next.map((production) => production.id));
+  };
+
+  if (!isLoading && queue.length === 0 && done.length === 0) {
+    return (
+      <>
+        <EmptyState
+          title="Aucune vidéo en production"
+          description="Crée ta première vidéo : elle portera son script, ses créneaux, ses produits et ses sponsos, puis se rattachera à sa sortie le jour de la publication."
+          actionLabel="Nouvelle vidéo"
+          onAction={() => setDialogOpen(true)}
+        />
+        <ProductionDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold">Production</h1>
+          <p className="text-sm text-muted-foreground">
+            {queue.length} vidéo(s) en cours · {formatLoad(overview?.weekLoadMinutes ?? 0)} planifié
+            cette semaine
+          </p>
+        </div>
+        <Button size="sm" onClick={() => setDialogOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Nouvelle vidéo
+        </Button>
+      </div>
+
+      {overview && <AlertsBanner alerts={overview.alerts} />}
+
+      {/* Rapprochements possibles avec les sorties déjà collectées : proposés, jamais
+          appliqués tout seuls — deux vidéos de la même semaine se ressembleraient trop. */}
+      {overview && overview.suggestions.length > 0 && (
+        <Card className="border-[var(--in-kind)]/40 bg-[var(--in-kind)]/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Sparkles className="h-4 w-4" />
+              Sorties détectées
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {overview.suggestions.map((suggestion) => (
+              <div
+                key={suggestion.productionId}
+                className="flex flex-wrap items-center justify-between gap-2 text-sm"
+              >
+                <span className="min-w-0">
+                  <span className="font-medium">{suggestion.productionTitle}</span>
+                  <span className="text-muted-foreground">
+                    {' '}
+                    ressemble à « {suggestion.videoTitle} », sortie le{' '}
+                    {formatDate(suggestion.videoDate)}
+                  </span>
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={publish.isPending}
+                  onClick={() =>
+                    publish.mutate({
+                      id: suggestion.productionId,
+                      videoId: suggestion.videoId,
+                    })
+                  }
+                >
+                  Rattacher
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      <Tabs defaultValue="queue">
+        <TabsList>
+          <TabsTrigger value="queue">File d'attente</TabsTrigger>
+          <TabsTrigger value="planning">Planning</TabsTrigger>
+          <TabsTrigger value="done">Terminées ({done.length})</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="queue">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="space-y-2.5">
+              {queue.map((production, index) => (
+                <ProductionCard
+                  key={production.id}
+                  production={production}
+                  steps={steps}
+                  highlighted={production.id === overview?.nextId}
+                  onToggleStep={(stepId, checked) =>
+                    toggleStep.mutate({ id: production.id, stepId, checked })
+                  }
+                  onMoveUp={index > 0 ? () => move(index, -1) : undefined}
+                  onMoveDown={index < queue.length - 1 ? () => move(index, 1) : undefined}
+                />
+              ))}
+              {queue.length === 0 && (
+                <Card className="p-8 text-center text-sm text-muted-foreground">
+                  Rien en cours. Tout est publié.
+                </Card>
+              )}
+            </div>
+
+            {/* Les créneaux à venir, tous projets confondus : ce que dit l'agenda. */}
+            <Card className="h-fit">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <CalendarClock className="h-4 w-4" />
+                  Prochains créneaux
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2.5">
+                {(overview?.upcomingSlots ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Aucun créneau posé sur les 14 prochains jours.
+                  </p>
+                ) : (
+                  (overview?.upcomingSlots ?? []).map((slot) => (
+                    <Link
+                      key={slot.id}
+                      to={`/production/${slot.productionId}`}
+                      className="flex items-start gap-2 rounded-md p-1.5 text-sm transition-colors hover:bg-muted/60"
+                    >
+                      <span
+                        className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: slot.channelColor ?? 'var(--muted-foreground)' }}
+                        aria-hidden
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">
+                          {slot.label || slot.stepName || 'Créneau'}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {formatDate(slot.date)} · {formatSlotTime(slot)} · {slot.productionTitle}
+                        </span>
+                      </span>
+                    </Link>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="planning">
+          <ProductionGantt productions={[...queue, ...done]} slots={slots} />
+        </TabsContent>
+
+        <TabsContent value="done">
+          {done.length === 0 ? (
+            <Card className="p-8 text-center text-sm text-muted-foreground">
+              Aucune vidéo publiée depuis l'outil pour l'instant.
+            </Card>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {done.map((production) => (
+                <Card key={production.id} className="overflow-hidden">
+                  {production.videoThumbnailUrl && (
+                    <img
+                      src={production.videoThumbnailUrl}
+                      alt=""
+                      className="aspect-video w-full object-cover"
+                    />
+                  )}
+                  <div className="space-y-2 p-4">
+                    <Link
+                      to={`/production/${production.id}`}
+                      className="block font-medium hover:underline"
+                    >
+                      <span className="line-clamp-2">
+                        {production.videoTitle ?? production.title}
+                      </span>
+                    </Link>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="secondary">{production.channelName ?? 'Sans chaîne'}</Badge>
+                      {production.plannedDate && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" aria-hidden />
+                          {formatDate(production.plannedDate)}
+                        </span>
+                      )}
+                      {production.videoExternalId && (
+                        <a
+                          href={`https://www.youtube.com/watch?v=${production.videoExternalId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1 hover:text-foreground"
+                        >
+                          <ExternalLink className="h-3 w-3" aria-hidden />
+                          YouTube
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <ProductionDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+    </div>
+  );
+};

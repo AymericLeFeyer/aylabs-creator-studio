@@ -7,6 +7,14 @@ import { categoriesRouter, revenuesRouter } from './routes/revenues.ts';
 import { expensesRouter } from './routes/expenses.ts';
 import { analyticsRouter } from './routes/analytics.ts';
 import { videosRouter } from './routes/videos.ts';
+import { brandsRouter } from './routes/brands.ts';
+import {
+  productionsRouter,
+  productionSlotsRouter,
+  productionStepsRouter,
+} from './routes/productions.ts';
+import { productsRouter } from './routes/products.ts';
+import { sponsorshipsRouter } from './routes/sponsorships.ts';
 
 export const createServer = (container: Container): express.Express => {
   const app = express();
@@ -30,6 +38,12 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/expenses', expensesRouter(container));
   app.use('/api/videos', videosRouter(container));
   app.use('/api/analytics', analyticsRouter(container));
+  app.use('/api/brands', brandsRouter(container));
+  app.use('/api/productions', productionsRouter(container));
+  app.use('/api/production-steps', productionStepsRouter(container));
+  app.use('/api/production-slots', productionSlotsRouter(container));
+  app.use('/api/products', productsRouter(container));
+  app.use('/api/sponsorships', sponsorshipsRouter(container));
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Route inconnue', code: 'NOT_FOUND' });

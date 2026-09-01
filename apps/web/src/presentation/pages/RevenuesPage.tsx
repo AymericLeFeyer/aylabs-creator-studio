@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useDeleteRevenue, useRevenues } from '../../application/revenue/usecases/useRevenues.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
 import type { RevenueEntry } from '../../domain/revenue/entities/Revenue.ts';
+import { ORIGIN_LABELS, ORIGIN_TARGET } from '../../domain/revenue/entities/Revenue.ts';
 import { NATURE_LABELS } from '../../domain/category/entities/Category.ts';
 import { formatDate, formatMoney } from '../../shared/format.ts';
 import { Button } from '../components/ui/button.tsx';
@@ -108,6 +110,18 @@ export const RevenuesPage = () => {
                   </TableCell>
                   <TableCell className="font-medium">
                     {entry.label}
+                    {/* Une entrée générée dit d'où elle vient et où la corriger : sans ça,
+                        le bouton grisé serait vécu comme une panne. */}
+                    {entry.origin !== 'manual' && (
+                      <Link
+                        to={ORIGIN_TARGET[entry.origin]}
+                        className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-normal text-muted-foreground hover:text-foreground hover:underline"
+                        title="Cette entrée est générée : elle se modifie depuis sa fiche."
+                      >
+                        <Lock className="h-3 w-3" aria-hidden />
+                        {ORIGIN_LABELS[entry.origin]}
+                      </Link>
+                    )}
                     {entry.notes && (
                       <span className="block text-xs font-normal text-muted-foreground">
                         {entry.notes}
@@ -140,13 +154,24 @@ export const RevenuesPage = () => {
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(entry)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={entry.origin !== 'manual'}
+                        title={
+                          entry.origin === 'manual'
+                            ? 'Modifier'
+                            : 'Généré automatiquement : modifie-le depuis sa fiche.'
+                        }
+                        onClick={() => openEdit(entry)}
+                      >
                         <Pencil className="h-3.5 w-3.5" />
                         <span className="sr-only">Modifier</span>
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
+                        disabled={entry.origin !== 'manual'}
                         onClick={() => {
                           if (window.confirm(`Supprimer « ${entry.label} » ?`)) {
                             remove.mutate(entry.id);

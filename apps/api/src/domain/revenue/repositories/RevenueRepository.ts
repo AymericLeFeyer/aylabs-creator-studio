@@ -20,8 +20,15 @@ export interface RevenueEntryRepository {
   findAll(filter?: RevenueEntryFilter): RevenueEntryView[];
   findById(id: string): RevenueEntry | null;
   create(input: CreateRevenueEntryInput): RevenueEntry;
+  /** Refuse en 409 une entrée générée par un produit ou une sponso. */
   update(id: string, input: UpdateRevenueEntryInput): RevenueEntry;
   delete(id: string): void;
+  /**
+   * Écriture et suppression **sans** la garde d'origine, réservées aux use cases de
+   * synchronisation du module de production : ce sont eux qui possèdent ces lignes.
+   */
+  updateLinked(id: string, input: UpdateRevenueEntryInput): RevenueEntry;
+  deleteLinked(id: string): void;
   /** Somme par jour, par catégorie et par nature, pour construire les séries temporelles. */
   sumByDate(filter: RevenueEntryFilter): Array<{
     date: IsoDate;

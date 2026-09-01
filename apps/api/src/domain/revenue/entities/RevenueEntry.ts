@@ -2,6 +2,16 @@ import type { Cents } from '../../../shared/money.ts';
 import type { IsoDate } from '../../../shared/dates.ts';
 
 /**
+ * D'où vient un revenu.
+ *
+ * `product` et `sponsorship` désignent une entrée **générée** par le module de
+ * production, qui reste liée à sa fiche. Elle n'est plus modifiable depuis l'écran
+ * Revenus : deux points d'écriture sur la même ligne les feraient diverger en silence
+ * — le montant corrigé ici ne remonterait jamais dans la fiche produit.
+ */
+export type RevenueOrigin = 'manual' | 'product' | 'sponsorship';
+
+/**
  * Un revenu saisi manuellement (sponso, affiliation, produit reçu...).
  * Les revenus AdSense ne passent PAS par ici : ils viennent de `daily_metrics`.
  */
@@ -16,6 +26,7 @@ export interface RevenueEntry {
   amountCents: Cents;
   label: string;
   notes: string | null;
+  origin: RevenueOrigin;
   createdAt: string;
   updatedAt: string;
 }
@@ -28,6 +39,8 @@ export interface CreateRevenueEntryInput {
   amountCents: Cents;
   label: string;
   notes?: string | null;
+  /** Défaut `manual` : seuls les use cases de production posent autre chose. */
+  origin?: RevenueOrigin;
 }
 
 export type UpdateRevenueEntryInput = Partial<CreateRevenueEntryInput>;

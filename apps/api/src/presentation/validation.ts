@@ -160,3 +160,177 @@ export const rangeQuerySchema = z.object({
         .filter(Boolean),
     ),
 });
+
+// ---------------------------------------------------------------------------
+// Module de production
+// ---------------------------------------------------------------------------
+
+/** Liste séparée par des virgules dans la query string ; vide = pas de filtre. */
+const csvList = z
+  .string()
+  .optional()
+  .transform((value) =>
+    (value ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
+  );
+
+/** Un montant facultatif en euros, converti en centimes comme les revenus. */
+const optionalAmount = z
+  .number()
+  .finite()
+  .transform((value) => Math.round(value * 100))
+  .optional();
+
+const optionalIsoDate = isoDate.nullable().optional();
+
+/** Horaire d'un créneau, ou `null` : un créneau sans heure reste un créneau. */
+const time = z
+  .string()
+  .regex(/^\d{2}:\d{2}$/, 'Heure attendue au format HH:MM')
+  .nullable()
+  .optional();
+
+export const createBrandSchema = z.object({
+  name: z.string().trim().min(1, 'Le nom est obligatoire').max(120),
+  website: z.string().trim().nullable().optional(),
+  contactName: z.string().trim().nullable().optional(),
+  contactEmail: z.string().trim().nullable().optional(),
+  color: hexColor,
+  notes: z.string().trim().nullable().optional(),
+});
+
+export const updateBrandSchema = createBrandSchema.partial().extend({
+  isArchived: z.boolean().optional(),
+});
+
+export const brandQuerySchema = z.object({
+  includeArchived: z
+    .string()
+    .optional()
+    .transform((value) => value === 'true'),
+});
+
+/** Bornes des classements du dashboard : mêmes paramètres que `/api/analytics`. */
+export const brandStatsQuerySchema = z.object({
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  channelIds: csvList,
+});
+
+export const createProductionStepSchema = z.object({
+  name: z.string().trim().min(1, 'Le nom est obligatoire').max(60),
+  color: hexColor,
+  sortOrder: z.number().int().optional(),
+});
+
+export const updateProductionStepSchema = createProductionStepSchema.partial().extend({
+  isArchived: z.boolean().optional(),
+});
+
+export const createProductionSchema = z.object({
+  title: z.string().trim().min(1, 'Le titre est obligatoire').max(200),
+  channelId: z.string().nullable().optional(),
+  videoId: z.string().nullable().optional(),
+  status: z.enum(['idea', 'in_progress', 'paused', 'done']).optional(),
+  pausedReason: z.string().trim().nullable().optional(),
+  startDate: optionalIsoDate,
+  plannedDate: optionalIsoDate,
+  script: z.string().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+export const updateProductionSchema = createProductionSchema.partial();
+
+export const productionQuerySchema = z.object({
+  statuses: csvList,
+  channelIds: csvList,
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  search: z.string().trim().optional(),
+});
+
+/** L'ordre complet de la file, dans l'ordre reçu : le rang est l'index. */
+export const reorderProductionsSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, 'Aucune production à réordonner'),
+});
+
+export const publishProductionSchema = z.object({
+  videoId: z.string().min(1, 'Choisis la sortie correspondante'),
+});
+
+export const createProductionSlotSchema = z.object({
+  stepId: z.string().nullable().optional(),
+  date: isoDate,
+  startTime: time,
+  endTime: time,
+  label: z.string().trim().max(200).optional(),
+  done: z.boolean().optional(),
+  notes: z.string().trim().nullable().optional(),
+});
+
+export const updateProductionSlotSchema = createProductionSlotSchema.partial();
+
+/** Création depuis le router des créneaux : la production fait partie du corps. */
+export const createSlotBodySchema = createProductionSlotSchema.extend({
+  productionId: z.string().min(1, 'La production est obligatoire'),
+});
+
+export const slotQuerySchema = z.object({
+  productionIds: csvList,
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  includeDone: z
+    .string()
+    .optional()
+    .transform((value) => value !== 'false'),
+});
+
+export const createProductSchema = z.object({
+  name: z.string().trim().min(1, 'Le nom est obligatoire').max(200),
+  brandId: z.string().nullable().optional(),
+  productionId: z.string().nullable().optional(),
+  channelId: z.string().nullable().optional(),
+  url: z.string().trim().nullable().optional(),
+  /** Valeur en euros, convertie en centimes. C'est elle qui devient le revenu en nature. */
+  value: optionalAmount,
+  status: z
+    .enum(['discussion', 'confirmed', 'shipped', 'received', 'returned', 'cancelled'])
+    .optional(),
+  requestedAt: optionalIsoDate,
+  deadline: optionalIsoDate,
+  receivedAt: optionalIsoDate,
+  notes: z.string().trim().nullable().optional(),
+});
+
+export const updateProductSchema = createProductSchema.partial();
+
+export const productQuerySchema = z.object({
+  statuses: csvList,
+  brandIds: csvList,
+  productionIds: csvList,
+  channelIds: csvList,
+});
+
+export const createSponsorshipSchema = z.object({
+  label: z.string().trim().min(1, 'Le libellé est obligatoire').max(200),
+  brandId: z.string().nullable().optional(),
+  productionId: z.string().nullable().optional(),
+  channelId: z.string().nullable().optional(),
+  /** Montant en euros, converti en centimes. Devient le revenu cash une fois payé. */
+  amount: optionalAmount,
+  status: z.enum(['discussion', 'todo', 'in_progress', 'paid', 'cancelled']).optional(),
+  deadline: optionalIsoDate,
+  paidAt: optionalIsoDate,
+  notes: z.string().trim().nullable().optional(),
+});
+
+export const updateSponsorshipSchema = createSponsorshipSchema.partial();
+
+export const sponsorshipQuerySchema = z.object({
+  statuses: csvList,
+  brandIds: csvList,
+  productionIds: csvList,
+  channelIds: csvList,
+});

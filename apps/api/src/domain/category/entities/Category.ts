@@ -59,3 +59,11 @@ export const ADSENSE_CATEGORY_ID = 'adsense';
 
 /** Identifiant fixe de la catégorie qui a repris les anciennes taxes (migration 2). */
 export const TAX_CATEGORY_ID = 'impots';
+
+/**
+ * Catégories d'accueil des revenus générés par le module de production : un produit
+ * reçu atterrit en nature dans « Produits », une sponso payée en cash dans « Sponsors ».
+ * Ce sont deux des catégories seedées au premier démarrage.
+ */
+export const IN_KIND_CATEGORY_ID = 'produits';
+export const SPONSOR_CATEGORY_ID = 'sponsors';

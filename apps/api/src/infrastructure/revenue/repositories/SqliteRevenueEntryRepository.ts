@@ -4,6 +4,7 @@ import type {
   CreateRevenueEntryInput,
   RevenueEntry,
   RevenueEntryView,
+  RevenueOrigin,
   UpdateRevenueEntryInput,
 } from '../../../domain/revenue/entities/RevenueEntry.ts';
 import type {
@@ -23,6 +24,7 @@ interface EntryRow {
   amount_cents: number;
   label: string;
   notes: string | null;
+  origin: string;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +46,7 @@ const toDomain = (row: EntryRow): RevenueEntry => ({
   amountCents: row.amount_cents,
   label: row.label,
   notes: row.notes,
+  origin: row.origin as RevenueOrigin,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -74,6 +77,26 @@ const assertAcceptsRevenue = (db: DatabaseSync, categoryId: string): void => {
   if (row.scope === 'expense') {
     throw conflict(`« ${row.name} » est une catégorie de dépenses : elle n'accepte pas de revenu.`);
   }
+};
+
+/** Libellé de l'écran qui fait autorité sur une entrée générée. */
+const ORIGIN_OWNER: Record<Exclude<RevenueOrigin, 'manual'>, string> = {
+  product: 'la fiche du produit',
+  sponsorship: 'la fiche de la sponso',
+};
+
+/**
+ * Refuse toute écriture manuelle sur une entrée générée par le module de production.
+ *
+ * Ces entrées sont le reflet d'un produit reçu ou d'une sponso payée : les corriger ici
+ * ne remonterait pas à la fiche, et le prochain enregistrement côté production écraserait
+ * la correction sans prévenir. Une seule source d'écriture par ligne.
+ */
+const assertManualOrigin = (existing: RevenueEntry, verb: string): void => {
+  if (existing.origin === 'manual') return;
+  throw conflict(
+    `Ce revenu est généré automatiquement : ${verb}-le depuis ${ORIGIN_OWNER[existing.origin]}.`,
+  );
 };
 
 export class SqliteRevenueEntryRepository implements RevenueEntryRepository {
@@ -128,8 +151,8 @@ export class SqliteRevenueEntryRepository implements RevenueEntryRepository {
       .prepare(
         `INSERT INTO revenue_entries
            (id, channel_id, category_id, video_id, date, amount_cents, label, notes,
-            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            origin, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -140,6 +163,7 @@ export class SqliteRevenueEntryRepository implements RevenueEntryRepository {
         input.amountCents,
         input.label,
         input.notes ?? null,
+        input.origin ?? 'manual',
         now,
         now,
       );
@@ -150,6 +174,21 @@ export class SqliteRevenueEntryRepository implements RevenueEntryRepository {
   update(id: string, input: UpdateRevenueEntryInput): RevenueEntry {
     const existing = this.findById(id);
     if (!existing) throw notFound('Revenu');
+    assertManualOrigin(existing, 'modifie');
+    return this.write(id, existing, input);
+  }
+
+  /**
+   * Même écriture, sans la garde d'origine : réservée aux use cases de synchronisation,
+   * qui sont justement le côté autorisé à toucher une entrée générée.
+   */
+  updateLinked(id: string, input: UpdateRevenueEntryInput): RevenueEntry {
+    const existing = this.findById(id);
+    if (!existing) throw notFound('Revenu');
+    return this.write(id, existing, input);
+  }
+
+  private write(id: string, existing: RevenueEntry, input: UpdateRevenueEntryInput): RevenueEntry {
     if (input.categoryId !== undefined) assertAcceptsRevenue(this.db, input.categoryId);
 
     const fields: string[] = [];
@@ -179,8 +218,15 @@ export class SqliteRevenueEntryRepository implements RevenueEntryRepository {
   }
 
   delete(id: string): void {
-    const result = this.db.prepare('DELETE FROM revenue_entries WHERE id = ?').run(id);
-    if (result.changes === 0) throw notFound('Revenu');
+    const existing = this.findById(id);
+    if (!existing) throw notFound('Revenu');
+    assertManualOrigin(existing, 'supprime');
+    this.db.prepare('DELETE FROM revenue_entries WHERE id = ?').run(id);
+  }
+
+  /** Suppression sans garde, pour le use case qui détache un produit ou une sponso. */
+  deleteLinked(id: string): void {
+    this.db.prepare('DELETE FROM revenue_entries WHERE id = ?').run(id);
   }
 
   sumByDate(filter: RevenueEntryFilter): Array<{

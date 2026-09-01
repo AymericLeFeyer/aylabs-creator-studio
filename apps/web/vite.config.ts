@@ -19,6 +19,9 @@ export default defineConfig({
           react: ['react', 'react-dom', 'react-router-dom'],
           charts: ['recharts'],
           query: ['@tanstack/react-query'],
+          // Le rendu markdown ne sert qu'à l'éditeur de script : isolé, il n'est
+          // téléchargé que par ceux qui ouvrent une fiche de production.
+          markdown: ['react-markdown', 'remark-gfm'],
         },
       },
     },
