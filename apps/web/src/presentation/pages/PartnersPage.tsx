@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Gift, Handshake, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useDeleteProduct, useProducts } from '../../application/product/usecases/useProducts.ts';
 import {
   useDeleteSponsorship,
@@ -135,6 +135,8 @@ export const PartnersPage = () => {
               <TableBody>
                 {products.map((product) => (
                   <TableRow key={product.id}>
+                    {/* Le partenariat est un détail de la ligne, pas une dimension à
+                        balayer : une sous-ligne plutôt qu'une neuvième colonne. */}
                     <TableCell className="font-medium">
                       {product.url ? (
                         <a
@@ -147,6 +149,12 @@ export const PartnersPage = () => {
                         </a>
                       ) : (
                         product.name
+                      )}
+                      {product.sponsorshipLabel && (
+                        <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
+                          <Handshake className="h-3 w-3" aria-hidden />
+                          {product.sponsorshipLabel}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -268,7 +276,17 @@ export const PartnersPage = () => {
               <TableBody>
                 {sponsorships.map((sponsorship) => (
                   <TableRow key={sponsorship.id}>
-                    <TableCell className="font-medium">{sponsorship.label}</TableCell>
+                    <TableCell className="font-medium">
+                      {sponsorship.label}
+                      {sponsorship.productsCount > 0 && (
+                        <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
+                          <Gift className="h-3 w-3" aria-hidden />
+                          {sponsorship.productsCount} produit(s)
+                          {sponsorship.productsValueCents > 0 &&
+                            ` · ${formatMoney(sponsorship.productsValueCents)} reçus`}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {sponsorship.brandName ? (
                         <span className="flex items-center gap-2 text-sm">

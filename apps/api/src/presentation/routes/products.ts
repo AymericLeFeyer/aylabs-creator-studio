@@ -21,6 +21,7 @@ export const productsRouter = (container: Container): Router => {
         statuses: query.statuses as ProductStatus[],
         brandIds: query.brandIds,
         productionIds: query.productionIds,
+        sponsorshipIds: query.sponsorshipIds,
         channelIds: query.channelIds,
       }),
     );

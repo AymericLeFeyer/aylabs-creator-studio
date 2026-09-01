@@ -53,6 +53,9 @@ export interface Sponsorship {
   brandColor: string | null;
   productionTitle: string | null;
   channelName: string | null;
+  /** Produits venus avec cette sponso, et leur valeur en nature une fois reçus. */
+  productsCount: number;
+  productsValueCents: number;
 }
 
 /** `amount` est en euros : l'API le convertit en centimes. */

@@ -56,6 +56,9 @@ export interface SponsorshipView extends Sponsorship {
   brandColor: string | null;
   productionTitle: string | null;
   channelName: string | null;
+  /** Produits venus avec cette sponso, et leur valeur cumulée en nature. */
+  productsCount: number;
+  productsValueCents: Cents;
 }
 
 export interface CreateSponsorshipInput {

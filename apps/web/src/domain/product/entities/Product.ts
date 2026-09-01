@@ -37,6 +37,12 @@ export interface Product {
   id: string;
   brandId: string | null;
   productionId: string | null;
+  /**
+   * Sponso dont ce produit fait partie. `null` quand il arrive seul — le cas le plus
+   * courant, et l'inverse (une sponso sans colis) l'est tout autant. Le lien est
+   * informatif : les deux montants restent distincts, rien n'est compté deux fois.
+   */
+  sponsorshipId: string | null;
   channelId: string | null;
   /** Revenu en nature généré. `null` tant que le produit n'est pas reçu. */
   revenueEntryId: string | null;
@@ -55,6 +61,7 @@ export interface Product {
   brandColor: string | null;
   productionTitle: string | null;
   channelName: string | null;
+  sponsorshipLabel: string | null;
 }
 
 /** `value` est en euros : l'API le convertit en centimes. */
@@ -62,6 +69,7 @@ export interface ProductInput {
   name: string;
   brandId?: string | null;
   productionId?: string | null;
+  sponsorshipId?: string | null;
   channelId?: string | null;
   url?: string | null;
   value?: number;

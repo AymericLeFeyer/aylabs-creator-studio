@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useBrands } from '../../../application/brand/usecases/useBrands.ts';
 import { useChannels } from '../../../application/channel/usecases/useChannels.ts';
 import { useProductions } from '../../../application/production/usecases/useProductions.ts';
+import { useSponsorships } from '../../../application/sponsorship/usecases/useSponsorships.ts';
 import {
   useCreateProduct,
   useUpdateProduct,
@@ -26,6 +27,12 @@ import { Input, Textarea } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { fromSelectValue, NONE, toSelectValue } from './selectNone.ts';
+import { SponsorshipLinkField } from './SponsorshipLinkField.tsx';
+import {
+  EMPTY_SPONSORSHIP_DRAFT,
+  useResolveSponsorshipLink,
+  type SponsorshipDraft,
+} from './partnerLinks.ts';
 
 interface ProductDialogProps {
   open: boolean;
@@ -33,12 +40,15 @@ interface ProductDialogProps {
   product?: Product | null;
   /** Pré-remplit la vidéo quand le dialogue s'ouvre depuis une fiche de production. */
   defaultProductionId?: string | null;
+  /** Pré-remplit la sponso quand le dialogue s'ouvre depuis une fiche de sponso. */
+  defaultSponsorshipId?: string | null;
 }
 
 const EMPTY = {
   name: '',
   brandId: NONE,
   productionId: NONE,
+  sponsorshipId: NONE,
   channelId: NONE,
   url: '',
   value: '',
@@ -54,26 +64,33 @@ export const ProductDialog = ({
   onOpenChange,
   product,
   defaultProductionId,
+  defaultSponsorshipId,
 }: ProductDialogProps) => {
   const { data: brands = [] } = useBrands();
   const { data: channels = [] } = useChannels();
   const { data: productions = [] } = useProductions();
+  const { data: sponsorships = [] } = useSponsorships();
   const create = useCreateProduct();
   const update = useUpdateProduct();
+  const resolveSponsorship = useResolveSponsorshipLink();
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY);
+  const [sponsorshipDraft, setSponsorshipDraft] =
+    useState<SponsorshipDraft>(EMPTY_SPONSORSHIP_DRAFT);
 
   const [lastKey, setLastKey] = useState<string | null>(null);
   const key = `${open}-${product?.id ?? 'new'}`;
   if (open && key !== lastKey) {
     setLastKey(key);
     setError(null);
+    setSponsorshipDraft(EMPTY_SPONSORSHIP_DRAFT);
     setForm(
       product
         ? {
             name: product.name,
             brandId: toSelectValue(product.brandId),
             productionId: toSelectValue(product.productionId),
+            sponsorshipId: toSelectValue(product.sponsorshipId),
             channelId: toSelectValue(product.channelId),
             url: product.url ?? '',
             value: product.valueCents ? String(product.valueCents / 100) : '',
@@ -83,7 +100,11 @@ export const ProductDialog = ({
             receivedAt: product.receivedAt ?? '',
             notes: product.notes ?? '',
           }
-        : { ...EMPTY, productionId: toSelectValue(defaultProductionId) },
+        : {
+            ...EMPTY,
+            productionId: toSelectValue(defaultProductionId),
+            sponsorshipId: toSelectValue(defaultSponsorshipId),
+          },
     );
   }
 
@@ -97,11 +118,30 @@ export const ProductDialog = ({
       return;
     }
 
+    const brandId = fromSelectValue(form.brandId);
+    const productionId = fromSelectValue(form.productionId);
+    const channelId = fromSelectValue(form.channelId);
+
+    // La sponso est créée AVANT le produit quand on la saisit sur place : sans son
+    // identifiant, le produit n'aurait rien à référencer.
+    let sponsorshipId: string | null;
+    try {
+      sponsorshipId = await resolveSponsorship.resolve(form.sponsorshipId, sponsorshipDraft, {
+        brandId,
+        productionId,
+        channelId,
+      });
+    } catch (linkError) {
+      setError(linkError instanceof Error ? linkError.message : 'Création de la sponso impossible');
+      return;
+    }
+
     const payload = {
       name: form.name.trim(),
-      brandId: fromSelectValue(form.brandId),
-      productionId: fromSelectValue(form.productionId),
-      channelId: fromSelectValue(form.channelId),
+      brandId,
+      productionId,
+      sponsorshipId,
+      channelId,
       url: form.url.trim() || null,
       value,
       status: form.status,
@@ -126,7 +166,7 @@ export const ProductDialog = ({
     }
   };
 
-  const pending = create.isPending || update.isPending;
+  const pending = create.isPending || update.isPending || resolveSponsorship.isPending;
   const willValue = form.status === 'received' && Number(form.value.replace(',', '.')) > 0;
 
   return (
@@ -252,6 +292,33 @@ export const ProductDialog = ({
               C'est elle qui porte la chaîne et la sortie : le revenu généré les reprendra.
             </p>
           </div>
+
+          <SponsorshipLinkField
+            value={form.sponsorshipId}
+            onValueChange={(value, sponsorship) =>
+              setForm((f) => ({
+                ...f,
+                sponsorshipId: value,
+                // La sponso choisie complète ce qui est encore vide, sans jamais écraser
+                // un choix déjà fait : c'est une suggestion, pas une reprise en main.
+                brandId:
+                  f.brandId === NONE && sponsorship?.brandId ? sponsorship.brandId : f.brandId,
+                productionId:
+                  f.productionId === NONE && sponsorship?.productionId
+                    ? sponsorship.productionId
+                    : f.productionId,
+                channelId:
+                  f.channelId === NONE && sponsorship?.channelId
+                    ? sponsorship.channelId
+                    : f.channelId,
+              }))
+            }
+            draft={sponsorshipDraft}
+            onDraftChange={setSponsorshipDraft}
+            sponsorships={sponsorships}
+            brandId={fromSelectValue(form.brandId)}
+            productionId={fromSelectValue(form.productionId)}
+          />
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">

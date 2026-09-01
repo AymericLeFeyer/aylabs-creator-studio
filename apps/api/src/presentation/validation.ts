@@ -291,6 +291,8 @@ export const createProductSchema = z.object({
   name: z.string().trim().min(1, 'Le nom est obligatoire').max(200),
   brandId: z.string().nullable().optional(),
   productionId: z.string().nullable().optional(),
+  /** Sponso dont ce produit fait partie. Facultatif : beaucoup arrivent seuls. */
+  sponsorshipId: z.string().nullable().optional(),
   channelId: z.string().nullable().optional(),
   url: z.string().trim().nullable().optional(),
   /** Valeur en euros, convertie en centimes. C'est elle qui devient le revenu en nature. */
@@ -310,6 +312,7 @@ export const productQuerySchema = z.object({
   statuses: csvList,
   brandIds: csvList,
   productionIds: csvList,
+  sponsorshipIds: csvList,
   channelIds: csvList,
 });
 

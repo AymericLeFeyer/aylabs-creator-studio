@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -10,6 +10,7 @@ import {
   Pencil,
   Plus,
   Trash2,
+  Unlink,
   Upload,
 } from 'lucide-react';
 import {
@@ -22,8 +23,11 @@ import {
   useUpdateProduction,
   useUpdateSlot,
 } from '../../application/production/usecases/useProductions.ts';
-import { useProducts } from '../../application/product/usecases/useProducts.ts';
-import { useSponsorships } from '../../application/sponsorship/usecases/useSponsorships.ts';
+import { useProducts, useUpdateProduct } from '../../application/product/usecases/useProducts.ts';
+import {
+  useSponsorships,
+  useUpdateSponsorship,
+} from '../../application/sponsorship/usecases/useSponsorships.ts';
 import { STATUS_COLORS, STATUS_LABELS } from '../../domain/production/entities/Production.ts';
 import type { ProductionSlot } from '../../domain/production/entities/ProductionSlot.ts';
 import { formatSlotTime } from '../../domain/production/entities/ProductionSlot.ts';
@@ -40,6 +44,10 @@ import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
 import { ProductDialog } from '../components/forms/ProductDialog.tsx';
 import { SponsorshipDialog } from '../components/forms/SponsorshipDialog.tsx';
 import { SlotDialog } from '../components/forms/SlotDialog.tsx';
+import {
+  AttachExistingSelect,
+  type AttachOption,
+} from '../components/forms/AttachExistingSelect.tsx';
 import { PublishDialog } from '../components/forms/PublishDialog.tsx';
 import { cn } from '../../shared/cn.ts';
 
@@ -50,11 +58,15 @@ export const ProductionDetailPage = () => {
   const { data: production, isLoading } = useProduction(id);
   const { data: steps = [] } = useProductionSteps();
   const { data: slots = [] } = useProductionSlots({ productionIds: id ? [id] : [] });
-  const { data: products = [] } = useProducts({ productionIds: id ? [id] : [] });
-  const { data: sponsorships = [] } = useSponsorships({ productionIds: id ? [id] : [] });
+  // Toutes les fiches, pas seulement celles de cette vidéo : la même liste sert à
+  // afficher les rattachées ET à proposer les autres au rattachement.
+  const { data: allProducts = [] } = useProducts();
+  const { data: allSponsorships = [] } = useSponsorships();
 
   const update = useUpdateProduction();
   const remove = useDeleteProduction();
+  const updateProduct = useUpdateProduct();
+  const updateSponsorship = useUpdateSponsorship();
   const toggleStep = useToggleStep();
   const updateSlot = useUpdateSlot();
   const deleteSlot = useDeleteSlot();
@@ -65,6 +77,46 @@ export const ProductionDetailPage = () => {
   const [sponsorshipOpen, setSponsorshipOpen] = useState(false);
   const [slotOpen, setSlotOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<ProductionSlot | null>(null);
+
+  const products = useMemo(
+    () => allProducts.filter((product) => product.productionId === id),
+    [allProducts, id],
+  );
+  const sponsorships = useMemo(
+    () => allSponsorships.filter((sponsorship) => sponsorship.productionId === id),
+    [allSponsorships, id],
+  );
+
+  /**
+   * Ce qu'on peut rattacher : tout ce qui n'est pas déjà sur cette vidéo. Les fiches
+   * posées sur une autre le disent — déplacer reste possible, mais jamais à l'insu.
+   */
+  const attachableProducts = useMemo<AttachOption[]>(
+    () =>
+      allProducts
+        .filter((product) => product.productionId !== id)
+        .map((product) => ({
+          id: product.id,
+          label: product.name,
+          hint: product.productionTitle
+            ? `déplacer depuis « ${product.productionTitle} »`
+            : (product.brandName ?? undefined),
+        })),
+    [allProducts, id],
+  );
+  const attachableSponsorships = useMemo<AttachOption[]>(
+    () =>
+      allSponsorships
+        .filter((sponsorship) => sponsorship.productionId !== id)
+        .map((sponsorship) => ({
+          id: sponsorship.id,
+          label: sponsorship.label,
+          hint: sponsorship.productionTitle
+            ? `déplacer depuis « ${sponsorship.productionTitle} »`
+            : (sponsorship.brandName ?? undefined),
+        })),
+    [allSponsorships, id],
+  );
 
   if (isLoading) {
     return <div className="h-64 animate-pulse rounded-xl border border-border bg-card" />;
@@ -274,10 +326,25 @@ export const ProductionDetailPage = () => {
                   <Gift className="h-4 w-4" />
                   Produits
                 </CardTitle>
-                <Button size="sm" variant="outline" onClick={() => setProductOpen(true)}>
-                  <Plus className="h-4 w-4" />
-                  Ajouter
-                </Button>
+                {/* Deux gestes distincts et tous deux courants : un produit arrive
+                    parfois avant qu'on sache pour quelle vidéo il servira. */}
+                <div className="flex items-center gap-2">
+                  <AttachExistingSelect
+                    placeholder="Associer un produit"
+                    emptyLabel="Aucun autre produit"
+                    options={attachableProducts}
+                    onSelect={(productId) =>
+                      updateProduct.mutate({
+                        id: productId,
+                        input: { productionId: production.id },
+                      })
+                    }
+                  />
+                  <Button size="sm" variant="outline" onClick={() => setProductOpen(true)}>
+                    <Plus className="h-4 w-4" />
+                    Créer
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 {products.length === 0 ? (
@@ -286,22 +353,39 @@ export const ProductionDetailPage = () => {
                   </p>
                 ) : (
                   products.map((product) => (
-                    <Link
+                    <div
                       key={product.id}
-                      to="/partenariats?onglet=produits"
-                      className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-muted/60"
+                      className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
                     >
-                      <span className="min-w-0">
+                      <Link
+                        to="/partenariats?onglet=produits"
+                        className="min-w-0 flex-1 hover:underline"
+                      >
                         <span className="block truncate font-medium">{product.name}</span>
                         <span className="block truncate text-xs text-muted-foreground">
                           {product.brandName ?? 'Sans marque'} ·{' '}
                           {PRODUCT_STATUS_LABELS[product.status]}
+                          {product.sponsorshipLabel && ` · avec « ${product.sponsorshipLabel} »`}
                         </span>
-                      </span>
+                      </Link>
                       <span className="shrink-0 tabular text-[var(--in-kind)]">
                         {formatMoney(product.valueCents)}
                       </span>
-                    </Link>
+                      {/* Détacher, pas supprimer : le produit reste reçu, il n'est plus
+                          rattaché à cette vidéo. */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        title="Détacher de cette vidéo"
+                        onClick={() =>
+                          updateProduct.mutate({ id: product.id, input: { productionId: null } })
+                        }
+                      >
+                        <Unlink className="h-3.5 w-3.5" />
+                        <span className="sr-only">Détacher {product.name}</span>
+                      </Button>
+                    </div>
                   ))
                 )}
               </CardContent>
@@ -318,10 +402,23 @@ export const ProductionDetailPage = () => {
                     </span>
                   )}
                 </CardTitle>
-                <Button size="sm" variant="outline" onClick={() => setSponsorshipOpen(true)}>
-                  <Plus className="h-4 w-4" />
-                  Ajouter
-                </Button>
+                <div className="flex items-center gap-2">
+                  <AttachExistingSelect
+                    placeholder="Associer une sponso"
+                    emptyLabel="Aucune autre sponso"
+                    options={attachableSponsorships}
+                    onSelect={(sponsorshipId) =>
+                      updateSponsorship.mutate({
+                        id: sponsorshipId,
+                        input: { productionId: production.id },
+                      })
+                    }
+                  />
+                  <Button size="sm" variant="outline" onClick={() => setSponsorshipOpen(true)}>
+                    <Plus className="h-4 w-4" />
+                    Créer
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 {sponsorships.length === 0 ? (
@@ -330,18 +427,22 @@ export const ProductionDetailPage = () => {
                   </p>
                 ) : (
                   sponsorships.map((sponsorship) => (
-                    <Link
+                    <div
                       key={sponsorship.id}
-                      to="/partenariats?onglet=sponsors"
-                      className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-muted/60"
+                      className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
                     >
-                      <span className="min-w-0">
+                      <Link
+                        to="/partenariats?onglet=sponsors"
+                        className="min-w-0 flex-1 hover:underline"
+                      >
                         <span className="block truncate font-medium">{sponsorship.label}</span>
                         <span className="block truncate text-xs text-muted-foreground">
                           {sponsorship.brandName ?? 'Sans marque'} ·{' '}
                           {SPONSORSHIP_STATUS_LABELS[sponsorship.status]}
+                          {sponsorship.productsCount > 0 &&
+                            ` · ${sponsorship.productsCount} produit(s)`}
                         </span>
-                      </span>
+                      </Link>
                       <span
                         className={cn(
                           'shrink-0 tabular',
@@ -352,7 +453,22 @@ export const ProductionDetailPage = () => {
                       >
                         {formatMoney(sponsorship.amountCents)}
                       </span>
-                    </Link>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        title="Détacher de cette vidéo"
+                        onClick={() =>
+                          updateSponsorship.mutate({
+                            id: sponsorship.id,
+                            input: { productionId: null },
+                          })
+                        }
+                      >
+                        <Unlink className="h-3.5 w-3.5" />
+                        <span className="sr-only">Détacher {sponsorship.label}</span>
+                      </Button>
+                    </div>
                   ))
                 )}
               </CardContent>

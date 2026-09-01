@@ -36,6 +36,13 @@ export interface Product {
   brandId: string | null;
   /** Vidéo en préparation à laquelle le produit est destiné. */
   productionId: string | null;
+  /**
+   * Sponso dont ce produit fait partie. `null` quand le produit arrive seul — c'est
+   * le cas le plus courant, et l'inverse (une sponso sans colis) l'est tout autant.
+   * Le lien est purement informatif : les deux montants restent distincts, le produit
+   * vaut en nature ce que la sponso vaut en cash, et rien n'est compté deux fois.
+   */
+  sponsorshipId: string | null;
   channelId: string | null;
   /** Revenu en nature généré. `null` tant que le produit n'est pas reçu. */
   revenueEntryId: string | null;
@@ -58,12 +65,14 @@ export interface ProductView extends Product {
   brandColor: string | null;
   productionTitle: string | null;
   channelName: string | null;
+  sponsorshipLabel: string | null;
 }
 
 export interface CreateProductInput {
   name: string;
   brandId?: string | null;
   productionId?: string | null;
+  sponsorshipId?: string | null;
   channelId?: string | null;
   url?: string | null;
   valueCents?: Cents;

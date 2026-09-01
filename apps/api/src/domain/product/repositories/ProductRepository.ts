@@ -11,6 +11,7 @@ export interface ProductFilter {
   statuses?: ProductStatus[];
   brandIds?: string[];
   productionIds?: string[];
+  sponsorshipIds?: string[];
   channelIds?: string[];
   /** Fenêtre sur la date de réception, pour les classements du dashboard. */
   receivedRange?: { from: IsoDate; to: IsoDate };

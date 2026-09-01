@@ -35,6 +35,8 @@ interface SponsorshipViewRow extends SponsorshipRow {
   brand_color: string | null;
   production_title: string | null;
   channel_name: string | null;
+  products_count: number;
+  products_value_cents: number;
 }
 
 const toDomain = (row: SponsorshipRow): Sponsorship => ({
@@ -88,7 +90,14 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
                 b.name   AS brand_name,
                 b.color  AS brand_color,
                 pr.title AS production_title,
-                ch.name  AS channel_name
+                ch.name  AS channel_name,
+                -- Sous-requetes correlees : joindre les produits multiplierait la ligne
+                -- de la sponso par le nombre de colis recus.
+                (SELECT COUNT(*) FROM products p WHERE p.sponsorship_id = s.id)
+                  AS products_count,
+                (SELECT COALESCE(SUM(p.value_cents), 0) FROM products p
+                  WHERE p.sponsorship_id = s.id AND p.status = 'received')
+                  AS products_value_cents
            FROM sponsorships s
            LEFT JOIN brands b       ON b.id  = s.brand_id
            LEFT JOIN productions pr ON pr.id = s.production_id
@@ -104,6 +113,8 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
       brandColor: row.brand_color,
       productionTitle: row.production_title,
       channelName: row.channel_name,
+      productsCount: row.products_count,
+      productsValueCents: row.products_value_cents,
     }));
   }
 

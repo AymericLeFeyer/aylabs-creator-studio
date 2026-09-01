@@ -9,6 +9,7 @@ export interface ProductListParams {
   statuses?: ProductStatus[];
   brandIds?: string[];
   productionIds?: string[];
+  sponsorshipIds?: string[];
   channelIds?: string[];
 }
 
@@ -22,6 +23,7 @@ export const productApi = {
         statuses: csv(params.statuses),
         brandIds: csv(params.brandIds),
         productionIds: csv(params.productionIds),
+        sponsorshipIds: csv(params.sponsorshipIds),
         channelIds: csv(params.channelIds),
       },
     }),

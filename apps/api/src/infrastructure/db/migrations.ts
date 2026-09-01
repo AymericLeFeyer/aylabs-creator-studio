@@ -327,6 +327,20 @@ const migrations: Migration[] = [
       ALTER TABLE revenue_entries ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual';
     `,
   },
+  {
+    version: 6,
+    name: 'product_sponsorship_link',
+    // Un partenariat arrive souvent en deux morceaux : de l'argent ET du materiel.
+    // Le lien est N:1 (une sponso peut venir avec plusieurs produits, un produit
+    // n'appartient qu'a une sponso) et reste FACULTATIF des deux cotes : beaucoup de
+    // produits arrivent sans contrepartie, et beaucoup de sponsos sans colis.
+    // ON DELETE SET NULL : supprimer la sponso ne doit pas emporter le produit recu.
+    up: `
+      ALTER TABLE products ADD COLUMN sponsorship_id TEXT
+        REFERENCES sponsorships(id) ON DELETE SET NULL;
+      CREATE INDEX idx_products_sponsorship ON products(sponsorship_id);
+    `,
+  },
 ];
 
 /**

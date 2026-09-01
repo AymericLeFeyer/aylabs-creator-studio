@@ -243,11 +243,15 @@ Table `production_step_checks` (PK `(production_id, step_id)`, colonne `checked_
 
 ### `product`
 
-`Product { id, brandId, productionId, channelId, revenueEntryId, name, url, valueCents, status, requestedAt, deadline, receivedAt, notes }` — table `products`.
+`Product { id, brandId, productionId, sponsorshipId, channelId, revenueEntryId, name, url, valueCents, status, requestedAt, deadline, receivedAt, notes }` — table `products`.
 
 `status` ∈ `discussion | confirmed | shipped | received | returned | cancelled`. Seul `received` compte en argent : c'est lui qui déclenche le revenu **en nature**. `returned` et `cancelled` existent pour que le pipeline se vide — une négo morte laissée en « en discussion » pollue la vue pour toujours.
 
 Le revenu généré reprend la **chaîne et la vidéo de la production** : c'est ce qui fait remonter le produit dans la ligne de la bonne vidéo du tableau de performance, sans saisie de plus.
+
+`sponsorshipId` (migration 6) rattache le produit à la sponso dont il fait partie. Le lien est **N:1** — une marque envoie parfois trois objets pour une seule intégration, un objet n'appartient qu'à un partenariat — et **facultatif des deux côtés** : beaucoup de produits arrivent sans contrepartie, beaucoup de sponsos sans colis. `ON DELETE SET NULL` : supprimer la sponso détache le produit, elle ne l'emporte pas.
+
+Le lien est **purement informatif pour l'argent** : le produit vaut en nature ce que la sponso vaut en cash, les deux revenus restent distincts et rien n'est compté deux fois. `SponsorshipView` expose `productsCount` et `productsValueCents` (valeur des produits **reçus** seulement — un colis en route ne vaut encore rien).
 
 ### `sponsorship`
 
@@ -399,7 +403,7 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 - **Use case propriétaire d'une écriture** : dès qu'une écriture a un effet de bord ailleurs (les revenus générés), elle vit dans un use case (`ManageProducts`, `ManageSponsorships`, `ManageProductions`) et la route ne touche plus le dépôt. Le dépôt garde une méthode technique (`setRevenueEntryId`) réservée à ce use case.
 - **Sentinelle des `Select` facultatifs** : `NONE` / `toSelectValue` / `fromSelectValue` (`presentation/components/forms/selectNone.ts`). Radix refuse une `SelectItem` de valeur vide ; la sentinelle est partagée pour que trois formulaires n'en inventent pas trois différentes.
 - **Référentiel plutôt que colonnes** : les étapes de production sont des lignes (`production_steps`) et l'état « coché » est la **présence** d'une ligne dans `production_step_checks`. En ajouter une ne demande aucune migration, et la date de complétion vient gratuitement.
-- **Migration 5** ajoute `brands`, `production_steps`, `productions`, `production_step_checks`, `production_slots`, `products`, `sponsorships`, et la colonne `revenue_entries.origin`.
+- **Migration 5** ajoute `brands`, `production_steps`, `productions`, `production_step_checks`, `production_slots`, `products`, `sponsorships`, et la colonne `revenue_entries.origin`. **Migration 6** ajoute `products.sponsorship_id`.
 
 ## Points d'attention
 
@@ -442,6 +446,11 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 - **Le Gantt est une grille CSS maison**, sans bibliothèque : une barre par production, une colonne par jour, rien d'autre que des jours à compter. Sans `startDate`, la barre occupe le seul jour visé — une vidéo qu'on n'a pas commencé à planifier ne doit pas paraître étalée sur trois semaines.
 - **Les classements de partenaires sont des barres, pas des anneaux.** Sur un top-N ordonné, ce qui se lit est le rang et l'écart au premier : une longueur le donne, un angle non. Les barres sont proportionnelles au **maximum** de la liste et non au total — un classement n'est pas une répartition, et rapporter au total écraserait tout le bas de liste.
 - **`StepsPage` édite en champs non contrôlés, validés à la sortie** (`defaultValue` + `onBlur`) : un `onChange` branché sur la mutation enverrait une requête par lettre tapée.
+- **Créer et rattacher sont deux gestes distincts**, tous deux courants : un produit arrive parfois avant qu'on sache pour quelle vidéo il servira. Les deux sont proposés partout où un lien existe — `SponsorshipLinkField` (produit → sponso, avec création sur place), `ProductLinkField` (sponso → produits, liste avec ajout/retrait), et `AttachExistingSelect` dans l'onglet « Produits & sponsos » d'une fiche de production. Les helpers d'écriture vivent dans `partnerLinks.ts`, qui **n'exporte aucun composant** (règle `react-refresh/only-export-components`, même découpage que `videoMarkers.tsx`).
+- **Ordre d'écriture des liens.** Une sponso créée depuis un produit l'est **avant** le produit (sans identifiant, rien à référencer) ; des produits rattachés depuis une sponso le sont **après** elle (en création, son identifiant n'existe pas encore). Inverser l'un ou l'autre laisserait une fiche orpheline si la seconde écriture échouait.
+- **Les listes de rattachement sont triées, pas filtrées.** Les fiches de la même marque ou de la même vidéo remontent en tête, mais rien n'est masqué : un partenariat peut croiser deux marques. Seule exception, `ProductLinkField` cache les produits déjà rattachés à **une autre** sponso — les proposer reviendrait à les voler en silence. Dans une fiche de production, en revanche, déplacer est permis et le libellé le dit (« déplacer depuis « X » »).
+- **`AttachExistingSelect` reste bloqué sur `NONE`** : il déclenche une action et se réarme, il ne mémorise pas de valeur. Sans ça, le déclencheur afficherait le dernier élément rattaché et se lirait comme un filtre.
+- **Détacher n'est pas supprimer.** Le bouton ⛓ des listes d'une fiche de production met `productionId` à `null` : le produit reste reçu et son revenu existe toujours, il perd juste son rattachement à la vidéo (et donc le `videoId` de son revenu, par re-synchronisation).
 - **Rattacher une vidéo force la chaîne** du revenu ou de la dépense (une vidéo appartient à une seule chaîne), et changer de chaîne détache la vidéo. `VideoSelect` garde en tête de liste la vidéo déjà rattachée même si elle sort du filtre courant, sinon une édition l'effacerait silencieusement.
 
 ## Déploiement

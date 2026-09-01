@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useBrands } from '../../../application/brand/usecases/useBrands.ts';
 import { useChannels } from '../../../application/channel/usecases/useChannels.ts';
 import { useProductions } from '../../../application/production/usecases/useProductions.ts';
+import { useProducts } from '../../../application/product/usecases/useProducts.ts';
 import {
   useCreateSponsorship,
   useUpdateSponsorship,
@@ -29,6 +30,12 @@ import { Input, Textarea } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { fromSelectValue, NONE, toSelectValue } from './selectNone.ts';
+import { ProductLinkField } from './ProductLinkField.tsx';
+import {
+  EMPTY_PRODUCT_LINKS,
+  useApplyProductLinks,
+  type ProductLinkState,
+} from './partnerLinks.ts';
 
 interface SponsorshipDialogProps {
   open: boolean;
@@ -58,16 +65,22 @@ export const SponsorshipDialog = ({
   const { data: brands = [] } = useBrands();
   const { data: channels = [] } = useChannels();
   const { data: productions = [] } = useProductions();
+  // Une seule liste sert le picker ET l'affichage des produits déjà rattachés : en
+  // création, la sponso n'a pas d'identifiant à interroger de toute façon.
+  const { data: products = [] } = useProducts();
   const create = useCreateSponsorship();
   const update = useUpdateSponsorship();
+  const productLinks = useApplyProductLinks();
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY);
+  const [links, setLinks] = useState<ProductLinkState>(EMPTY_PRODUCT_LINKS);
 
   const [lastKey, setLastKey] = useState<string | null>(null);
   const key = `${open}-${sponsorship?.id ?? 'new'}`;
   if (open && key !== lastKey) {
     setLastKey(key);
     setError(null);
+    setLinks(EMPTY_PRODUCT_LINKS);
     setForm(
       sponsorship
         ? {
@@ -95,11 +108,15 @@ export const SponsorshipDialog = ({
       return;
     }
 
+    const brandId = fromSelectValue(form.brandId);
+    const productionId = fromSelectValue(form.productionId);
+    const channelId = fromSelectValue(form.channelId);
+
     const payload = {
       label: form.label.trim(),
-      brandId: fromSelectValue(form.brandId),
-      productionId: fromSelectValue(form.productionId),
-      channelId: fromSelectValue(form.channelId),
+      brandId,
+      productionId,
+      channelId,
       amount,
       status: form.status,
       deadline: form.deadline || null,
@@ -109,8 +126,14 @@ export const SponsorshipDialog = ({
     };
 
     try {
-      if (sponsorship) await update.mutateAsync({ id: sponsorship.id, input: payload });
-      else await create.mutateAsync(payload);
+      // Les rattachements partent APRÈS l'écriture : en création, l'identifiant de la
+      // sponso n'existe pas avant, et un produit ne peut pas référencer ce qui n'est
+      // pas écrit.
+      const saved = sponsorship
+        ? await update.mutateAsync({ id: sponsorship.id, input: payload })
+        : await create.mutateAsync(payload);
+
+      await productLinks.apply(saved.id, links, { brandId, productionId, channelId });
       onOpenChange(false);
     } catch (mutationError) {
       setError(
@@ -119,7 +142,7 @@ export const SponsorshipDialog = ({
     }
   };
 
-  const pending = create.isPending || update.isPending;
+  const pending = create.isPending || update.isPending || productLinks.isPending;
   const willEarn = form.status === 'paid' && Number(form.amount.replace(',', '.')) > 0;
 
   return (
@@ -244,6 +267,15 @@ export const SponsorshipDialog = ({
               </SelectContent>
             </Select>
           </div>
+
+          <ProductLinkField
+            sponsorshipId={sponsorship?.id ?? null}
+            products={products}
+            state={links}
+            onChange={setLinks}
+            brandId={fromSelectValue(form.brandId)}
+            productionId={fromSelectValue(form.productionId)}
+          />
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
