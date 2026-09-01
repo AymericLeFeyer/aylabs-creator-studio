@@ -114,16 +114,23 @@ export class GetProductionOverview {
     }
 
     // Payée mais rien en ligne : c'est la situation qui coûte le plus cher en confiance.
+    //
+    // « En ligne » se lit exactement comme la synchronisation des revenus : la sortie
+    // vient du rattachement DIRECT (`videoId`, une vidéo déjà publiée importée depuis
+    // YouTube) ou, à défaut, de celui de la production. Ne regarder que la production
+    // faisait crier au retard sur une sponso rattachée à une vidéo pourtant en ligne.
     const publishedProductionIds = new Set(
       this.productions
         .findAll()
         .filter((p) => p.videoId)
         .map((p) => p.id),
     );
+    const isDelivered = (sponsorship: { videoId: string | null; productionId: string | null }) =>
+      sponsorship.videoId !== null ||
+      (sponsorship.productionId !== null && publishedProductionIds.has(sponsorship.productionId));
+
     for (const sponsorship of this.sponsorships.findAll({ statuses: ['paid'] })) {
-      if (sponsorship.productionId && publishedProductionIds.has(sponsorship.productionId)) {
-        continue;
-      }
+      if (isDelivered(sponsorship)) continue;
       alerts.push({
         kind: 'sponsorship_undelivered',
         severity: 'warning',
