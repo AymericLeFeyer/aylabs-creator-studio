@@ -109,7 +109,11 @@ export class SqliteProductRepository implements ProductRepository {
            LEFT JOIN channels ch     ON ch.id = p.channel_id
            LEFT JOIN sponsorships sp ON sp.id = p.sponsorship_id
            ${clause}
-          ORDER BY p.deadline IS NULL, p.deadline, p.created_at DESC`,
+          -- Les receptions les plus recentes d'abord : la table des produits se lit comme
+          -- un journal de ce qui est arrive. Ceux qui n'ont pas de date de reception ne
+          -- sont pas encore arrives, ils ne peuvent pas participer a ce classement et
+          -- ferment donc la liste, du plus recemment saisi au plus ancien.
+          ORDER BY p.received_at IS NULL, p.received_at DESC, p.created_at DESC`,
       )
       .all(...(params as never[])) as unknown as ProductViewRow[];
 

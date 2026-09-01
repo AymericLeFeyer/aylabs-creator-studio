@@ -108,7 +108,10 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
            LEFT JOIN videos v       ON v.id  = s.video_id
            LEFT JOIN channels ch    ON ch.id = s.channel_id
            ${clause}
-          ORDER BY s.deadline IS NULL, s.deadline, s.created_at DESC`,
+          -- L'echeance la plus courte d'abord : contrairement aux produits, ce qui
+          -- compte sur une sponso est ce qu'on doit encore livrer. Sans echeance, la
+          -- sponso n'a pas d'urgence connue et ferme la liste.
+          ORDER BY s.deadline IS NULL, s.deadline ASC, s.created_at DESC`,
       )
       .all(...(params as never[])) as unknown as SponsorshipViewRow[];
 
