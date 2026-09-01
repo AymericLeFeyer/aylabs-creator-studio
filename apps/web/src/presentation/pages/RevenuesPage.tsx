@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Lock, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Lock, PackagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useDeleteRevenue, useRevenues } from '../../application/revenue/usecases/useRevenues.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
 import type { RevenueEntry } from '../../domain/revenue/entities/Revenue.ts';
@@ -19,6 +19,7 @@ import {
   TableRow,
 } from '../components/ui/table.tsx';
 import { RevenueDialog } from '../components/forms/RevenueDialog.tsx';
+import { ProductDialog } from '../components/forms/ProductDialog.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 
 export const RevenuesPage = () => {
@@ -32,6 +33,8 @@ export const RevenuesPage = () => {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<RevenueEntry | null>(null);
+  /** Revenu en nature en cours de documentation : il devient une fiche produit. */
+  const [documenting, setDocumenting] = useState<RevenueEntry | null>(null);
 
   const totals = useMemo(() => {
     const cash = entries
@@ -154,6 +157,20 @@ export const RevenuesPage = () => {
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
+                      {/* Un produit reçu saisi à la main n'a pas de fiche : marque,
+                          échéance, sponso associée, tout est perdu. Le + ouvre le
+                          formulaire produit pré-rempli pour le documenter enfin. */}
+                      {entry.origin === 'manual' && entry.categoryNature === 'in_kind' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Créer la fiche produit correspondante"
+                          onClick={() => setDocumenting(entry)}
+                        >
+                          <PackagePlus className="h-3.5 w-3.5" />
+                          <span className="sr-only">Documenter « {entry.label} »</span>
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -191,6 +208,32 @@ export const RevenuesPage = () => {
       )}
 
       <RevenueDialog open={dialogOpen} onOpenChange={setDialogOpen} entry={editing} />
+
+      {/* La fiche produit régénère un revenu équivalent (`origin: 'product'`) : l'entrée
+          manuelle d'origine est supprimée juste après, sinon le même euro compterait
+          deux fois. Créer d'abord, supprimer ensuite — l'inverse perdrait la saisie si
+          la création échouait. */}
+      <ProductDialog
+        open={documenting !== null}
+        onOpenChange={(next) => {
+          if (!next) setDocumenting(null);
+        }}
+        defaults={
+          documenting
+            ? {
+                name: documenting.label,
+                value: documenting.amountCents / 100,
+                receivedAt: documenting.date,
+                channelId: documenting.channelId,
+                videoId: documenting.videoId,
+              }
+            : undefined
+        }
+        onCreated={() => {
+          if (documenting) remove.mutate(documenting.id);
+          setDocumenting(null);
+        }}
+      />
     </div>
   );
 };

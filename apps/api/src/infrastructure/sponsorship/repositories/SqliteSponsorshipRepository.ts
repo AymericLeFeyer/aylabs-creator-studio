@@ -18,6 +18,7 @@ interface SponsorshipRow {
   id: string;
   brand_id: string | null;
   production_id: string | null;
+  video_id: string | null;
   channel_id: string | null;
   revenue_entry_id: string | null;
   label: string;
@@ -34,6 +35,7 @@ interface SponsorshipViewRow extends SponsorshipRow {
   brand_name: string | null;
   brand_color: string | null;
   production_title: string | null;
+  video_title: string | null;
   channel_name: string | null;
   products_count: number;
   products_value_cents: number;
@@ -43,6 +45,7 @@ const toDomain = (row: SponsorshipRow): Sponsorship => ({
   id: row.id,
   brandId: row.brand_id,
   productionId: row.production_id,
+  videoId: row.video_id,
   channelId: row.channel_id,
   revenueEntryId: row.revenue_entry_id,
   label: row.label,
@@ -90,6 +93,7 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
                 b.name   AS brand_name,
                 b.color  AS brand_color,
                 pr.title AS production_title,
+                v.title  AS video_title,
                 ch.name  AS channel_name,
                 -- Sous-requetes correlees : joindre les produits multiplierait la ligne
                 -- de la sponso par le nombre de colis recus.
@@ -101,6 +105,7 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
            FROM sponsorships s
            LEFT JOIN brands b       ON b.id  = s.brand_id
            LEFT JOIN productions pr ON pr.id = s.production_id
+           LEFT JOIN videos v       ON v.id  = s.video_id
            LEFT JOIN channels ch    ON ch.id = s.channel_id
            ${clause}
           ORDER BY s.deadline IS NULL, s.deadline, s.created_at DESC`,
@@ -112,6 +117,7 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
       brandName: row.brand_name,
       brandColor: row.brand_color,
       productionTitle: row.production_title,
+      videoTitle: row.video_title,
       channelName: row.channel_name,
       productsCount: row.products_count,
       productsValueCents: row.products_value_cents,
@@ -131,14 +137,15 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
     this.db
       .prepare(
         `INSERT INTO sponsorships
-           (id, brand_id, production_id, channel_id, revenue_entry_id, label, amount_cents,
-            status, deadline, paid_at, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, brand_id, production_id, video_id, channel_id, revenue_entry_id, label,
+            amount_cents, status, deadline, paid_at, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.brandId ?? null,
         input.productionId ?? null,
+        input.videoId ?? null,
         input.channelId ?? null,
         input.label,
         input.amountCents ?? 0,
@@ -166,6 +173,7 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
 
     if (input.brandId !== undefined) set('brand_id', input.brandId);
     if (input.productionId !== undefined) set('production_id', input.productionId);
+    if (input.videoId !== undefined) set('video_id', input.videoId);
     if (input.channelId !== undefined) set('channel_id', input.channelId);
     if (input.label !== undefined) set('label', input.label);
     if (input.amountCents !== undefined) set('amount_cents', input.amountCents);

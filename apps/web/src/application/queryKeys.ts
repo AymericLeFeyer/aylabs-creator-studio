@@ -23,6 +23,7 @@ export const queryKeys = {
   productionSlots: (params: unknown) => ['productionSlots', params] as const,
   products: (params: unknown) => ['products', params] as const,
   sponsorships: (params: unknown) => ['sponsorships', params] as const,
+  ideas: () => ['ideas'] as const,
 };
 
 /** Racines à invalider après une écriture qui change les chiffres agrégés. */

@@ -341,6 +341,40 @@ const migrations: Migration[] = [
       CREATE INDEX idx_products_sponsorship ON products(sponsorship_id);
     `,
   },
+  {
+    version: 7,
+    name: 'ideas',
+    // Le carnet de notes de la page production : ce qu'on jette en vrac avant de savoir
+    // si ca fera une video. Volontairement pauvre — un titre et rien d'autre : le jour
+    // ou l'idee merite des dates, un script et des creneaux, elle devient une production.
+    up: `
+      CREATE TABLE ideas (
+        id         TEXT PRIMARY KEY,
+        text       TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_ideas_created ON ideas(created_at);
+    `,
+  },
+  {
+    version: 8,
+    name: 'partner_video_link',
+    // Un produit ou une sponso peut concerner une video DEJA SORTIE, qui n'a jamais eu
+    // de fiche de production dans l'outil (tout l'historique collecte sur YouTube).
+    // On garde les deux rattachements plutot qu'un seul : `production_id` designe une
+    // video en preparation, `video_id` une sortie reelle. Ils sont exclusifs a l'usage
+    // — le formulaire n'en pose qu'un — et la synchronisation prend `video_id` en
+    // priorite, puis celui de la production.
+    up: `
+      ALTER TABLE products ADD COLUMN video_id TEXT
+        REFERENCES videos(id) ON DELETE SET NULL;
+      ALTER TABLE sponsorships ADD COLUMN video_id TEXT
+        REFERENCES videos(id) ON DELETE SET NULL;
+      CREATE INDEX idx_products_video ON products(video_id);
+      CREATE INDEX idx_sponsorships_video ON sponsorships(video_id);
+    `,
+  },
 ];
 
 /**

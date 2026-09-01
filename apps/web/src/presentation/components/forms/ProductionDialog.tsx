@@ -31,6 +31,10 @@ interface ProductionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   production?: Production | null;
+  /** Titre de travail pré-rempli, quand la vidéo naît d'une idée du carnet. */
+  defaultTitle?: string;
+  /** Appelé après une création réussie — c'est là que l'idée d'origine est retirée. */
+  onCreated?: (production: Production) => void;
 }
 
 const EMPTY = {
@@ -50,7 +54,13 @@ const EMPTY = {
  * publiée, c'est-à-dire rattachée à sa sortie réelle. La proposer comme un statut
  * ordinaire produirait des vidéos « terminées » que rien ne relie à YouTube.
  */
-export const ProductionDialog = ({ open, onOpenChange, production }: ProductionDialogProps) => {
+export const ProductionDialog = ({
+  open,
+  onOpenChange,
+  production,
+  defaultTitle,
+  onCreated,
+}: ProductionDialogProps) => {
   const { data: channels = [] } = useChannels();
   const create = useCreateProduction();
   const update = useUpdateProduction();
@@ -58,7 +68,9 @@ export const ProductionDialog = ({ open, onOpenChange, production }: ProductionD
   const [form, setForm] = useState(EMPTY);
 
   const [lastKey, setLastKey] = useState<string | null>(null);
-  const key = `${open}-${production?.id ?? 'new'}`;
+  // Le titre par défaut fait partie de la clé : deux idées promues d'affilée doivent
+  // rouvrir le formulaire avec le bon titre, pas avec celui de la précédente.
+  const key = `${open}-${production?.id ?? 'new'}-${defaultTitle ?? ''}`;
   if (open && key !== lastKey) {
     setLastKey(key);
     setError(null);
@@ -73,7 +85,7 @@ export const ProductionDialog = ({ open, onOpenChange, production }: ProductionD
             plannedDate: production.plannedDate ?? '',
             notes: production.notes ?? '',
           }
-        : EMPTY,
+        : { ...EMPTY, title: defaultTitle ?? '' },
     );
   }
 
@@ -94,8 +106,11 @@ export const ProductionDialog = ({ open, onOpenChange, production }: ProductionD
     };
 
     try {
-      if (production) await update.mutateAsync({ id: production.id, input: payload });
-      else await create.mutateAsync(payload);
+      if (production) {
+        await update.mutateAsync({ id: production.id, input: payload });
+      } else {
+        onCreated?.(await create.mutateAsync(payload));
+      }
       onOpenChange(false);
     } catch (mutationError) {
       setError(

@@ -18,6 +18,7 @@ interface ProductRow {
   id: string;
   brand_id: string | null;
   production_id: string | null;
+  video_id: string | null;
   sponsorship_id: string | null;
   channel_id: string | null;
   revenue_entry_id: string | null;
@@ -37,6 +38,7 @@ interface ProductViewRow extends ProductRow {
   brand_name: string | null;
   brand_color: string | null;
   production_title: string | null;
+  video_title: string | null;
   channel_name: string | null;
   sponsorship_label: string | null;
 }
@@ -45,6 +47,7 @@ const toDomain = (row: ProductRow): Product => ({
   id: row.id,
   brandId: row.brand_id,
   productionId: row.production_id,
+  videoId: row.video_id,
   sponsorshipId: row.sponsorship_id,
   channelId: row.channel_id,
   revenueEntryId: row.revenue_entry_id,
@@ -96,11 +99,13 @@ export class SqliteProductRepository implements ProductRepository {
                 b.name   AS brand_name,
                 b.color  AS brand_color,
                 pr.title AS production_title,
+                v.title  AS video_title,
                 ch.name  AS channel_name,
                 sp.label AS sponsorship_label
            FROM products p
            LEFT JOIN brands b        ON b.id  = p.brand_id
            LEFT JOIN productions pr  ON pr.id = p.production_id
+           LEFT JOIN videos v        ON v.id  = p.video_id
            LEFT JOIN channels ch     ON ch.id = p.channel_id
            LEFT JOIN sponsorships sp ON sp.id = p.sponsorship_id
            ${clause}
@@ -113,6 +118,7 @@ export class SqliteProductRepository implements ProductRepository {
       brandName: row.brand_name,
       brandColor: row.brand_color,
       productionTitle: row.production_title,
+      videoTitle: row.video_title,
       channelName: row.channel_name,
       sponsorshipLabel: row.sponsorship_label,
     }));
@@ -131,15 +137,16 @@ export class SqliteProductRepository implements ProductRepository {
     this.db
       .prepare(
         `INSERT INTO products
-           (id, brand_id, production_id, sponsorship_id, channel_id, revenue_entry_id,
-            name, url, value_cents, status, requested_at, deadline, received_at, notes,
-            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, brand_id, production_id, video_id, sponsorship_id, channel_id,
+            revenue_entry_id, name, url, value_cents, status, requested_at, deadline,
+            received_at, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.brandId ?? null,
         input.productionId ?? null,
+        input.videoId ?? null,
         input.sponsorshipId ?? null,
         input.channelId ?? null,
         input.name,
@@ -170,6 +177,7 @@ export class SqliteProductRepository implements ProductRepository {
 
     if (input.brandId !== undefined) set('brand_id', input.brandId);
     if (input.productionId !== undefined) set('production_id', input.productionId);
+    if (input.videoId !== undefined) set('video_id', input.videoId);
     if (input.sponsorshipId !== undefined) set('sponsorship_id', input.sponsorshipId);
     if (input.channelId !== undefined) set('channel_id', input.channelId);
     if (input.name !== undefined) set('name', input.name);

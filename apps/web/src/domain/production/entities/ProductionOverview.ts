@@ -17,22 +17,11 @@ export interface ProductionAlert {
   sponsorshipId: string | null;
 }
 
-/** Rapprochement proposé entre une production et une sortie déjà collectée. */
-export interface PublishSuggestion {
-  productionId: string;
-  productionTitle: string;
-  videoId: string;
-  videoTitle: string;
-  videoDate: string;
-  dayGap: number;
-}
-
 export interface ProductionOverview {
   queue: Production[];
   /** La prochaine à travailler : la première de la file qui n'est pas en pause. */
   nextId: string | null;
   alerts: ProductionAlert[];
-  suggestions: PublishSuggestion[];
   upcomingSlots: ProductionSlot[];
   weekLoadMinutes: number;
 }

@@ -22,21 +22,6 @@ export interface ProductionAlert {
   sponsorshipId: string | null;
 }
 
-/**
- * Rapprochement proposé entre une production pas encore publiée et une sortie déjà
- * collectée sur YouTube. Ce n'est **jamais** appliqué automatiquement : deux vidéos
- * sorties la même semaine se ressembleraient assez pour se voler leur rattachement.
- */
-export interface PublishSuggestion {
-  productionId: string;
-  productionTitle: string;
-  videoId: string;
-  videoTitle: string;
-  videoDate: IsoDate;
-  /** Écart en jours entre la date visée et la sortie réelle. */
-  dayGap: number;
-}
-
 /** Tout ce que l'écran de production affiche en tête : « où j'en suis », en une requête. */
 export interface ProductionOverview {
   /** Vidéos encore à faire, dans l'ordre manuel. */
@@ -44,7 +29,6 @@ export interface ProductionOverview {
   /** La prochaine à travailler : la première de la file qui n'est pas en pause. */
   nextId: string | null;
   alerts: ProductionAlert[];
-  suggestions: PublishSuggestion[];
   /** Créneaux des 14 prochains jours, tous projets confondus. */
   upcomingSlots: ProductionSlotView[];
   /** Charge planifiée des 7 prochains jours, en minutes (créneaux sans horaire exclus). */

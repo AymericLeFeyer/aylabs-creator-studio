@@ -51,7 +51,7 @@ export const useProduction = (id: string | undefined) =>
     enabled: Boolean(id),
   });
 
-/** File d'attente, alertes, suggestions et charge de la semaine, en une requête. */
+/** File d'attente, alertes, créneaux à venir et charge de la semaine, en une requête. */
 export const useProductionOverview = () =>
   useQuery({
     queryKey: queryKeys.productionOverview(),

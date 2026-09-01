@@ -40,14 +40,6 @@ export interface ProductionRepository {
   /** Coche une étape (idempotent : recocher ne change pas la date de complétion). */
   checkStep(productionId: string, stepId: string): void;
   uncheckStep(productionId: string, stepId: string): void;
-
-  /** Sorties déjà collectées qu'aucune production ne revendique, pour la suggestion. */
-  findUnlinkedVideos(limit: number): Array<{
-    id: string;
-    channelId: string;
-    title: string;
-    date: IsoDate;
-  }>;
 }
 
 export interface ProductionStepRepository {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useBrands } from '../../../application/brand/usecases/useBrands.ts';
 import { useChannels } from '../../../application/channel/usecases/useChannels.ts';
 import { useProductions } from '../../../application/production/usecases/useProductions.ts';
+import { useVideos } from '../../../application/video/usecases/useVideos.ts';
 import { useSponsorships } from '../../../application/sponsorship/usecases/useSponsorships.ts';
 import {
   useCreateProduct,
@@ -27,6 +28,8 @@ import { Input, Textarea } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { fromSelectValue, NONE, toSelectValue } from './selectNone.ts';
+import { VideoTargetSelect } from './VideoTargetSelect.tsx';
+import { fromTargetValue, PRODUCTION_PREFIX, targetToValue, toTargetValue } from './videoTarget.ts';
 import { SponsorshipLinkField } from './SponsorshipLinkField.tsx';
 import {
   EMPTY_SPONSORSHIP_DRAFT,
@@ -42,12 +45,25 @@ interface ProductDialogProps {
   defaultProductionId?: string | null;
   /** Pré-remplit la sponso quand le dialogue s'ouvre depuis une fiche de sponso. */
   defaultSponsorshipId?: string | null;
+  /**
+   * Valeurs de départ, quand le produit naît d'ailleurs — par exemple d'un revenu en
+   * nature saisi à la main qu'on veut enfin documenter.
+   */
+  defaults?: {
+    name?: string;
+    value?: number;
+    receivedAt?: string | null;
+    channelId?: string | null;
+    videoId?: string | null;
+  };
+  /** Appelé après une création réussie. */
+  onCreated?: (product: Product) => void;
 }
 
 const EMPTY = {
   name: '',
   brandId: NONE,
-  productionId: NONE,
+  target: NONE,
   sponsorshipId: NONE,
   channelId: NONE,
   url: '',
@@ -65,10 +81,13 @@ export const ProductDialog = ({
   product,
   defaultProductionId,
   defaultSponsorshipId,
+  defaults,
+  onCreated,
 }: ProductDialogProps) => {
   const { data: brands = [] } = useBrands();
   const { data: channels = [] } = useChannels();
   const { data: productions = [] } = useProductions();
+  const { data: videos = [] } = useVideos();
   const { data: sponsorships = [] } = useSponsorships();
   const create = useCreateProduct();
   const update = useUpdateProduct();
@@ -79,7 +98,9 @@ export const ProductDialog = ({
     useState<SponsorshipDraft>(EMPTY_SPONSORSHIP_DRAFT);
 
   const [lastKey, setLastKey] = useState<string | null>(null);
-  const key = `${open}-${product?.id ?? 'new'}`;
+  // Les valeurs de départ font partie de la clé : deux revenus documentés d'affilée
+  // doivent rouvrir le formulaire avec les bonnes, pas avec celles du précédent.
+  const key = `${open}-${product?.id ?? 'new'}-${defaults?.name ?? ''}`;
   if (open && key !== lastKey) {
     setLastKey(key);
     setError(null);
@@ -89,7 +110,7 @@ export const ProductDialog = ({
         ? {
             name: product.name,
             brandId: toSelectValue(product.brandId),
-            productionId: toSelectValue(product.productionId),
+            target: toTargetValue(product.productionId, product.videoId),
             sponsorshipId: toSelectValue(product.sponsorshipId),
             channelId: toSelectValue(product.channelId),
             url: product.url ?? '',
@@ -102,8 +123,15 @@ export const ProductDialog = ({
           }
         : {
             ...EMPTY,
-            productionId: toSelectValue(defaultProductionId),
+            target: toTargetValue(defaultProductionId, defaults?.videoId),
             sponsorshipId: toSelectValue(defaultSponsorshipId),
+            name: defaults?.name ?? '',
+            value: defaults?.value !== undefined ? String(defaults.value) : '',
+            // Documenter un revenu en nature existant, c'est décrire un produit
+            // déjà arrivé : le statut et la date suivent.
+            status: defaults ? 'received' : EMPTY.status,
+            receivedAt: defaults?.receivedAt ?? '',
+            channelId: toSelectValue(defaults?.channelId),
           },
     );
   }
@@ -119,7 +147,8 @@ export const ProductDialog = ({
     }
 
     const brandId = fromSelectValue(form.brandId);
-    const productionId = fromSelectValue(form.productionId);
+    // Un seul des deux est posé : le sélecteur ne propose qu'un rattachement à la fois.
+    const { productionId, videoId } = fromTargetValue(form.target);
     const channelId = fromSelectValue(form.channelId);
 
     // La sponso est créée AVANT le produit quand on la saisit sur place : sans son
@@ -140,6 +169,7 @@ export const ProductDialog = ({
       name: form.name.trim(),
       brandId,
       productionId,
+      videoId,
       sponsorshipId,
       channelId,
       url: form.url.trim() || null,
@@ -156,8 +186,11 @@ export const ProductDialog = ({
     };
 
     try {
-      if (product) await update.mutateAsync({ id: product.id, input: payload });
-      else await create.mutateAsync(payload);
+      if (product) {
+        await update.mutateAsync({ id: product.id, input: payload });
+      } else {
+        onCreated?.(await create.mutateAsync(payload));
+      }
       onOpenChange(false);
     } catch (mutationError) {
       setError(
@@ -270,28 +303,25 @@ export const ProductDialog = ({
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="product-production">Vidéo</Label>
-            <Select
-              value={form.productionId}
-              onValueChange={(value) => setForm((f) => ({ ...f, productionId: value }))}
-            >
-              <SelectTrigger id="product-production">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>Aucune</SelectItem>
-                {productions.map((production) => (
-                  <SelectItem key={production.id} value={production.id}>
-                    {production.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              C'est elle qui porte la chaîne et la sortie : le revenu généré les reprendra.
-            </p>
-          </div>
+          <VideoTargetSelect
+            id="product-video"
+            value={form.target}
+            productions={productions}
+            videos={videos}
+            channelId={fromSelectValue(form.channelId)}
+            onChange={(target) =>
+              setForm((f) => ({
+                ...f,
+                target: targetToValue(target),
+                // Une vidéo appartient à une chaîne : la choisir renseigne la chaîne
+                // encore vide, comme le fait déjà `VideoSelect` sur les dépenses.
+                channelId:
+                  f.channelId === NONE && target.kind !== 'none' && target.channelId
+                    ? target.channelId
+                    : f.channelId,
+              }))
+            }
+          />
 
           <SponsorshipLinkField
             value={form.sponsorshipId}
@@ -303,10 +333,10 @@ export const ProductDialog = ({
                 // un choix déjà fait : c'est une suggestion, pas une reprise en main.
                 brandId:
                   f.brandId === NONE && sponsorship?.brandId ? sponsorship.brandId : f.brandId,
-                productionId:
-                  f.productionId === NONE && sponsorship?.productionId
-                    ? sponsorship.productionId
-                    : f.productionId,
+                target:
+                  f.target === NONE && sponsorship
+                    ? toTargetValue(sponsorship.productionId, sponsorship.videoId)
+                    : f.target,
                 channelId:
                   f.channelId === NONE && sponsorship?.channelId
                     ? sponsorship.channelId
@@ -317,7 +347,11 @@ export const ProductDialog = ({
             onDraftChange={setSponsorshipDraft}
             sponsorships={sponsorships}
             brandId={fromSelectValue(form.brandId)}
-            productionId={fromSelectValue(form.productionId)}
+            productionId={
+              form.target.startsWith(PRODUCTION_PREFIX)
+                ? fromTargetValue(form.target).productionId
+                : null
+            }
           />
 
           <div className="grid gap-4 sm:grid-cols-3">

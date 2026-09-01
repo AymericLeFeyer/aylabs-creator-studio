@@ -1,5 +1,4 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { IsoDate } from '../../../shared/dates.ts';
 import { today } from '../../../shared/dates.ts';
 import type {
   CreateProductionInput,
@@ -332,34 +331,5 @@ export class SqliteProductionRepository implements ProductionRepository {
     this.db
       .prepare('DELETE FROM production_step_checks WHERE production_id = ? AND step_id = ?')
       .run(productionId, stepId);
-  }
-
-  findUnlinkedVideos(limit: number): Array<{
-    id: string;
-    channelId: string;
-    title: string;
-    date: IsoDate;
-  }> {
-    const rows = this.db
-      .prepare(
-        `SELECT v.id, v.channel_id, v.title, v.date
-           FROM videos v
-          WHERE NOT EXISTS (SELECT 1 FROM productions p WHERE p.video_id = v.id)
-          ORDER BY v.date DESC
-          LIMIT ${Math.max(1, Math.min(limit, 200))}`,
-      )
-      .all() as unknown as Array<{
-      id: string;
-      channel_id: string;
-      title: string;
-      date: string;
-    }>;
-
-    return rows.map((row) => ({
-      id: row.id,
-      channelId: row.channel_id,
-      title: row.title,
-      date: row.date,
-    }));
   }
 }

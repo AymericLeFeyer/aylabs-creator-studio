@@ -13,6 +13,7 @@ import { SqliteProductionStepRepository } from './infrastructure/production/repo
 import { SqliteProductionSlotRepository } from './infrastructure/production/repositories/SqliteProductionSlotRepository.ts';
 import { SqliteProductRepository } from './infrastructure/product/repositories/SqliteProductRepository.ts';
 import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/repositories/SqliteSponsorshipRepository.ts';
+import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
 import { seedDefaultCategories } from './application/category/usecases/SeedDefaultCategories.ts';
 import { seedDefaultSteps } from './application/production/usecases/SeedDefaultSteps.ts';
 import { ManageProducts } from './application/product/usecases/ManageProducts.ts';
@@ -38,6 +39,7 @@ export interface Container {
   productionSlots: SqliteProductionSlotRepository;
   products: SqliteProductRepository;
   sponsorships: SqliteSponsorshipRepository;
+  ideas: SqliteIdeaRepository;
   collectMetrics: CollectMetrics;
   getAnalytics: GetAnalytics;
   /**
@@ -70,6 +72,7 @@ export const buildContainer = (config: Config): Container => {
   const productionSlots = new SqliteProductionSlotRepository(db);
   const products = new SqliteProductRepository(db);
   const sponsorships = new SqliteSponsorshipRepository(db);
+  const ideas = new SqliteIdeaRepository(db);
 
   const manageProducts = new ManageProducts(products, productions, brands, revenues);
   const manageSponsorships = new ManageSponsorships(sponsorships, productions, brands, revenues);
@@ -89,6 +92,7 @@ export const buildContainer = (config: Config): Container => {
     productionSlots,
     products,
     sponsorships,
+    ideas,
     manageProducts,
     manageSponsorships,
     manageProductions: new ManageProductions(

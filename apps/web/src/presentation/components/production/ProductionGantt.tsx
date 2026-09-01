@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Production } from '../../../domain/production/entities/Production.ts';
-import { STATUS_COLORS, STATUS_LABELS } from '../../../domain/production/entities/Production.ts';
+import { STATUS_LABELS } from '../../../domain/production/entities/Production.ts';
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
 import { formatSlotTime } from '../../../domain/production/entities/ProductionSlot.ts';
 import { toIsoDate } from '../../../shared/format.ts';
+import { readableTextColor } from '../../../shared/contrast.ts';
+import { Button } from '../ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
 import { cn } from '../../../shared/cn.ts';
 
@@ -18,6 +21,12 @@ const ZOOM: Record<Zoom, { label: string; before: number; after: number; cell: n
   quarter: { label: '4 mois', before: 14, after: 106, cell: 11 },
 };
 
+/** Au-delà, le planning prend toute la page avant même qu'on ait vu la file d'attente. */
+const COLLAPSED_ROWS = 5;
+
+/** Couleur de repli quand la vidéo n'a pas encore de chaîne : neutre, jamais transparente. */
+const NO_CHANNEL_COLOR = '#64748b';
+
 interface ProductionGanttProps {
   productions: Production[];
   slots: ProductionSlot[];
@@ -27,15 +36,20 @@ interface ProductionGanttProps {
  * Le calendrier des vidéos, en barres.
  *
  * Construit en grille CSS plutôt qu'avec une bibliothèque de Gantt : une barre par
- * production, une colonne par jour, et rien d'autre à faire que de compter des jours —
- * une dépendance de plus pour ça serait mal placée, et aucune ne s'accorderait au thème.
+ * production, une colonne par jour, et rien d'autre à faire que de compter des jours.
  *
  * La barre va de la date de début à la date de sortie visée. Sans date de début, elle
- * occupe le seul jour visé : une vidéo qu'on n'a pas encore commencée à planifier ne
+ * occupe le seul jour visé : une vidéo qu'on n'a pas encore commencé à planifier ne
  * doit pas paraître étalée sur trois semaines.
+ *
+ * **La couleur dit la chaîne, le texte dit l'état.** Répéter le nom de la chaîne dans
+ * la barre serait redondant avec sa couleur, alors que l'avancement ne se lit nulle part
+ * ailleurs sur cette vue. La couleur du texte est calculée pour chaque fond (`readableTextColor`) :
+ * du blanc sur un vert clair ne se lit pas.
  */
 export const ProductionGantt = ({ productions, slots }: ProductionGanttProps) => {
   const [zoom, setZoom] = useState<Zoom>('month');
+  const [expanded, setExpanded] = useState(false);
   const { before, after, cell } = ZOOM[zoom];
 
   const { days, first } = useMemo(() => {
@@ -66,7 +80,23 @@ export const ProductionGantt = ({ productions, slots }: ProductionGanttProps) =>
     return offset >= 0 && offset < days.length;
   };
 
-  const planned = productions.filter((p) => p.plannedDate ?? p.startDate);
+  // Les vidéos encore à faire d'abord : le planning sert à préparer, pas à archiver.
+  const planned = useMemo(
+    () =>
+      productions
+        .filter((production) => production.plannedDate ?? production.startDate)
+        .sort((a, b) => {
+          if ((a.status === 'done') !== (b.status === 'done')) return a.status === 'done' ? 1 : -1;
+          return (a.plannedDate ?? a.startDate ?? '').localeCompare(
+            b.plannedDate ?? b.startDate ?? '',
+          );
+        }),
+    [productions],
+  );
+
+  const rows = expanded ? planned : planned.slice(0, COLLAPSED_ROWS);
+  const hidden = planned.length - rows.length;
+
   const todayColumn = columnOf(toIsoDate(new Date()));
   const gridStyle = { gridTemplateColumns: `repeat(${days.length}, ${cell}px)` };
 
@@ -76,7 +106,8 @@ export const ProductionGantt = ({ productions, slots }: ProductionGanttProps) =>
         <div>
           <CardTitle>Planning</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Du début du travail à la date de sortie visée. Les points sont tes créneaux.
+            Du début du travail à la date de sortie visée. La couleur est la chaîne, les points sont
+            tes créneaux.
           </p>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-muted p-1 text-sm">
@@ -104,101 +135,134 @@ export const ProductionGantt = ({ productions, slots }: ProductionGanttProps) =>
             Aucune vidéo datée. Renseigne une date de sortie visée pour la voir apparaître ici.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <div className="min-w-max">
-              {/* En-tête : le lundi porte l'étiquette, les autres jours le numéro. */}
-              <div className="sticky top-0 z-10 flex bg-card">
-                <div className="w-56 shrink-0" />
-                <div className="grid" style={gridStyle}>
-                  {days.map((day) => {
-                    const monday = day.getDay() === 1;
-                    const weekend = day.getDay() === 0 || day.getDay() === 6;
+          <>
+            <div className="overflow-x-auto">
+              <div className="min-w-max">
+                {/* En-tête : le lundi porte l'étiquette, les autres jours le numéro. */}
+                <div className="sticky top-0 z-10 flex bg-card">
+                  <div className="w-56 shrink-0" />
+                  <div className="grid" style={gridStyle}>
+                    {days.map((day) => {
+                      const monday = day.getDay() === 1;
+                      const weekend = day.getDay() === 0 || day.getDay() === 6;
+                      return (
+                        <div
+                          key={day.toISOString()}
+                          className={cn(
+                            'border-l border-border/60 pb-1 text-center text-[10px] leading-tight',
+                            weekend ? 'text-muted-foreground/50' : 'text-muted-foreground',
+                          )}
+                        >
+                          {monday || zoom === 'weeks' ? (
+                            <>
+                              <span className="block">{format(day, 'd', { locale: fr })}</span>
+                              {monday && (
+                                <span className="block font-medium">
+                                  {format(startOfWeek(day, { weekStartsOn: 1 }), 'MMM', {
+                                    locale: fr,
+                                  })}
+                                </span>
+                              )}
+                            </>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 pt-2">
+                  {rows.map((production) => {
+                    const end = production.plannedDate ?? production.startDate!;
+                    const start = production.startDate ?? end;
+                    const from = columnOf(start);
+                    const to = columnOf(end);
+                    const span = Math.max(1, to - from + 1);
+                    const color = production.channelColor ?? NO_CHANNEL_COLOR;
+                    const done = production.status === 'done';
+
                     return (
-                      <div
-                        key={day.toISOString()}
-                        className={cn(
-                          'border-l border-border/60 pb-1 text-center text-[10px] leading-tight',
-                          weekend ? 'text-muted-foreground/50' : 'text-muted-foreground',
-                        )}
-                      >
-                        {monday || zoom === 'weeks' ? (
-                          <>
-                            <span className="block">{format(day, 'd', { locale: fr })}</span>
-                            {monday && (
-                              <span className="block font-medium">
-                                {format(startOfWeek(day, { weekStartsOn: 1 }), 'MMM', {
-                                  locale: fr,
-                                })}
-                              </span>
-                            )}
-                          </>
-                        ) : null}
+                      <div key={production.id} className="flex items-center">
+                        <Link
+                          to={`/production/${production.id}`}
+                          className={cn(
+                            'w-56 shrink-0 truncate pr-3 text-sm hover:underline',
+                            done && 'text-muted-foreground',
+                          )}
+                          title={production.title}
+                        >
+                          {production.title}
+                        </Link>
+
+                        <div className="relative grid h-7 items-center" style={gridStyle}>
+                          {/* Trait d'aujourd'hui, posé sur toute la hauteur de la ligne. */}
+                          <span
+                            aria-hidden
+                            className="pointer-events-none absolute inset-y-0 z-0 w-px bg-[var(--negative)]/60"
+                            style={{ left: todayColumn * cell }}
+                          />
+
+                          {/* La barre entière est cliquable : c'est la cible la plus large
+                              de la ligne, et celle qu'on vise naturellement. */}
+                          <Link
+                            to={`/production/${production.id}`}
+                            className="z-10 flex h-5 items-center overflow-hidden rounded px-1.5 text-[11px] font-medium transition-opacity hover:opacity-80"
+                            style={{
+                              gridColumn: `${from + 1} / span ${span}`,
+                              backgroundColor: color,
+                              color: readableTextColor(color),
+                              opacity: done ? 0.55 : 1,
+                            }}
+                            title={`${production.title} — ${STATUS_LABELS[production.status]}${
+                              production.channelName ? ` · ${production.channelName}` : ''
+                            }`}
+                          >
+                            <span className="truncate">{STATUS_LABELS[production.status]}</span>
+                          </Link>
+
+                          {(slotsByProduction.get(production.id) ?? [])
+                            .filter((slot) => isVisible(slot.date))
+                            .map((slot) => (
+                              <span
+                                key={slot.id}
+                                aria-hidden
+                                className={cn(
+                                  'pointer-events-none z-20 mx-auto h-2 w-2 rounded-full ring-2 ring-card',
+                                  slot.done ? 'bg-muted-foreground' : 'bg-foreground',
+                                )}
+                                style={{ gridColumn: `${columnOf(slot.date) + 1} / span 1` }}
+                                title={`${slot.label || 'Créneau'} · ${formatSlotTime(slot)}`}
+                              />
+                            ))}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
-
-              <div className="space-y-1.5 pt-2">
-                {planned.map((production) => {
-                  const end = production.plannedDate ?? production.startDate!;
-                  const start = production.startDate ?? end;
-                  const from = columnOf(start);
-                  const to = columnOf(end);
-                  const span = Math.max(1, to - from + 1);
-                  const color = production.channelColor ?? STATUS_COLORS[production.status];
-
-                  return (
-                    <div key={production.id} className="flex items-center">
-                      <Link
-                        to={`/production/${production.id}`}
-                        className="w-56 shrink-0 truncate pr-3 text-sm hover:underline"
-                        title={production.title}
-                      >
-                        {production.title}
-                      </Link>
-
-                      <div className="relative grid h-7 items-center" style={gridStyle}>
-                        {/* Trait d'aujourd'hui, posé sur toute la hauteur de la ligne. */}
-                        <span
-                          aria-hidden
-                          className="pointer-events-none absolute inset-y-0 z-0 w-px bg-[var(--negative)]/60"
-                          style={{ left: todayColumn * cell }}
-                        />
-
-                        <div
-                          className="z-10 flex h-5 items-center gap-1 overflow-hidden rounded px-1.5 text-[11px] font-medium text-white"
-                          style={{
-                            gridColumn: `${from + 1} / span ${span}`,
-                            backgroundColor: color,
-                            opacity: production.status === 'done' ? 0.45 : 1,
-                          }}
-                          title={`${production.title} — ${STATUS_LABELS[production.status]}`}
-                        >
-                          <span className="truncate">{production.channelName ?? ''}</span>
-                        </div>
-
-                        {(slotsByProduction.get(production.id) ?? [])
-                          .filter((slot) => isVisible(slot.date))
-                          .map((slot) => (
-                            <span
-                              key={slot.id}
-                              aria-hidden
-                              className={cn(
-                                'z-20 mx-auto h-2 w-2 rounded-full ring-2 ring-card',
-                                slot.done ? 'bg-muted-foreground' : 'bg-foreground',
-                              )}
-                              style={{ gridColumn: `${columnOf(slot.date) + 1} / span 1` }}
-                              title={`${slot.label || 'Créneau'} · ${formatSlotTime(slot)}`}
-                            />
-                          ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
-          </div>
+
+            {(hidden > 0 || expanded) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-2 w-full text-muted-foreground"
+                onClick={() => setExpanded((value) => !value)}
+              >
+                {expanded ? (
+                  <>
+                    <ChevronUp className="h-4 w-4" />
+                    Réduire le planning
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4" />
+                    Afficher les {hidden} autres vidéos
+                  </>
+                )}
+              </Button>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

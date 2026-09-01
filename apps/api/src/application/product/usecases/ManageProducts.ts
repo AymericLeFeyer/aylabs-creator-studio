@@ -78,6 +78,9 @@ export class ManageProducts {
 
     // La production porte la chaîne et la vidéo : c'est ce qui fait remonter le produit
     // dans la ligne de la bonne vidéo du tableau de performance, sans saisie de plus.
+    // Un rattachement direct à une sortie déjà publiée (`videoId`) l'emporte : c'est le
+    // choix explicite le plus récent, et il existe justement quand aucune production
+    // ne couvre cette vidéo.
     const production = product.productionId
       ? this.productions.findById(product.productionId)
       : null;
@@ -86,7 +89,7 @@ export class ManageProducts {
     const payload = {
       channelId: product.channelId ?? production?.channelId ?? null,
       categoryId: IN_KIND_CATEGORY_ID,
-      videoId: production?.videoId ?? null,
+      videoId: product.videoId ?? production?.videoId ?? null,
       date: product.receivedAt ?? today(),
       amountCents: product.valueCents,
       label: brand ? `${brand.name} — ${product.name}` : product.name,

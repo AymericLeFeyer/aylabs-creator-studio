@@ -291,6 +291,8 @@ export const createProductSchema = z.object({
   name: z.string().trim().min(1, 'Le nom est obligatoire').max(200),
   brandId: z.string().nullable().optional(),
   productionId: z.string().nullable().optional(),
+  /** Sortie déjà publiée, quand elle n'a pas de fiche de production. */
+  videoId: z.string().nullable().optional(),
   /** Sponso dont ce produit fait partie. Facultatif : beaucoup arrivent seuls. */
   sponsorshipId: z.string().nullable().optional(),
   channelId: z.string().nullable().optional(),
@@ -320,6 +322,8 @@ export const createSponsorshipSchema = z.object({
   label: z.string().trim().min(1, 'Le libellé est obligatoire').max(200),
   brandId: z.string().nullable().optional(),
   productionId: z.string().nullable().optional(),
+  /** Sortie déjà publiée, quand elle n'a pas de fiche de production. */
+  videoId: z.string().nullable().optional(),
   channelId: z.string().nullable().optional(),
   /** Montant en euros, converti en centimes. Devient le revenu cash une fois payé. */
   amount: optionalAmount,
@@ -337,3 +341,9 @@ export const sponsorshipQuerySchema = z.object({
   productionIds: csvList,
   channelIds: csvList,
 });
+
+export const createIdeaSchema = z.object({
+  text: z.string().trim().min(1, "L'idée ne peut pas être vide").max(500),
+});
+
+export const updateIdeaSchema = createIdeaSchema.partial();

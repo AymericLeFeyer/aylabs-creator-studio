@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useBrands } from '../../../application/brand/usecases/useBrands.ts';
 import { useChannels } from '../../../application/channel/usecases/useChannels.ts';
 import { useProductions } from '../../../application/production/usecases/useProductions.ts';
+import { useVideos } from '../../../application/video/usecases/useVideos.ts';
 import { useProducts } from '../../../application/product/usecases/useProducts.ts';
 import {
   useCreateSponsorship,
@@ -30,6 +31,8 @@ import { Input, Textarea } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { fromSelectValue, NONE, toSelectValue } from './selectNone.ts';
+import { VideoTargetSelect } from './VideoTargetSelect.tsx';
+import { fromTargetValue, PRODUCTION_PREFIX, targetToValue, toTargetValue } from './videoTarget.ts';
 import { ProductLinkField } from './ProductLinkField.tsx';
 import {
   EMPTY_PRODUCT_LINKS,
@@ -47,7 +50,7 @@ interface SponsorshipDialogProps {
 const EMPTY = {
   label: '',
   brandId: NONE,
-  productionId: NONE,
+  target: NONE,
   channelId: NONE,
   amount: '',
   status: 'discussion' as SponsorshipStatus,
@@ -65,6 +68,7 @@ export const SponsorshipDialog = ({
   const { data: brands = [] } = useBrands();
   const { data: channels = [] } = useChannels();
   const { data: productions = [] } = useProductions();
+  const { data: videos = [] } = useVideos();
   // Une seule liste sert le picker ET l'affichage des produits déjà rattachés : en
   // création, la sponso n'a pas d'identifiant à interroger de toute façon.
   const { data: products = [] } = useProducts();
@@ -86,7 +90,7 @@ export const SponsorshipDialog = ({
         ? {
             label: sponsorship.label,
             brandId: toSelectValue(sponsorship.brandId),
-            productionId: toSelectValue(sponsorship.productionId),
+            target: toTargetValue(sponsorship.productionId, sponsorship.videoId),
             channelId: toSelectValue(sponsorship.channelId),
             amount: sponsorship.amountCents ? String(sponsorship.amountCents / 100) : '',
             status: sponsorship.status,
@@ -94,7 +98,7 @@ export const SponsorshipDialog = ({
             paidAt: sponsorship.paidAt ?? '',
             notes: sponsorship.notes ?? '',
           }
-        : { ...EMPTY, productionId: toSelectValue(defaultProductionId) },
+        : { ...EMPTY, target: toTargetValue(defaultProductionId, null) },
     );
   }
 
@@ -109,13 +113,15 @@ export const SponsorshipDialog = ({
     }
 
     const brandId = fromSelectValue(form.brandId);
-    const productionId = fromSelectValue(form.productionId);
+    // Un seul des deux est posé : le sélecteur ne propose qu'un rattachement à la fois.
+    const { productionId, videoId } = fromTargetValue(form.target);
     const channelId = fromSelectValue(form.channelId);
 
     const payload = {
       label: form.label.trim(),
       brandId,
       productionId,
+      videoId,
       channelId,
       amount,
       status: form.status,
@@ -248,25 +254,23 @@ export const SponsorshipDialog = ({
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="sponsorship-production">Vidéo</Label>
-            <Select
-              value={form.productionId}
-              onValueChange={(value) => setForm((f) => ({ ...f, productionId: value }))}
-            >
-              <SelectTrigger id="sponsorship-production">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>Aucune</SelectItem>
-                {productions.map((production) => (
-                  <SelectItem key={production.id} value={production.id}>
-                    {production.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <VideoTargetSelect
+            id="sponsorship-video"
+            value={form.target}
+            productions={productions}
+            videos={videos}
+            channelId={fromSelectValue(form.channelId)}
+            onChange={(target) =>
+              setForm((f) => ({
+                ...f,
+                target: targetToValue(target),
+                channelId:
+                  f.channelId === NONE && target.kind !== 'none' && target.channelId
+                    ? target.channelId
+                    : f.channelId,
+              }))
+            }
+          />
 
           <ProductLinkField
             sponsorshipId={sponsorship?.id ?? null}
@@ -274,7 +278,11 @@ export const SponsorshipDialog = ({
             state={links}
             onChange={setLinks}
             brandId={fromSelectValue(form.brandId)}
-            productionId={fromSelectValue(form.productionId)}
+            productionId={
+              form.target.startsWith(PRODUCTION_PREFIX)
+                ? fromTargetValue(form.target).productionId
+                : null
+            }
           />
 
           <div className="grid gap-4 sm:grid-cols-2">

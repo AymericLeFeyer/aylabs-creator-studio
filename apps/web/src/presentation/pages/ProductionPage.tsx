@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarClock, Clock, ExternalLink, Plus, Sparkles } from 'lucide-react';
+import { CalendarClock, Clock, ExternalLink, Plus } from 'lucide-react';
 import {
   useProductionOverview,
   useProductions,
   useProductionSlots,
   useProductionSteps,
-  usePublishProduction,
   useReorderProductions,
   useToggleStep,
 } from '../../application/production/usecases/useProductions.ts';
+import { useDeleteIdea } from '../../application/idea/usecases/useIdeas.ts';
+import type { Idea } from '../../domain/idea/entities/Idea.ts';
 import { formatDate } from '../../shared/format.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -19,6 +20,7 @@ import { EmptyState } from '../components/EmptyState.tsx';
 import { AlertsBanner } from '../components/production/AlertsBanner.tsx';
 import { ProductionCard } from '../components/production/ProductionCard.tsx';
 import { ProductionGantt } from '../components/production/ProductionGantt.tsx';
+import { IdeaBox } from '../components/production/IdeaBox.tsx';
 import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
 import { formatSlotTime } from '../../domain/production/entities/ProductionSlot.ts';
 
@@ -38,10 +40,23 @@ export const ProductionPage = () => {
 
   const reorder = useReorderProductions();
   const toggleStep = useToggleStep();
-  const publish = usePublishProduction();
+  const deleteIdea = useDeleteIdea();
   const [dialogOpen, setDialogOpen] = useState(false);
+  /** Idée en cours de promotion : son texte remplit le titre, et elle part à la création. */
+  const [promoted, setPromoted] = useState<Idea | null>(null);
 
   const queue = overview?.queue ?? [];
+
+  const openCreate = () => {
+    setPromoted(null);
+    setDialogOpen(true);
+  };
+
+  /** Une idée devient une vidéo : son texte remplit le titre, elle-même part à la création. */
+  const promote = (idea: Idea) => {
+    setPromoted(idea);
+    setDialogOpen(true);
+  };
 
   /** Déplace une carte d'un cran et réécrit l'ordre complet de la file. */
   const move = (index: number, direction: -1 | 1) => {
@@ -62,7 +77,7 @@ export const ProductionPage = () => {
           title="Aucune vidéo en production"
           description="Crée ta première vidéo : elle portera son script, ses créneaux, ses produits et ses sponsos, puis se rattachera à sa sortie le jour de la publication."
           actionLabel="Nouvelle vidéo"
-          onAction={() => setDialogOpen(true)}
+          onAction={openCreate}
         />
         <ProductionDialog open={dialogOpen} onOpenChange={setDialogOpen} />
       </>
@@ -79,7 +94,7 @@ export const ProductionPage = () => {
             cette semaine
           </p>
         </div>
-        <Button size="sm" onClick={() => setDialogOpen(true)}>
+        <Button size="sm" onClick={openCreate}>
           <Plus className="h-4 w-4" />
           Nouvelle vidéo
         </Button>
@@ -87,53 +102,14 @@ export const ProductionPage = () => {
 
       {overview && <AlertsBanner alerts={overview.alerts} />}
 
-      {/* Rapprochements possibles avec les sorties déjà collectées : proposés, jamais
-          appliqués tout seuls — deux vidéos de la même semaine se ressembleraient trop. */}
-      {overview && overview.suggestions.length > 0 && (
-        <Card className="border-[var(--in-kind)]/40 bg-[var(--in-kind)]/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <Sparkles className="h-4 w-4" />
-              Sorties détectées
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {overview.suggestions.map((suggestion) => (
-              <div
-                key={suggestion.productionId}
-                className="flex flex-wrap items-center justify-between gap-2 text-sm"
-              >
-                <span className="min-w-0">
-                  <span className="font-medium">{suggestion.productionTitle}</span>
-                  <span className="text-muted-foreground">
-                    {' '}
-                    ressemble à « {suggestion.videoTitle} », sortie le{' '}
-                    {formatDate(suggestion.videoDate)}
-                  </span>
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={publish.isPending}
-                  onClick={() =>
-                    publish.mutate({
-                      id: suggestion.productionId,
-                      videoId: suggestion.videoId,
-                    })
-                  }
-                >
-                  Rattacher
-                </Button>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+      {/* Le planning se lit à l'arrivée, pas derrière un onglet : c'est la vue qui
+          répond à « qu'est-ce qui sort quand », la première question de la page. Il se
+          replie à cinq lignes pour ne pas repousser la file d'attente sous le pli. */}
+      <ProductionGantt productions={[...queue, ...done]} slots={slots} />
 
       <Tabs defaultValue="queue">
         <TabsList>
           <TabsTrigger value="queue">File d'attente</TabsTrigger>
-          <TabsTrigger value="planning">Planning</TabsTrigger>
           <TabsTrigger value="done">Terminées ({done.length})</TabsTrigger>
         </TabsList>
 
@@ -160,49 +136,59 @@ export const ProductionPage = () => {
               )}
             </div>
 
-            {/* Les créneaux à venir, tous projets confondus : ce que dit l'agenda. */}
-            <Card className="h-fit">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <CalendarClock className="h-4 w-4" />
-                  Prochains créneaux
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2.5">
-                {(overview?.upcomingSlots ?? []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    Aucun créneau posé sur les 14 prochains jours.
-                  </p>
-                ) : (
-                  (overview?.upcomingSlots ?? []).map((slot) => (
-                    <Link
-                      key={slot.id}
-                      to={`/production/${slot.productionId}`}
-                      className="flex items-start gap-2 rounded-md p-1.5 text-sm transition-colors hover:bg-muted/60"
-                    >
-                      <span
-                        className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: slot.channelColor ?? 'var(--muted-foreground)' }}
-                        aria-hidden
-                      />
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">
-                          {slot.label || slot.stepName || 'Créneau'}
+            <div className="space-y-4">
+              {/* Les créneaux à venir, tous projets confondus : ce que dit l'agenda. */}
+              <Card className="h-fit">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <CalendarClock className="h-4 w-4" />
+                    Prochains créneaux
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2.5">
+                  {(overview?.upcomingSlots ?? []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Aucun créneau posé sur les 14 prochains jours.
+                    </p>
+                  ) : (
+                    (overview?.upcomingSlots ?? []).map((slot) => (
+                      <Link
+                        key={slot.id}
+                        to={`/production/${slot.productionId}`}
+                        className="flex items-start gap-2 rounded-md p-1.5 text-sm transition-colors hover:bg-muted/60"
+                      >
+                        <span
+                          className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                          style={{
+                            backgroundColor: slot.channelColor ?? 'var(--muted-foreground)',
+                          }}
+                          aria-hidden
+                        />
+                        {/* L'étape en titre : c'est elle qui dit ce qu'on va faire.
+                            L'intitulé, quand il existe, précise juste en dessous. */}
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">
+                            {slot.stepName ?? 'Créneau'}
+                          </span>
+                          {slot.label && (
+                            <span className="block truncate text-xs">{slot.label}</span>
+                          )}
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {formatDate(slot.date)} · {formatSlotTime(slot)} ·{' '}
+                            {slot.productionTitle}
+                          </span>
                         </span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {formatDate(slot.date)} · {formatSlotTime(slot)} · {slot.productionTitle}
-                        </span>
-                      </span>
-                    </Link>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
+                      </Link>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
 
-        <TabsContent value="planning">
-          <ProductionGantt productions={[...queue, ...done]} slots={slots} />
+              {/* Le carnet vit à côté de la file, pas dans un écran à part : une idée se
+                  note pendant qu'on regarde ce qu'on est en train de faire. */}
+              <IdeaBox onPromote={promote} />
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="done">
@@ -258,7 +244,17 @@ export const ProductionPage = () => {
         </TabsContent>
       </Tabs>
 
-      <ProductionDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <ProductionDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        defaultTitle={promoted?.text}
+        // L'idée n'est retirée qu'une fois la vidéo réellement créée : abandonner le
+        // formulaire ne doit pas la faire disparaître.
+        onCreated={() => {
+          if (promoted) deleteIdea.mutate(promoted.id);
+          setPromoted(null);
+        }}
+      />
     </div>
   );
 };

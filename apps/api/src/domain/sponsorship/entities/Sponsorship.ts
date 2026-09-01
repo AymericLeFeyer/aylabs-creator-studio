@@ -37,6 +37,8 @@ export interface Sponsorship {
   id: string;
   brandId: string | null;
   productionId: string | null;
+  /** Sortie déjà publiée concernée, quand elle n'a pas de fiche de production. */
+  videoId: string | null;
   channelId: string | null;
   /** Revenu cash généré. `null` tant que ce n'est pas payé. */
   revenueEntryId: string | null;
@@ -55,6 +57,7 @@ export interface SponsorshipView extends Sponsorship {
   brandName: string | null;
   brandColor: string | null;
   productionTitle: string | null;
+  videoTitle: string | null;
   channelName: string | null;
   /** Produits venus avec cette sponso, et leur valeur cumulée en nature. */
   productsCount: number;
@@ -65,6 +68,7 @@ export interface CreateSponsorshipInput {
   label: string;
   brandId?: string | null;
   productionId?: string | null;
+  videoId?: string | null;
   channelId?: string | null;
   amountCents?: Cents;
   status?: SponsorshipStatus;

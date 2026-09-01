@@ -4,7 +4,6 @@ import type { ProductionView } from '../../../domain/production/entities/Product
 import type {
   ProductionAlert,
   ProductionOverview,
-  PublishSuggestion,
 } from '../../../domain/production/entities/ProductionOverview.ts';
 import { slotMinutes } from '../../../domain/production/entities/ProductionSlot.ts';
 import type {
@@ -20,9 +19,6 @@ const DEADLINE_WARNING_DAYS = 7;
 
 /** Au-delà, une vidéo en pause n'est plus « en attente » mais oubliée. */
 const STALLED_DAYS = 14;
-
-/** Écart maximum entre la date visée et une sortie réelle pour proposer un rattachement. */
-const SUGGESTION_GAP_DAYS = 21;
 
 const daysBetween = (a: IsoDate, b: IsoDate): number =>
   Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
@@ -76,7 +72,6 @@ export class GetProductionOverview {
       queue,
       nextId: next?.id ?? null,
       alerts: this.buildAlerts(now, queue),
-      suggestions: this.buildSuggestions(queue),
       upcomingSlots,
       weekLoadMinutes,
     };
@@ -162,42 +157,5 @@ export class GetProductionOverview {
       if (a.severity !== b.severity) return a.severity === 'danger' ? -1 : 1;
       return (a.date ?? '9999').localeCompare(b.date ?? '9999');
     });
-  }
-
-  /**
-   * Rapproche une production non publiée d'une sortie déjà collectée.
-   *
-   * Le rapprochement se fait sur la **chaîne et la date**, jamais sur le titre : un
-   * titre de travail ressemble rarement au titre final, et une correspondance textuelle
-   * approximative proposerait des rattachements faux avec assurance.
-   */
-  private buildSuggestions(queue: ProductionView[]): PublishSuggestion[] {
-    const candidates = queue.filter((p) => !p.videoId && p.status !== 'idea');
-    if (candidates.length === 0) return [];
-
-    const videos = this.productions.findUnlinkedVideos(50);
-    const now = today();
-    const suggestions: PublishSuggestion[] = [];
-
-    for (const production of candidates) {
-      const reference = production.plannedDate ?? now;
-      const best = videos
-        .filter((video) => !production.channelId || video.channelId === production.channelId)
-        .map((video) => ({ video, gap: Math.abs(daysBetween(reference, video.date)) }))
-        .filter((match) => match.gap <= SUGGESTION_GAP_DAYS)
-        .sort((a, b) => a.gap - b.gap)[0];
-
-      if (!best) continue;
-      suggestions.push({
-        productionId: production.id,
-        productionTitle: production.title,
-        videoId: best.video.id,
-        videoTitle: best.video.title,
-        videoDate: best.video.date,
-        dayGap: best.gap,
-      });
-    }
-
-    return suggestions.sort((a, b) => a.dayGap - b.dayGap);
   }
 }

@@ -37,6 +37,12 @@ export interface Product {
   /** Vidéo en préparation à laquelle le produit est destiné. */
   productionId: string | null;
   /**
+   * Sortie **déjà publiée** concernée, quand elle n'a pas de fiche de production dans
+   * l'outil — tout l'historique collecté sur YouTube est dans ce cas. Exclusif de
+   * `productionId` à l'usage : le formulaire n'en pose qu'un.
+   */
+  videoId: string | null;
+  /**
    * Sponso dont ce produit fait partie. `null` quand le produit arrive seul — c'est
    * le cas le plus courant, et l'inverse (une sponso sans colis) l'est tout autant.
    * Le lien est purement informatif : les deux montants restent distincts, le produit
@@ -64,6 +70,7 @@ export interface ProductView extends Product {
   brandName: string | null;
   brandColor: string | null;
   productionTitle: string | null;
+  videoTitle: string | null;
   channelName: string | null;
   sponsorshipLabel: string | null;
 }
@@ -72,6 +79,7 @@ export interface CreateProductInput {
   name: string;
   brandId?: string | null;
   productionId?: string | null;
+  videoId?: string | null;
   sponsorshipId?: string | null;
   channelId?: string | null;
   url?: string | null;

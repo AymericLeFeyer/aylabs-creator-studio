@@ -70,6 +70,8 @@ export class ManageSponsorships {
       return { ...sponsorship, revenueEntryId: null };
     }
 
+    // Même règle que pour les produits : un rattachement direct à une sortie publiée
+    // l'emporte sur celui de la production.
     const production = sponsorship.productionId
       ? this.productions.findById(sponsorship.productionId)
       : null;
@@ -78,7 +80,7 @@ export class ManageSponsorships {
     const payload = {
       channelId: sponsorship.channelId ?? production?.channelId ?? null,
       categoryId: SPONSOR_CATEGORY_ID,
-      videoId: production?.videoId ?? null,
+      videoId: sponsorship.videoId ?? production?.videoId ?? null,
       date: sponsorship.paidAt ?? today(),
       amountCents: sponsorship.amountCents,
       label: brand ? `${brand.name} — ${sponsorship.label}` : sponsorship.label,

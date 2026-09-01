@@ -185,6 +185,8 @@ export const PartnersPage = () => {
                     <TableCell className="tabular text-muted-foreground">
                       {product.receivedAt ? formatDate(product.receivedAt) : '—'}
                     </TableCell>
+                    {/* Une vidéo en préparation mène à sa fiche ; une sortie déjà
+                        publiée n'en a pas, elle se lit telle quelle. */}
                     <TableCell className="max-w-[12rem] text-muted-foreground">
                       {product.productionId ? (
                         <Link
@@ -193,6 +195,10 @@ export const PartnersPage = () => {
                         >
                           {product.productionTitle}
                         </Link>
+                      ) : product.videoTitle ? (
+                        <span className="line-clamp-1" title={product.videoTitle}>
+                          {product.videoTitle}
+                        </span>
                       ) : (
                         '—'
                       )}
@@ -323,6 +329,10 @@ export const PartnersPage = () => {
                         >
                           {sponsorship.productionTitle}
                         </Link>
+                      ) : sponsorship.videoTitle ? (
+                        <span className="line-clamp-1" title={sponsorship.videoTitle}>
+                          {sponsorship.videoTitle}
+                        </span>
                       ) : (
                         '—'
                       )}
