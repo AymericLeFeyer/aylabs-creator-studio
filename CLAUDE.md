@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-01
+> Dernière mise à jour : 2026-09-02
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -101,7 +101,7 @@ Les deux applications suivent la même découpe.
 ```
 apps/api/src/
 ├── domain/          channel, metrics, category, revenue, expense, video, analytics,
-│                    brand, production, product, sponsorship
+│                    brand, production, product, sponsorship, idea, legal
 │   └── <domaine>/{entities,repositories,services}    # repositories = interfaces seules
 ├── application/<domaine>/usecases/
 ├── infrastructure/
@@ -259,7 +259,15 @@ Le lien est **purement informatif pour l'argent** : le produit vaut en nature ce
 
 ### `sponsorship`
 
-`Sponsorship { id, brandId, productionId, videoId, channelId, revenueEntryId, label, amountCents, status, deadline, paidAt, notes }` — table `sponsorships`.
+`Sponsorship { id, brandId, productionId, videoId, channelId, revenueEntryId, label, amountCents, status, deadline, paidAt, script, notes }` — table `sponsorships`.
+
+`script` (migration 10, `NOT NULL DEFAULT ''` comme `productions.script`) porte le texte
+de l'intégration en markdown : éléments de langage, mentions obligatoires, code promo.
+Il vit sur la **sponso** et non sur la production — une même vidéo peut en porter deux,
+et la sponso survit à un changement de rattachement. Il s'édite depuis son **propre
+bouton** dans la table des sponsors (`SponsorshipScriptDialog`), jamais depuis la modale
+d'édition : on corrige un montant en dix secondes, on écrit un script en plusieurs
+passages, et un formulaire refermé par mégarde emporterait le texte.
 
 `status` ∈ `discussion | todo | in_progress | paid | cancelled` (les quatre demandés + l'abandon, sans quoi une négo morte fausse le montant « à encaisser » à vie). Seul `paid` crée le revenu **cash**. Tant qu'elle n'est pas payée, la sponso vit dans le « à encaisser » du dashboard et **jamais dans le CA**.
 
@@ -268,6 +276,43 @@ Le lien est **purement informatif pour l'argent** : le produit vaut en nature ce
 `Idea { id, text, createdAt, updatedAt }` — table `ideas` (migration 7).
 
 Volontairement pauvre : un texte, et rien d'autre. Lui donner une chaîne, une date ou un statut en ferait une production au rabais — or c'est justement l'absence de champs qui permet de noter une idée en trois secondes, et une idée qu'on ne note pas est une idée perdue. Le bouton « en faire une vidéo » la promeut en `Production` (son texte devient le titre de travail) et la retire du carnet. La promotion est faite **côté front en deux appels** : créer la production, puis supprimer l'idée — un endpoint dédié n'apporterait qu'une transaction sur deux écritures indépendantes, et l'idée ne doit disparaître que si la vidéo est réellement créée.
+
+### `legal`
+
+Le suivi administratif : la société, et une ligne par mois depuis sa création.
+
+`Company { id, name, legalForm, siret, vatNumber, address, foundedOn, notes }` — table
+`company`, **ligne unique** (`id = 'default'`, insérée par la migration). `foundedOn`
+décide du **premier mois** du tableau ; sans elle, il retombe sur les 12 derniers mois.
+
+`LegalObligation { id, label, dayOfMonth, notes, sortOrder, isArchived }` — table
+`legal_obligations`, seedée par `seedLegalObligations` avec `factures-affiliation`,
+`declaration-produits`, `urssaf` (jour 15), `des` (jour 15) — identifiants fixes.
+**Ce sont des lignes, pas des colonnes** : même raison que les étapes de production, en
+ajouter une ne demande aucune migration, et le référentiel se gère depuis
+Paramètres → Société.
+
+`dayOfMonth` est le **jour limite dans le mois**. `null` = pas d'échéance connue : c'est
+le mois entier qui fait foi, et rien n'est en retard tant qu'il n'est pas terminé. Un 31
+sur un mois de 30 jours est ramené au dernier jour (`dueDateOf`).
+
+Table `legal_checks` (PK `(obligation_id, month)`, colonne `checked_at`, `month` au
+format `AAAA-MM`) : **la présence de la ligne vaut « fait »**. Cocher/décocher est un
+INSERT `DO NOTHING` / DELETE, et la date de réalisation vient gratuitement — recocher ne
+la repousse pas.
+
+`GetLegalOverview.execute()` renvoie `{ company, obligations, months, alerts, totals }`.
+`months` va du mois en cours à la création, **du plus récent au plus ancien** (garde-fou
+à 180 mois : une date de création saisie de travers ne doit pas produire mille lignes).
+
+Le **statut d'une case est calculé côté API** (`done | late | due_soon | pending`) : la
+pastille du tableau et l'alerte du dashboard doivent dire la même chose de la même case,
+et une règle dupliquée finirait par diverger. `due_soon` = échéance dans les 7 jours.
+`alerts` reprend les `late` et `due_soon`, la plus ancienne échéance d'abord, plafonnées
+à 8 — au-delà, une alerte devient un tableau qu'on ne lit plus.
+
+Toutes les obligations actives s'appliquent à **tous** les mois de la période : c'est
+l'archivage qui retire celle qui n'a plus lieu d'être, sans effacer l'historique coché.
 
 ### `analytics`
 
@@ -348,22 +393,29 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 
 ## Routes front
 
-| Route             | Page                   | Contenu                                                                                                                                                  |
-| ----------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`               | `DashboardPage`        | 10 cartes de stats, graphique d'argent, audience, répartitions revenus + dépenses, détail par chaîne, classements des partenaires, performance par vidéo |
-| `/production`     | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                   |
-| `/production/:id` | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / Créneaux / Produits & sponsos / Notes                                                           |
-| `/partenariats`   | `PartnersPage`         | Deux onglets, Produits et Sponsors (onglet dans `?onglet=`)                                                                                              |
-| `/revenus`        | `RevenuesPage`         | Liste + saisie des revenus manuels, avec vidéo rattachée                                                                                                 |
-| `/depenses`       | `ExpensesPage`         | Liste + saisie des dépenses, avec catégorie et vidéo rattachée                                                                                           |
-| `/chaines`        | `ChannelsPage`         | Cartes des chaînes, collecte, saisie manuelle                                                                                                            |
-| `/categories`     | `CategoriesPage`       | Gestion des catégories : portée, nature, couleur                                                                                                         |
-| `/marques`        | `BrandsPage`           | Référentiel des marques (paramètres)                                                                                                                     |
-| `/etapes`         | `StepsPage`            | Référentiel des étapes de production (paramètres)                                                                                                        |
+| Route               | Page                   | Contenu                                                                                                                                                |
+| ------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/`                 | `DashboardPage`        | 10 cartes de stats, alertes (production + légal), **les deux graphiques seulement** (argent, audience), aperçu de la file de production et du pipeline |
+| `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo, dernières sorties (hors période), file de production         |
+| `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                 |
+| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / Créneaux / Produits & sponsos / Notes                                                         |
+| `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis deux onglets Produits et Sponsors (`?onglet=`). Bouton **Script** par sponso                           |
+| `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                  |
+| `/legal`            | `LegalPage`            | Fiche société, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                         |
+| `/chaines`          | `ChannelsPage`         | Cartes des chaînes, collecte, saisie manuelle                                                                                                          |
+| `/categories`       | `CategoriesPage`       | Gestion des catégories : portée, nature, couleur                                                                                                       |
+| `/marques`          | `BrandsPage`           | Référentiel des marques (paramètres)                                                                                                                   |
+| `/etapes`           | `StepsPage`            | Référentiel des étapes de production (paramètres)                                                                                                      |
+| `/societe`          | `CompanyPage`          | Fiche société éditable + référentiel des obligations mensuelles (paramètres)                                                                           |
 
-`AppLayout` porte la navigation : Dashboard / Production / Partenariats / Revenus / Dépenses dans la barre, **Chaînes, Catégories, Marques et Étapes dans le menu ⚙ Paramètres** en haut à droite (ce sont des écrans de configuration, pas de lecture). Le bouton ⚙ s'allume sur `SETTINGS_NAV`, pas sur l'absence de filtres : `/production` n'a pas de barre de filtres sans être pour autant un écran de configuration. La largeur du site est fixée une fois pour toutes par la constante `CONTAINER` (`max-w-[1800px]`), partagée par l'en-tête et le contenu.
+`/revenus`, `/depenses` et `/taxes` **redirigent** vers `/chiffre-affaires` sur le bon
+onglet : ce sont les deux moitiés de la même soustraction, et elles se consultent l'une
+après l'autre. Les tables vivent désormais dans `components/money/RevenuesPanel.tsx` et
+`ExpensesPanel.tsx` — ce sont les anciennes pages, déplacées telles quelles.
 
-La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/chaines`, `/categories`, `/marques`, `/etapes`, `/production`, `/partenariats` — une vidéo à écrire n'appartient à aucune fenêtre de temps) — configurer une chaîne ne dépend d'aucune période — et les pages ne la rendent donc plus elles-mêmes. Deux rangées, dans l'ordre où on s'en sert :
+`AppLayout` porte la navigation : Dashboard / Contenu / Production / Partenariats / Chiffre d'affaires / Légal dans la barre, **Chaînes, Catégories, Marques, Étapes et Société dans le menu ⚙ Paramètres** en haut à droite. L'ordre des deux boutons de droite est **thème puis paramètres** : le thème se change une fois, les paramètres s'ouvrent souvent, et ce qui s'ouvre en menu déroulant est à l'extrémité pour ne pas déborder (ce sont des écrans de configuration, pas de lecture). Le bouton ⚙ s'allume sur `SETTINGS_NAV`, pas sur l'absence de filtres : `/production` n'a pas de barre de filtres sans être pour autant un écran de configuration. La largeur du site est fixée une fois pour toutes par la constante `CONTAINER` (`max-w-[1800px]`), partagée par l'en-tête et le contenu.
+
+La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/chaines`, `/categories`, `/marques`, `/etapes`, `/societe`, `/production`, `/partenariats`, `/legal` — une vidéo à écrire n'appartient à aucune fenêtre de temps, et le tableau légal a sa propre maille, le mois) — configurer une chaîne ne dépend d'aucune période — et les pages ne la rendent donc plus elles-mêmes. Deux rangées, dans l'ordre où on s'en sert :
 
 1. **quand** : préréglages de période (dont `mtd`, « Ce mois », qui part du 1er du mois en cours), dates personnalisées, pas d'agrégation, et le bouton « Collecter » à l'autre bout de cette même rangée ;
 2. **quoi et comment le lire** : puces de chaînes, puis l'interrupteur **CA / Bénéfices** et les coches « Compter les produits reçus » et « Marquer les sorties de vidéo ».
@@ -374,7 +426,7 @@ Deux cartes déplient un panneau au survol (prop `details` de `StatCard`, ouvert
 
 La carte « Abonnés gagnés » met le **gain** en grand et le total en sous-titre : sur une période, ce qui se pilote est la progression, pas un cumul qui ne bouge qu'à la marge.
 
-Disposition du dashboard, de haut en bas : 10 cartes de stats (2 colonnes en mobile, 5 à partir de `lg`), les graphiques d'argent et d'audience **côte à côte** à partir de `2xl`, trois anneaux (revenus / dépenses / revenus par chaîne), les deux classements de partenaires, puis le classement des vidéos à gauche et le tableau complet à droite.
+Disposition du dashboard, de haut en bas : 10 cartes de stats (2 colonnes en mobile, 5 à partir de `lg`), les deux bandeaux d'alertes (production, légal), les graphiques d'argent et d'audience **côte à côte** à partir de `2xl`, puis l'aperçu de la file de production et deux cartes de pipeline. **C'est tout** : anneaux, classements de partenaires et performance par vidéo ont migré vers `/chiffre-affaires` et `/contenu`, parce qu'empilés ici ils faisaient une page qu'on parcourait au lieu de la lire.
 
 Les deux dernières cartes de stats — « Sponsos en cours » et « Produits attendus » — **ne suivent pas la période** : ce sont des états du pipeline, pas des flux. Une sponso signée en mars et pas encore payée est toujours à encaisser en juin. Leur sous-titre le dit, pour qu'on ne les lise pas comme un cumul de période.
 
@@ -397,8 +449,11 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useProductionSlots`, `useCreateSlot`, `useUpdateSlot`, `useDeleteSlot`                                                                                                                           | idem                                                  | Créneaux de travail                                                                                 |
 | `useProducts`, `useCreateProduct`, …                                                                                                                                                              | `application/product/usecases/useProducts.ts`         | Produits reçus                                                                                      |
 | `useSponsorships`, `useCreateSponsorship`, …                                                                                                                                                      | `application/sponsorship/usecases/useSponsorships.ts` | Sponsos                                                                                             |
+| `useLegalOverview`, `useLegalObligations`, `useUpdateCompany`, `useCreateObligation`, `useUpdateObligation`, `useDeleteObligation`, `useToggleLegalCheck` | `application/legal/usecases/useLegal.ts` | Société + obligations mensuelles |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
+
+`LEGAL_ROOTS` (`legalOverview`, `legalObligations`) part en entier à chaque écriture du module légal : changer un jour limite déplace l'échéance sur tous les mois déjà affichés, et cocher une case retire une alerte du dashboard.
 
 `PRODUCTION_ROOTS` couvre le module de production, et `PARTNER_ROOTS` y ajoute `MONEY_ROOTS` + `brandStats` : **une écriture de produit ou de sponso crée, modifie ou supprime un revenu**, les vues d'argent doivent donc repartir en même temps. Le découpage n'est pas plus fin volontairement — un seul changement de statut peut faire bouger les alertes, les compteurs de la file et les classements, et le module est assez petit pour que le refetch soit indolore.
 
@@ -414,6 +469,10 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 - **Sentinelle des `Select` facultatifs** : `NONE` / `toSelectValue` / `fromSelectValue` (`presentation/components/forms/selectNone.ts`). Radix refuse une `SelectItem` de valeur vide ; la sentinelle est partagée pour que trois formulaires n'en inventent pas trois différentes.
 - **Référentiel plutôt que colonnes** : les étapes de production sont des lignes (`production_steps`) et l'état « coché » est la **présence** d'une ligne dans `production_step_checks`. En ajouter une ne demande aucune migration, et la date de complétion vient gratuitement.
 - **Migration 5** ajoute `brands`, `production_steps`, `productions`, `production_step_checks`, `production_slots`, `products`, `sponsorships`, et la colonne `revenue_entries.origin`. **Migration 6** ajoute `products.sponsorship_id`, **migration 7** la table `ideas`, **migration 8** `products.video_id` et `sponsorships.video_id`.
+- **Migration 9** ajoute `company` (ligne unique), `legal_obligations` et `legal_checks`. **Migration 10** ajoute `sponsorships.script`.
+- **Un panneau plutôt qu'une page dès que deux écrans le partagent** : `RevenuesPanel` et `ExpensesPanel` (ex-pages) sont montés dans les onglets de `/chiffre-affaires` ; `MoneyBreakdowns` porte les trois anneaux et les deux classements ; `PartnerStatCards` les quatre chiffres du pipeline ; `ProductionQueueCard` l'aperçu de la file. Chacun est monté à deux endroits au moins, et le dupliquer ferait diverger deux écrans qui doivent annoncer le même montant.
+- **Un aperçu ne se manipule pas** : `ProductionQueueCard` affiche la file mais ne réordonne rien et ne coche aucune étape — ces gestes vivent sur `/production`, propriétaire de la file. Un aperçu modifiable finit par diverger de l'écran qui en est propriétaire.
+- **Le calcul du pipeline vit dans le domaine** (`domain/partner/services/pipeline.ts`, `partnerPipeline`) et non dans les écrans : le dashboard et `/partenariats` affichent le même « à encaisser », et deux comptages parallèles finiraient par se contredire.
 - **Contraste calculé, pas choisi** : `shared/contrast.ts` (`readableTextColor`) prend une couleur de fond libre et renvoie le blanc ou l'encre du thème, selon le meilleur **ratio WCAG réel** des deux. Les couleurs de chaîne sont libres — un vert clair et un bleu nuit peuvent cohabiter, et écrire en blanc sur les deux rend le premier illisible.
 
 ## Points d'attention
@@ -473,6 +532,12 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 - **`AttachExistingSelect` reste bloqué sur `NONE`** : il déclenche une action et se réarme, il ne mémorise pas de valeur. Sans ça, le déclencheur afficherait le dernier élément rattaché et se lirait comme un filtre.
 - **Détacher n'est pas supprimer.** Le bouton ⛓ des listes d'une fiche de production met `productionId` à `null` : le produit reste reçu et son revenu existe toujours, il perd juste son rattachement à la vidéo (et donc le `videoId` de son revenu, par re-synchronisation).
 - **Rattacher une vidéo force la chaîne** du revenu ou de la dépense (une vidéo appartient à une seule chaîne), et changer de chaîne détache la vidéo. `VideoSelect` garde en tête de liste la vidéo déjà rattachée même si elle sort du filtre courant, sinon une édition l'effacerait silencieusement.
+- **Le dashboard n'a plus que deux graphiques.** Les répartitions et les classements sont dans `/chiffre-affaires` → Synthèse, la performance par vidéo dans `/contenu`. Y remettre un graphique demande de se demander lequel il remplace : la page doit se lire d'un regard, pas se parcourir.
+- **Deux temporalités cohabitent sur `/contenu`** : la performance suit la période de la barre de filtres, les « Dernières sorties » l'ignorent (`useVideos` sans bornes de date, `limit: 15`). Une période de 7 jours viderait la liste alors que c'est justement là qu'on la consulte. Les deux blocs sont côte à côte : leurs totaux ne se recoupent pas, et c'est voulu.
+- **Le tableau légal s'applique rétroactivement.** Une obligation ajoutée aujourd'hui apparaît sur **tous** les mois depuis la création de la société, donc immédiatement « en retard » sur les mois passés. C'est le comportement demandé (une ligne par mois depuis la création) ; pour retirer une obligation devenue caduque sans perdre l'historique coché, l'**archiver** plutôt que la supprimer — la supprimer efface les cases de tous les mois.
+- **Sans `company.foundedOn`, le tableau légal retombe sur les 12 derniers mois** (`FALLBACK_MONTHS`). Ce n'est pas un bug : c'est ce qui permet de cocher quelque chose avant d'avoir renseigné la fiche. La date se saisit dans Paramètres → Société.
+- **Le mois d'une case est `AAAA-MM`, jamais une date.** `/api/legal/checks/:id/:month` valide le format en 422 : un `2026-3` passerait silencieusement à côté de toutes les lignes existantes, et la case paraîtrait ne jamais se cocher.
+- **Le script d'une sponso a son propre bouton**, pas une case dans la modale d'édition : `SponsorshipScriptDialog` réutilise le `ScriptEditor` des productions (même markdown, même durée de lecture, même absence d'enregistrement automatique). `PartnersPage` garde l'**identifiant** de la sponso ouverte et non la fiche : après enregistrement la liste est rechargée, et un instantané figé laisserait l'éditeur croire éternellement qu'il reste du non-enregistré.
 
 ## Déploiement
 

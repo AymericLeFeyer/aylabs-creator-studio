@@ -1,28 +1,24 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Lock, PackagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useDeleteRevenue, useRevenues } from '../../application/revenue/usecases/useRevenues.ts';
-import { useFilters } from '../hooks/useFilters.tsx';
-import type { RevenueEntry } from '../../domain/revenue/entities/Revenue.ts';
-import { ORIGIN_LABELS, ORIGIN_TARGET } from '../../domain/revenue/entities/Revenue.ts';
-import { NATURE_LABELS } from '../../domain/category/entities/Category.ts';
-import { formatDate, formatMoney } from '../../shared/format.ts';
-import { Button } from '../components/ui/button.tsx';
-import { Badge } from '../components/ui/badge.tsx';
-import { Card, CardHeader, CardTitle } from '../components/ui/card.tsx';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../components/ui/table.tsx';
-import { RevenueDialog } from '../components/forms/RevenueDialog.tsx';
-import { ProductDialog } from '../components/forms/ProductDialog.tsx';
-import { EmptyState } from '../components/EmptyState.tsx';
+  useDeleteRevenue,
+  useRevenues,
+} from '../../../application/revenue/usecases/useRevenues.ts';
+import { useFilters } from '../../hooks/useFilters.tsx';
+import type { RevenueEntry } from '../../../domain/revenue/entities/Revenue.ts';
+import { ORIGIN_LABELS, ORIGIN_TARGET } from '../../../domain/revenue/entities/Revenue.ts';
+import { NATURE_LABELS } from '../../../domain/category/entities/Category.ts';
+import { formatDate, formatMoney } from '../../../shared/format.ts';
+import { Button } from '../ui/button.tsx';
+import { Badge } from '../ui/badge.tsx';
+import { Card, CardHeader, CardTitle } from '../ui/card.tsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
+import { RevenueDialog } from '../forms/RevenueDialog.tsx';
+import { ProductDialog } from '../forms/ProductDialog.tsx';
+import { EmptyState } from '../EmptyState.tsx';
 
-export const RevenuesPage = () => {
+export const RevenuesPanel = () => {
   const filters = useFilters();
   const { data: entries = [], isLoading } = useRevenues({
     from: filters.from,

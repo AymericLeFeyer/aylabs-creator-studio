@@ -48,6 +48,12 @@ export interface Sponsorship {
   /** Échéance de livraison : la date à laquelle la vidéo doit être en ligne. */
   deadline: IsoDate | null;
   paidAt: IsoDate | null;
+  /**
+   * Le texte de l'intégration, en markdown : éléments de langage, mentions
+   * obligatoires, code promo. Il vit sur la sponso et non sur la production — une même
+   * vidéo peut en porter deux, et la sponso survit à un changement de rattachement.
+   */
+  script: string;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -74,6 +80,7 @@ export interface CreateSponsorshipInput {
   status?: SponsorshipStatus;
   deadline?: IsoDate | null;
   paidAt?: IsoDate | null;
+  script?: string;
   notes?: string | null;
 }
 

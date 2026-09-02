@@ -14,12 +14,16 @@ import { SqliteProductionSlotRepository } from './infrastructure/production/repo
 import { SqliteProductRepository } from './infrastructure/product/repositories/SqliteProductRepository.ts';
 import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/repositories/SqliteSponsorshipRepository.ts';
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
+import { SqliteCompanyRepository } from './infrastructure/legal/repositories/SqliteCompanyRepository.ts';
+import { SqliteLegalObligationRepository } from './infrastructure/legal/repositories/SqliteLegalObligationRepository.ts';
 import { seedDefaultCategories } from './application/category/usecases/SeedDefaultCategories.ts';
 import { seedDefaultSteps } from './application/production/usecases/SeedDefaultSteps.ts';
+import { seedLegalObligations } from './application/legal/usecases/SeedLegalObligations.ts';
 import { ManageProducts } from './application/product/usecases/ManageProducts.ts';
 import { ManageSponsorships } from './application/sponsorship/usecases/ManageSponsorships.ts';
 import { ManageProductions } from './application/production/usecases/ManageProductions.ts';
 import { GetProductionOverview } from './application/production/usecases/GetProductionOverview.ts';
+import { GetLegalOverview } from './application/legal/usecases/GetLegalOverview.ts';
 import { CollectMetrics } from './application/metrics/usecases/CollectMetrics.ts';
 import { GetAnalytics } from './application/analytics/usecases/GetAnalytics.ts';
 import { YouTubeDataClient } from './infrastructure/youtube/api/YouTubeDataClient.ts';
@@ -40,6 +44,8 @@ export interface Container {
   products: SqliteProductRepository;
   sponsorships: SqliteSponsorshipRepository;
   ideas: SqliteIdeaRepository;
+  company: SqliteCompanyRepository;
+  legalObligations: SqliteLegalObligationRepository;
   collectMetrics: CollectMetrics;
   getAnalytics: GetAnalytics;
   /**
@@ -50,6 +56,8 @@ export interface Container {
   manageSponsorships: ManageSponsorships;
   manageProductions: ManageProductions;
   getProductionOverview: GetProductionOverview;
+  /** Tableau des obligations mensuelles + alertes reprises par le dashboard. */
+  getLegalOverview: GetLegalOverview;
   /** `null` tant qu'aucune clé API YouTube n'est configurée. */
   youtubeData: YouTubeDataClient | null;
 }
@@ -59,6 +67,7 @@ export const buildContainer = (config: Config): Container => {
   const db = getDatabase(config.databasePath);
   seedDefaultCategories(db);
   seedDefaultSteps(db);
+  seedLegalObligations(db);
 
   const channels = new SqliteChannelRepository(db);
   const metrics = new SqliteMetricsRepository(db);
@@ -73,6 +82,8 @@ export const buildContainer = (config: Config): Container => {
   const products = new SqliteProductRepository(db);
   const sponsorships = new SqliteSponsorshipRepository(db);
   const ideas = new SqliteIdeaRepository(db);
+  const company = new SqliteCompanyRepository(db);
+  const legalObligations = new SqliteLegalObligationRepository(db);
 
   const manageProducts = new ManageProducts(products, productions, brands, revenues);
   const manageSponsorships = new ManageSponsorships(sponsorships, productions, brands, revenues);
@@ -93,6 +104,8 @@ export const buildContainer = (config: Config): Container => {
     products,
     sponsorships,
     ideas,
+    company,
+    legalObligations,
     manageProducts,
     manageSponsorships,
     manageProductions: new ManageProductions(
@@ -109,6 +122,7 @@ export const buildContainer = (config: Config): Container => {
       products,
       sponsorships,
     ),
+    getLegalOverview: new GetLegalOverview(company, legalObligations),
     collectMetrics: new CollectMetrics(channels, metrics, videos, {
       youtubeApiKey: config.youtubeApiKey,
       gcpClientId: config.gcpClientId,

@@ -14,11 +14,14 @@ import {
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
 import { useChannels } from '../../application/channel/usecases/useChannels.ts';
 import { useRevenues } from '../../application/revenue/usecases/useRevenues.ts';
-import { useBrandStats } from '../../application/brand/usecases/useBrands.ts';
 import { useProducts } from '../../application/product/usecases/useProducts.ts';
 import { useSponsorships } from '../../application/sponsorship/usecases/useSponsorships.ts';
-import { PENDING_PRODUCT_STATUSES } from '../../domain/product/entities/Product.ts';
-import { PENDING_SPONSORSHIP_STATUSES } from '../../domain/sponsorship/entities/Sponsorship.ts';
+import {
+  useProductionOverview,
+  useProductionSteps,
+} from '../../application/production/usecases/useProductions.ts';
+import { useLegalOverview } from '../../application/legal/usecases/useLegal.ts';
+import { partnerPipeline } from '../../domain/partner/services/pipeline.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
 import {
   cashRevenue,
@@ -37,12 +40,23 @@ import { StatCard } from '../components/StatCard.tsx';
 import { InKindList, VideoList } from '../components/StatCardLists.tsx';
 import { MoneyChart } from '../components/charts/MoneyChart.tsx';
 import { AudienceChart } from '../components/charts/AudienceChart.tsx';
-import { DonutBreakdown, type DonutSlice } from '../components/charts/DonutBreakdown.tsx';
-import { RankingBars, type RankingRow } from '../components/charts/RankingBars.tsx';
-import { VideoPerformanceChart } from '../components/charts/VideoPerformanceChart.tsx';
-import { VideoPerformanceTable } from '../components/charts/VideoPerformanceTable.tsx';
+import { AlertsBanner } from '../components/production/AlertsBanner.tsx';
+import { ProductionQueueCard } from '../components/production/ProductionQueueCard.tsx';
+import { LegalAlertsCard } from '../components/legal/LegalAlertsCard.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 
+/**
+ * Le tableau de bord : ce qu'il faut savoir de chaque onglet, sans en ouvrir aucun.
+ *
+ * Il ne garde que **deux graphiques** — l'argent et l'audience, côte à côte et à survol
+ * synchronisé. Les répartitions, les classements de partenaires et le tableau de
+ * performance vivent désormais dans les onglets Chiffre d'affaires et Contenu : les
+ * empiler ici faisait une page qu'on parcourait au lieu de la lire.
+ *
+ * Ce qui reste tient en un écran et demi : les chiffres de la période, ce qui cloche
+ * (production et administratif), et l'état des deux files qui n'ont pas de période —
+ * les vidéos en cours et le pipeline de partenariats.
+ */
 export const DashboardPage = () => {
   const filters = useFilters();
   const params = useAnalyticsParams();
@@ -61,80 +75,20 @@ export const DashboardPage = () => {
     [revenues],
   );
 
-  // Classements des partenaires : mêmes bornes que le reste de l'écran, sans quoi ils
-  // contrediraient les cartes du dessus.
-  const { data: brandStats = [] } = useBrandStats({
-    from: filters.from,
-    to: filters.to,
-    channelIds: filters.channelIds,
-  });
-
-  // Le pipeline, lui, n'est **pas** borné par la période : une sponso signée en mars et
-  // pas encore payée reste à encaisser en juin. C'est un état, pas un flux.
+  // Le pipeline n'est **pas** borné par la période : une sponso signée en mars et pas
+  // encore payée reste à encaisser en juin. C'est un état, pas un flux.
   const { data: products = [] } = useProducts();
   const { data: sponsorships = [] } = useSponsorships();
-
-  const pipeline = useMemo(() => {
-    const today = toIsoDate(new Date());
-    const pendingProducts = products.filter((product) =>
-      PENDING_PRODUCT_STATUSES.includes(product.status),
-    );
-    const pendingSponsorships = sponsorships.filter((sponsorship) =>
-      PENDING_SPONSORSHIP_STATUSES.includes(sponsorship.status),
-    );
-    return {
-      productsPending: pendingProducts.length,
-      productsLate: pendingProducts.filter(
-        (product) => product.deadline !== null && product.deadline < today,
-      ).length,
-      sponsorshipsPending: pendingSponsorships.length,
-      sponsorshipsPendingCents: pendingSponsorships.reduce(
-        (total, sponsorship) => total + sponsorship.amountCents,
-        0,
-      ),
-    };
-  }, [products, sponsorships]);
-
-  const brandRows = useMemo<RankingRow[]>(
-    () =>
-      brandStats.map((brand) => ({
-        id: brand.brandId,
-        label: brand.brandName,
-        color: brand.color,
-        value: brand.productsValueCents,
-        formatted: formatMoney(brand.productsValueCents),
-        hint: `${brand.productsCount} produit(s)`,
-      })),
-    [brandStats],
+  const pipeline = useMemo(
+    () => partnerPipeline(products, sponsorships, toIsoDate(new Date())),
+    [products, sponsorships],
   );
 
-  const sponsorRows = useMemo<RankingRow[]>(
-    () =>
-      brandStats.map((brand) => ({
-        id: brand.brandId,
-        label: brand.brandName,
-        color: brand.color,
-        value: brand.sponsorshipsPaidCents,
-        formatted: formatMoney(brand.sponsorshipsPaidCents),
-        hint: `${brand.sponsorshipsPaidCount} sponso(s)`,
-      })),
-    [brandStats],
-  );
+  const { data: production } = useProductionOverview();
+  const { data: steps = [] } = useProductionSteps();
+  const { data: legal } = useLegalOverview();
 
   const moneyOptions = { mode: filters.moneyMode, includeInKind: filters.includeInKind };
-
-  // L'anneau par chaîne se lit à côté de ceux des catégories : même unité, donc l'argent
-  // gagné par chaîne, et non les vues — sinon on comparerait trois échelles différentes.
-  const channelSlices = useMemo<DonutSlice[]>(
-    () =>
-      (data?.byChannel ?? []).map((channel) => ({
-        id: channel.channelId,
-        label: channel.channelName,
-        color: channel.color,
-        cents: channel.revenueCashCents + (filters.includeInKind ? channel.inKindCents : 0),
-      })),
-    [data?.byChannel, filters.includeInKind],
-  );
 
   if (!channelsLoading && channels.length === 0) {
     return (
@@ -156,7 +110,7 @@ export const DashboardPage = () => {
       )}
 
       {isLoading && !data && (
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, index) => (
             <div
               key={index}
@@ -168,7 +122,7 @@ export const DashboardPage = () => {
 
       {data && (
         <>
-          <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <StatCard
               label={filters.moneyMode === 'profit' ? 'Bénéfices' : "Chiffre d'affaires"}
               value={formatMoney(moneyValue(data.totals, moneyOptions))}
@@ -257,73 +211,52 @@ export const DashboardPage = () => {
             />
           </div>
 
+          {/* Ce qui cloche vient avant les courbes : une déclaration en retard ou un
+              produit qui n'arrive pas se traite aujourd'hui, la tendance attend. */}
+          <div className="grid gap-4 xl:grid-cols-2">
+            {production && <AlertsBanner alerts={production.alerts} />}
+            {legal && <LegalAlertsCard alerts={legal.alerts} />}
+          </div>
+
           {/* Même abscisse, survol synchronisé : côte à côte, une bosse de vues et un
-              pic de revenus se lisent d'un seul regard. */}
+              pic de revenus se lisent d'un seul regard. Ce sont les deux seuls
+              graphiques de cet écran — le détail vit dans les onglets. */}
           <div className="grid gap-4 2xl:grid-cols-2">
             <MoneyChart data={data} />
             <AudienceChart data={data} />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {/* Décoché, l'anneau ne montre pas les produits reçus : son total doit
-                rester celui du CA affiché partout ailleurs. */}
-            <DonutBreakdown
-              title="Répartition des revenus"
-              slices={data.byCategory
-                .filter((item) => filters.includeInKind || item.nature !== 'in_kind')
-                .map((item) => ({
-                  id: `r-${item.categoryId}`,
-                  label: item.categoryName,
-                  color: item.color,
-                  cents: item.totalCents,
-                  badge: item.nature === 'in_kind' ? NATURE_LABELS.in_kind : undefined,
-                }))}
-              emptyLabel="Aucun revenu sur cette période."
-              totalHint={filters.includeInKind ? 'produits reçus compris' : undefined}
-            />
-            <DonutBreakdown
-              title="Répartition des dépenses"
-              slices={data.byExpenseCategory.map((item) => ({
-                id: `e-${item.categoryId}`,
-                label: item.categoryName,
-                color: item.color,
-                cents: item.totalCents,
-              }))}
-              emptyLabel="Aucune dépense sur cette période."
-            />
-            {/* Les revenus globaux (sans chaîne) ne sont dans aucune tranche : le total
-                de cet anneau peut être inférieur à celui des revenus, c'est voulu. */}
-            <DonutBreakdown
-              title="Revenus par chaîne"
-              slices={channelSlices}
-              emptyLabel="Aucun revenu rattaché à une chaîne sur cette période."
-              totalHint="hors revenus globaux"
-            />
-          </div>
-
-          {/* Barres horizontales et non anneaux : sur un top-N ordonné, c'est le rang et
-              l'écart au premier qu'on lit, deux choses qu'une longueur donne d'un coup. */}
-          <div className="grid gap-4 lg:grid-cols-2">
-            <RankingBars
-              title="Marques les plus généreuses"
-              description="Valeur des produits reçus sur la période."
-              rows={brandRows}
-              emptyLabel="Aucun produit reçu sur cette période."
-            />
-            <RankingBars
-              title="Sponsors qui paient le plus"
-              description="Sponsos encaissées sur la période."
-              rows={sponsorRows}
-              emptyLabel="Aucune sponso encaissée sur cette période."
-            />
-          </div>
-
-          <div className="grid gap-4 2xl:grid-cols-2">
-            <VideoPerformanceChart data={data} />
-            <VideoPerformanceTable data={data} />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <ProductionQueueCard productions={production?.queue ?? []} totalSteps={steps.length} />
+            <PipelineCard pipeline={pipeline} />
           </div>
         </>
       )}
     </div>
   );
 };
+
+/**
+ * L'état des partenariats en quatre lignes, sans période.
+ *
+ * Une carte de liens plutôt que quatre `StatCard` de plus : ces chiffres sont déjà en
+ * haut de l'écran, et ce qu'on cherche ici c'est l'accès à la table qui les détaille.
+ */
+const PipelineCard = ({ pipeline }: { pipeline: ReturnType<typeof partnerPipeline> }) => (
+  <div className="grid grid-cols-2 gap-3">
+    <StatCard
+      label="Produits reçus"
+      value={formatMoney(pipeline.productsReceivedCents)}
+      hint={`${pipeline.productsReceived} produit(s), toutes périodes`}
+      icon={<Gift className="h-4 w-4" />}
+      accent={pipeline.productsReceivedCents > 0 ? 'var(--in-kind)' : undefined}
+    />
+    <StatCard
+      label="Sponsos encaissées"
+      value={formatMoney(pipeline.sponsorshipsPaidCents)}
+      hint={`${pipeline.sponsorshipsPaid} sponso(s), toutes périodes`}
+      icon={<Handshake className="h-4 w-4" />}
+      accent={pipeline.sponsorshipsPaidCents > 0 ? 'var(--positive)' : undefined}
+    />
+  </div>
+);

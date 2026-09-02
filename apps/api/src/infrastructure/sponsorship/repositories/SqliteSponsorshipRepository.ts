@@ -26,6 +26,7 @@ interface SponsorshipRow {
   status: string;
   deadline: string | null;
   paid_at: string | null;
+  script: string;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -53,6 +54,7 @@ const toDomain = (row: SponsorshipRow): Sponsorship => ({
   status: row.status as SponsorshipStatus,
   deadline: row.deadline,
   paidAt: row.paid_at,
+  script: row.script,
   notes: row.notes,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -141,8 +143,8 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
       .prepare(
         `INSERT INTO sponsorships
            (id, brand_id, production_id, video_id, channel_id, revenue_entry_id, label,
-            amount_cents, status, deadline, paid_at, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            amount_cents, status, deadline, paid_at, script, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -155,6 +157,7 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
         input.status ?? 'discussion',
         input.deadline ?? null,
         input.paidAt ?? null,
+        input.script ?? '',
         input.notes ?? null,
         now,
         now,
@@ -183,6 +186,7 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
     if (input.status !== undefined) set('status', input.status);
     if (input.deadline !== undefined) set('deadline', input.deadline);
     if (input.paidAt !== undefined) set('paid_at', input.paidAt);
+    if (input.script !== undefined) set('script', input.script);
     if (input.notes !== undefined) set('notes', input.notes);
 
     if (fields.length === 0) return existing;

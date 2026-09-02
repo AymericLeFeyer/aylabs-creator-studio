@@ -330,6 +330,8 @@ export const createSponsorshipSchema = z.object({
   status: z.enum(['discussion', 'todo', 'in_progress', 'paid', 'cancelled']).optional(),
   deadline: optionalIsoDate,
   paidAt: optionalIsoDate,
+  /** Script de l'intégration, en markdown. Édité depuis son propre écran, pas la modale. */
+  script: z.string().optional(),
   notes: z.string().trim().nullable().optional(),
 });
 
@@ -347,3 +349,52 @@ export const createIdeaSchema = z.object({
 });
 
 export const updateIdeaSchema = createIdeaSchema.partial();
+
+/** Un mois, maille du tableau légal. */
+const isoMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Mois attendu au format AAAA-MM');
+
+/** Champ texte facultatif d'une fiche : la chaîne vide vaut « pas renseigné ». */
+const optionalText = z
+  .string()
+  .trim()
+  .max(500)
+  .nullable()
+  .optional()
+  .transform((value) => (value === '' ? null : value));
+
+export const updateCompanySchema = z.object({
+  name: z.string().trim().max(200).optional(),
+  legalForm: optionalText,
+  siret: optionalText,
+  vatNumber: optionalText,
+  address: z
+    .string()
+    .trim()
+    .max(500)
+    .nullable()
+    .optional()
+    .transform((value) => (value === '' ? null : value)),
+  /** Décide du premier mois du tableau des obligations. */
+  foundedOn: optionalIsoDate,
+  notes: z
+    .string()
+    .trim()
+    .max(2000)
+    .nullable()
+    .optional()
+    .transform((value) => (value === '' ? null : value)),
+});
+
+export const createLegalObligationSchema = z.object({
+  label: z.string().trim().min(1, 'Le libellé est obligatoire').max(200),
+  /** Jour limite dans le mois. `null` = pas d'échéance : le mois entier fait foi. */
+  dayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
+  notes: optionalText,
+  sortOrder: z.number().int().optional(),
+});
+
+export const updateLegalObligationSchema = createLegalObligationSchema.partial().extend({
+  isArchived: z.boolean().optional(),
+});
+
+export const legalMonthParamSchema = isoMonth;

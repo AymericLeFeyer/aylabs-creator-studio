@@ -1,23 +1,19 @@
 import { useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { useDeleteExpense, useExpenses } from '../../application/expense/usecases/useExpenses.ts';
-import { useFilters } from '../hooks/useFilters.tsx';
-import type { ExpenseEntry } from '../../domain/expense/entities/Expense.ts';
-import { formatDate, formatMoney } from '../../shared/format.ts';
-import { Button } from '../components/ui/button.tsx';
-import { Card, CardHeader, CardTitle } from '../components/ui/card.tsx';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../components/ui/table.tsx';
-import { EmptyState } from '../components/EmptyState.tsx';
-import { ExpenseDialog } from '../components/forms/ExpenseDialog.tsx';
+  useDeleteExpense,
+  useExpenses,
+} from '../../../application/expense/usecases/useExpenses.ts';
+import { useFilters } from '../../hooks/useFilters.tsx';
+import type { ExpenseEntry } from '../../../domain/expense/entities/Expense.ts';
+import { formatDate, formatMoney } from '../../../shared/format.ts';
+import { Button } from '../ui/button.tsx';
+import { Card, CardHeader, CardTitle } from '../ui/card.tsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
+import { EmptyState } from '../EmptyState.tsx';
+import { ExpenseDialog } from '../forms/ExpenseDialog.tsx';
 
-export const ExpensesPage = () => {
+export const ExpensesPanel = () => {
   const filters = useFilters();
   const { data: expenses = [], isLoading } = useExpenses({
     from: filters.from,

@@ -6,8 +6,9 @@ import {
   Handshake,
   ListChecks,
   Moon,
+  PlaySquare,
   Radio,
-  Receipt,
+  ScrollText,
   Settings,
   Sun,
   Tags,
@@ -31,10 +32,12 @@ const CONTAINER = 'mx-auto w-full max-w-[1800px] px-3 sm:px-5';
 /** Les écrans de lecture : ceux qui portent la barre de filtres. */
 const NAV = [
   { to: '/', label: 'Dashboard', icon: BarChart3, end: true },
+  { to: '/contenu', label: 'Contenu', icon: PlaySquare, end: false },
   { to: '/production', label: 'Production', icon: Clapperboard, end: false },
   { to: '/partenariats', label: 'Partenariats', icon: Handshake, end: false },
-  { to: '/revenus', label: 'Revenus', icon: Wallet, end: false },
-  { to: '/depenses', label: 'Dépenses', icon: Receipt, end: false },
+  // Revenus et dépenses réunis : ce sont les deux moitiés de la même soustraction.
+  { to: '/chiffre-affaires', label: "Chiffre d'affaires", icon: Wallet, end: false },
+  { to: '/legal', label: 'Légal', icon: ScrollText, end: false },
 ];
 
 /** Les écrans de configuration : rangés dans le menu Paramètres. */
@@ -43,6 +46,7 @@ const SETTINGS_NAV = [
   { to: '/categories', label: 'Catégories', icon: Tags },
   { to: '/marques', label: 'Marques', icon: Building2 },
   { to: '/etapes', label: 'Étapes', icon: ListChecks },
+  { to: '/societe', label: 'Société & obligations', icon: ScrollText },
 ];
 
 /**
@@ -56,8 +60,12 @@ const ROUTES_WITHOUT_FILTERS = [
   '/categories',
   '/marques',
   '/etapes',
+  '/societe',
   '/production',
   '/partenariats',
+  // Le tableau des obligations part de la création de la société : il a sa propre
+  // maille, le mois, et ne dépend d'aucune fenêtre de temps.
+  '/legal',
 ];
 
 export const AppLayout = () => {
@@ -102,6 +110,11 @@ export const AppLayout = () => {
             ))}
           </nav>
 
+          <Button variant="ghost" size="icon" onClick={toggle} title="Changer de thème">
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            <span className="sr-only">Changer de thème</span>
+          </Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -127,11 +140,6 @@ export const AppLayout = () => {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-
-          <Button variant="ghost" size="icon" onClick={toggle} title="Changer de thème">
-            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            <span className="sr-only">Changer de thème</span>
-          </Button>
         </div>
 
         {showFilters && (

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Gift, Handshake, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FileText, Gift, Handshake, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useDeleteProduct, useProducts } from '../../application/product/usecases/useProducts.ts';
 import {
   useDeleteSponsorship,
@@ -16,6 +16,7 @@ import {
   PENDING_SPONSORSHIP_STATUSES,
   SPONSORSHIP_STATUS_LABELS,
 } from '../../domain/sponsorship/entities/Sponsorship.ts';
+import { partnerPipeline } from '../../domain/partner/services/pipeline.ts';
 import { formatDate, formatMoney, toIsoDate } from '../../shared/format.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -29,6 +30,8 @@ import {
   TableRow,
 } from '../components/ui/table.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
+import { PartnerStatCards } from '../components/partners/PartnerStatCards.tsx';
+import { SponsorshipScriptDialog } from '../components/partners/SponsorshipScriptDialog.tsx';
 import { ProductDialog } from '../components/forms/ProductDialog.tsx';
 import { SponsorshipDialog } from '../components/forms/SponsorshipDialog.tsx';
 import { cn } from '../../shared/cn.ts';
@@ -65,16 +68,21 @@ export const PartnersPage = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [sponsorshipOpen, setSponsorshipOpen] = useState(false);
   const [editingSponsorship, setEditingSponsorship] = useState<Sponsorship | null>(null);
+  /**
+   * Sponso dont on écrit le script : un écran à part, jamais la modale d'édition.
+   * On garde l'identifiant et non la fiche : après enregistrement, la liste est
+   * rechargée, et un instantané figé laisserait l'éditeur croire éternellement qu'il
+   * reste du non-enregistré.
+   */
+  const [scriptingId, setScriptingId] = useState<string | null>(null);
+  const scripting = sponsorships.find((item) => item.id === scriptingId) ?? null;
 
-  const receivedValue = products
-    .filter((product) => product.status === 'received')
-    .reduce((total, product) => total + product.valueCents, 0);
-  const pendingCash = sponsorships
-    .filter((sponsorship) => PENDING_SPONSORSHIP_STATUSES.includes(sponsorship.status))
-    .reduce((total, sponsorship) => total + sponsorship.amountCents, 0);
-  const paidCash = sponsorships
-    .filter((sponsorship) => sponsorship.status === 'paid')
-    .reduce((total, sponsorship) => total + sponsorship.amountCents, 0);
+  // Les mêmes chiffres que le dashboard, calculés au même endroit : deux comptages
+  // parallèles finiraient par annoncer deux montants à encaisser différents.
+  const pipeline = useMemo(
+    () => partnerPipeline(products, sponsorships, toIsoDate(new Date())),
+    [products, sponsorships],
+  );
 
   return (
     <div className="space-y-4">
@@ -85,6 +93,8 @@ export const PartnersPage = () => {
           double saisie, et pas de double comptage.
         </p>
       </div>
+
+      <PartnerStatCards pipeline={pipeline} />
 
       <Tabs
         value={tab}
@@ -100,7 +110,7 @@ export const PartnersPage = () => {
             <p className="text-sm">
               <span className="text-muted-foreground">Valeur reçue : </span>
               <span className="tabular font-semibold text-[var(--in-kind)]">
-                {formatMoney(receivedValue)}
+                {formatMoney(pipeline.productsReceivedCents)}
               </span>
             </p>
             <Button
@@ -245,10 +255,12 @@ export const PartnersPage = () => {
             <p className="text-sm">
               <span className="text-muted-foreground">Encaissé : </span>
               <span className="tabular font-semibold text-[var(--positive)]">
-                {formatMoney(paidCash)}
+                {formatMoney(pipeline.sponsorshipsPaidCents)}
               </span>
               <span className="ml-3 text-muted-foreground">À encaisser : </span>
-              <span className="tabular font-semibold">{formatMoney(pendingCash)}</span>
+              <span className="tabular font-semibold">
+                {formatMoney(pipeline.sponsorshipsPendingCents)}
+              </span>
             </p>
             <Button
               size="sm"
@@ -276,7 +288,7 @@ export const PartnersPage = () => {
                   <TableHead>Payée le</TableHead>
                   <TableHead>Vidéo</TableHead>
                   <TableHead className="text-right">Montant</TableHead>
-                  <TableHead className="w-20" />
+                  <TableHead className="w-28" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -349,6 +361,28 @@ export const PartnersPage = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
+                        {/* Le script a son propre bouton, et pas une case de la modale :
+                            on l'écrit en plusieurs passages, et un formulaire refermé
+                            par mégarde emporterait le texte. La pastille dit qu'il y a
+                            déjà quelque chose d'écrit. */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title={
+                            sponsorship.script.trim() === ''
+                              ? "Écrire le script de l'intégration"
+                              : 'Ouvrir le script'
+                          }
+                          onClick={() => setScriptingId(sponsorship.id)}
+                        >
+                          <FileText
+                            className={cn(
+                              'h-3.5 w-3.5',
+                              sponsorship.script.trim() !== '' && 'text-[var(--positive)]',
+                            )}
+                          />
+                          <span className="sr-only">Script de « {sponsorship.label} »</span>
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -387,6 +421,12 @@ export const PartnersPage = () => {
         open={sponsorshipOpen}
         onOpenChange={setSponsorshipOpen}
         sponsorship={editingSponsorship}
+      />
+      <SponsorshipScriptDialog
+        sponsorship={scripting}
+        onOpenChange={(open) => {
+          if (!open) setScriptingId(null);
+        }}
       />
     </div>
   );

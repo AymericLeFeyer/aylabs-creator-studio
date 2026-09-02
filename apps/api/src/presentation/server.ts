@@ -16,6 +16,7 @@ import {
 import { productsRouter } from './routes/products.ts';
 import { sponsorshipsRouter } from './routes/sponsorships.ts';
 import { ideasRouter } from './routes/ideas.ts';
+import { legalRouter } from './routes/legal.ts';
 
 export const createServer = (container: Container): express.Express => {
   const app = express();
@@ -46,6 +47,7 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/products', productsRouter(container));
   app.use('/api/sponsorships', sponsorshipsRouter(container));
   app.use('/api/ideas', ideasRouter(container));
+  app.use('/api/legal', legalRouter(container));
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Route inconnue', code: 'NOT_FOUND' });

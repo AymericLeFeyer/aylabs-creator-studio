@@ -375,6 +375,71 @@ const migrations: Migration[] = [
       CREATE INDEX idx_sponsorships_video ON sponsorships(video_id);
     `,
   },
+  {
+    version: 9,
+    name: 'legal',
+    // Le suivi administratif de la societe : une ligne par mois depuis la creation, et
+    // une case a cocher par obligation.
+    //
+    // Les obligations sont des LIGNES et non des colonnes, meme raison que les etapes de
+    // production : en ajouter une ne demande aucune migration, et « cochee » est la
+    // PRESENCE d'une ligne dans `legal_checks` — cocher/decocher devient un INSERT ou un
+    // DELETE, et la date de realisation vient gratuitement.
+    //
+    // `company` est une table a ligne unique (id = 'default') plutot qu'un fichier de
+    // config : les infos se saisissent dans l'interface, et `founded_on` decide du
+    // premier mois du tableau.
+    up: `
+      CREATE TABLE company (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL DEFAULT '',
+        legal_form  TEXT,
+        siret       TEXT,
+        vat_number  TEXT,
+        address     TEXT,
+        founded_on  TEXT,
+        notes       TEXT,
+        updated_at  TEXT NOT NULL
+      );
+      INSERT INTO company (id, name, updated_at)
+        VALUES ('default', '', datetime('now'));
+
+      CREATE TABLE legal_obligations (
+        id           TEXT PRIMARY KEY,
+        label        TEXT NOT NULL,
+        -- Jour limite dans le mois. NULL = pas d'echeance connue : le mois entier fait foi.
+        day_of_month INTEGER,
+        notes        TEXT,
+        sort_order   INTEGER NOT NULL DEFAULT 0,
+        is_archived  INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL
+      );
+
+      CREATE TABLE legal_checks (
+        obligation_id TEXT NOT NULL REFERENCES legal_obligations(id) ON DELETE CASCADE,
+        -- Mois vise, au format AAAA-MM : c'est la maille du tableau legal.
+        month         TEXT NOT NULL,
+        checked_at    TEXT NOT NULL,
+        PRIMARY KEY (obligation_id, month)
+      );
+      CREATE INDEX idx_legal_checks_month ON legal_checks(month);
+    `,
+  },
+  {
+    version: 10,
+    name: 'sponsorship_script',
+    // Le texte de l'integration, ecrit par la marque ou negocie avec elle : elements de
+    // langage, mentions obligatoires, code promo. Il vit sur la SPONSO et non sur la
+    // production, parce qu'une meme video peut en porter deux, et qu'une sponso survit
+    // au rattachement d'une production a l'autre.
+    //
+    // NOT NULL DEFAULT '' comme `productions.script` : une chaine vide se rend
+    // directement, la sont les NULL a tester partout.
+    up: `
+      ALTER TABLE sponsorships ADD COLUMN script TEXT NOT NULL DEFAULT '';
+    `,
+  },
 ];
 
 /**

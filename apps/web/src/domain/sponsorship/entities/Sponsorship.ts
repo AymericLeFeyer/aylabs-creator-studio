@@ -47,6 +47,12 @@ export interface Sponsorship {
   status: SponsorshipStatus;
   deadline: string | null;
   paidAt: string | null;
+  /**
+   * Le texte de l'intégration, en markdown. Sur la sponso et non sur la production :
+   * une même vidéo peut en porter deux, et la sponso survit à un changement de
+   * rattachement.
+   */
+  script: string;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -72,5 +78,6 @@ export interface SponsorshipInput {
   status?: SponsorshipStatus;
   deadline?: string | null;
   paidAt?: string | null;
+  script?: string;
   notes?: string | null;
 }

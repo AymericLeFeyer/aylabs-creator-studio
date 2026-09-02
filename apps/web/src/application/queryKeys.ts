@@ -24,6 +24,9 @@ export const queryKeys = {
   products: (params: unknown) => ['products', params] as const,
   sponsorships: (params: unknown) => ['sponsorships', params] as const,
   ideas: () => ['ideas'] as const,
+
+  legalOverview: () => ['legalOverview'] as const,
+  legalObligations: (includeArchived: boolean) => ['legalObligations', includeArchived] as const,
 };
 
 /** Racines à invalider après une écriture qui change les chiffres agrégés. */
@@ -47,3 +50,10 @@ export const PRODUCTION_ROOTS = [
  * d'argent doivent repartir en même temps que celles de production.
  */
 export const PARTNER_ROOTS = [...PRODUCTION_ROOTS, ...MONEY_ROOTS, 'brandStats'] as const;
+
+/**
+ * Racines du suivi administratif. Le référentiel part avec l'aperçu : changer un jour
+ * limite déplace l'échéance sur tous les mois déjà affichés, et cocher une case retire
+ * une alerte du dashboard.
+ */
+export const LEGAL_ROOTS = ['legalOverview', 'legalObligations'] as const;
