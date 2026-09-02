@@ -344,6 +344,17 @@ export const sponsorshipQuerySchema = z.object({
   channelIds: csvList,
 });
 
+/** Un plan à filmer exigé par la marque : un intitulé, et rien d'autre à la création. */
+export const createRequirementSchema = z.object({
+  label: z.string().trim().min(1, "L'intitulé est obligatoire").max(300),
+});
+
+export const updateRequirementSchema = z.object({
+  label: z.string().trim().min(1).max(300).optional(),
+  done: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
 export const createIdeaSchema = z.object({
   text: z.string().trim().min(1, "L'idée ne peut pas être vide").max(500),
 });

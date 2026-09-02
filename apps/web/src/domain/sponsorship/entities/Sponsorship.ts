@@ -33,6 +33,39 @@ export const PENDING_SPONSORSHIP_STATUSES: SponsorshipStatus[] = [
   'in_progress',
 ];
 
+/**
+ * Un plan à filmer exigé par la marque : « produit en main », « macro du logo »,
+ * « code promo à l'oral ». C'est un cahier des charges de tournage, coché plan par plan.
+ *
+ * Propre à **une** sponso et non un référentiel partagé (contrairement aux étapes de
+ * production) : chaque marque pose ses propres conditions.
+ */
+export interface SponsorshipRequirement {
+  id: string;
+  sponsorshipId: string;
+  label: string;
+  done: boolean;
+  /** Date de réalisation. `null` tant que ce n'est pas coché. */
+  doneAt: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequirementInput {
+  label: string;
+  done?: boolean;
+  sortOrder?: number;
+}
+
+/** Plans filmés sur plans exigés — `0 / 0` quand la marque n'a rien demandé. */
+export const requirementProgress = (
+  requirements: SponsorshipRequirement[],
+): { done: number; total: number } => ({
+  done: requirements.filter((requirement) => requirement.done).length,
+  total: requirements.length,
+});
+
 export interface Sponsorship {
   id: string;
   brandId: string | null;
@@ -65,6 +98,8 @@ export interface Sponsorship {
   /** Produits venus avec cette sponso, et leur valeur en nature une fois reçus. */
   productsCount: number;
   productsValueCents: number;
+  /** Les plans à filmer exigés par la marque, dans l'ordre du cahier des charges. */
+  requirements: SponsorshipRequirement[];
 }
 
 /** `amount` est en euros : l'API le convertit en centimes. */

@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '../ui/dialog.tsx';
 import { ScriptEditor } from '../production/ScriptEditor.tsx';
+import { RequirementsChecklist } from './RequirementsChecklist.tsx';
 
 /**
  * Le script d'une intégration sponsorisée, sur son propre écran.
@@ -24,6 +25,10 @@ import { ScriptEditor } from '../production/ScriptEditor.tsx';
  * durée de lecture, même absence d'enregistrement automatique : un script de sponso
  * s'écrit exactement comme un script de vidéo, et deux éditeurs divergeraient dès la
  * première retouche.
+ *
+ * Au-dessus, les **plans exigés par la marque** : ce sont eux qui dictent ce qu'on
+ * écrit. Eux se cochent sans bouton d'enregistrement — un geste unique et sans perte
+ * possible, là où un texte en cours de réflexion demande une décision explicite.
  */
 export const SponsorshipScriptDialog = ({
   sponsorship,
@@ -50,11 +55,21 @@ export const SponsorshipScriptDialog = ({
               </DialogDescription>
             </DialogHeader>
 
-            <ScriptEditor
-              value={sponsorship.script}
-              saving={update.isPending}
-              onSave={(script) => update.mutateAsync({ id: sponsorship.id, input: { script } })}
-            />
+            {/* Les conditions de la marque avant le script : ce sont elles qui
+                dictent ce qu'on écrit, et les ranger ailleurs obligerait à faire
+                l'aller-retour à chaque paragraphe. */}
+            <div className="space-y-3">
+              <RequirementsChecklist
+                sponsorshipId={sponsorship.id}
+                requirements={sponsorship.requirements}
+              />
+
+              <ScriptEditor
+                value={sponsorship.script}
+                saving={update.isPending}
+                onSave={(script) => update.mutateAsync({ id: sponsorship.id, input: { script } })}
+              />
+            </div>
           </>
         )}
       </DialogContent>

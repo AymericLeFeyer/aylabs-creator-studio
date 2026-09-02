@@ -1,8 +1,11 @@
 import { today } from '../../../shared/dates.ts';
 import { SPONSOR_CATEGORY_ID } from '../../../domain/category/entities/Category.ts';
 import type {
+  CreateRequirementInput,
   CreateSponsorshipInput,
   Sponsorship,
+  SponsorshipRequirement,
+  UpdateRequirementInput,
   UpdateSponsorshipInput,
 } from '../../../domain/sponsorship/entities/Sponsorship.ts';
 import type { SponsorshipRepository } from '../../../domain/sponsorship/repositories/SponsorshipRepository.ts';
@@ -50,6 +53,26 @@ export class ManageSponsorships {
     if (!existing) throw notFound('Sponso');
     if (existing.revenueEntryId) this.revenues.deleteLinked(existing.revenueEntryId);
     this.sponsorships.delete(id);
+  }
+
+  /**
+   * Les plans à filmer exigés par la marque.
+   *
+   * Ils passent par ce use case comme tout le reste, alors qu'ils **n'ont aucun effet
+   * sur le revenu** : les routes ne parlent jamais directement au dépôt des sponsos, et
+   * une exception ici serait le premier chemin d'écriture qu'on oublierait de vérifier
+   * le jour où un plan coché voudra dire quelque chose de plus.
+   */
+  addRequirement(sponsorshipId: string, input: CreateRequirementInput): SponsorshipRequirement {
+    return this.sponsorships.addRequirement(sponsorshipId, input);
+  }
+
+  updateRequirement(id: string, input: UpdateRequirementInput): SponsorshipRequirement {
+    return this.sponsorships.updateRequirement(id, input);
+  }
+
+  removeRequirement(id: string): void {
+    this.sponsorships.deleteRequirement(id);
   }
 
   /** Re-synchronise toutes les sponsos d'une production (sa chaîne ou sa vidéo a changé). */

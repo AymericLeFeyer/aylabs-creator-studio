@@ -1,9 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type {
+  CreateRequirementInput,
   CreateSponsorshipInput,
   Sponsorship,
+  SponsorshipRequirement,
   SponsorshipStatus,
   SponsorshipView,
+  UpdateRequirementInput,
   UpdateSponsorshipInput,
 } from '../../../domain/sponsorship/entities/Sponsorship.ts';
 import type {
@@ -31,6 +34,28 @@ interface SponsorshipRow {
   created_at: string;
   updated_at: string;
 }
+
+interface RequirementRow {
+  id: string;
+  sponsorship_id: string;
+  label: string;
+  done: number;
+  done_at: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+const toRequirement = (row: RequirementRow): SponsorshipRequirement => ({
+  id: row.id,
+  sponsorshipId: row.sponsorship_id,
+  label: row.label,
+  done: row.done === 1,
+  doneAt: row.done_at,
+  sortOrder: row.sort_order,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
 
 interface SponsorshipViewRow extends SponsorshipRow {
   brand_name: string | null;
@@ -117,6 +142,26 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
       )
       .all(...(params as never[])) as unknown as SponsorshipViewRow[];
 
+    // Une seule requête pour tout le lot, comme les produits d'une production : les
+    // joindre à la ligne de sponso la multiplierait par le nombre de plans exigés.
+    const bySponsorship = new Map<string, SponsorshipRequirement[]>();
+    if (rows.length > 0) {
+      const ids = rows.map((row) => row.id);
+      const requirementRows = this.db
+        .prepare(
+          `SELECT * FROM sponsorship_requirements
+            WHERE sponsorship_id IN (${placeholders(ids.length)})
+            ORDER BY sort_order, created_at`,
+        )
+        .all(...(ids as never[])) as unknown as RequirementRow[];
+
+      for (const requirementRow of requirementRows) {
+        const list = bySponsorship.get(requirementRow.sponsorship_id) ?? [];
+        list.push(toRequirement(requirementRow));
+        bySponsorship.set(requirementRow.sponsorship_id, list);
+      }
+    }
+
     return rows.map((row) => ({
       ...toDomain(row),
       brandName: row.brand_name,
@@ -126,7 +171,86 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
       channelName: row.channel_name,
       productsCount: row.products_count,
       productsValueCents: row.products_value_cents,
+      requirements: bySponsorship.get(row.id) ?? [],
     }));
+  }
+
+  findRequirements(sponsorshipId: string): SponsorshipRequirement[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM sponsorship_requirements
+          WHERE sponsorship_id = ?
+          ORDER BY sort_order, created_at`,
+      )
+      .all(sponsorshipId) as unknown as RequirementRow[];
+    return rows.map(toRequirement);
+  }
+
+  addRequirement(sponsorshipId: string, input: CreateRequirementInput): SponsorshipRequirement {
+    if (!this.findById(sponsorshipId)) throw notFound('Sponso');
+
+    const id = newId();
+    const now = new Date().toISOString();
+    const nextOrder =
+      (
+        this.db
+          .prepare(
+            'SELECT COALESCE(MAX(sort_order), 0) AS n FROM sponsorship_requirements WHERE sponsorship_id = ?',
+          )
+          .get(sponsorshipId) as { n: number }
+      ).n + 1;
+
+    this.db
+      .prepare(
+        `INSERT INTO sponsorship_requirements
+           (id, sponsorship_id, label, done, done_at, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, 0, NULL, ?, ?, ?)`,
+      )
+      .run(id, sponsorshipId, input.label, nextOrder, now, now);
+
+    return this.findRequirementById(id)!;
+  }
+
+  updateRequirement(id: string, input: UpdateRequirementInput): SponsorshipRequirement {
+    const existing = this.findRequirementById(id);
+    if (!existing) throw notFound('Plan à filmer');
+
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    const set = (column: string, value: unknown) => {
+      fields.push(`${column} = ?`);
+      values.push(value);
+    };
+
+    if (input.label !== undefined) set('label', input.label);
+    if (input.sortOrder !== undefined) set('sort_order', input.sortOrder);
+    if (input.done !== undefined && input.done !== existing.done) {
+      set('done', input.done ? 1 : 0);
+      // La date de réalisation suit le PASSAGE à coché, pas la mise à jour du libellé :
+      // corriger l'intitulé d'un plan ne doit pas réécrire le jour où il a été filmé.
+      set('done_at', input.done ? new Date().toISOString() : null);
+    }
+
+    if (fields.length === 0) return existing;
+
+    set('updated_at', new Date().toISOString());
+    values.push(id);
+    this.db
+      .prepare(`UPDATE sponsorship_requirements SET ${fields.join(', ')} WHERE id = ?`)
+      .run(...(values as never[]));
+
+    return this.findRequirementById(id)!;
+  }
+
+  deleteRequirement(id: string): void {
+    const result = this.db.prepare('DELETE FROM sponsorship_requirements WHERE id = ?').run(id);
+    if (result.changes === 0) throw notFound('Plan à filmer');
+  }
+
+  private findRequirementById(id: string): SponsorshipRequirement | null {
+    const row = this.db.prepare('SELECT * FROM sponsorship_requirements WHERE id = ?').get(id) as
+      RequirementRow | undefined;
+    return row ? toRequirement(row) : null;
   }
 
   findById(id: string): Sponsorship | null {

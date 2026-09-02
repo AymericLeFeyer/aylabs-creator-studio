@@ -440,6 +440,35 @@ const migrations: Migration[] = [
       ALTER TABLE sponsorships ADD COLUMN script TEXT NOT NULL DEFAULT '';
     `,
   },
+  {
+    version: 11,
+    name: 'sponsorship_requirements',
+    // Ce que la marque exige de voir a l'image : plan produit en main, macro du logo,
+    // mention du code promo. C'est un cahier des charges de TOURNAGE, coche plan par
+    // plan pendant qu'on filme.
+    //
+    // Ces lignes appartiennent a UNE sponso et ne sont pas un referentiel partage
+    // (contrairement aux `production_steps`) : chaque marque pose ses propres
+    // conditions, et les mutualiser obligerait a cocher « plan macro du logo » sur des
+    // partenariats qui ne l'ont jamais demande.
+    //
+    // Ici la ligne EST l'item : « fait » ne peut donc pas etre sa presence, d'ou la
+    // colonne `done` et son `done_at`. ON DELETE CASCADE, contrairement aux produits
+    // qui sont detaches : une condition n'a aucun sens sans son partenariat.
+    up: `
+      CREATE TABLE sponsorship_requirements (
+        id             TEXT PRIMARY KEY,
+        sponsorship_id TEXT NOT NULL REFERENCES sponsorships(id) ON DELETE CASCADE,
+        label          TEXT NOT NULL,
+        done           INTEGER NOT NULL DEFAULT 0,
+        done_at        TEXT,
+        sort_order     INTEGER NOT NULL DEFAULT 0,
+        created_at     TEXT NOT NULL,
+        updated_at     TEXT NOT NULL
+      );
+      CREATE INDEX idx_sponsorship_requirements ON sponsorship_requirements(sponsorship_id);
+    `,
+  },
 ];
 
 /**

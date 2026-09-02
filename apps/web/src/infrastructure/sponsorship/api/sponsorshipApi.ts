@@ -1,7 +1,9 @@
 import { request } from '../../http/httpClient.ts';
 import type {
+  RequirementInput,
   Sponsorship,
   SponsorshipInput,
+  SponsorshipRequirement,
   SponsorshipStatus,
 } from '../../../domain/sponsorship/entities/Sponsorship.ts';
 
@@ -33,4 +35,20 @@ export const sponsorshipApi = {
     request<Sponsorship>(`/api/sponsorships/${id}`, { method: 'PATCH', body: input }),
 
   remove: (id: string) => request<void>(`/api/sponsorships/${id}`, { method: 'DELETE' }),
+
+  /** Les plans à filmer exigés par la marque : ils vivent sous leur sponso. */
+  addRequirement: (sponsorshipId: string, input: RequirementInput) =>
+    request<SponsorshipRequirement>(`/api/sponsorships/${sponsorshipId}/requirements`, {
+      method: 'POST',
+      body: input,
+    }),
+
+  updateRequirement: (sponsorshipId: string, id: string, input: Partial<RequirementInput>) =>
+    request<SponsorshipRequirement>(`/api/sponsorships/${sponsorshipId}/requirements/${id}`, {
+      method: 'PATCH',
+      body: input,
+    }),
+
+  removeRequirement: (sponsorshipId: string, id: string) =>
+    request<void>(`/api/sponsorships/${sponsorshipId}/requirements/${id}`, { method: 'DELETE' }),
 };

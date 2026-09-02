@@ -1,48 +1,28 @@
 import { useMemo } from 'react';
 import { Clock, Eye, Heart, Users, Video } from 'lucide-react';
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
-import { useVideos } from '../../application/video/usecases/useVideos.ts';
-import {
-  useProductionOverview,
-  useProductionSteps,
-} from '../../application/production/usecases/useProductions.ts';
-import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
+import { useProductionOverview } from '../../application/production/usecases/useProductions.ts';
+import { useAnalyticsParams } from '../hooks/useFilters.tsx';
 import { compareTotals } from '../../domain/analytics/services/revenueMath.ts';
 import { formatHours, formatNumber, formatSigned } from '../../shared/format.ts';
 import { StatCard } from '../components/StatCard.tsx';
 import { AudienceChart } from '../components/charts/AudienceChart.tsx';
 import { VideoPerformanceChart } from '../components/charts/VideoPerformanceChart.tsx';
 import { VideoPerformanceTable } from '../components/charts/VideoPerformanceTable.tsx';
-import { RecentVideosCard } from '../components/content/RecentVideosCard.tsx';
-import { ProductionQueueCard } from '../components/production/ProductionQueueCard.tsx';
-
-/** Les dernières sorties, toutes périodes confondues : assez pour couvrir un trimestre. */
-const RECENT_LIMIT = 15;
 
 /**
- * Tout ce qui concerne les vidéos, au même endroit.
+ * Tout ce qui concerne les vidéos déjà sorties, sur la période choisie en haut.
  *
- * Deux temporalités cohabitent volontairement ici :
- * - **la période** (barre de filtres) pour les sorties et leur performance ;
- * - **le fil des dernières sorties**, qui l'ignore — « qu'est-ce que j'ai publié
- *   dernièrement » ne se pose pas dans une fenêtre de temps, et une période de 7 jours
- *   viderait la liste alors que c'est précisément là qu'on la consulte.
- *
- * L'encart de production ferme la boucle : ce qui est en ligne, et ce qui arrive.
+ * L'écran ne porte que de la **mesure** : combien de sorties, ce qu'elles ont fait, et
+ * laquelle sort du lot. Ce qui n'est pas encore publié se pilote sur `/production`, et
+ * la dernière sortie se lit sur le dashboard — les rappeler ici ferait trois endroits
+ * où lire la même chose.
  */
 export const ContentPage = () => {
-  const filters = useFilters();
   const params = useAnalyticsParams();
   const { data, isLoading } = useAnalytics(params);
 
-  // Sans bornes de date : l'API renvoie les plus récentes en premier.
-  const { data: recentVideos = [] } = useVideos({
-    channelIds: filters.channelIds,
-    limit: RECENT_LIMIT,
-  });
-
   const { data: overview } = useProductionOverview();
-  const { data: steps = [] } = useProductionSteps();
 
   const periodVideos = useMemo(() => data?.videoPerformance ?? [], [data]);
 
@@ -115,16 +95,6 @@ export const ContentPage = () => {
           </div>
         </>
       )}
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <RecentVideosCard
-          videos={recentVideos}
-          title="Dernières sorties"
-          description="Les plus récentes d'abord, quelle que soit la période choisie en haut."
-          emptyLabel="Aucune vidéo collectée. Lance une collecte depuis l'onglet Chaînes."
-        />
-        <ProductionQueueCard productions={overview?.queue ?? []} totalSteps={steps.length} />
-      </div>
     </div>
   );
 };

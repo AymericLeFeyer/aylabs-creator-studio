@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import {
+  Clapperboard,
   Clock,
   Eye,
   Gift,
@@ -15,11 +16,9 @@ import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.
 import { useChannels } from '../../application/channel/usecases/useChannels.ts';
 import { useRevenues } from '../../application/revenue/usecases/useRevenues.ts';
 import { useProducts } from '../../application/product/usecases/useProducts.ts';
+import { useVideos } from '../../application/video/usecases/useVideos.ts';
 import { useSponsorships } from '../../application/sponsorship/usecases/useSponsorships.ts';
-import {
-  useProductionOverview,
-  useProductionSteps,
-} from '../../application/production/usecases/useProductions.ts';
+import { useProductionOverview } from '../../application/production/usecases/useProductions.ts';
 import { useLegalOverview } from '../../application/legal/usecases/useLegal.ts';
 import { partnerPipeline } from '../../domain/partner/services/pipeline.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
@@ -41,7 +40,7 @@ import { InKindList, VideoList } from '../components/StatCardLists.tsx';
 import { MoneyChart } from '../components/charts/MoneyChart.tsx';
 import { AudienceChart } from '../components/charts/AudienceChart.tsx';
 import { AlertsBanner } from '../components/production/AlertsBanner.tsx';
-import { ProductionQueueCard } from '../components/production/ProductionQueueCard.tsx';
+import { LatestVideoCard } from '../components/content/LatestVideoCard.tsx';
 import { LegalAlertsCard } from '../components/legal/LegalAlertsCard.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 
@@ -53,9 +52,8 @@ import { EmptyState } from '../components/EmptyState.tsx';
  * performance vivent désormais dans les onglets Chiffre d'affaires et Contenu : les
  * empiler ici faisait une page qu'on parcourait au lieu de la lire.
  *
- * Ce qui reste tient en un écran et demi : les chiffres de la période, ce qui cloche
- * (production et administratif), et l'état des deux files qui n'ont pas de période —
- * les vidéos en cours et le pipeline de partenariats.
+ * Ce qui reste tient en un écran et demi : les chiffres de la période, la dernière
+ * sortie et ses compteurs, puis ce qui cloche (production et administratif).
  */
 export const DashboardPage = () => {
   const filters = useFilters();
@@ -85,8 +83,11 @@ export const DashboardPage = () => {
   );
 
   const { data: production } = useProductionOverview();
-  const { data: steps = [] } = useProductionSteps();
   const { data: legal } = useLegalOverview();
+
+  // Sans bornes de date : l'API renvoie les plus récentes en premier, et la dernière
+  // sortie n'a aucune raison de tomber dans la période affichée.
+  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 1 });
 
   const moneyOptions = { mode: filters.moneyMode, includeInKind: filters.includeInKind };
 
@@ -122,7 +123,7 @@ export const DashboardPage = () => {
 
       {data && (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 2xl:grid-cols-6">
             <StatCard
               label={filters.moneyMode === 'profit' ? 'Bénéfices' : "Chiffre d'affaires"}
               value={formatMoney(moneyValue(data.totals, moneyOptions))}
@@ -191,8 +192,15 @@ export const DashboardPage = () => {
               icon={<Heart className="h-4 w-4" />}
             />
 
-            {/* Ces deux-là ne suivent pas la période : ce sont des états du pipeline,
-                pas des flux. Le sous-titre le dit plutôt que de laisser croire à un cumul. */}
+            {/* Ces trois-là ne suivent pas la période : ce sont des états — une file,
+                un pipeline —, pas des flux. Le sous-titre le dit plutôt que de laisser
+                croire à un cumul. */}
+            <StatCard
+              label="En production"
+              value={formatNumber(production?.queue.length ?? 0)}
+              hint="vidéos pas encore publiées"
+              icon={<Clapperboard className="h-4 w-4" />}
+            />
             <StatCard
               label="Sponsos en cours"
               value={formatMoney(pipeline.sponsorshipsPendingCents)}
@@ -211,6 +219,10 @@ export const DashboardPage = () => {
             />
           </div>
 
+          {/* La dernière sortie, en pleine largeur : c'est la question qui suit
+              immédiatement les totaux — « et ma dernière vidéo, elle marche ? ». */}
+          <LatestVideoCard video={latestVideos[0]} />
+
           {/* Ce qui cloche vient avant les courbes : une déclaration en retard ou un
               produit qui n'arrive pas se traite aujourd'hui, la tendance attend. */}
           <div className="grid gap-4 xl:grid-cols-2">
@@ -225,38 +237,8 @@ export const DashboardPage = () => {
             <MoneyChart data={data} />
             <AudienceChart data={data} />
           </div>
-
-          <div className="grid gap-4 xl:grid-cols-2">
-            <ProductionQueueCard productions={production?.queue ?? []} totalSteps={steps.length} />
-            <PipelineCard pipeline={pipeline} />
-          </div>
         </>
       )}
     </div>
   );
 };
-
-/**
- * L'état des partenariats en quatre lignes, sans période.
- *
- * Une carte de liens plutôt que quatre `StatCard` de plus : ces chiffres sont déjà en
- * haut de l'écran, et ce qu'on cherche ici c'est l'accès à la table qui les détaille.
- */
-const PipelineCard = ({ pipeline }: { pipeline: ReturnType<typeof partnerPipeline> }) => (
-  <div className="grid grid-cols-2 gap-3">
-    <StatCard
-      label="Produits reçus"
-      value={formatMoney(pipeline.productsReceivedCents)}
-      hint={`${pipeline.productsReceived} produit(s), toutes périodes`}
-      icon={<Gift className="h-4 w-4" />}
-      accent={pipeline.productsReceivedCents > 0 ? 'var(--in-kind)' : undefined}
-    />
-    <StatCard
-      label="Sponsos encaissées"
-      value={formatMoney(pipeline.sponsorshipsPaidCents)}
-      hint={`${pipeline.sponsorshipsPaid} sponso(s), toutes périodes`}
-      icon={<Handshake className="h-4 w-4" />}
-      accent={pipeline.sponsorshipsPaidCents > 0 ? 'var(--positive)' : undefined}
-    />
-  </div>
-);

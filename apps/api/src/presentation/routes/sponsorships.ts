@@ -2,8 +2,10 @@ import { Router } from 'express';
 import type { Container } from '../../container.ts';
 import type { SponsorshipStatus } from '../../domain/sponsorship/entities/Sponsorship.ts';
 import {
+  createRequirementSchema,
   createSponsorshipSchema,
   sponsorshipQuerySchema,
+  updateRequirementSchema,
   updateSponsorshipSchema,
 } from '../validation.ts';
 import { param } from '../helpers.ts';
@@ -44,6 +46,36 @@ export const sponsorshipsRouter = (container: Container): Router => {
 
   router.delete('/:id', (req, res) => {
     container.manageSponsorships.remove(param(req, 'id'));
+    res.status(204).end();
+  });
+
+  /**
+   * Les plans à filmer exigés par la marque. Ils vivent sous la sponso parce qu'ils
+   * n'ont aucun sens ailleurs : chaque partenariat pose ses propres conditions, et
+   * supprimer la sponso les emporte (cascade SQL).
+   */
+  router.post('/:id/requirements', (req, res) => {
+    res
+      .status(201)
+      .json(
+        container.manageSponsorships.addRequirement(
+          param(req, 'id'),
+          createRequirementSchema.parse(req.body),
+        ),
+      );
+  });
+
+  router.patch('/:id/requirements/:requirementId', (req, res) => {
+    res.json(
+      container.manageSponsorships.updateRequirement(
+        param(req, 'requirementId'),
+        updateRequirementSchema.parse(req.body),
+      ),
+    );
+  });
+
+  router.delete('/:id/requirements/:requirementId', (req, res) => {
+    container.manageSponsorships.removeRequirement(param(req, 'requirementId'));
     res.status(204).end();
   });
 

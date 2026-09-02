@@ -1,9 +1,12 @@
 import type { IsoDate } from '../../../shared/dates.ts';
 import type {
+  CreateRequirementInput,
   CreateSponsorshipInput,
   Sponsorship,
+  SponsorshipRequirement,
   SponsorshipStatus,
   SponsorshipView,
+  UpdateRequirementInput,
   UpdateSponsorshipInput,
 } from '../entities/Sponsorship.ts';
 
@@ -25,4 +28,10 @@ export interface SponsorshipRepository {
   setRevenueEntryId(id: string, revenueEntryId: string | null): void;
   /** Montants par production, pour les cartes de la file d'attente. */
   sumByProduction(): Array<{ productionId: string; total: number; pendingCents: number }>;
+
+  /** Les plans à filmer d'une sponso, dans l'ordre du cahier des charges. */
+  findRequirements(sponsorshipId: string): SponsorshipRequirement[];
+  addRequirement(sponsorshipId: string, input: CreateRequirementInput): SponsorshipRequirement;
+  updateRequirement(id: string, input: UpdateRequirementInput): SponsorshipRequirement;
+  deleteRequirement(id: string): void;
 }

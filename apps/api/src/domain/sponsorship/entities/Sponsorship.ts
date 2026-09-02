@@ -59,6 +59,36 @@ export interface Sponsorship {
   updatedAt: string;
 }
 
+/**
+ * Un plan à filmer exigé par la marque : « produit en main », « macro du logo »,
+ * « code promo à l'oral ». C'est un cahier des charges de tournage, coché plan par plan.
+ *
+ * Propre à **une** sponso et non un référentiel partagé (contrairement aux étapes de
+ * production) : chaque marque pose ses propres conditions, et les mutualiser
+ * obligerait à cocher des plans que ce partenariat-là n'a jamais demandés.
+ */
+export interface SponsorshipRequirement {
+  id: string;
+  sponsorshipId: string;
+  label: string;
+  done: boolean;
+  /** Date de réalisation. `null` tant que ce n'est pas coché. */
+  doneAt: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateRequirementInput {
+  label: string;
+}
+
+export interface UpdateRequirementInput {
+  label?: string;
+  done?: boolean;
+  sortOrder?: number;
+}
+
 export interface SponsorshipView extends Sponsorship {
   brandName: string | null;
   brandColor: string | null;
@@ -68,6 +98,11 @@ export interface SponsorshipView extends Sponsorship {
   /** Produits venus avec cette sponso, et leur valeur cumulée en nature. */
   productsCount: number;
   productsValueCents: Cents;
+  /**
+   * Les plans à filmer exigés par la marque. Chargés en **une** requête pour tout le
+   * lot : les joindre à la ligne de sponso la multiplierait par le nombre de plans.
+   */
+  requirements: SponsorshipRequirement[];
 }
 
 export interface CreateSponsorshipInput {
