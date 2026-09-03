@@ -108,7 +108,7 @@ export const AppLayout = () => {
   const sidebarContent = ({ compact }: { compact: boolean }) => (
     <div className="flex h-full flex-col gap-1 p-2">
       <div className={cn('flex items-center gap-2 px-1 py-2', compact && 'justify-center px-0')}>
-        <BarChart3 className="h-5 w-5 shrink-0" />
+        <img src="/icon-192.png" alt="" className="h-6 w-6 shrink-0" />
         {!compact && <span className="truncate font-semibold">Creator Studio</span>}
       </div>
 
@@ -210,8 +210,21 @@ export const AppLayout = () => {
         className="transition-[padding] lg:pl-[var(--sidebar-width)]"
         style={{ ['--sidebar-width' as string]: collapsed ? SIDEBAR_CLOSED : SIDEBAR_OPEN }}
       >
-        <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur">
-          <div className={cn(CONTAINER, 'flex items-center gap-2 pt-2 lg:pt-0')}>
+        <header
+          className={cn(
+            'sticky top-0 z-30 bg-background/85 backdrop-blur',
+            // Sans filtres, l'en-tête n'est plus qu'un support pour le bouton du menu
+            // mobile : ni trait, ni hauteur — le contenu doit démarrer tout en haut.
+            showFilters && 'border-b border-border',
+          )}
+        >
+          <div
+            className={cn(
+              CONTAINER,
+              'flex items-center gap-2',
+              showFilters ? 'pt-2.5' : 'py-1 lg:py-0',
+            )}
+          >
             <Button
               variant="ghost"
               size="icon"
@@ -224,9 +237,7 @@ export const AppLayout = () => {
 
             {/* La barre de filtres occupe l'en-tête : période et chaînes restent sous la
                 main quand on descend dans un long tableau. */}
-            <div className="min-w-0 flex-1">
-              {showFilters ? <FiltersBar /> : <div className="h-2" />}
-            </div>
+            <div className="min-w-0 flex-1">{showFilters && <FiltersBar />}</div>
           </div>
 
           {/* Le chronomètre vit DANS l'en-tête collant : il suit l'écran et non la page —

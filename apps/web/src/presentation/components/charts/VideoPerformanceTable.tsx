@@ -13,6 +13,7 @@ import { sumVideoRows, withMoney, type VideoRow } from './videoPerformance.ts';
 type SortKey =
   | 'date'
   | 'views'
+  | 'periodViews'
   | 'subscribersGained'
   | 'adsenseCents'
   | 'manualCashCents'
@@ -36,10 +37,16 @@ interface Column {
  * décochée, ces montants ne sont plus dans le CA, et les laisser en colonne ferait
  * lire une addition qui ne tombe pas juste.
  */
-const columnsFor = (includeInKind: boolean): Column[] =>
+const columnsFor = (includeInKind: boolean, showPeriodViews: boolean): Column[] =>
   [
     { key: 'date', label: 'Vidéo', numeric: false },
-    { key: 'views', label: 'Vues', numeric: true },
+    // « Vues » reste le cumul depuis la sortie ; « Sur la période » dit ce que la vidéo
+    // a rapporté pendant la fenêtre affichée. Les deux côte à côte, parce que sur un
+    // catalogue c'est justement l'écart entre les deux qui est l'information.
+    ...(showPeriodViews
+      ? [{ key: 'periodViews' as const, label: 'Vues (période)', numeric: true }]
+      : []),
+    { key: 'views', label: 'Vues (total)', numeric: true },
     { key: 'subscribersGained', label: 'Abonnés', numeric: true },
     { key: 'adsenseCents', label: 'AdSense', numeric: true },
     { key: 'manualCashCents', label: 'Revenus liés', numeric: true },
@@ -94,7 +101,19 @@ export const VideoPerformanceTable = ({
     [input, moneyMode, includeInKind],
   );
 
-  const columns = useMemo(() => columnsFor(includeInKind), [includeInKind]);
+  /**
+   * La colonne « période » n'apparaît que si au moins une ligne sait répondre.
+   *
+   * L'historique des relevés commence à la première collecte : sur une base qui n'en a
+   * pas encore, une colonne entièrement remplie de « — » ferait croire à une panne. Elle
+   * apparaîtra d'elle-même dès qu'il y aura deux relevés encadrant la période.
+   */
+  const showPeriodViews = useMemo(() => rows.some((row) => row.periodViews !== null), [rows]);
+
+  const columns = useMemo(
+    () => columnsFor(includeInKind, showPeriodViews),
+    [includeInKind, showPeriodViews],
+  );
 
   // Décocher la case fait disparaître la colonne « Produits reçus » : sans ce repli, le
   // tableau resterait trié sur une colonne devenue invisible, sans moyen d'en changer.
@@ -114,7 +133,10 @@ export const VideoPerformanceTable = ({
           : a.date > b.date
             ? 1
             : 0
-        : a[activeSort.key] - b[activeSort.key];
+        : activeSort.key === 'periodViews'
+          ? // Les non mesurables ferment le classement, quel que soit le sens du tri.
+            (a.periodViews ?? -1) - (b.periodViews ?? -1)
+          : a[activeSort.key] - b[activeSort.key];
 
     return [...rows].sort((a, b) => (activeSort.desc ? compare(b, a) : compare(a, b)));
   }, [rows, activeSort]);
@@ -219,7 +241,19 @@ export const VideoPerformanceTable = ({
                 </div>
               </TableCell>
               {/* « — » et non « 0 » tant qu'aucune collecte n'a mesuré la vidéo. */}
-              <TableCell className="text-right tabular">
+              {showPeriodViews && (
+                <TableCell
+                  className="text-right tabular font-medium"
+                  title={
+                    row.periodViews === null
+                      ? "Pas encore mesurable : il manque un relevé antérieur à la période. L'historique se constitue à chaque collecte."
+                      : undefined
+                  }
+                >
+                  {row.periodViews === null ? '—' : formatNumber(row.periodViews)}
+                </TableCell>
+              )}
+              <TableCell className="text-right tabular text-muted-foreground">
                 {row.hasStats ? formatNumber(row.views) : '—'}
               </TableCell>
               <TableCell className="text-right tabular">
@@ -255,6 +289,11 @@ export const VideoPerformanceTable = ({
         <tfoot>
           <TableRow className="border-t-2 border-border font-medium hover:bg-transparent">
             <TableCell className="whitespace-nowrap">Total ({rows.length})</TableCell>
+            {showPeriodViews && (
+              <TableCell className="text-right tabular">
+                {formatNumber(totals.periodViews)}
+              </TableCell>
+            )}
             <TableCell className="text-right tabular">{formatNumber(totals.views)}</TableCell>
             <TableCell className="text-right tabular">
               {formatSigned(totals.subscribersGained)}

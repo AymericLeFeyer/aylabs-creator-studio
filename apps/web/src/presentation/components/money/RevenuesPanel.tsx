@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Lock, PackagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
+import { CalendarClock, Lock, PackagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   useDeleteRevenue,
   useRevenues,
@@ -18,10 +18,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { RevenueDialog } from '../forms/RevenueDialog.tsx';
 import { ProductDialog } from '../forms/ProductDialog.tsx';
 import { EmptyState } from '../EmptyState.tsx';
-import { UpcomingSection } from './UpcomingSection.tsx';
+import { UPCOMING_MONTHS } from '../../../domain/expense/services/upcoming.ts';
+import { Checkbox } from '../ui/checkbox.tsx';
+import { Label } from '../ui/label.tsx';
+import { cn } from '../../../shared/cn.ts';
 
 interface RevenueTableProps {
   entries: RevenueEntry[];
+  /** Lignes déjà datées en avant : grisées, en tête, et hors des totaux. */
+  upcoming?: RevenueEntry[];
   onEdit: (entry: RevenueEntry) => void;
   onDelete: (entry: RevenueEntry) => void;
   onDocument: (entry: RevenueEntry) => void;
@@ -33,7 +38,13 @@ interface RevenueTableProps {
  * comparaison entre ce qui est encaissé et ce qui arrive plus difficile qu'elle ne doit
  * l'être.
  */
-const RevenueTable = ({ entries, onEdit, onDelete, onDocument }: RevenueTableProps) => (
+const RevenueTable = ({
+  entries,
+  upcoming = [],
+  onEdit,
+  onDelete,
+  onDocument,
+}: RevenueTableProps) => (
   <Table>
     <TableHeader>
       <TableRow>
@@ -47,10 +58,16 @@ const RevenueTable = ({ entries, onEdit, onDelete, onDocument }: RevenueTablePro
       </TableRow>
     </TableHeader>
     <TableBody>
-      {entries.map((entry) => (
-        <TableRow key={entry.id}>
+      {[
+        ...upcoming.map((entry) => ({ entry, isUpcoming: true })),
+        ...entries.map((entry) => ({ entry, isUpcoming: false })),
+      ].map(({ entry, isUpcoming }) => (
+        <TableRow key={entry.id} className={cn(isUpcoming && 'bg-muted/30 text-muted-foreground')}>
           <TableCell className="whitespace-nowrap text-muted-foreground tabular">
-            {formatDate(entry.date)}
+            <span className="flex items-center gap-1.5">
+              {isUpcoming && <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+              {formatDate(entry.date)}
+            </span>
           </TableCell>
           <TableCell className="font-medium">
             {entry.label}
@@ -89,7 +106,12 @@ const RevenueTable = ({ entries, onEdit, onDelete, onDocument }: RevenueTablePro
               {entry.videoTitle ?? '—'}
             </span>
           </TableCell>
-          <TableCell className="text-right tabular font-medium">
+          <TableCell
+            className={cn(
+              'text-right tabular font-medium',
+              isUpcoming && 'font-normal text-muted-foreground',
+            )}
+          >
             {formatMoney(entry.amountCents)}
           </TableCell>
           <TableCell>
@@ -149,6 +171,7 @@ export const RevenuesPanel = () => {
   const upcoming = useUpcomingRevenues(filters.channelIds);
   const remove = useDeleteRevenue();
 
+  const [showUpcoming, setShowUpcoming] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<RevenueEntry | null>(null);
   /** Revenu en nature en cours de documentation : il devient une fiche produit. */
@@ -163,6 +186,14 @@ export const RevenuesPanel = () => {
       .reduce((sum, entry) => sum + entry.amountCents, 0);
     return { cash, inKind };
   }, [entries]);
+
+  // Les plus lointains en haut : le tableau se lit du futur vers le passé, comme les
+  // revenus de la période qui le suivent (date décroissante).
+  const upcomingRows = useMemo(
+    () => [...upcoming.revenues].sort((a, b) => b.date.localeCompare(a.date)),
+    [upcoming.revenues],
+  );
+  const visibleUpcoming = showUpcoming ? upcomingRows : [];
 
   const openCreate = () => {
     setEditing(null);
@@ -197,13 +228,31 @@ export const RevenuesPanel = () => {
           </span>
         </div>
 
-        <Button size="sm" onClick={openCreate}>
-          <Plus className="h-4 w-4" />
-          Ajouter un revenu
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          {upcomingRows.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="show-upcoming-revenues"
+                checked={showUpcoming}
+                onCheckedChange={(checked) => setShowUpcoming(checked === true)}
+              />
+              <Label
+                htmlFor="show-upcoming-revenues"
+                className="text-xs font-normal text-muted-foreground"
+              >
+                Afficher les {upcomingRows.length} revenu(s) à venir (
+                {formatMoney(upcoming.totalCents)})
+              </Label>
+            </div>
+          )}
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            Ajouter un revenu
+          </Button>
+        </div>
       </div>
 
-      {!isLoading && entries.length === 0 ? (
+      {!isLoading && entries.length === 0 && upcomingRows.length === 0 ? (
         <EmptyState
           title="Aucun revenu sur cette période"
           description="Ajoute tes sponsos, revenus d'affiliation ou produits reçus pour les voir apparaître dans le dashboard."
@@ -214,32 +263,23 @@ export const RevenuesPanel = () => {
         <Card>
           <CardHeader>
             <CardTitle>{entries.length} revenu(s)</CardTitle>
+            {visibleUpcoming.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Les {visibleUpcoming.length} première(s) ligne(s), grisées, sont à venir d'ici{' '}
+                {UPCOMING_MONTHS} mois : déjà enregistrées, pas encore arrivées, et hors des totaux
+                ci-dessus.
+              </p>
+            )}
           </CardHeader>
           <RevenueTable
             entries={entries}
+            upcoming={visibleUpcoming}
             onEdit={openEdit}
             onDelete={confirmDelete}
             onDocument={setDocumenting}
           />
         </Card>
       )}
-
-      {/* Ce qui est déjà daté en avant : une sponso encaissable le mois prochain, une
-          facture d'affiliation programmée. Hors des totaux ci-dessus, et le bloc le dit. */}
-      <UpcomingSection
-        kind="revenue"
-        count={upcoming.revenues.length}
-        totalCents={upcoming.totalCents}
-        from={formatDate(upcoming.range.from)}
-        to={formatDate(upcoming.range.to)}
-      >
-        <RevenueTable
-          entries={upcoming.revenues}
-          onEdit={openEdit}
-          onDelete={confirmDelete}
-          onDocument={setDocumenting}
-        />
-      </UpcomingSection>
 
       <RevenueDialog open={dialogOpen} onOpenChange={setDialogOpen} entry={editing} />
 

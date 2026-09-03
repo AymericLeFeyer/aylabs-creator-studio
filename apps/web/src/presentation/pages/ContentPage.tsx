@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import { Clock, Eye, Heart, Library, Users, Video } from 'lucide-react';
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
 import { useProductionOverview } from '../../application/production/usecases/useProductions.ts';
-import { useAnalyticsParams } from '../hooks/useFilters.tsx';
+import { useVideos } from '../../application/video/usecases/useVideos.ts';
+import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
 import { compareTotals } from '../../domain/analytics/services/revenueMath.ts';
 import { formatHours, formatNumber, formatSigned } from '../../shared/format.ts';
 import { StatCard } from '../components/StatCard.tsx';
@@ -10,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.
 import { AudienceChart } from '../components/charts/AudienceChart.tsx';
 import { VideoPerformanceChart } from '../components/charts/VideoPerformanceChart.tsx';
 import { VideoPerformanceTable } from '../components/charts/VideoPerformanceTable.tsx';
+import { LatestVideoCard } from '../components/content/LatestVideoCard.tsx';
 
 /**
  * Tout ce qui concerne les vidéos déjà sorties, sur la période choisie en haut.
@@ -24,10 +26,16 @@ import { VideoPerformanceTable } from '../components/charts/VideoPerformanceTabl
  * publié ; ne montrer que les nouveautés laissait croire que le reste avait disparu.
  */
 export const ContentPage = () => {
+  const filters = useFilters();
   const params = useAnalyticsParams();
   const { data, isLoading } = useAnalytics(params);
 
   const { data: overview } = useProductionOverview();
+
+  // Sans bornes de date, comme sur le dashboard : « ma dernière vidéo, elle marche
+  // comment » ne se pose pas dans une fenêtre de temps, et une période de sept jours
+  // viderait le bloc précisément quand on vient le lire.
+  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 1 });
 
   const periodVideos = useMemo(() => data?.videoPerformance ?? [], [data]);
   const catalog = useMemo(() => data?.catalogPerformance ?? [], [data]);
@@ -120,6 +128,12 @@ export const ContentPage = () => {
       {isLoading && !data && (
         <div className="h-80 animate-pulse rounded-xl border border-border bg-card" />
       )}
+
+      {/* La dernière sortie avant les courbes : c'est la question qui suit les totaux,
+          et l'écran Contenu est celui où on vient précisément la poser. Ses compteurs
+          sont des cumuls depuis la sortie — ils ne s'additionnent pas avec les totaux
+          de la période affichés au-dessus. */}
+      <LatestVideoCard video={latestVideos[0]} />
 
       {data && (
         <>

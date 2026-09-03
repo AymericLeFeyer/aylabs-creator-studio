@@ -106,9 +106,13 @@ export const StepProgress = ({
 }) => {
   const { done, total } = progressCounts(production, steps.length);
   const ratio = total === 0 ? 0 : done / total;
+  const detail = `${done} sur ${total} (étapes et tâches)`;
 
   return (
-    <div className="flex items-center gap-2">
+    // Le pourcentage se lit d'un coup et se compare d'une carte à l'autre ; le compte
+    // exact ne sert qu'à savoir *combien il en reste*, ce qu'on ne demande que sur la
+    // vidéo qu'on s'apprête à attaquer. D'où l'un affiché, l'autre au survol.
+    <div className="flex items-center gap-2" title={detail}>
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
         <div
           className="h-full rounded-full bg-[var(--positive)] transition-[width]"
@@ -116,8 +120,9 @@ export const StepProgress = ({
         />
       </div>
       <span className="shrink-0 text-[11px] tabular text-muted-foreground">
-        {done}/{total}
+        {Math.round(ratio * 100)} %
       </span>
+      <span className="sr-only">{detail}</span>
     </div>
   );
 };

@@ -1,6 +1,12 @@
 import type { IsoDate } from '../../../shared/dates.ts';
 import type { DateRange } from '../../metrics/repositories/MetricsRepository.ts';
-import type { UpsertVideoInput, Video, VideoStatsUpdate, VideoView } from '../entities/Video.ts';
+import type {
+  UpsertVideoInput,
+  Video,
+  VideoRangeStats,
+  VideoStatsUpdate,
+  VideoView,
+} from '../entities/Video.ts';
 
 export interface VideoFilter {
   range?: DateRange;
@@ -19,6 +25,12 @@ export interface VideoRepository {
   upsertMany(videos: UpsertVideoInput[]): number;
   /** Remplace les compteurs d'une vidéo. Les compteurs sont des cumuls, jamais additionnés. */
   upsertStats(updates: VideoStatsUpdate[]): number;
+  /**
+   * Ce que des vidéos ont fait sur une période, par différence de relevés datés.
+   * Une vidéo sans relevé antérieur à la période est **absente** du résultat : on ne
+   * peut pas séparer sa part de période de son cumul d'avant.
+   */
+  sumStatsOverRange(videoIds: string[], range: DateRange): Map<string, VideoRangeStats>;
   /** Compte les sorties de la période, sans les charger (le `limit` de `findAll` fausserait). */
   countInRange(channelIds: string[], range: DateRange): number;
   /** Jour de la dernière vidéo connue, pour ne re-parcourir que le nécessaire. */

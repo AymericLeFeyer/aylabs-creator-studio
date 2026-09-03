@@ -4,6 +4,7 @@ import type { DateRange } from '../../../domain/metrics/repositories/MetricsRepo
 import type {
   UpsertVideoInput,
   Video,
+  VideoRangeStats,
   VideoStatsUpdate,
   VideoView,
 } from '../../../domain/video/entities/Video.ts';
@@ -159,15 +160,22 @@ export class SqliteVideoRepository implements VideoRepository {
   }
 
   /**
-   * Écrase les compteurs des vidéos concernées.
+   * Écrase les compteurs des vidéos concernées, **et en garde une trace datée**.
    *
-   * Aucune insertion : une statistique sans ligne de vidéo n'a nulle part où aller, et
-   * la vidéo est toujours enregistrée avant par `upsertMany`. Une vidéo absente du lot
-   * garde donc ses valeurs précédentes plutôt que de retomber à zéro.
+   * Aucune insertion dans `videos` : une statistique sans ligne de vidéo n'a nulle part
+   * où aller, et la vidéo est toujours enregistrée avant par `upsertMany`. Une vidéo
+   * absente du lot garde donc ses valeurs précédentes plutôt que de retomber à zéro.
+   *
+   * Le relevé du jour (`video_stat_snapshots`) est écrit dans la foulée : les compteurs
+   * de `videos` sont des cumuls écrasés à chaque passage, et sans point de repère daté
+   * on ne saurait jamais dire ce qu'une vidéo a rapporté *sur une période*. Un seul
+   * relevé par jour, le dernier écrasant le précédent — la collecte tourne toutes les
+   * heures, et douze lignes par jour et par vidéo ne diraient rien de plus.
    */
   upsertStats(updates: VideoStatsUpdate[]): number {
     if (updates.length === 0) return 0;
     const now = new Date().toISOString();
+    const today = now.slice(0, 10);
 
     const stmt = this.db.prepare(
       `UPDATE videos
@@ -180,6 +188,23 @@ export class SqliteVideoRepository implements VideoRepository {
               stats_updated_at = ?,
               updated_at = ?
         WHERE channel_id = ? AND external_id = ?`,
+    );
+
+    const snapshot = this.db.prepare(
+      `INSERT INTO video_stat_snapshots
+         (video_id, date, views, watch_minutes, subscribers_gained, likes, comments,
+          estimated_revenue_cents, captured_at)
+       SELECT v.id, ?, ?, ?, ?, ?, ?, ?, ?
+         FROM videos v
+        WHERE v.channel_id = ? AND v.external_id = ?
+       ON CONFLICT(video_id, date) DO UPDATE SET
+         views = excluded.views,
+         watch_minutes = excluded.watch_minutes,
+         subscribers_gained = excluded.subscribers_gained,
+         likes = excluded.likes,
+         comments = excluded.comments,
+         estimated_revenue_cents = excluded.estimated_revenue_cents,
+         captured_at = excluded.captured_at`,
     );
 
     let count = 0;
@@ -197,8 +222,87 @@ export class SqliteVideoRepository implements VideoRepository {
         update.externalId,
       );
       count += Number(result.changes);
+
+      snapshot.run(
+        today,
+        update.stats.views,
+        update.stats.watchMinutes,
+        update.stats.subscribersGained,
+        update.stats.likes,
+        update.stats.comments,
+        update.stats.estimatedRevenueCents,
+        now,
+        update.channelId,
+        update.externalId,
+      );
     }
     return count;
+  }
+
+  /**
+   * Ce que des vidéos ont fait **sur une période**, par différence de relevés.
+   *
+   * Pour chaque vidéo : dernier relevé jusqu'à `to`, moins dernier relevé antérieur à
+   * `from`. Une vidéo sans relevé antérieur est **absente du résultat** plutôt que
+   * ramenée à son cumul : sur une vidéo sortie il y a deux ans, afficher 40 000 vues
+   * dans une colonne « sur la période » serait faux d'un facteur cinquante.
+   *
+   * L'écart est planché à zéro : YouTube révise ses chiffres à la baisse (vues
+   * invalidées), et une période ne doit pas afficher −12 vues.
+   */
+  sumStatsOverRange(videoIds: string[], range: DateRange): Map<string, VideoRangeStats> {
+    const result = new Map<string, VideoRangeStats>();
+    if (videoIds.length === 0) return result;
+
+    const holes = placeholders(videoIds.length);
+    // Deux photos du catalogue : celle de la fin de période, et celle d'avant son début.
+    // `MAX(date)` par vidéo donne le relevé le plus récent de chaque côté.
+    const rows = this.db
+      .prepare(
+        `WITH bounds AS (
+           SELECT s.video_id,
+                  MAX(CASE WHEN s.date <= ? THEN s.date END) AS end_date,
+                  MAX(CASE WHEN s.date <  ? THEN s.date END) AS start_date
+             FROM video_stat_snapshots s
+            WHERE s.video_id IN (${holes})
+            GROUP BY s.video_id
+         )
+         SELECT b.video_id                                            AS video_id,
+                e.views - COALESCE(o.views, 0)                        AS views,
+                e.watch_minutes - COALESCE(o.watch_minutes, 0)        AS watch_minutes,
+                e.subscribers_gained - COALESCE(o.subscribers_gained, 0) AS subscribers_gained,
+                e.estimated_revenue_cents - COALESCE(o.estimated_revenue_cents, 0)
+                                                                      AS revenue_cents,
+                o.video_id IS NOT NULL                                AS has_baseline
+           FROM bounds b
+           JOIN video_stat_snapshots e
+             ON e.video_id = b.video_id AND e.date = b.end_date
+           LEFT JOIN video_stat_snapshots o
+             ON o.video_id = b.video_id AND o.date = b.start_date
+          WHERE b.end_date IS NOT NULL`,
+      )
+      .all(range.to, range.from, ...(videoIds as never[])) as unknown as Array<{
+      video_id: string;
+      views: number;
+      watch_minutes: number;
+      subscribers_gained: number;
+      revenue_cents: number;
+      has_baseline: number;
+    }>;
+
+    for (const row of rows) {
+      // Sans relevé antérieur, on ne sait pas séparer ce qui vient de la période du
+      // cumul d'avant : la vidéo n'a pas de valeur, et le tableau affichera « — ».
+      if (row.has_baseline !== 1) continue;
+      result.set(row.video_id, {
+        views: Math.max(0, row.views),
+        watchMinutes: Math.max(0, row.watch_minutes),
+        subscribersGained: Math.max(0, row.subscribers_gained),
+        estimatedRevenueCents: Math.max(0, row.revenue_cents),
+      });
+    }
+
+    return result;
   }
 
   countInRange(channelIds: string[], range: DateRange): number {

@@ -33,6 +33,7 @@ export const queryKeys = {
   legalOverview: () => ['legalOverview'] as const,
   legalObligations: (includeArchived: boolean) => ['legalObligations', includeArchived] as const,
   legalBookmarks: (includeArchived: boolean) => ['legalBookmarks', includeArchived] as const,
+  affiliatePlatforms: (params: unknown) => ['affiliatePlatforms', params] as const,
 };
 
 /** Racines à invalider après une écriture qui change les chiffres agrégés. */

@@ -23,6 +23,8 @@ export interface VideoRow extends VideoPerformanceRow {
 
 export interface VideoTotals {
   views: number;
+  /** Somme des vues de période **mesurables** : les `null` n'entrent pas dans le total. */
+  periodViews: number;
   subscribersGained: number;
   adsenseCents: number;
   manualCashCents: number;
@@ -49,6 +51,7 @@ export const sumVideoRows = (rows: VideoRow[]): VideoTotals =>
   rows.reduce<VideoTotals>(
     (sum, row) => ({
       views: sum.views + row.views,
+      periodViews: sum.periodViews + (row.periodViews ?? 0),
       subscribersGained: sum.subscribersGained + row.subscribersGained,
       adsenseCents: sum.adsenseCents + row.adsenseCents,
       manualCashCents: sum.manualCashCents + row.manualCashCents,
@@ -60,6 +63,7 @@ export const sumVideoRows = (rows: VideoRow[]): VideoTotals =>
     }),
     {
       views: 0,
+      periodViews: 0,
       subscribersGained: 0,
       adsenseCents: 0,
       manualCashCents: 0,

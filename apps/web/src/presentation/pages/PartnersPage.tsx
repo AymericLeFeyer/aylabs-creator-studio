@@ -30,6 +30,7 @@ import {
   TableRow,
 } from '../components/ui/table.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
+import { PlatformsPanel } from '../components/partners/PlatformsPanel.tsx';
 import { PartnerStatCards } from '../components/partners/PartnerStatCards.tsx';
 import { SponsorshipScriptDialog } from '../components/partners/SponsorshipScriptDialog.tsx';
 import { ProductDialog } from '../components/forms/ProductDialog.tsx';
@@ -57,7 +58,9 @@ const DeadlineCell = ({ date, pending }: { date: string | null; pending: boolean
 
 export const PartnersPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get('onglet') === 'sponsors' ? 'sponsors' : 'produits';
+  const requestedTab = searchParams.get('onglet');
+  const tab =
+    requestedTab === 'sponsors' || requestedTab === 'plateformes' ? requestedTab : 'produits';
 
   const { data: products = [] } = useProducts();
   const { data: sponsorships = [] } = useSponsorships();
@@ -103,6 +106,9 @@ export const PartnersPage = () => {
         <TabsList>
           <TabsTrigger value="produits">Produits ({products.length})</TabsTrigger>
           <TabsTrigger value="sponsors">Sponsors ({sponsorships.length})</TabsTrigger>
+          {/* Les plateformes ne sont pas un partenariat de plus : c'est l'endroit où se
+              gère l'affiliation, et ce qu'elle rapporte. D'où un onglet à part. */}
+          <TabsTrigger value="plateformes">Plateformes</TabsTrigger>
         </TabsList>
 
         <TabsContent value="produits">
@@ -413,6 +419,10 @@ export const PartnersPage = () => {
               </TableBody>
             </Table>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="plateformes">
+          <PlatformsPanel />
         </TabsContent>
       </Tabs>
 

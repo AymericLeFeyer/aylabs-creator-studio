@@ -169,8 +169,11 @@ export const ProductionCard = ({
           <Handshake className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         )}
 
-        <span className="shrink-0 text-xs tabular text-muted-foreground">
-          {progress.done}/{progress.total}
+        <span
+          className="shrink-0 text-xs tabular text-muted-foreground"
+          title={`${progress.done} sur ${progress.total} (étapes et tâches)`}
+        >
+          {progress.total === 0 ? '—' : `${Math.round((progress.done / progress.total) * 100)} %`}
         </span>
 
         <Badge

@@ -20,6 +20,7 @@ interface EntryRow {
   channel_id: string | null;
   category_id: string;
   video_id: string | null;
+  platform_id: string | null;
   date: string;
   amount_cents: number;
   label: string;
@@ -35,6 +36,7 @@ interface EntryViewRow extends EntryRow {
   category_color: string;
   channel_name: string | null;
   video_title: string | null;
+  platform_name: string | null;
 }
 
 const toDomain = (row: EntryRow): RevenueEntry => ({
@@ -42,6 +44,7 @@ const toDomain = (row: EntryRow): RevenueEntry => ({
   channelId: row.channel_id,
   categoryId: row.category_id,
   videoId: row.video_id,
+  platformId: row.platform_id,
   date: row.date,
   amountCents: row.amount_cents,
   label: row.label,
@@ -58,6 +61,7 @@ const toViewDomain = (row: EntryViewRow): RevenueEntryView => ({
   categoryColor: row.category_color,
   channelName: row.channel_name,
   videoTitle: row.video_title,
+  platformName: row.platform_name,
 });
 
 /**
@@ -117,11 +121,13 @@ export class SqliteRevenueEntryRepository implements RevenueEntryRepository {
              c.nature AS category_nature,
              c.color  AS category_color,
              ch.name  AS channel_name,
-             v.title  AS video_title
+             v.title  AS video_title,
+             p.name   AS platform_name
         FROM revenue_entries e
         JOIN categories c ON c.id = e.category_id
         LEFT JOIN channels ch ON ch.id = e.channel_id
         LEFT JOIN videos v ON v.id = e.video_id
+        LEFT JOIN affiliate_platforms p ON p.id = e.platform_id
         ${clause}`;
 
     if (categoryIds.length > 0) {
@@ -150,15 +156,16 @@ export class SqliteRevenueEntryRepository implements RevenueEntryRepository {
     this.db
       .prepare(
         `INSERT INTO revenue_entries
-           (id, channel_id, category_id, video_id, date, amount_cents, label, notes,
-            origin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, channel_id, category_id, video_id, platform_id, date, amount_cents,
+            label, notes, origin, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.channelId ?? null,
         input.categoryId,
         input.videoId ?? null,
+        input.platformId ?? null,
         input.date,
         input.amountCents,
         input.label,
@@ -201,6 +208,7 @@ export class SqliteRevenueEntryRepository implements RevenueEntryRepository {
     if (input.channelId !== undefined) set('channel_id', input.channelId);
     if (input.categoryId !== undefined) set('category_id', input.categoryId);
     if (input.videoId !== undefined) set('video_id', input.videoId);
+    if (input.platformId !== undefined) set('platform_id', input.platformId);
     if (input.date !== undefined) set('date', input.date);
     if (input.amountCents !== undefined) set('amount_cents', input.amountCents);
     if (input.label !== undefined) set('label', input.label);

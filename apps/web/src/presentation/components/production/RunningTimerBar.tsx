@@ -38,7 +38,7 @@ export const RunningTimerBar = () => {
   const elapsed = now - Date.parse(running.startedAt);
 
   return (
-    <div className="border-t border-[var(--positive)]/30 bg-[var(--positive)]/10">
+    <div className="border-y border-[var(--positive)]/30 bg-[var(--positive)]/10">
       <div className="mx-auto flex w-full max-w-[1800px] flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 text-sm sm:px-5">
         <Timer className="h-4 w-4 shrink-0 text-[var(--positive)]" aria-hidden />
 

@@ -137,6 +137,18 @@ export interface VideoPerformanceRow {
   /** `false` tant qu'aucune collecte n'a mesuré cette vidéo : « — » plutôt que « 0 ». */
   hasStats: boolean;
 
+  /**
+   * Vues faites **pendant la période affichée**, et non depuis la sortie.
+   *
+   * Reconstituées par différence entre deux relevés datés (`video_stat_snapshots`).
+   * `null` = pas mesurable : il manque un relevé antérieur à la période, ce qui est le
+   * cas de toute vidéo dont l'historique n'a pas encore été collecté. « — » alors, jamais
+   * « 0 » — c'est la différence entre « n'a rien fait » et « on ne sait pas ».
+   */
+  periodViews: number | null;
+  periodWatchHours: number | null;
+  periodSubscribersGained: number | null;
+
   /** AdSense attribué à la vidéo par YouTube Analytics. */
   adsenseCents: Cents;
   /** Revenus manuels `cash` rattachés à la vidéo, quelle que soit leur date. */

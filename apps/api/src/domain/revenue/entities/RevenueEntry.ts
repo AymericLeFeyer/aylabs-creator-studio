@@ -22,6 +22,12 @@ export interface RevenueEntry {
   categoryId: string;
   /** Vidéo à laquelle ce revenu est rattaché. `null` = revenu non imputé à une sortie. */
   videoId: string | null;
+  /**
+   * Plateforme d'affiliation qui a rapporté ce revenu. `null` = non rattaché — tous les
+   * revenus ne viennent pas de l'affiliation. C'est ce champ qui permet de dire quelle
+   * plateforme rapporte le plus.
+   */
+  platformId: string | null;
   date: IsoDate;
   amountCents: Cents;
   label: string;
@@ -35,6 +41,7 @@ export interface CreateRevenueEntryInput {
   channelId?: string | null;
   categoryId: string;
   videoId?: string | null;
+  platformId?: string | null;
   date: IsoDate;
   amountCents: Cents;
   label: string;
@@ -52,4 +59,6 @@ export interface RevenueEntryView extends RevenueEntry {
   categoryColor: string;
   channelName: string | null;
   videoTitle: string | null;
+  /** Nom de la plateforme rattachée, pour l'afficher sans seconde requête. */
+  platformName: string | null;
 }

@@ -36,6 +36,9 @@ export interface RevenueEntry {
   categoryColor: string;
   channelName: string | null;
   videoTitle: string | null;
+  /** Plateforme d'affiliation rattachée, `null` si le revenu n'en vient pas. */
+  platformId: string | null;
+  platformName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -45,6 +48,7 @@ export interface RevenueEntryInput {
   channelId?: string | null;
   categoryId: string;
   videoId?: string | null;
+  platformId?: string | null;
   date: string;
   amount: number;
   label: string;

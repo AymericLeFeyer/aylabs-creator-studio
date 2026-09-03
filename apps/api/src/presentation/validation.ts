@@ -58,6 +58,8 @@ export const createRevenueSchema = z.object({
   categoryId: z.string().min(1, 'La catégorie est obligatoire'),
   /** Rattachement facultatif à une sortie de vidéo. */
   videoId: z.string().nullable().optional(),
+  /** Plateforme d'affiliation qui a rapporté ce revenu. Facultatif. */
+  platformId: z.string().nullable().optional(),
   date: isoDate,
   amount,
   label: z.string().trim().min(1, 'Le libellé est obligatoire').max(200),
@@ -527,3 +529,45 @@ export const createRecurringExpenseSchema = z.object({
 });
 
 export const updateRecurringExpenseSchema = createRecurringExpenseSchema.partial();
+
+/**
+ * Une plateforme d'affiliation. `brandIds` remplace **entièrement** la liste des marques
+ * quand il est fourni : le formulaire envoie l'état complet des cases cochées, et une
+ * fusion rendrait impossible le retrait d'une marque.
+ */
+export const createAffiliatePlatformSchema = z.object({
+  name: z.string().trim().min(1, 'Le nom est obligatoire').max(120),
+  description: optionalText,
+  url: z
+    .string()
+    .trim()
+    .url('Adresse attendue, par exemple https://partenaires.amazon.fr')
+    .max(500)
+    .nullable()
+    .optional(),
+  imageUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .nullable()
+    .optional()
+    .transform((value) => (value === '' ? null : value)),
+  color: hexColor,
+  notes: optionalText,
+  sortOrder: z.number().int().optional(),
+  brandIds: z.array(z.string().min(1)).optional(),
+});
+
+export const updateAffiliatePlatformSchema = createAffiliatePlatformSchema.partial().extend({
+  isArchived: z.boolean().optional(),
+});
+
+/** Bornes des gains par plateforme : mêmes paramètres que les classements de marques. */
+export const platformQuerySchema = z.object({
+  includeArchived: z
+    .string()
+    .optional()
+    .transform((value) => value === 'true'),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+});

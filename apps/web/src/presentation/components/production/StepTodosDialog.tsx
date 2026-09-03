@@ -67,7 +67,7 @@ export const StepTodosDialog = ({ open, onOpenChange, production, step }: StepTo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md space-y-4">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span
@@ -84,11 +84,11 @@ export const StepTodosDialog = ({ open, onOpenChange, production, step }: StepTo
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-1">
+        <div className="max-h-[45vh] space-y-0.5 overflow-y-auto">
           {todos.map((todo) => (
             <div
               key={todo.id}
-              className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/60"
+              className="group flex items-center gap-2.5 rounded-md px-1.5 py-1.5 hover:bg-muted/60"
             >
               <button
                 type="button"
@@ -143,7 +143,7 @@ export const StepTodosDialog = ({ open, onOpenChange, production, step }: StepTo
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 border-t border-border pt-3">
           <Input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}

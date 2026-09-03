@@ -356,6 +356,36 @@ passages, et un formulaire refermé par mégarde emporterait le texte.
 
 `status` ∈ `discussion | todo | in_progress | paid | cancelled` (les quatre demandés + l'abandon, sans quoi une négo morte fausse le montant « à encaisser » à vie). Seul `paid` crée le revenu **cash**. Tant qu'elle n'est pas payée, la sponso vit dans le « à encaisser » du dashboard et **jamais dans le CA**.
 
+### `affiliatePlatform`
+
+`AffiliatePlatform { id, name, description, url, imageUrl, color, notes, sortOrder, isArchived }` —
+table `affiliate_platforms` (migration 15).
+
+Amazon Partenaires, Awin, Effiliation… Elles répondent à **deux** questions posées à des
+moments différents : _où_ est gérée l'affiliation d'une marque (le lien et les marques
+couvertes) et _laquelle rapporte le plus_ (l'argent).
+
+La seconde suppose de **rattacher les revenus** : `revenue_entries.platform_id`, posé
+exactement comme `video_id`, alimenté par le champ « Plateforme » du formulaire de revenu.
+Un revenu à `platform_id NULL` est le cas normal — tous les revenus ne viennent pas de
+l'affiliation.
+
+Le lien avec les marques est **N:N et facultatif des deux côtés** (`affiliate_platform_brands`,
+la présence de la ligne vaut le lien) : une plateforme couvre plusieurs marques, une marque
+peut être sur plusieurs plateformes, et beaucoup de plateformes n'en ont aucune de
+renseignée. `brandIds` **remplace entièrement** la liste quand il est fourni — le
+formulaire envoie l'état complet des cases cochées, et une fusion rendrait impossible le
+retrait d'une marque.
+
+`AffiliatePlatformView` porte `earnedCents` (**borné par la période**), `totalEarnedCents`
+(**jamais borné**) et `entriesCount`. Les deux montants disent autre chose : « ce
+trimestre » sert à comparer, « depuis toujours » à décider si le compte vaut encore la
+peine d'être suivi.
+
+Suppression : les liens vers les marques partent en cascade, les **revenus sont détachés**
+(`ON DELETE SET NULL`). Supprimer une plateforme ne doit pas effacer les euros qu'elle a
+rapportés — ils restent dans le chiffre d'affaires, sans rattachement.
+
 ### `idea`
 
 `Idea { id, text, createdAt, updatedAt }` — table `ideas` (migration 7).
@@ -425,6 +455,33 @@ personne ait rien appris au passage.
 
 Suppression **franche**, contrairement aux obligations qu'on archive : un lien ne porte
 aucun historique ni aucune case cochée, il n'y a rien à préserver.
+
+### `videoStatSnapshot`
+
+Table `video_stat_snapshots` (migration 14) : un relevé daté des compteurs d'une vidéo,
+clé `(video_id, date)`, écrit par `SqliteVideoRepository.upsertStats` à chaque collecte.
+
+`videos` ne porte qu'un **cumul depuis la sortie**, écrasé à chaque passage : il dit
+« cette vidéo a fait 40 000 vues », jamais « elle en a fait 800 le mois dernier ». Or
+c'est cette seconde question qu'on pose devant un catalogue.
+
+Même parti pris que `channel_snapshots` : une ligne CUMUL par jour, dont on prend la
+**différence** entre deux dates pour obtenir un flux. `sumStatsOverRange(ids, range)`
+renvoie, par vidéo, `dernier relevé ≤ to` moins `dernier relevé < from`. L'écart est
+planché à zéro — YouTube révise ses chiffres à la baisse, et une période ne doit pas
+afficher −12 vues.
+
+**Une vidéo sans relevé antérieur à la période est absente du résultat**, et
+`periodViews` vaut alors `null` (affiché « — », jamais « 0 ») : sur une vidéo sortie il y
+a deux ans, afficher son cumul dans une colonne « sur la période » serait faux d'un
+facteur cinquante.
+
+Un seul relevé par jour, le dernier écrasant le précédent : la collecte tourne toutes les
+heures, et douze lignes quotidiennes par vidéo ne diraient rien de plus.
+
+**L'historique commence à la première collecte suivant la migration.** La colonne « Vues
+(période) » n'apparaît donc pas tant qu'aucune ligne ne sait répondre — une colonne
+entièrement remplie de « — » se lirait comme une panne.
 
 ### `analytics`
 
@@ -512,6 +569,10 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `DELETE` | `/api/legal/obligations/:id`                        | Supprimer (les cases cochées de tous les mois partent en cascade)                                                                                                                                     |
 | `PUT`    | `/api/legal/checks/:obligationId/:month`            | Cocher un mois (`AAAA-MM`, 422 sinon). Idempotent                                                                                                                                                     |
 | `DELETE` | `/api/legal/checks/:obligationId/:month`            | Décocher                                                                                                                                                                                              |
+| `GET`    | `/api/affiliate-platforms`                          | Plateformes d'affiliation, avec marques et gains. Params `includeArchived`, `from`, `to`                                                                                                              |
+| `POST`   | `/api/affiliate-platforms`                          | Créer. `brandIds` remplace entièrement la liste des marques                                                                                                                                           |
+| `PATCH`  | `/api/affiliate-platforms/:id`                      | Modifier / archiver. `brandIds` absent = marques inchangées                                                                                                                                           |
+| `DELETE` | `/api/affiliate-platforms/:id`                      | Supprimer ; les revenus rattachés sont **détachés**                                                                                                                                                   |
 | `GET`    | `/api/legal/bookmarks`                              | Liens utiles de l'écran Légal. Param `includeArchived`                                                                                                                                                |
 | `POST`   | `/api/legal/bookmarks`                              | Créer. `url` doit être **absolue** (le front complète le `https://` manquant)                                                                                                                         |
 | `PATCH`  | `/api/legal/bookmarks/:id`                          | Modifier / réordonner                                                                                                                                                                                 |
@@ -527,7 +588,7 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 | `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                        |
 | `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                             |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / Créneaux / Produits & sponsos / Notes                                                     |
-| `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis deux onglets Produits et Sponsors (`?onglet=`). Bouton **Script** par sponso                       |
+| `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis trois onglets Produits, Sponsors et **Plateformes** (`?onglet=`). Bouton **Script** par sponso     |
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                              |
 | `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                   |
 | `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, Catégories, Abonnements, Marques, Étapes, Société                           |
@@ -673,7 +734,9 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Sentinelle des `Select` facultatifs** : `NONE` / `toSelectValue` / `fromSelectValue` (`presentation/components/forms/selectNone.ts`). Radix refuse une `SelectItem` de valeur vide ; la sentinelle est partagée pour que trois formulaires n'en inventent pas trois différentes.
 - **Référentiel plutôt que colonnes** : les étapes de production sont des lignes (`production_steps`) et l'état « coché » est la **présence** d'une ligne dans `production_step_checks`. En ajouter une ne demande aucune migration, et la date de complétion vient gratuitement.
 - **Migration 5** ajoute `brands`, `production_steps`, `productions`, `production_step_checks`, `production_slots`, `products`, `sponsorships`, et la colonne `revenue_entries.origin`. **Migration 6** ajoute `products.sponsorship_id`, **migration 7** la table `ideas`, **migration 8** `products.video_id` et `sponsorships.video_id`.
-- **Migration 9** ajoute `company` (ligne unique), `legal_obligations` et `legal_checks`. **Migration 10** ajoute `sponsorships.script`, **migration 11** la table `sponsorship_requirements`. **Migration 13** ajoute `legal_bookmarks`. **Migration 12** en ajoute trois d'un coup — `production_time_entries` (le temps passé), `step_todos` / `production_todos` / `production_todo_checks` (les tâches d'étape), `recurring_expenses` + `expense_entries.recurring_id` (les dépenses qui reviennent) — et la colonne `channels.thumbnail_url`.
+- **Migration 9** ajoute `company` (ligne unique), `legal_obligations` et `legal_checks`. **Migration 10** ajoute `sponsorships.script`, **migration 11** la table `sponsorship_requirements`. **Migration 15** ajoute `affiliate_platforms`, `affiliate_platform_brands` et
+  `revenue_entries.platform_id`. **Migration 14** ajoute `video_stat_snapshots`.
+  **Migration 13** ajoute `legal_bookmarks`. **Migration 12** en ajoute trois d'un coup — `production_time_entries` (le temps passé), `step_todos` / `production_todos` / `production_todo_checks` (les tâches d'étape), `recurring_expenses` + `expense_entries.recurring_id` (les dépenses qui reviennent) — et la colonne `channels.thumbnail_url`.
 - **Un panneau plutôt qu'une page dès que deux écrans le partagent** : `RevenuesPanel` et `ExpensesPanel` (ex-pages) sont montés dans les onglets de `/chiffre-affaires` ; `MoneyBreakdowns` porte les trois anneaux et les deux classements ; `PartnerStatCards` les quatre chiffres du pipeline. Le dupliquer ferait diverger deux écrans qui doivent annoncer le même montant.
 - **Le calcul du pipeline vit dans le domaine** (`domain/partner/services/pipeline.ts`, `partnerPipeline`) et non dans les écrans : le dashboard et `/partenariats` affichent le même « à encaisser », et deux comptages parallèles finiraient par se contredire.
 - **Contraste calculé, pas choisi** : `shared/contrast.ts` (`readableTextColor`) prend une couleur de fond libre et renvoie le blanc ou l'encre du thème, selon le meilleur **ratio WCAG réel** des deux. Les couleurs de chaîne sont libres — un vert clair et un bleu nuit peuvent cohabiter, et écrire en blanc sur les deux rend le premier illisible.
@@ -756,6 +819,11 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Le planning s'ouvre centré sur aujourd'hui.** `ProductionGantt` pose `scrollLeft` au montage et à chaque changement de zoom, en retranchant la largeur de la colonne des titres (`TITLE_WIDTH`). Sans ça il s'ouvrait collé à sa borne gauche, sur des jours passés. Les fenêtres couvrent donc volontairement du passé (`before` : 14, 30 ou 60 jours) pour qu'on puisse reculer. La colonne des titres est `sticky left-0` : en défilant vers le futur, on doit continuer de savoir de quelle vidéo est la barre qu'on regarde.
 - **La file d'attente a une vue compacte** (`preferences.compactQueue`) : une ligne par vidéo. Au-delà de cinq ou six vidéos en cours, la version détaillée oblige à faire défiler pour voir sa propre file. Le chevron d'une carte l'ouvre **à contre-courant du réglage global** (`exceptions`, un `Set` d'identifiants) : on veut souvent une file compacte _sauf_ la vidéo sur laquelle on travaille. Changer le réglage global vide les exceptions.
 - **Les confettis sont maison** (`Confetti`, canvas, ~50 lignes, aucune dépendance) et ne se déclenchent qu'à la **publication** : c'est le seul moment de l'outil qui mérite d'être fêté, tout le reste est de la comptabilité et de la planification. Le canvas est `pointer-events-none` en position fixe — il recouvre l'écran sans jamais intercepter un clic — et se démonte tout seul.
+- **« Vues (période) » et « Vues (total) » ne mesurent pas la même chose.** La première vient de la différence de deux relevés datés (`video_stat_snapshots`), la seconde est le cumul depuis la sortie. Sur un catalogue, c'est l'écart entre les deux qui est l'information : une vidéo à 40 000 vues dont 30 sur le mois ne travaille plus, une à 4 000 dont 800 travaille encore. Le catalogue est d'ailleurs **trié sur la période** quand elle est connue, pas sur le cumul — sinon le classement ne bougerait jamais.
+- **Les dépenses et revenus à venir sont dans le tableau, pas sous le tableau.** En tête, grisés, avec une icône de calendrier et une case pour les masquer. Ils **n'entrent jamais dans le total** affiché au-dessus, qui reste celui de la période — le sous-titre de la carte le répète, parce que c'est le genre de détail qui fait mal comprendre un chiffre.
+- **Une vidéo à 0 % est repliée d'office** dans la file d'attente. Une carte détaillée sert à décider quoi faire ensuite : à 0 %, elle n'a ni étape cochée, ni créneau, ni argent à montrer. C'est un **défaut**, pas une règle : le chevron rouvre la carte, et le réglage global l'emporte dès qu'on y touche.
+- **La barre de progression affiche le pourcentage, le détail est au survol.** Le pourcentage se compare d'une carte à l'autre ; le compte exact (« 18 sur 30 ») ne sert qu'à savoir combien il reste, ce qu'on ne demande que sur la vidéo qu'on s'apprête à attaquer.
+- **L'en-tête n'a de hauteur que s'il porte la barre de filtres.** Sur `/production`, `/partenariats`, `/legal` et `/parametres`, il perd son trait et son padding : un bandeau vide repoussait le contenu pour rien. Le bandeau du chronomètre, lui, porte une bordure **haut et bas** (`border-y`) parce qu'il peut se retrouver seul tout en haut — c'est même le cas le plus probable, `/production` étant l'écran sans filtres où un chronomètre tourne.
 - **Les liens utiles s'intercalent entre la fiche société et les alertes**, avant le tableau à cocher : on ouvre le portail, on fait la démarche, on revient cocher la case juste en dessous. La carte **entière** est le lien (cible la plus large) et s'ouvre dans un **nouvel onglet** — une navigation ferait perdre l'année choisie et la position dans le tableau. Le bloc ne s'affiche pas du tout tant qu'aucun lien n'est configuré : un encart vide prendrait la place de ce qu'on vient réellement faire sur cet écran.
 - **`/api/productions/:id/todos` est monté AVANT `/api/productions`** dans `server.ts` : un router de préfixe plus long doit passer en premier, sinon le plus court capte la requête et répond 404. Même vigilance que `/overview` déclaré avant `/:id`.
 

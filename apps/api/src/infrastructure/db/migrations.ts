@@ -611,6 +611,90 @@ const migrations: Migration[] = [
       CREATE INDEX idx_legal_bookmarks_sort ON legal_bookmarks(sort_order);
     `,
   },
+  {
+    version: 14,
+    name: 'video_stat_snapshots',
+    // Un releve des compteurs d'une video, date du jour de la collecte.
+    //
+    // `videos` ne porte qu'un CUMUL depuis la sortie, ecrase a chaque collecte : il dit
+    // « cette video a fait 40 000 vues », jamais « elle en a fait 800 le mois dernier ».
+    // Or c'est cette seconde question qu'on pose devant un catalogue — une video de l'an
+    // dernier qui rapporte encore des vues aujourd'hui n'apparaissait nulle part.
+    //
+    // Meme parti pris que `channel_snapshots` : une ligne CUMUL par jour, dont on prend
+    // la DIFFERENCE entre deux dates pour obtenir un flux. YouTube Analytics ne donne les
+    // compteurs par video qu'en cumul depuis la sortie, jamais jour par jour ; les
+    // reconstituer par difference est la seule facon de les ventiler sur une periode
+    // sans multiplier les appels d'API.
+    //
+    // Consequence assumee : l'historique commence a la premiere collecte suivant cette
+    // migration. Tant qu'il n'existe pas deux releves encadrant la periode demandee, la
+    // colonne affiche « — » plutot qu'un zero trompeur.
+    up: `
+      CREATE TABLE video_stat_snapshots (
+        video_id                TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+        -- AAAA-MM-JJ : un seul releve par jour et par video, le dernier ecrase le
+        -- precedent (la collecte tourne toutes les heures).
+        date                    TEXT NOT NULL,
+        views                   INTEGER NOT NULL DEFAULT 0,
+        watch_minutes           REAL    NOT NULL DEFAULT 0,
+        subscribers_gained      INTEGER NOT NULL DEFAULT 0,
+        likes                   INTEGER NOT NULL DEFAULT 0,
+        comments                INTEGER NOT NULL DEFAULT 0,
+        estimated_revenue_cents INTEGER NOT NULL DEFAULT 0,
+        captured_at             TEXT NOT NULL,
+        PRIMARY KEY (video_id, date)
+      );
+      CREATE INDEX idx_video_snapshots_date ON video_stat_snapshots(date);
+    `,
+  },
+  {
+    version: 15,
+    name: 'affiliate_platforms',
+    // Les plateformes d'affiliation : Amazon Partenaires, Awin, Effiliation...
+    //
+    // On y revient pour deux raisons, et elles demandent deux choses differentes :
+    // « ou est-ce que je gere l'affiliation de telle marque » (le lien et les marques
+    // couvertes) et « laquelle me rapporte le plus » (l'argent). La premiere se lit sur
+    // la fiche, la seconde suppose de RATTACHER les revenus a une plateforme — d'ou la
+    // colonne `revenue_entries.platform_id`, exactement comme `video_id`.
+    //
+    // Le lien avec les marques est N:N et FACULTATIF des deux cotes : une plateforme
+    // couvre plusieurs marques, une marque peut etre dispo sur plusieurs plateformes, et
+    // beaucoup de plateformes n'ont aucune marque connue au depart.
+    up: `
+      CREATE TABLE affiliate_platforms (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        description TEXT,
+        url         TEXT,
+        image_url   TEXT,
+        color       TEXT NOT NULL DEFAULT '#64748b',
+        notes       TEXT,
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        is_archived INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+
+      -- Table de liaison : la PRESENCE de la ligne vaut « cette marque est sur cette
+      -- plateforme ». ON DELETE CASCADE des deux cotes — un lien n'a aucun sens sans
+      -- l'un de ses deux bouts, et il ne porte aucune information propre a preserver.
+      CREATE TABLE affiliate_platform_brands (
+        platform_id TEXT NOT NULL REFERENCES affiliate_platforms(id) ON DELETE CASCADE,
+        brand_id    TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+        PRIMARY KEY (platform_id, brand_id)
+      );
+      CREATE INDEX idx_platform_brands_brand ON affiliate_platform_brands(brand_id);
+
+      -- Rattachement d'un revenu a sa plateforme. Facultatif : tous les revenus ne
+      -- viennent pas de l'affiliation. ON DELETE SET NULL — supprimer une plateforme ne
+      -- doit pas emporter les euros qu'elle a rapportes.
+      ALTER TABLE revenue_entries ADD COLUMN platform_id TEXT
+        REFERENCES affiliate_platforms(id) ON DELETE SET NULL;
+      CREATE INDEX idx_revenue_entries_platform ON revenue_entries(platform_id);
+    `,
+  },
 ];
 
 /**

@@ -21,6 +21,8 @@ import { Input, Textarea } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { NO_VIDEO, VideoSelect } from './VideoSelect.tsx';
+import { usePlatforms } from '../../../application/affiliate/usecases/usePlatforms.ts';
+import { NONE, fromSelectValue, toSelectValue } from './selectNone.ts';
 
 /** Valeur du Select pour « aucune chaîne » : Radix refuse une valeur vide. */
 const NO_CHANNEL = '__none__';
@@ -35,6 +37,9 @@ interface RevenueDialogProps {
 export const RevenueDialog = ({ open, onOpenChange, entry }: RevenueDialogProps) => {
   // Seules les catégories ouvertes aux revenus : « Impôts » n'a rien à faire ici.
   const { data: categories = [] } = useCategories({ scope: 'revenue' });
+  // Le champ n'apparaît que s'il y a des plateformes à proposer : sur une base qui n'en
+  // a aucune, une liste déroulante vide serait un formulaire de plus à parcourir.
+  const { data: platforms = [] } = usePlatforms();
   const { data: channels = [] } = useChannels();
   const create = useCreateRevenue();
   const update = useUpdateRevenue();
@@ -46,6 +51,7 @@ export const RevenueDialog = ({ open, onOpenChange, entry }: RevenueDialogProps)
     categoryId: '',
     channelId: NO_CHANNEL,
     videoId: NO_VIDEO,
+    platformId: NONE,
     date: toIsoDate(new Date()),
     amount: '',
     label: '',
@@ -64,6 +70,7 @@ export const RevenueDialog = ({ open, onOpenChange, entry }: RevenueDialogProps)
       categoryId: entry?.categoryId ?? selectable[0]?.id ?? '',
       channelId: entry?.channelId ?? NO_CHANNEL,
       videoId: entry?.videoId ?? NO_VIDEO,
+      platformId: toSelectValue(entry?.platformId),
       date: entry?.date ?? toIsoDate(new Date()),
       amount: entry ? String(entry.amountCents / 100) : '',
       label: entry?.label ?? '',
@@ -91,6 +98,7 @@ export const RevenueDialog = ({ open, onOpenChange, entry }: RevenueDialogProps)
       categoryId: form.categoryId,
       channelId: form.channelId === NO_CHANNEL ? null : form.channelId,
       videoId: form.videoId === NO_VIDEO ? null : form.videoId,
+      platformId: fromSelectValue(form.platformId),
       date: form.date,
       amount,
       label: form.label.trim(),
@@ -209,6 +217,30 @@ export const RevenueDialog = ({ open, onOpenChange, entry }: RevenueDialogProps)
               }))
             }
           />
+
+          {/* La plateforme d'affiliation qui a rapporté ce revenu. C'est ce
+              rattachement, et lui seul, qui permet de dire laquelle rapporte le plus. */}
+          {platforms.length > 0 && (
+            <div className="space-y-1.5">
+              <Label htmlFor="revenue-platform">Plateforme d'affiliation</Label>
+              <Select
+                value={form.platformId}
+                onValueChange={(value) => setForm((f) => ({ ...f, platformId: value }))}
+              >
+                <SelectTrigger id="revenue-platform">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Aucune</SelectItem>
+                  {platforms.map((platform) => (
+                    <SelectItem key={platform.id} value={platform.id}>
+                      {platform.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {selectedCategory?.nature === 'in_kind' && (
             <p className="rounded-md bg-[var(--in-kind)]/10 px-3 py-2 text-xs text-[var(--in-kind)]">

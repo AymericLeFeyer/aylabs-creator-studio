@@ -23,6 +23,7 @@ import {
 import { useDeleteIdea } from '../../application/idea/usecases/useIdeas.ts';
 import type { Idea } from '../../domain/idea/entities/Idea.ts';
 import type { Production } from '../../domain/production/entities/Production.ts';
+import { progressCounts } from '../../domain/production/entities/Production.ts';
 import type { ProductionStep } from '../../domain/production/entities/ProductionStep.ts';
 import { formatDuration } from '../../domain/production/entities/TimeEntry.ts';
 import { usePreferences } from '../hooks/usePreferences.ts';
@@ -83,8 +84,24 @@ export const ProductionPage = () => {
       return next;
     });
 
-  const isCompact = (id: string) =>
-    exceptions.has(id) ? !preferences.compactQueue : preferences.compactQueue;
+  /**
+   * Une vidéo **pas encore commencée** est repliée d'office.
+   *
+   * Une carte détaillée sert à décider *quoi faire ensuite* : étapes cochées, créneau
+   * posé, argent engagé. À 0 %, elle n'a rien de tout ça à montrer — elle occupe une
+   * hauteur de bloc pour dire « rien n'a commencé ». Les idées notées en vrac
+   * s'accumulent au bas de la file, et c'est ce qui la rendait longue à parcourir.
+   *
+   * Ce n'est qu'un **défaut** : le chevron rouvre la carte, et le réglage global
+   * l'emporte dès qu'on le change.
+   */
+  const startedOn = (production: Production): boolean =>
+    progressCounts(production, steps.length).done > 0;
+
+  const isCompact = (production: Production) => {
+    const byDefault = preferences.compactQueue || !startedOn(production);
+    return exceptions.has(production.id) ? !byDefault : byDefault;
+  };
 
   const openCreate = () => {
     setPromoted(null);
@@ -227,7 +244,7 @@ export const ProductionPage = () => {
                   steps={steps}
                   highlighted={production.id === overview?.nextId}
                   timerRunning={overview?.running?.productionId === production.id}
-                  compact={isCompact(production.id)}
+                  compact={isCompact(production)}
                   onToggleCompact={() => toggleException(production.id)}
                   onOpenStep={(step) => setOpenStep({ production, step })}
                   onStartTimer={() => setTimerFor(production)}

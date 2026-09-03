@@ -115,7 +115,7 @@ export class GetAnalytics {
       byExpenseCategory: this.buildExpenseBreakdown(activeIds, query),
       byChannel: this.buildChannelBreakdown(activeIds, allChannels, query),
       videos: this.buildVideoMarkers(videos, allChannels, query),
-      videoPerformance: this.buildVideoPerformance(videos, allChannels),
+      videoPerformance: this.buildVideoPerformance(videos, allChannels, query),
       catalogPerformance: this.buildCatalogPerformance(query, activeIds, allChannels),
       previousTotals: this.buildPreviousTotals(activeIds, query),
     };
@@ -414,6 +414,7 @@ export class GetAnalytics {
   private buildVideoPerformance(
     videos: Video[],
     allChannels: ReturnType<ChannelRepository['findAll']>,
+    query: AnalyticsQuery,
   ): VideoPerformanceRow[] {
     if (videos.length === 0) return [];
 
@@ -422,6 +423,9 @@ export class GetAnalytics {
     const expenseByVideo = new Map(
       this.expenses.sumByVideo(ids).map((row) => [row.videoId, row.totalCents]),
     );
+    // Ce que chaque vidéo a fait PENDANT la période, par différence de relevés datés.
+    // Une vidéo sans relevé antérieur est absente : la colonne affichera « — ».
+    const rangeStats = this.videos.sumStatsOverRange(ids, { from: query.from, to: query.to });
 
     return videos
       .flatMap((video) => {
@@ -445,6 +449,11 @@ export class GetAnalytics {
             likes: video.stats.likes,
             comments: video.stats.comments,
             hasStats: video.stats.updatedAt !== null,
+            periodViews: rangeStats.get(video.id)?.views ?? null,
+            periodWatchHours: rangeStats.has(video.id)
+              ? Math.round((rangeStats.get(video.id)!.watchMinutes / 60) * 100) / 100
+              : null,
+            periodSubscribersGained: rangeStats.get(video.id)?.subscribersGained ?? null,
             adsenseCents: video.stats.estimatedRevenueCents,
             manualCashCents: revenue?.cashCents ?? 0,
             inKindCents: revenue?.inKindCents ?? 0,
@@ -473,8 +482,17 @@ export class GetAnalytics {
       limit: 500,
     });
 
-    return this.buildVideoPerformance(older, allChannels)
-      .sort((a, b) => b.views - a.views)
+    // Trié sur ce que la vidéo a rapporté **pendant la période** quand on le sait : sur
+    // un catalogue, la question n'est pas « laquelle a le plus gros compteur » — c'est
+    // toujours la même — mais « laquelle travaille encore pour moi en ce moment ».
+    // Sans relevé, on retombe sur le cumul, faute de mieux.
+    return this.buildVideoPerformance(older, allChannels, query)
+      .sort((a, b) => {
+        if (a.periodViews !== null || b.periodViews !== null) {
+          return (b.periodViews ?? -1) - (a.periodViews ?? -1);
+        }
+        return b.views - a.views;
+      })
       .slice(0, CATALOG_LIMIT);
   }
 

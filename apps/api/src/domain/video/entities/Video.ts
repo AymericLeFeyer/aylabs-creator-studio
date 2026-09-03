@@ -55,3 +55,22 @@ export interface VideoStatsUpdate {
   externalId: string;
   stats: Omit<VideoStats, 'updatedAt'>;
 }
+
+/**
+ * Ce qu'une vidéo a fait **sur une période donnée**, reconstitué par différence entre
+ * deux relevés de `video_stat_snapshots`.
+ *
+ * À ne pas confondre avec `VideoStats`, qui est un **cumul depuis la sortie**. Les deux
+ * cohabitent volontairement : « cette vidéo a fait 40 000 vues » et « elle en a fait 800
+ * le mois dernier » répondent à deux questions différentes, et c'est la seconde qui dit
+ * ce que le catalogue rapporte encore.
+ *
+ * `undefined` (absence de la clé) signifie **pas mesurable** — il manque un relevé
+ * antérieur à la période — et non « zéro ».
+ */
+export interface VideoRangeStats {
+  views: number;
+  watchMinutes: number;
+  subscribersGained: number;
+  estimatedRevenueCents: number;
+}

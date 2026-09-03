@@ -119,6 +119,17 @@ export interface VideoPerformanceRow {
   /** `false` tant qu'aucune collecte n'a mesuré cette vidéo. */
   hasStats: boolean;
 
+  /**
+   * Vues faites **pendant la période affichée**, et non depuis la sortie.
+   *
+   * Reconstituées côté API par différence entre deux relevés datés. `null` = pas
+   * mesurable, faute d'un relevé antérieur à la période — « — » alors, jamais « 0 » :
+   * c'est la différence entre « n'a rien fait » et « on ne sait pas ».
+   */
+  periodViews: number | null;
+  periodWatchHours: number | null;
+  periodSubscribersGained: number | null;
+
   adsenseCents: number;
   manualCashCents: number;
   inKindCents: number;
