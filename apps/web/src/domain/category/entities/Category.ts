@@ -51,3 +51,15 @@ export const SCOPE_HINTS: Record<CategoryScope, string> = {
 
 /** La nature ne s'applique qu'aux revenus : une dépense sort toujours du compte. */
 export const usesNature = (scope: CategoryScope): boolean => scope !== 'expense';
+
+/**
+ * Identifiants fixes des catégories seedées au premier démarrage (miroir de
+ * `apps/api/src/domain/category/entities/Category.ts`).
+ *
+ * Ils servent aux règles qui doivent désigner **une** catégorie précise — la part fiscale
+ * des dépenses à venir, les revenus d'affiliation qui attendent une plateforme. Se fier
+ * au libellé casserait au premier renommage, qui est justement permis.
+ */
+export const ADSENSE_CATEGORY_ID = 'adsense';
+export const AFFILIATE_CATEGORY_ID = 'affiliation';
+export const TAX_CATEGORY_ID = 'impots';

@@ -1,7 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type {
   CreateRecurringExpenseInput,
-  RecurrenceFrequency,
   RecurringExpense,
   RecurringExpenseView,
   UpdateRecurringExpenseInput,
@@ -18,9 +17,8 @@ interface RecurringRow {
   category_id: string;
   label: string;
   amount_cents: number;
-  frequency: string;
+  interval_months: number;
   day_of_month: number;
-  month_of_year: number | null;
   start_date: string;
   end_date: string | null;
   notes: string | null;
@@ -42,9 +40,8 @@ const toDomain = (row: RecurringRow): RecurringExpense => ({
   categoryId: row.category_id,
   label: row.label,
   amountCents: row.amount_cents,
-  frequency: row.frequency as RecurrenceFrequency,
+  intervalMonths: row.interval_months,
   dayOfMonth: row.day_of_month,
-  monthOfYear: row.month_of_year,
   startDate: row.start_date,
   endDate: row.end_date,
   notes: row.notes,
@@ -121,9 +118,11 @@ export class SqliteRecurringExpenseRepository implements RecurringExpenseReposit
     this.db
       .prepare(
         `INSERT INTO recurring_expenses
-           (id, channel_id, category_id, label, amount_cents, frequency, day_of_month,
-            month_of_year, start_date, end_date, notes, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, channel_id, category_id, label, amount_cents, interval_months, day_of_month,
+            start_date, end_date, notes, is_active, created_at, updated_at,
+            frequency, month_of_year)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                 CASE WHEN ? >= 12 THEN 'yearly' ELSE 'monthly' END, NULL)`,
       )
       .run(
         id,
@@ -131,17 +130,19 @@ export class SqliteRecurringExpenseRepository implements RecurringExpenseReposit
         input.categoryId,
         input.label,
         input.amountCents,
-        input.frequency,
+        input.intervalMonths,
         // Sans jour précisé, celui de la date de début : c'est presque toujours le bon.
         input.dayOfMonth ?? Number(input.startDate.slice(8, 10)),
-        input.monthOfYear ??
-          (input.frequency === 'yearly' ? Number(input.startDate.slice(5, 7)) : null),
         input.startDate,
         input.endDate ?? null,
         input.notes ?? null,
         input.isActive === false ? 0 : 1,
         now,
         now,
+        // `frequency` est une colonne morte, conservée pour son CHECK NOT NULL : la
+        // supprimer imposerait de recréer la table, donc un DROP, qui détacherait toutes
+        // les occurrences déjà projetées (`ON DELETE SET NULL`). Elle n'est jamais lue.
+        input.intervalMonths,
       );
 
     return this.findById(id)!;
@@ -163,9 +164,12 @@ export class SqliteRecurringExpenseRepository implements RecurringExpenseReposit
     if (input.categoryId !== undefined) set('category_id', input.categoryId);
     if (input.label !== undefined) set('label', input.label);
     if (input.amountCents !== undefined) set('amount_cents', input.amountCents);
-    if (input.frequency !== undefined) set('frequency', input.frequency);
+    if (input.intervalMonths !== undefined) {
+      set('interval_months', input.intervalMonths);
+      // Colonne morte tenue à jour : voir le commentaire de `create`.
+      set('frequency', input.intervalMonths >= 12 ? 'yearly' : 'monthly');
+    }
     if (input.dayOfMonth !== undefined) set('day_of_month', input.dayOfMonth);
-    if (input.monthOfYear !== undefined) set('month_of_year', input.monthOfYear);
     if (input.startDate !== undefined) set('start_date', input.startDate);
     if (input.endDate !== undefined) set('end_date', input.endDate);
     if (input.notes !== undefined) set('notes', input.notes);

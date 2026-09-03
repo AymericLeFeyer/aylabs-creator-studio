@@ -1,10 +1,25 @@
 /** Contrat de `/api/recurring-expenses`. */
 
-export type RecurrenceFrequency = 'monthly' | 'yearly';
+/**
+ * Périodicité **en mois** : 1 mensuel, 3 trimestriel, 12 annuel, 24 tous les deux ans.
+ *
+ * Un nombre plutôt qu'une énumération : ajouter « tous les deux ans » à une liste fermée
+ * demandait une migration, et la suivante en aurait demandé une autre. Toute périodicité
+ * exprimable en mois existe désormais sans rien toucher.
+ */
+export const INTERVAL_PRESETS = [
+  { months: 1, label: 'Mensuelle' },
+  { months: 3, label: 'Trimestrielle' },
+  { months: 6, label: 'Semestrielle' },
+  { months: 12, label: 'Annuelle' },
+  { months: 24, label: 'Tous les 2 ans' },
+] as const;
 
-export const FREQUENCY_LABELS: Record<RecurrenceFrequency, string> = {
-  monthly: 'Mensuelle',
-  yearly: 'Annuelle',
+/** « Tous les 2 ans », ou « Tous les 18 mois » pour un rythme sans préréglage. */
+export const intervalLabel = (months: number): string => {
+  const preset = INTERVAL_PRESETS.find((item) => item.months === months);
+  if (preset) return preset.label;
+  return months % 12 === 0 ? `Tous les ${months / 12} ans` : `Tous les ${months} mois`;
 };
 
 /**
@@ -24,9 +39,8 @@ export interface RecurringExpense {
   categoryColor: string;
   label: string;
   amountCents: number;
-  frequency: RecurrenceFrequency;
+  intervalMonths: number;
   dayOfMonth: number;
-  monthOfYear: number | null;
   startDate: string;
   endDate: string | null;
   notes: string | null;
@@ -46,9 +60,8 @@ export interface RecurringExpenseInput {
   categoryId: string;
   label: string;
   amount: number;
-  frequency: RecurrenceFrequency;
+  intervalMonths: number;
   dayOfMonth?: number;
-  monthOfYear?: number | null;
   startDate: string;
   endDate?: string | null;
   notes?: string | null;

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarClock, Lock, PackagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, CalendarClock, Lock, PackagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   useDeleteRevenue,
   useRevenues,
@@ -9,7 +9,11 @@ import { useUpcomingRevenues } from '../../../application/expense/usecases/useUp
 import { useFilters } from '../../hooks/useFilters.tsx';
 import type { RevenueEntry } from '../../../domain/revenue/entities/Revenue.ts';
 import { ORIGIN_LABELS, ORIGIN_TARGET } from '../../../domain/revenue/entities/Revenue.ts';
-import { NATURE_LABELS } from '../../../domain/category/entities/Category.ts';
+import {
+  AFFILIATE_CATEGORY_ID,
+  NATURE_LABELS,
+} from '../../../domain/category/entities/Category.ts';
+import { usePlatforms } from '../../../application/affiliate/usecases/usePlatforms.ts';
 import { formatDate, formatMoney } from '../../../shared/format.ts';
 import { Button } from '../ui/button.tsx';
 import { Badge } from '../ui/badge.tsx';
@@ -23,6 +27,16 @@ import { Checkbox } from '../ui/checkbox.tsx';
 import { Label } from '../ui/label.tsx';
 import { cn } from '../../../shared/cn.ts';
 
+/**
+ * Un revenu d'affiliation sans plateforme rattachée.
+ *
+ * C'est la seule absence qui vaille d'être signalée : AdSense, une sponso ou un produit
+ * reçu n'ont aucune raison d'avoir une plateforme, et les marquer tous ferait une colonne
+ * d'avertissements qu'on cesserait de lire au bout de trois lignes.
+ */
+const needsPlatform = (entry: RevenueEntry): boolean =>
+  entry.categoryId === AFFILIATE_CATEGORY_ID && entry.platformId === null;
+
 interface RevenueTableProps {
   entries: RevenueEntry[];
   /** Lignes déjà datées en avant : grisées, en tête, et hors des totaux. */
@@ -30,6 +44,11 @@ interface RevenueTableProps {
   onEdit: (entry: RevenueEntry) => void;
   onDelete: (entry: RevenueEntry) => void;
   onDocument: (entry: RevenueEntry) => void;
+  /**
+   * Affiche la colonne « Plateforme ». Masquée tant qu'aucune plateforme n'existe : ce
+   * serait une colonne de tirets, et il n'y aurait de toute façon rien à y renseigner.
+   */
+  showPlatform: boolean;
 }
 
 /**
@@ -44,6 +63,7 @@ const RevenueTable = ({
   onEdit,
   onDelete,
   onDocument,
+  showPlatform,
 }: RevenueTableProps) => (
   <Table>
     <TableHeader>
@@ -51,6 +71,7 @@ const RevenueTable = ({
         <TableHead>Date</TableHead>
         <TableHead>Libellé</TableHead>
         <TableHead>Catégorie</TableHead>
+        {showPlatform && <TableHead>Plateforme</TableHead>}
         <TableHead>Chaîne</TableHead>
         <TableHead>Vidéo</TableHead>
         <TableHead className="text-right">Montant</TableHead>
@@ -100,6 +121,24 @@ const RevenueTable = ({
               )}
             </span>
           </TableCell>
+          {showPlatform && (
+            <TableCell>
+              {entry.platformName ? (
+                <span className="text-sm">{entry.platformName}</span>
+              ) : needsPlatform(entry) ? (
+                // Repérable d'un coup d'œil en parcourant la colonne, sans avoir à
+                // croiser mentalement la catégorie et la case vide.
+                <span
+                  className="flex items-center gap-1 text-xs font-medium text-[var(--expense)]"
+                  title="Revenu d'affiliation sans plateforme : modifie-le pour la renseigner."
+                >
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />À renseigner
+                </span>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
+            </TableCell>
+          )}
           <TableCell className="text-muted-foreground">{entry.channelName ?? 'Global'}</TableCell>
           <TableCell className="max-w-[14rem] text-muted-foreground">
             <span className="line-clamp-1" title={entry.videoTitle ?? undefined}>
@@ -169,6 +208,8 @@ export const RevenuesPanel = () => {
     channelIds: filters.channelIds,
   });
   const upcoming = useUpcomingRevenues(filters.channelIds);
+  // Sans plateforme configurée, la colonne n'aurait rien à montrer et rien à réclamer.
+  const { data: platforms = [] } = usePlatforms();
   const remove = useDeleteRevenue();
 
   const [showUpcoming, setShowUpcoming] = useState(true);
@@ -193,7 +234,19 @@ export const RevenuesPanel = () => {
     () => [...upcoming.revenues].sort((a, b) => b.date.localeCompare(a.date)),
     [upcoming.revenues],
   );
-  const visibleUpcoming = showUpcoming ? upcomingRows : [];
+  // Mémorisé, et pas seulement dérivé : le compteur ci-dessous en dépend, et un tableau
+  // recréé à chaque rendu le ferait recalculer en permanence.
+  const visibleUpcoming = useMemo(
+    () => (showUpcoming ? upcomingRows : []),
+    [showUpcoming, upcomingRows],
+  );
+
+  const showPlatform = platforms.length > 0;
+  /** Ce qu'il reste à rattacher, sur la période comme dans ce qui arrive. */
+  const missingPlatform = useMemo(
+    () => [...entries, ...visibleUpcoming].filter(needsPlatform).length,
+    [entries, visibleUpcoming],
+  );
 
   const openCreate = () => {
     setEditing(null);
@@ -226,6 +279,15 @@ export const RevenuesPanel = () => {
           <span className="text-xs text-muted-foreground">
             AdSense non listé ici : collecté automatiquement
           </span>
+          {showPlatform && missingPlatform > 0 && (
+            <span
+              className="flex items-center gap-1 text-xs font-medium text-[var(--expense)]"
+              title="Ces revenus d'affiliation n'ont pas de plateforme rattachée : leurs montants ne comptent dans aucun classement de plateforme."
+            >
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {missingPlatform} sans plateforme
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -271,13 +333,18 @@ export const RevenuesPanel = () => {
               </p>
             )}
           </CardHeader>
-          <RevenueTable
-            entries={entries}
-            upcoming={visibleUpcoming}
-            onEdit={openEdit}
-            onDelete={confirmDelete}
-            onDocument={setDocumenting}
-          />
+          {/* Une colonne de plus peut déborder sur un écran étroit : le tableau défile
+              dans son propre conteneur plutôt que d'emporter la page en travers. */}
+          <div className="overflow-x-auto">
+            <RevenueTable
+              entries={entries}
+              upcoming={visibleUpcoming}
+              onEdit={openEdit}
+              onDelete={confirmDelete}
+              onDocument={setDocumenting}
+              showPlatform={showPlatform}
+            />
+          </div>
         </Card>
       )}
 

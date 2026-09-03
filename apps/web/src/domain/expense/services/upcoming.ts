@@ -1,4 +1,5 @@
 import type { ExpenseEntry } from '../entities/Expense.ts';
+import { TAX_CATEGORY_ID } from '../../category/entities/Category.ts';
 
 /**
  * Ce qui est déjà engagé mais pas encore passé : échéances fiscales, abonnements,
@@ -16,13 +17,6 @@ import type { ExpenseEntry } from '../entities/Expense.ts';
  * au-delà, l'information cesse d'être actionnable et devient du bruit.
  */
 export const UPCOMING_MONTHS = 3;
-
-/**
- * Identifiant de la catégorie fiscale, fixé par le seed (`SeedDefaultCategories`) et
- * repris par la migration 2. C'est lui qui alimente le « dont X d'impôts » : le déduire
- * du libellé casserait au premier renommage.
- */
-export const TAX_CATEGORY_ID = 'impots';
 
 export interface UpcomingSummary {
   totalCents: number;

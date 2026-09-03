@@ -5,11 +5,11 @@ import {
   useCreateRecurringExpense,
   useUpdateRecurringExpense,
 } from '../../../application/expense/usecases/useExpenses.ts';
-import type {
-  RecurrenceFrequency,
-  RecurringExpense,
+import type { RecurringExpense } from '../../../domain/expense/entities/RecurringExpense.ts';
+import {
+  INTERVAL_PRESETS,
+  intervalLabel,
 } from '../../../domain/expense/entities/RecurringExpense.ts';
-import { FREQUENCY_LABELS } from '../../../domain/expense/entities/RecurringExpense.ts';
 import { toIsoDate } from '../../../shared/format.ts';
 import { Button } from '../ui/button.tsx';
 import {
@@ -25,21 +25,6 @@ import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { NONE, fromSelectValue, toSelectValue } from './selectNone.ts';
 
-const MONTHS = [
-  'Janvier',
-  'Février',
-  'Mars',
-  'Avril',
-  'Mai',
-  'Juin',
-  'Juillet',
-  'Août',
-  'Septembre',
-  'Octobre',
-  'Novembre',
-  'Décembre',
-];
-
 interface RecurringExpenseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -49,10 +34,16 @@ interface RecurringExpenseDialogProps {
 /**
  * Créer ou corriger une dépense qui revient.
  *
- * Un seul choix structurant : **mensuelle ou annuelle**, plus le jour. Tout le reste est
- * une dépense ordinaire. À l'enregistrement, l'API reprojette les douze prochaines
- * échéances — corriger un montant met donc à jour tout ce qui n'est pas encore passé,
- * sans toucher aux mois déjà clos.
+ * Un seul choix structurant : **la périodicité**, exprimée en mois (mensuelle,
+ * trimestrielle, semestrielle, annuelle, tous les deux ans), plus le jour de
+ * prélèvement. Tout le reste est une dépense ordinaire.
+ *
+ * La **première échéance ancre le rythme** : une règle tous les deux ans démarrée en
+ * mars 2026 retombe en mars 2028. C'est pour ça qu'il n'y a plus de champ « mois » —
+ * il ne disait rien que la date de début ne dise déjà.
+ *
+ * À l'enregistrement, l'API reprojette les échéances des douze prochains mois : corriger
+ * un montant met à jour tout ce qui n'est pas encore passé, sans toucher aux mois clos.
  */
 export const RecurringExpenseDialog = ({
   open,
@@ -70,9 +61,8 @@ export const RecurringExpenseDialog = ({
     categoryId: '',
     label: '',
     amount: '',
-    frequency: 'monthly' as RecurrenceFrequency,
+    intervalMonths: '1',
     dayOfMonth: '1',
-    monthOfYear: '1',
     startDate: toIsoDate(new Date()),
     endDate: '',
     channelId: NONE,
@@ -91,9 +81,8 @@ export const RecurringExpenseDialog = ({
       categoryId: rule?.categoryId ?? categories[0]?.id ?? '',
       label: rule?.label ?? '',
       amount: rule ? String(rule.amountCents / 100) : '',
-      frequency: rule?.frequency ?? 'monthly',
+      intervalMonths: String(rule?.intervalMonths ?? 1),
       dayOfMonth: String(rule?.dayOfMonth ?? today.getDate()),
-      monthOfYear: String(rule?.monthOfYear ?? today.getMonth() + 1),
       startDate: rule?.startDate ?? toIsoDate(today),
       endDate: rule?.endDate ?? '',
       channelId: toSelectValue(rule?.channelId),
@@ -119,11 +108,8 @@ export const RecurringExpenseDialog = ({
       categoryId: form.categoryId,
       label: form.label.trim(),
       amount,
-      frequency: form.frequency,
+      intervalMonths: Number(form.intervalMonths),
       dayOfMonth: Number(form.dayOfMonth),
-      // Le mois ne sert qu'aux échéances annuelles : le poser sur une mensuelle
-      // n'aurait aucun effet et laisserait croire le contraire.
-      monthOfYear: form.frequency === 'yearly' ? Number(form.monthOfYear) : null,
       startDate: form.startDate,
       endDate: form.endDate || null,
       channelId: fromSelectValue(form.channelId),
@@ -151,8 +137,8 @@ export const RecurringExpenseDialog = ({
             {rule ? 'Modifier la dépense récurrente' : 'Nouvelle dépense récurrente'}
           </DialogTitle>
           <DialogDescription>
-            Les douze prochaines échéances sont créées automatiquement, et apparaissent dans les
-            dépenses à venir.
+            Les échéances des douze prochains mois sont créées automatiquement — au minimum la
+            prochaine — et apparaissent dans les dépenses à venir.
           </DialogDescription>
         </DialogHeader>
 
@@ -206,20 +192,27 @@ export const RecurringExpenseDialog = ({
             <div className="space-y-1.5">
               <Label htmlFor="recurring-frequency">Fréquence</Label>
               <Select
-                value={form.frequency}
-                onValueChange={(value) =>
-                  setForm((f) => ({ ...f, frequency: value as RecurrenceFrequency }))
-                }
+                value={form.intervalMonths}
+                onValueChange={(value) => setForm((f) => ({ ...f, intervalMonths: value }))}
               >
                 <SelectTrigger id="recurring-frequency">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(FREQUENCY_LABELS) as RecurrenceFrequency[]).map((frequency) => (
-                    <SelectItem key={frequency} value={frequency}>
-                      {FREQUENCY_LABELS[frequency]}
+                  {INTERVAL_PRESETS.map((preset) => (
+                    <SelectItem key={preset.months} value={String(preset.months)}>
+                      {preset.label}
                     </SelectItem>
                   ))}
+                  {/* Un rythme sans préréglage (18 mois, par exemple) reste sélectionnable
+                      après coup : il vient de l'API, la liste ne doit pas l'effacer. */}
+                  {!INTERVAL_PRESETS.some(
+                    (preset) => String(preset.months) === form.intervalMonths,
+                  ) && (
+                    <SelectItem value={form.intervalMonths}>
+                      {intervalLabel(Number(form.intervalMonths))}
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -236,29 +229,6 @@ export const RecurringExpenseDialog = ({
                 required
               />
             </div>
-
-            {/* Le mois n'apparaît que pour une échéance annuelle : sur une mensuelle,
-                il n'aurait rien à décider. */}
-            {form.frequency === 'yearly' && (
-              <div className="space-y-1.5">
-                <Label htmlFor="recurring-month">Mois</Label>
-                <Select
-                  value={form.monthOfYear}
-                  onValueChange={(value) => setForm((f) => ({ ...f, monthOfYear: value }))}
-                >
-                  <SelectTrigger id="recurring-month">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MONTHS.map((month, index) => (
-                      <SelectItem key={month} value={String(index + 1)}>
-                        {month}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
 
             <div className="space-y-1.5">
               <Label htmlFor="recurring-channel">Chaîne</Label>
@@ -281,7 +251,7 @@ export const RecurringExpenseDialog = ({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="recurring-start">Début</Label>
+              <Label htmlFor="recurring-start">Première échéance</Label>
               <Input
                 id="recurring-start"
                 type="date"
@@ -289,6 +259,9 @@ export const RecurringExpenseDialog = ({
                 onChange={(event) => setForm((f) => ({ ...f, startDate: event.target.value }))}
                 required
               />
+              {/* C'est elle qui ancre le rythme : une règle tous les 2 ans démarrée en
+                  mars 2026 retombe en mars 2028, pas en mars 2027. */}
+              <p className="text-xs text-muted-foreground">Elle ancre le rythme.</p>
             </div>
 
             <div className="space-y-1.5">

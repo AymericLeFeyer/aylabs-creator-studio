@@ -1,8 +1,8 @@
 import type { ExpenseRepository } from '../../../domain/expense/repositories/ExpenseRepository.ts';
 import type { RecurringExpenseRepository } from '../../../domain/expense/repositories/RecurringExpenseRepository.ts';
 import {
-  OCCURRENCES_AHEAD,
   nextOccurrences,
+  occurrencesToProject,
   startOfMonthIso,
 } from '../../../domain/expense/entities/RecurringExpense.ts';
 import { today } from '../../../shared/dates.ts';
@@ -10,8 +10,11 @@ import { today } from '../../../shared/dates.ts';
 /**
  * Projette les échéances à venir de chaque dépense récurrente.
  *
- * Le principe : **une règle a toujours douze échéances d'avance**. On ne cherche pas à
- * savoir lesquelles manquent — on redemande les douze prochaines et on les insère en
+ * Le principe : **une règle a toujours douze mois d'échéances d'avance**
+ * (`OCCURRENCES_HORIZON_MONTHS`), et au minimum la prochaine. On ne compte plus un
+ * nombre fixe d'occurrences : douze échéances d'un abonnement annuel projetaient douze
+ * ans de dépenses imaginaires. On ne cherche pas non plus à savoir lesquelles
+ * manquent — on redemande celles de l'horizon et on les insère en
  * `INSERT OR IGNORE` sur l'index unique `(recurring_id, date)`. La projection est donc
  * idempotente : la rejouer dix fois par jour ne crée jamais de doublon, et une règle
  * dont le montant ou le jour a changé se rattrape toute seule au passage suivant.
@@ -45,7 +48,11 @@ export class SyncRecurringExpenses {
     for (const rule of this.rules.findAll()) {
       if (!rule.isActive) continue;
 
-      for (const date of nextOccurrences(rule, from, OCCURRENCES_AHEAD)) {
+      // Le nombre d'échéances dépend du rythme : douze pour un mensuel, une seule pour
+      // un abonnement bisannuel — dans les deux cas, douze mois de visibilité.
+      const count = occurrencesToProject(rule.intervalMonths);
+
+      for (const date of nextOccurrences(rule, from, count)) {
         try {
           this.expenses.create({
             channelId: rule.channelId,

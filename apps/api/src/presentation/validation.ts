@@ -519,9 +519,13 @@ export const createRecurringExpenseSchema = z.object({
   label: z.string().trim().min(1, 'Le libellé est obligatoire').max(200),
   /** Montant en euros, converti en centimes comme toute écriture d'argent. */
   amount,
-  frequency: z.enum(['monthly', 'yearly']),
+  /**
+   * Périodicité en mois : 1 mensuel, 3 trimestriel, 12 annuel, 24 tous les deux ans.
+   * Un nombre plutôt qu'une énumération — toute périodicité exprimable en mois existe
+   * déjà, sans migration ni valeur à ajouter.
+   */
+  intervalMonths: z.number().int().min(1).max(120),
   dayOfMonth: z.number().int().min(1).max(31).optional(),
-  monthOfYear: z.number().int().min(1).max(12).nullable().optional(),
   startDate: isoDate,
   endDate: optionalIsoDate,
   notes: z.string().trim().max(500).nullable().optional(),

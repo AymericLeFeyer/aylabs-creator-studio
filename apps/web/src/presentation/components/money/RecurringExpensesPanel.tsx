@@ -6,7 +6,7 @@ import {
   useUpdateRecurringExpense,
 } from '../../../application/expense/usecases/useExpenses.ts';
 import type { RecurringExpense } from '../../../domain/expense/entities/RecurringExpense.ts';
-import { FREQUENCY_LABELS } from '../../../domain/expense/entities/RecurringExpense.ts';
+import { intervalLabel } from '../../../domain/expense/entities/RecurringExpense.ts';
 import { formatDate, formatMoney } from '../../../shared/format.ts';
 import { Badge } from '../ui/badge.tsx';
 import { Button } from '../ui/button.tsx';
@@ -19,13 +19,17 @@ import { cn } from '../../../shared/cn.ts';
 /**
  * Les dépenses qui reviennent : abonnements, hébergement, assurances.
  *
- * Ce ne sont pas des lignes de dépense mais des **règles qui en engendrent**. L'API
- * garde toujours douze échéances d'avance, ce qui rend une année d'engagements visible
- * dans les dépenses à venir — c'est tout l'intérêt : un abonnement annuel de 240 € se
- * voit arriver, il ne tombe pas.
+ * Ce ne sont pas des lignes de dépense mais des **règles qui en engendrent**. L'API garde
+ * toujours **douze mois d'échéances d'avance**, et au minimum la prochaine : une année
+ * d'engagements devient visible dans les dépenses à venir — un abonnement annuel de
+ * 240 € se voit arriver, il ne tombe pas.
+ *
+ * La périodicité est un **nombre de mois** (1, 3, 6, 12, 24…) et non une liste fermée :
+ * ajouter « tous les deux ans » à une énumération demandait une migration, et la
+ * suivante en aurait demandé une autre.
  *
  * Le total annualisé est en tête parce que c'est **le seul chiffre comparable** entre un
- * abonnement mensuel et une facture annuelle, et le seul qui réponde à « combien me
+ * abonnement mensuel et une facture bisannuelle, et le seul qui réponde à « combien me
  * coûtent mes outils ».
  */
 export const RecurringExpensesPanel = () => {
@@ -64,7 +68,7 @@ export const RecurringExpensesPanel = () => {
       {!isLoading && rules.length === 0 ? (
         <EmptyState
           title="Aucune dépense récurrente"
-          description="Saisis tes abonnements une fois : les douze prochaines échéances sont créées automatiquement, et apparaissent dans les dépenses à venir."
+          description="Saisis tes abonnements une fois — mensuels, annuels ou tous les deux ans : les échéances à venir sont créées automatiquement et apparaissent dans les dépenses."
           actionLabel="Ajouter un abonnement"
           onAction={openCreate}
         />
@@ -110,7 +114,7 @@ export const RecurringExpensesPanel = () => {
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    <Badge variant="secondary">{FREQUENCY_LABELS[rule.frequency]}</Badge>
+                    <Badge variant="secondary">{intervalLabel(rule.intervalMonths)}</Badge>
                     <span className="ml-2 text-xs">le {rule.dayOfMonth}</span>
                   </TableCell>
                   <TableCell className="whitespace-nowrap tabular text-muted-foreground">

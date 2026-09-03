@@ -302,16 +302,37 @@ l'archivage qui la retire durablement.
 
 ### `recurringExpense` — les dépenses qui reviennent
 
-`RecurringExpense { id, channelId, categoryId, label, amountCents, frequency, dayOfMonth, monthOfYear, startDate, endDate, notes, isActive }` — table `recurring_expenses`.
+`RecurringExpense { id, channelId, categoryId, label, amountCents, intervalMonths, dayOfMonth, startDate, endDate, notes, isActive }` — table `recurring_expenses`.
+
+**La périodicité est un nombre de mois**, pas une énumération (migration 16) : 1 mensuel,
+3 trimestriel, 6 semestriel, 12 annuel, 24 tous les deux ans. Ajouter « tous les deux
+ans » à une liste fermée demandait une migration, et la suivante en aurait demandé une
+autre ; toute périodicité exprimable en mois existe désormais sans rien toucher.
+`INTERVAL_PRESETS` ne fait que proposer les cinq rythmes courants dans le formulaire — un
+rythme hors liste reste valide et s'affiche (`intervalLabel`).
+
+**`startDate` ancre le rythme** : une règle tous les 24 mois démarrée en mars 2026 tombe
+en mars 2028. C'est pour ça que `monthOfYear` a disparu — il ne disait rien que la date de
+début ne dise déjà.
+
+Les colonnes `frequency` et `month_of_year` **existent encore en base mais ne sont plus
+lues**. Les supprimer imposerait de recréer la table, donc un `DROP` — et avec
+`PRAGMA foreign_keys = ON`, un `DROP` déclenche le `ON DELETE SET NULL` de
+`expense_entries.recurring_id` et **détacherait toutes les occurrences déjà projetées**.
+Une colonne morte coûte moins cher qu'un historique cassé ; le dépôt y écrit une valeur
+de compatibilité pour satisfaire son `CHECK`.
 
 Ce n'est **pas** une ligne de dépense, c'est une **règle qui en engendre**. Les
 occurrences sont de vraies `expense_entries` reliées par `recurring_id` : rien dans les
 cumuls, les graphiques ou les catégories n'a à connaître les récurrences.
 
-`SyncRecurringExpenses.execute()` garde toujours **douze échéances d'avance**
-(`OCCURRENCES_AHEAD`). Il ne cherche pas ce qui manque : il redemande les douze
-prochaines et insère en ignorant les conflits sur l'index unique
-`(recurring_id, date)` — la projection est donc **idempotente**. Elle repart du **début
+`SyncRecurringExpenses.execute()` garde **douze mois d'échéances d'avance**
+(`OCCURRENCES_HORIZON_MONTHS`), et au minimum la prochaine. Un horizon en **durée** et non
+un nombre fixe d'occurrences : douze échéances d'un abonnement annuel projetaient douze
+ans de dépenses imaginaires dans la comptabilité. `occurrencesToProject(intervalMonths)`
+en tire le compte — 12 pour un mensuel, 1 pour un annuel ou un bisannuel. Il ne cherche
+pas ce qui manque : il redemande celles de l'horizon et insère en ignorant les conflits
+sur l'index unique `(recurring_id, date)` — la projection est donc **idempotente**. Elle repart du **début
 du mois courant** et non d'aujourd'hui : l'échéance du 5 alors qu'on est le 12 fait
 partie du mois qu'on est en train de lire.
 
@@ -734,7 +755,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Sentinelle des `Select` facultatifs** : `NONE` / `toSelectValue` / `fromSelectValue` (`presentation/components/forms/selectNone.ts`). Radix refuse une `SelectItem` de valeur vide ; la sentinelle est partagée pour que trois formulaires n'en inventent pas trois différentes.
 - **Référentiel plutôt que colonnes** : les étapes de production sont des lignes (`production_steps`) et l'état « coché » est la **présence** d'une ligne dans `production_step_checks`. En ajouter une ne demande aucune migration, et la date de complétion vient gratuitement.
 - **Migration 5** ajoute `brands`, `production_steps`, `productions`, `production_step_checks`, `production_slots`, `products`, `sponsorships`, et la colonne `revenue_entries.origin`. **Migration 6** ajoute `products.sponsorship_id`, **migration 7** la table `ideas`, **migration 8** `products.video_id` et `sponsorships.video_id`.
-- **Migration 9** ajoute `company` (ligne unique), `legal_obligations` et `legal_checks`. **Migration 10** ajoute `sponsorships.script`, **migration 11** la table `sponsorship_requirements`. **Migration 15** ajoute `affiliate_platforms`, `affiliate_platform_brands` et
+- **Migration 9** ajoute `company` (ligne unique), `legal_obligations` et `legal_checks`. **Migration 10** ajoute `sponsorships.script`, **migration 11** la table `sponsorship_requirements`. **Migration 16** remplace `frequency` par `interval_months` sur les récurrences.
+  **Migration 15** ajoute `affiliate_platforms`, `affiliate_platform_brands` et
   `revenue_entries.platform_id`. **Migration 14** ajoute `video_stat_snapshots`.
   **Migration 13** ajoute `legal_bookmarks`. **Migration 12** en ajoute trois d'un coup — `production_time_entries` (le temps passé), `step_todos` / `production_todos` / `production_todo_checks` (les tâches d'étape), `recurring_expenses` + `expense_entries.recurring_id` (les dépenses qui reviennent) — et la colonne `channels.thumbnail_url`.
 - **Un panneau plutôt qu'une page dès que deux écrans le partagent** : `RevenuesPanel` et `ExpensesPanel` (ex-pages) sont montés dans les onglets de `/chiffre-affaires` ; `MoneyBreakdowns` porte les trois anneaux et les deux classements ; `PartnerStatCards` les quatre chiffres du pipeline. Le dupliquer ferait diverger deux écrans qui doivent annoncer le même montant.
@@ -819,6 +841,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Le planning s'ouvre centré sur aujourd'hui.** `ProductionGantt` pose `scrollLeft` au montage et à chaque changement de zoom, en retranchant la largeur de la colonne des titres (`TITLE_WIDTH`). Sans ça il s'ouvrait collé à sa borne gauche, sur des jours passés. Les fenêtres couvrent donc volontairement du passé (`before` : 14, 30 ou 60 jours) pour qu'on puisse reculer. La colonne des titres est `sticky left-0` : en défilant vers le futur, on doit continuer de savoir de quelle vidéo est la barre qu'on regarde.
 - **La file d'attente a une vue compacte** (`preferences.compactQueue`) : une ligne par vidéo. Au-delà de cinq ou six vidéos en cours, la version détaillée oblige à faire défiler pour voir sa propre file. Le chevron d'une carte l'ouvre **à contre-courant du réglage global** (`exceptions`, un `Set` d'identifiants) : on veut souvent une file compacte _sauf_ la vidéo sur laquelle on travaille. Changer le réglage global vide les exceptions.
 - **Les confettis sont maison** (`Confetti`, canvas, ~50 lignes, aucune dépendance) et ne se déclenchent qu'à la **publication** : c'est le seul moment de l'outil qui mérite d'être fêté, tout le reste est de la comptabilité et de la planification. Le canvas est `pointer-events-none` en position fixe — il recouvre l'écran sans jamais intercepter un clic — et se démonte tout seul.
+- **La colonne « Plateforme » du tableau des revenus signale ce qui manque, pas ce qui est vide.** Un « À renseigner » en accent n'apparaît que sur les revenus de catégorie `affiliation` (identifiant fixe `AFFILIATE_CATEGORY_ID`) sans plateforme rattachée : AdSense, une sponso ou un produit reçu n'ont aucune raison d'en avoir une, et les marquer tous ferait une colonne d'avertissements qu'on cesserait de lire. Un compteur en tête donne le total à rattacher. La colonne entière disparaît tant qu'aucune plateforme n'existe — il n'y aurait rien à y renseigner.
+- **Les identifiants fixes de catégorie vivent dans `domain/category/entities/Category.ts`**, des deux côtés (`ADSENSE_CATEGORY_ID`, `AFFILIATE_CATEGORY_ID`, `TAX_CATEGORY_ID`). Les règles qui doivent désigner _une_ catégorie précise s'y réfèrent : se fier au libellé casserait au premier renommage, qui est justement permis.
 - **« Vues (période) » et « Vues (total) » ne mesurent pas la même chose.** La première vient de la différence de deux relevés datés (`video_stat_snapshots`), la seconde est le cumul depuis la sortie. Sur un catalogue, c'est l'écart entre les deux qui est l'information : une vidéo à 40 000 vues dont 30 sur le mois ne travaille plus, une à 4 000 dont 800 travaille encore. Le catalogue est d'ailleurs **trié sur la période** quand elle est connue, pas sur le cumul — sinon le classement ne bougerait jamais.
 - **Les dépenses et revenus à venir sont dans le tableau, pas sous le tableau.** En tête, grisés, avec une icône de calendrier et une case pour les masquer. Ils **n'entrent jamais dans le total** affiché au-dessus, qui reste celui de la période — le sous-titre de la carte le répète, parce que c'est le genre de détail qui fait mal comprendre un chiffre.
 - **Une vidéo à 0 % est repliée d'office** dans la file d'attente. Une carte détaillée sert à décider quoi faire ensuite : à 0 %, elle n'a ni étape cochée, ni créneau, ni argent à montrer. C'est un **défaut**, pas une règle : le chevron rouvre la carte, et le réglage global l'emporte dès qu'on y touche.

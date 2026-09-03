@@ -695,6 +695,41 @@ const migrations: Migration[] = [
       CREATE INDEX idx_revenue_entries_platform ON revenue_entries(platform_id);
     `,
   },
+  {
+    version: 16,
+    name: 'recurring_interval_months',
+    // « Mensuel ou annuel » ne suffisait pas : il existe des abonnements bisannuels, et
+    // demain des trimestriels. Plutot que d'ajouter une valeur a l'enumeration a chaque
+    // fois — donc une migration a chaque fois —, la recurrence devient un NOMBRE DE MOIS.
+    // 1 = mensuel, 3 = trimestriel, 12 = annuel, 24 = tous les deux ans.
+    //
+    // L'ancrage vient desormais de `start_date` seule : une regle tous les 24 mois qui
+    // demarre en mars 2026 tombe en mars 2028. `month_of_year` n'a donc plus d'objet.
+    //
+    // Les colonnes `frequency` et `month_of_year` sont CONSERVEES mais ne sont plus
+    // lues. Les supprimer imposerait de recreer la table, donc un DROP — et avec
+    // `PRAGMA foreign_keys = ON`, un DROP declenche le `ON DELETE SET NULL` de
+    // `expense_entries.recurring_id` et DETACHERAIT toutes les occurrences deja
+    // projetees. Une colonne morte coute moins cher qu'un historique casse ; le depot
+    // continue d'y ecrire une valeur de compatibilite pour satisfaire son CHECK.
+    up: `
+      ALTER TABLE recurring_expenses ADD COLUMN interval_months INTEGER NOT NULL DEFAULT 1;
+
+      -- Reprise de l'existant : mensuel -> 1 mois, annuel -> 12 mois.
+      UPDATE recurring_expenses SET interval_months = 12 WHERE frequency = 'yearly';
+      UPDATE recurring_expenses SET interval_months = 1  WHERE frequency = 'monthly';
+
+      -- Une regle annuelle ancree sur un autre mois que celui de sa date de debut voit
+      -- son ancrage recale : sans ca, elle changerait d'echeance en silence.
+      UPDATE recurring_expenses
+         SET start_date = substr(start_date, 1, 4) || '-' ||
+                          substr('0' || month_of_year, -2, 2) || '-' ||
+                          substr(start_date, 9, 2)
+       WHERE frequency = 'yearly'
+         AND month_of_year IS NOT NULL
+         AND month_of_year <> CAST(substr(start_date, 6, 2) AS INTEGER);
+    `,
+  },
 ];
 
 /**
