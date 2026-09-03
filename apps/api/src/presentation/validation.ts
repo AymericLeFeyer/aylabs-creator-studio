@@ -410,6 +410,38 @@ export const updateLegalObligationSchema = createLegalObligationSchema.partial()
 
 export const legalMonthParamSchema = isoMonth;
 
+/**
+ * Un favori de l'écran Légal.
+ *
+ * `url` est validée comme une **URL absolue** : un chemin relatif ouvrirait une route de
+ * l'application au lieu du site visé, et l'erreur ne se verrait qu'au clic.
+ */
+export const createLegalBookmarkSchema = z.object({
+  label: z.string().trim().min(1, 'Le nom est obligatoire').max(80),
+  url: z.string().trim().url('Adresse attendue, par exemple https://www.urssaf.fr').max(500),
+  description: z
+    .string()
+    .trim()
+    .max(200)
+    .nullable()
+    .optional()
+    .transform((value) => (value === '' ? null : value)),
+  /** Vignette. Vide = favicon du site cible, puis initiale sur fond coloré. */
+  imageUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .nullable()
+    .optional()
+    .transform((value) => (value === '' ? null : value)),
+  color: hexColor,
+  sortOrder: z.number().int().optional(),
+});
+
+export const updateLegalBookmarkSchema = createLegalBookmarkSchema.partial().extend({
+  isArchived: z.boolean().optional(),
+});
+
 // ---------------------------------------------------------------------------
 // Tâches d'étape, suivi du temps, dépenses récurrentes
 // ---------------------------------------------------------------------------

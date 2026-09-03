@@ -17,7 +17,7 @@
     "build": "npm run build -w @acs/api && npm run build -w @acs/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "format": "prettier --write \"apps/*/src/**/*.{ts,tsx,css}\"",
+    "format": "prettier --write \"apps/*/{src,public}/**/*.{ts,tsx,css,js,webmanifest}\" \"apps/web/index.html\"",
     "test": "npm run test --workspaces --if-present"
   },
   "devDependencies": {

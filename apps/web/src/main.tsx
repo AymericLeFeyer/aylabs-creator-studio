@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
+import { registerServiceWorker } from './registerServiceWorker.ts';
 import './index.css';
 
 const container = document.getElementById('root');
@@ -11,3 +12,6 @@ createRoot(container).render(
     <App />
   </StrictMode>,
 );
+
+// Après le rendu : l'installation ne doit pas retarder le premier écran.
+registerServiceWorker();

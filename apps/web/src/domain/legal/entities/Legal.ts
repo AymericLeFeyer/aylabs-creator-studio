@@ -108,3 +108,62 @@ export const formatMonth = (month: string): string => {
 /** L'échéance telle qu'on la dit : « Max le 15 », ou rien quand le mois entier fait foi. */
 export const dueLabel = (dayOfMonth: number | null): string | null =>
   dayOfMonth === null ? null : `Max le ${dayOfMonth}`;
+
+/**
+ * Un lien utile de l'écran Légal : Urssaf, impôts, portail bancaire, comptable.
+ *
+ * Ils vivent dans la page et non dans les signets du navigateur : on les cherche
+ * exactement au moment de cocher une case, et un signet ne dit pas *à quoi il sert* —
+ * là où une description de deux lignes le rappelle un an plus tard.
+ */
+export interface LegalBookmark {
+  id: string;
+  label: string;
+  url: string;
+  description: string | null;
+  /** `null` = pas d'image choisie : on tente le favicon du site, puis l'initiale. */
+  imageUrl: string | null;
+  color: string;
+  sortOrder: number;
+  isArchived: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LegalBookmarkInput {
+  label: string;
+  url: string;
+  description?: string | null;
+  imageUrl?: string | null;
+  color?: string;
+  sortOrder?: number;
+  isArchived?: boolean;
+}
+
+/**
+ * Le favicon du site cible, deviné depuis l'URL.
+ *
+ * Sert de **repli** quand aucune image n'a été saisie. Il est demandé au site lui-même
+ * (`https://host/favicon.ico`) et non à un service de vignettes tiers : ce serait
+ * envoyer à un inconnu la liste des sites administratifs qu'on consulte, pour une image
+ * de seize pixels. Beaucoup de sites répondent ; ceux qui ne répondent pas retombent sur
+ * l'initiale, et personne n'a rien appris au passage.
+ *
+ * `null` si l'URL est inexploitable — on ne veut pas d'une `<img>` sur une adresse vide.
+ */
+export const faviconOf = (url: string): string | null => {
+  try {
+    return new URL(url).origin + '/favicon.ico';
+  } catch {
+    return null;
+  }
+};
+
+/** « urssaf.fr » — le domaine seul, pour montrer où mène le lien sans l'URL entière. */
+export const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+};

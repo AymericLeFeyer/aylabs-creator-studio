@@ -19,6 +19,7 @@ import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/reposi
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
 import { SqliteCompanyRepository } from './infrastructure/legal/repositories/SqliteCompanyRepository.ts';
 import { SqliteLegalObligationRepository } from './infrastructure/legal/repositories/SqliteLegalObligationRepository.ts';
+import { SqliteLegalBookmarkRepository } from './infrastructure/legal/repositories/SqliteLegalBookmarkRepository.ts';
 import { seedDefaultCategories } from './application/category/usecases/SeedDefaultCategories.ts';
 import { seedDefaultSteps } from './application/production/usecases/SeedDefaultSteps.ts';
 import { seedDefaultStepTodos } from './application/production/usecases/SeedDefaultStepTodos.ts';
@@ -59,6 +60,8 @@ export interface Container {
   ideas: SqliteIdeaRepository;
   company: SqliteCompanyRepository;
   legalObligations: SqliteLegalObligationRepository;
+  /** Liens utiles de l'écran Légal (Urssaf, impôts, banque…). */
+  legalBookmarks: SqliteLegalBookmarkRepository;
   collectMetrics: CollectMetrics;
   getAnalytics: GetAnalytics;
   /**
@@ -110,6 +113,7 @@ export const buildContainer = (config: Config): Container => {
   const ideas = new SqliteIdeaRepository(db);
   const company = new SqliteCompanyRepository(db);
   const legalObligations = new SqliteLegalObligationRepository(db);
+  const legalBookmarks = new SqliteLegalBookmarkRepository(db);
 
   const manageProducts = new ManageProducts(products, productions, brands, revenues);
   const manageSponsorships = new ManageSponsorships(sponsorships, productions, brands, revenues);
@@ -140,6 +144,7 @@ export const buildContainer = (config: Config): Container => {
     ideas,
     company,
     legalObligations,
+    legalBookmarks,
     manageProducts,
     manageSponsorships,
     manageProductions: new ManageProductions(

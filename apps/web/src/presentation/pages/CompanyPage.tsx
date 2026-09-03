@@ -29,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table.tsx';
+import { BookmarksSettings } from '../components/legal/BookmarksSettings.tsx';
 import { cn } from '../../shared/cn.ts';
 
 /** Les champs texte de la société, dans l'ordre où on les recopie sur une facture. */
@@ -179,10 +180,17 @@ export const CompanyPage = () => {
         </div>
       </Card>
 
+      {/* Rangés dans le même ordre que sur l'écran Légal — fiche, liens, cases : la
+          page de configuration se lit comme l'écran qu'elle configure. */}
+      <BookmarksSettings />
+
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          L'ordre ci-dessous est celui des colonnes du tableau légal.
-        </p>
+        <div>
+          <h2 className="font-semibold">Obligations mensuelles</h2>
+          <p className="text-sm text-muted-foreground">
+            L'ordre ci-dessous est celui des colonnes du tableau légal.
+          </p>
+        </div>
         <Button size="sm" onClick={() => setDialogOpen(true)}>
           <Plus className="h-4 w-4" />
           Nouvelle obligation

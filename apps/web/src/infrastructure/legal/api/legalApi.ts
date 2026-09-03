@@ -2,6 +2,8 @@ import { request } from '../../http/httpClient.ts';
 import type {
   Company,
   CompanyInput,
+  LegalBookmark,
+  LegalBookmarkInput,
   LegalObligation,
   LegalObligationInput,
   LegalOverview,
@@ -27,6 +29,19 @@ export const legalApi = {
 
   removeObligation: (id: string) =>
     request<void>(`/api/legal/obligations/${id}`, { method: 'DELETE' }),
+
+  listBookmarks: (includeArchived = false) =>
+    request<LegalBookmark[]>('/api/legal/bookmarks', {
+      query: { includeArchived: includeArchived ? 'true' : undefined },
+    }),
+
+  createBookmark: (input: LegalBookmarkInput) =>
+    request<LegalBookmark>('/api/legal/bookmarks', { method: 'POST', body: input }),
+
+  updateBookmark: (id: string, input: Partial<LegalBookmarkInput>) =>
+    request<LegalBookmark>(`/api/legal/bookmarks/${id}`, { method: 'PATCH', body: input }),
+
+  removeBookmark: (id: string) => request<void>(`/api/legal/bookmarks/${id}`, { method: 'DELETE' }),
 
   check: (obligationId: string, month: string) =>
     request<void>(`/api/legal/checks/${obligationId}/${month}`, { method: 'PUT' }),

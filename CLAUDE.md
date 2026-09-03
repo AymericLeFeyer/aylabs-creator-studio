@@ -16,6 +16,7 @@ Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagn�
 | Graphiques | Recharts 3                                                                          |
 | Markdown   | `react-markdown` + `remark-gfm` (éditeur de script uniquement, chunk isolé)         |
 | Données    | TanStack Query 5                                                                    |
+| PWA        | Manifeste + service worker **écrits à la main**, aucune dépendance de build         |
 | CI/CD      | GitHub Actions → images GHCR → stack Portainer sur VPS                              |
 
 ### Commandes
@@ -398,6 +399,33 @@ et une règle dupliquée finirait par diverger. `due_soon` = échéance dans les
 Toutes les obligations actives s'appliquent à **tous** les mois de la période : c'est
 l'archivage qui retire celle qui n'a plus lieu d'être, sans effacer l'historique coché.
 
+### `legalBookmark`
+
+`LegalBookmark { id, label, url, description, imageUrl, color, sortOrder, isArchived }` —
+table `legal_bookmarks` (migration 13).
+
+Les liens qu'on rouvre chaque mois pour faire ses démarches : Urssaf, impôts, portail
+bancaire, cabinet comptable. Ils vivent **dans la page et non dans les signets du
+navigateur** parce qu'on les cherche exactement au moment de cocher une case — et parce
+qu'un signet ne dit pas _à quoi il sert_, là où une description de deux lignes le rappelle
+un an plus tard.
+
+Une **ligne** et non une colonne, comme les obligations et les étapes de production :
+en ajouter un ne demande aucune migration, et le référentiel se gère depuis
+Paramètres → Société. `sortOrder` est **manuel** — l'outil ne déduit aucune priorité
+entre le portail Urssaf et celui des impôts.
+
+La vignette a **deux replis** (`faviconOf`, dupliqué côté front) : l'image saisie, sinon
+le favicon du site cible (`https://host/favicon.ico`), sinon l'initiale sur `color` —
+attribuée en rotation à la création, comme pour les chaînes et les marques. Le favicon
+est demandé **au site lui-même et jamais à un service de vignettes tiers** : ce serait
+envoyer à un inconnu la liste des sites administratifs consultés, pour une image de seize
+pixels. Un site sur deux ne répond pas ; il retombe alors sur l'initiale, sans que
+personne ait rien appris au passage.
+
+Suppression **franche**, contrairement aux obligations qu'on archive : un lien ne porte
+aucun historique ni aucune case cochée, il n'y a rien à préserver.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -475,6 +503,19 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/sponsorships/:id/requirements`                | Ajouter un plan à filmer (entre en fin de liste)                                                                                                                                                      |
 | `PATCH`  | `/api/sponsorships/:id/requirements/:requirementId` | Cocher / renommer / réordonner un plan                                                                                                                                                                |
 | `DELETE` | `/api/sponsorships/:id/requirements/:requirementId` | Retirer un plan                                                                                                                                                                                       |
+| `GET`    | `/api/legal/overview`                               | Société, obligations, tableau mensuel et alertes en une requête                                                                                                                                       |
+| `GET`    | `/api/legal/company`                                | Fiche société (ligne unique)                                                                                                                                                                          |
+| `PATCH`  | `/api/legal/company`                                | Modifier. `foundedOn` décide du premier mois du tableau                                                                                                                                               |
+| `GET`    | `/api/legal/obligations`                            | Référentiel des obligations. Param `includeArchived`                                                                                                                                                  |
+| `POST`   | `/api/legal/obligations`                            | Créer                                                                                                                                                                                                 |
+| `PATCH`  | `/api/legal/obligations/:id`                        | Modifier / archiver / réordonner                                                                                                                                                                      |
+| `DELETE` | `/api/legal/obligations/:id`                        | Supprimer (les cases cochées de tous les mois partent en cascade)                                                                                                                                     |
+| `PUT`    | `/api/legal/checks/:obligationId/:month`            | Cocher un mois (`AAAA-MM`, 422 sinon). Idempotent                                                                                                                                                     |
+| `DELETE` | `/api/legal/checks/:obligationId/:month`            | Décocher                                                                                                                                                                                              |
+| `GET`    | `/api/legal/bookmarks`                              | Liens utiles de l'écran Légal. Param `includeArchived`                                                                                                                                                |
+| `POST`   | `/api/legal/bookmarks`                              | Créer. `url` doit être **absolue** (le front complète le `https://` manquant)                                                                                                                         |
+| `PATCH`  | `/api/legal/bookmarks/:id`                          | Modifier / réordonner                                                                                                                                                                                 |
+| `DELETE` | `/api/legal/bookmarks/:id`                          | Supprimer (pas d'archivage : rien n'en dépend)                                                                                                                                                        |
 
 Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube.
 
@@ -488,7 +529,7 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / Créneaux / Produits & sponsos / Notes                                                     |
 | `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis deux onglets Produits et Sponsors (`?onglet=`). Bouton **Script** par sponso                       |
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                              |
-| `/legal`            | `LegalPage`            | Fiche société, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                     |
+| `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                   |
 | `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, Catégories, Abonnements, Marques, Étapes, Société                           |
 
 `/chaines`, `/categories`, `/marques`, `/etapes`, `/societe` et `/abonnements`
@@ -607,6 +648,11 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
 
+Une écriture de **favori** n'invalide que `legalBookmarks`, et pas `LEGAL_ROOTS` :
+contrairement à une obligation, un lien ne touche ni au tableau mensuel, ni aux alertes,
+ni au dashboard — repartir sur tout l'écran ferait clignoter le tableau pour un
+changement de libellé.
+
 `LEGAL_ROOTS` (`legalOverview`, `legalObligations`) part en entier à chaque écriture du module légal : changer un jour limite déplace l'échéance sur tous les mois déjà affichés, et cocher une case retire une alerte du dashboard.
 
 `RECURRING_ROOTS` = `MONEY_ROOTS` + `recurringExpenses` : écrire une règle crée, réécrit
@@ -627,7 +673,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Sentinelle des `Select` facultatifs** : `NONE` / `toSelectValue` / `fromSelectValue` (`presentation/components/forms/selectNone.ts`). Radix refuse une `SelectItem` de valeur vide ; la sentinelle est partagée pour que trois formulaires n'en inventent pas trois différentes.
 - **Référentiel plutôt que colonnes** : les étapes de production sont des lignes (`production_steps`) et l'état « coché » est la **présence** d'une ligne dans `production_step_checks`. En ajouter une ne demande aucune migration, et la date de complétion vient gratuitement.
 - **Migration 5** ajoute `brands`, `production_steps`, `productions`, `production_step_checks`, `production_slots`, `products`, `sponsorships`, et la colonne `revenue_entries.origin`. **Migration 6** ajoute `products.sponsorship_id`, **migration 7** la table `ideas`, **migration 8** `products.video_id` et `sponsorships.video_id`.
-- **Migration 9** ajoute `company` (ligne unique), `legal_obligations` et `legal_checks`. **Migration 10** ajoute `sponsorships.script`, **migration 11** la table `sponsorship_requirements`. **Migration 12** en ajoute trois d'un coup — `production_time_entries` (le temps passé), `step_todos` / `production_todos` / `production_todo_checks` (les tâches d'étape), `recurring_expenses` + `expense_entries.recurring_id` (les dépenses qui reviennent) — et la colonne `channels.thumbnail_url`.
+- **Migration 9** ajoute `company` (ligne unique), `legal_obligations` et `legal_checks`. **Migration 10** ajoute `sponsorships.script`, **migration 11** la table `sponsorship_requirements`. **Migration 13** ajoute `legal_bookmarks`. **Migration 12** en ajoute trois d'un coup — `production_time_entries` (le temps passé), `step_todos` / `production_todos` / `production_todo_checks` (les tâches d'étape), `recurring_expenses` + `expense_entries.recurring_id` (les dépenses qui reviennent) — et la colonne `channels.thumbnail_url`.
 - **Un panneau plutôt qu'une page dès que deux écrans le partagent** : `RevenuesPanel` et `ExpensesPanel` (ex-pages) sont montés dans les onglets de `/chiffre-affaires` ; `MoneyBreakdowns` porte les trois anneaux et les deux classements ; `PartnerStatCards` les quatre chiffres du pipeline. Le dupliquer ferait diverger deux écrans qui doivent annoncer le même montant.
 - **Le calcul du pipeline vit dans le domaine** (`domain/partner/services/pipeline.ts`, `partnerPipeline`) et non dans les écrans : le dashboard et `/partenariats` affichent le même « à encaisser », et deux comptages parallèles finiraient par se contredire.
 - **Contraste calculé, pas choisi** : `shared/contrast.ts` (`readableTextColor`) prend une couleur de fond libre et renvoie le blanc ou l'encre du thème, selon le meilleur **ratio WCAG réel** des deux. Les couleurs de chaîne sont libres — un vert clair et un bleu nuit peuvent cohabiter, et écrire en blanc sur les deux rend le premier illisible.
@@ -710,7 +756,93 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Le planning s'ouvre centré sur aujourd'hui.** `ProductionGantt` pose `scrollLeft` au montage et à chaque changement de zoom, en retranchant la largeur de la colonne des titres (`TITLE_WIDTH`). Sans ça il s'ouvrait collé à sa borne gauche, sur des jours passés. Les fenêtres couvrent donc volontairement du passé (`before` : 14, 30 ou 60 jours) pour qu'on puisse reculer. La colonne des titres est `sticky left-0` : en défilant vers le futur, on doit continuer de savoir de quelle vidéo est la barre qu'on regarde.
 - **La file d'attente a une vue compacte** (`preferences.compactQueue`) : une ligne par vidéo. Au-delà de cinq ou six vidéos en cours, la version détaillée oblige à faire défiler pour voir sa propre file. Le chevron d'une carte l'ouvre **à contre-courant du réglage global** (`exceptions`, un `Set` d'identifiants) : on veut souvent une file compacte _sauf_ la vidéo sur laquelle on travaille. Changer le réglage global vide les exceptions.
 - **Les confettis sont maison** (`Confetti`, canvas, ~50 lignes, aucune dépendance) et ne se déclenchent qu'à la **publication** : c'est le seul moment de l'outil qui mérite d'être fêté, tout le reste est de la comptabilité et de la planification. Le canvas est `pointer-events-none` en position fixe — il recouvre l'écran sans jamais intercepter un clic — et se démonte tout seul.
+- **Les liens utiles s'intercalent entre la fiche société et les alertes**, avant le tableau à cocher : on ouvre le portail, on fait la démarche, on revient cocher la case juste en dessous. La carte **entière** est le lien (cible la plus large) et s'ouvre dans un **nouvel onglet** — une navigation ferait perdre l'année choisie et la position dans le tableau. Le bloc ne s'affiche pas du tout tant qu'aucun lien n'est configuré : un encart vide prendrait la place de ce qu'on vient réellement faire sur cet écran.
 - **`/api/productions/:id/todos` est monté AVANT `/api/productions`** dans `server.ts` : un router de préfixe plus long doit passer en premier, sinon le plus court capte la requête et répond 404. Même vigilance que `/overview` déclaré avant `/:id`.
+
+## PWA
+
+L'application s'installe sur l'écran d'accueil et se lance sans barre d'adresse. Trois
+fichiers, tous dans `apps/web/public/` (donc copiés tels quels dans `dist` par Vite) :
+
+| Fichier                  | Rôle                                           |
+| ------------------------ | ---------------------------------------------- |
+| `manifest.webmanifest`   | Nom, icônes, `display: standalone`, raccourcis |
+| `sw.js`                  | Service worker, écrit à la main                |
+| `icon-*.png`, `favicon*` | Le jeu d'icônes, dérivé d'un seul PNG source   |
+
+### Les icônes
+
+Toutes générées depuis **un seul PNG 256×256** (l'emoji 🎥 de Microsoft Teams), par un
+script Pillow ponctuel — il n'y a pas de chaîne de génération dans le build, une icône ne
+changeant qu'une fois tous les deux ans.
+
+| Fichier                 | Taille  | Fond        | Pour qui                                 |
+| ----------------------- | ------- | ----------- | ---------------------------------------- |
+| `favicon.ico`           | 16→64   | transparent | onglet, vieux navigateurs                |
+| `favicon-16/32.png`     | 16, 32  | transparent | onglet, navigateurs modernes             |
+| `icon-192/512.png`      | 192,512 | transparent | manifeste, `purpose: any`                |
+| `icon-maskable-512.png` | 512     | **blanc**   | manifeste, `purpose: maskable` (Android) |
+| `apple-touch-icon.png`  | 180     | **blanc**   | écran d'accueil iOS                      |
+
+Deux pièges, d'où les fonds blancs :
+
+- **iOS ignore la transparence** et la compose sur du noir : sans fond opaque, l'icône
+  d'écran d'accueil sort sur un carré noir. Elle est enregistrée en **RGB**, sans canal
+  alpha, pour qu'il n'y ait aucune ambiguïté.
+- **Une icône `maskable` est rognée** par Android selon la forme du lanceur (cercle,
+  carré arrondi, squircle Samsung). Le sujet occupe donc **60 %** du canevas, ce qui le
+  garde dans la zone de sécurité quelle que soit la découpe. Une icône transparente
+  déclarée `maskable` se retrouverait, elle, sur un fond noir généré par le système.
+
+iOS ne lit pas le manifeste pour l'icône : `apple-touch-icon` et les
+`apple-mobile-web-app-*` de `index.html` sont **obligatoires** en plus, pas redondants.
+
+### Le service worker
+
+Écrit à la main plutôt qu'avec `vite-plugin-pwa` / Workbox, même parti pris que le Gantt
+ou les confettis : le besoin tient en cinquante lignes, contre une dépendance de build et
+un fichier généré de plus à déboguer.
+
+**Aucune liste d'assets à précacher n'est figée** — c'est ce qui rend d'habitude un
+service worker maison fragile, les fichiers de `dist/assets/` changeant de hash à chaque
+build. La stratégie se déduit du type de requête :
+
+| Requête               | Stratégie              | Pourquoi                                                               |
+| --------------------- | ---------------------- | ---------------------------------------------------------------------- |
+| Navigation            | réseau, cache en repli | en ligne, toujours le dernier `index.html`                             |
+| `/assets/*`           | cache d'abord          | le hash est dans le nom, le contenu ne change jamais                   |
+| Icônes, manifeste     | cache d'abord          | ils changent une fois par an                                           |
+| `/api/*`              | **jamais de cache**    | un CA périmé affiché comme à jour fait plus de dégâts qu'un écran vide |
+| Toute requête non-GET | ignorée                | mettre un POST en cache casse l'application en silence                 |
+
+`skipWaiting()` + `clients.claim()` : la nouvelle version prend la main immédiatement,
+sans quoi un correctif attendrait la fermeture de tous les onglets.
+
+**Hors ligne, l'application se lance mais les écrans restent vides** : les données
+viennent de l'API. C'est voulu.
+
+`registerServiceWorker()` (appelé depuis `main.tsx`) **ne s'enregistre qu'en production**
+(`import.meta.env.PROD`) : en développement, un service worker intercalé devant Vite sert
+des modules périmés et fait passer le rechargement à chaud pour cassé. L'échec est avalé —
+un contexte non sécurisé ou une navigation privée ne doit pas empêcher l'app de démarrer.
+
+### Ce que nginx doit garantir
+
+`nginx.conf` porte trois règles sans lesquelles la PWA se met à jour mal ou pas du tout :
+
+- `location = /sw.js`, `= /index.html`, `= /manifest.webmanifest` → `no-cache,
+must-revalidate`. Un service worker figé par un cache HTTP d'un an rendrait
+  l'application impossible à mettre à jour sans vider le navigateur à la main.
+- `types { application/manifest+json webmanifest; }` — sans ça le manifeste sort en
+  `application/octet-stream` et n'est pas lu : plus de bannière d'installation, plus
+  d'icône.
+- `location ^~ /assets/` (et non `location /assets/`) : le `^~` fait passer ce préfixe
+  **avant** la règle en expression régulière des icônes, qui sinon retirerait leur cache
+  d'un an aux PNG hachés.
+
+Le thème de la barre système suit le thème réel via deux `<meta name="theme-color">` à
+`media` distinct ; le manifeste, lui, ne peut en porter qu'une seule (celle du thème
+clair, celui par défaut).
 
 ## Déploiement
 

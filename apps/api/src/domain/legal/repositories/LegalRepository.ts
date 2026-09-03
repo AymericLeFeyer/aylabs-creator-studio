@@ -5,6 +5,11 @@ import type {
   LegalObligation,
   UpdateLegalObligationInput,
 } from '../entities/LegalObligation.ts';
+import type {
+  CreateLegalBookmarkInput,
+  LegalBookmark,
+  UpdateLegalBookmarkInput,
+} from '../entities/LegalBookmark.ts';
 
 export interface CompanyRepository {
   /** Toujours une ligne : la table est créée avec `default` par la migration. */
@@ -25,4 +30,12 @@ export interface LegalObligationRepository {
   /** Idempotent : recocher ne repousse pas la date de réalisation. */
   check(obligationId: string, month: string): void;
   uncheck(obligationId: string, month: string): void;
+}
+
+export interface LegalBookmarkRepository {
+  findAll(includeArchived?: boolean): LegalBookmark[];
+  findById(id: string): LegalBookmark | null;
+  create(input: CreateLegalBookmarkInput): LegalBookmark;
+  update(id: string, input: UpdateLegalBookmarkInput): LegalBookmark;
+  delete(id: string): void;
 }

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Building2, CheckCircle2, ListChecks, Settings } from 'lucide-react';
 import {
+  useLegalBookmarks,
   useLegalOverview,
   useToggleLegalCheck,
 } from '../../application/legal/usecases/useLegal.ts';
@@ -28,6 +29,7 @@ import {
 } from '../components/ui/table.tsx';
 import { StatCard } from '../components/StatCard.tsx';
 import { LegalAlertsCard } from '../components/legal/LegalAlertsCard.tsx';
+import { LegalBookmarks } from '../components/legal/LegalBookmarks.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 import { cn } from '../../shared/cn.ts';
 
@@ -41,6 +43,7 @@ import { cn } from '../../shared/cn.ts';
  */
 export const LegalPage = () => {
   const { data, isLoading } = useLegalOverview();
+  const { data: bookmarks = [] } = useLegalBookmarks();
   const toggle = useToggleLegalCheck();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -64,7 +67,7 @@ export const LegalPage = () => {
         title="Aucune obligation configurée"
         description="Ajoute les déclarations et démarches qui reviennent chaque mois : elles deviendront une case à cocher par mois, et une alerte sur le dashboard dès qu'une échéance approche."
         actionLabel="Configurer les obligations"
-        actionTo="/societe"
+        actionTo="/parametres?onglet=societe"
       />
     );
   }
@@ -81,7 +84,7 @@ export const LegalPage = () => {
           </p>
         </div>
         <Button asChild size="sm" variant="outline">
-          <Link to="/societe">
+          <Link to="/parametres?onglet=societe">
             <Settings className="h-4 w-4" />
             Société &amp; obligations
           </Link>
@@ -126,7 +129,7 @@ export const LegalPage = () => {
               {!company?.name && (
                 <p className="mt-3 text-xs text-muted-foreground">
                   Renseigne les informations dans{' '}
-                  <Link to="/societe" className="underline">
+                  <Link to="/parametres?onglet=societe" className="underline">
                     Paramètres → Société
                   </Link>
                   . La date de création décide du premier mois du tableau.
@@ -155,6 +158,10 @@ export const LegalPage = () => {
               />
             </div>
           </div>
+
+          {/* Entre la fiche et le tableau : c'est là qu'on les cherche — on ouvre le
+              portail, on fait la démarche, on revient cocher la case juste en dessous. */}
+          <LegalBookmarks bookmarks={bookmarks} />
 
           <LegalAlertsCard alerts={data.alerts} />
 

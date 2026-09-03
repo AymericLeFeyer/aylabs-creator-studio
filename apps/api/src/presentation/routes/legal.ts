@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import type { Container } from '../../container.ts';
 import {
+  createLegalBookmarkSchema,
   createLegalObligationSchema,
   legalMonthParamSchema,
   updateCompanySchema,
+  updateLegalBookmarkSchema,
   updateLegalObligationSchema,
 } from '../validation.ts';
 import { param } from '../helpers.ts';
@@ -29,6 +31,32 @@ export const legalRouter = (container: Container): Router => {
 
   router.patch('/company', (req, res) => {
     res.json(container.company.update(updateCompanySchema.parse(req.body)));
+  });
+
+  /**
+   * Les liens utiles affichés au-dessus du tableau à cocher. Router à part de
+   * `/overview` : ils ne dépendent ni du mois ni des cases, et se lisent aussi seuls
+   * depuis l'écran de configuration (avec les archivés).
+   */
+  router.get('/bookmarks', (req, res) => {
+    res.json(container.legalBookmarks.findAll(req.query.includeArchived === 'true'));
+  });
+
+  router.post('/bookmarks', (req, res) => {
+    res
+      .status(201)
+      .json(container.legalBookmarks.create(createLegalBookmarkSchema.parse(req.body)));
+  });
+
+  router.patch('/bookmarks/:id', (req, res) => {
+    res.json(
+      container.legalBookmarks.update(param(req, 'id'), updateLegalBookmarkSchema.parse(req.body)),
+    );
+  });
+
+  router.delete('/bookmarks/:id', (req, res) => {
+    container.legalBookmarks.delete(param(req, 'id'));
+    res.status(204).end();
   });
 
   router.get('/obligations', (req, res) => {

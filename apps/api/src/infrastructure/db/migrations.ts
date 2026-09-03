@@ -580,6 +580,37 @@ const migrations: Migration[] = [
       ALTER TABLE channels ADD COLUMN thumbnail_url TEXT;
     `,
   },
+  {
+    version: 13,
+    name: 'legal_bookmarks',
+    // Les liens qu'on rouvre tous les mois pour faire ses declarations : Urssaf, impots,
+    // portail de la banque, cabinet comptable. Ils n'ont rien a faire dans un signet de
+    // navigateur — ils appartiennent a la meme page que les cases a cocher, juste au
+    // dessus, parce que c'est la qu'on les cherche au moment de cocher.
+    //
+    // Une LIGNE et non une colonne, comme les obligations et les etapes de production :
+    // en ajouter un ne demande aucune migration, et le referentiel se gere depuis
+    // Parametres -> Societe.
+    //
+    // `image_url` est facultatif : sans image saisie, l'interface tente le favicon du
+    // site cible puis retombe sur l'initiale sur fond colore. `color` est attribuee en
+    // rotation a la creation, comme pour les chaines et les marques.
+    up: `
+      CREATE TABLE legal_bookmarks (
+        id          TEXT PRIMARY KEY,
+        label       TEXT NOT NULL,
+        url         TEXT NOT NULL,
+        description TEXT,
+        image_url   TEXT,
+        color       TEXT NOT NULL DEFAULT '#64748b',
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        is_archived INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+      CREATE INDEX idx_legal_bookmarks_sort ON legal_bookmarks(sort_order);
+    `,
+  },
 ];
 
 /**

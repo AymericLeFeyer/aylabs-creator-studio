@@ -4,6 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
+
+    <!-- La couleur de la barre système suit le thème réel : une seule valeur ferait
+         une barre blanche au-dessus d'une application sombre, ou l'inverse. Le
+         manifeste, lui, ne peut en porter qu'une (celle du thème par défaut). -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0a" />
+
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <!-- iOS ignore le manifeste pour l'icône de l'écran d'accueil : il lui faut celle-ci,
+         opaque (la transparence y serait composée sur du noir). -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <meta
+      name="description"
+      content="Statistiques de créateur, production des vidéos, partenariats et comptabilité."
+    />
+    <!-- Sans ça, iOS ouvre l'application dans Safari avec sa barre d'adresse, même
+         lancée depuis l'écran d'accueil. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Creator Studio" />
+
     <title>Creator Studio</title>
   </head>
   <body>

@@ -30,7 +30,7 @@ jobs:
         run: npm run lint --workspaces --if-present
 
       - name: Vérifier le format
-        run: npx prettier --check "apps/*/src/**/*.{ts,tsx,css}"
+        run: npx prettier --check "apps/*/{src,public}/**/*.{ts,tsx,css,js,webmanifest}" "apps/web/index.html"
 
       - name: Builder le front
         run: npm run build --workspace=@acs/web
