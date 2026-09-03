@@ -1,8 +1,20 @@
 import { Link } from 'react-router-dom';
-import { CalendarClock, ChevronDown, ChevronUp, Gift, Handshake, Pause, Radio } from 'lucide-react';
+import {
+  CalendarClock,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Gift,
+  Handshake,
+  Pause,
+  Play,
+  Radio,
+  Timer,
+} from 'lucide-react';
 import type { Production } from '../../../domain/production/entities/Production.ts';
 import {
   partnerCounts,
+  progressCounts,
   STATUS_COLORS,
   STATUS_LABELS,
 } from '../../../domain/production/entities/Production.ts';
@@ -15,6 +27,7 @@ import {
   SPONSORSHIP_STATUS_LABELS,
 } from '../../../domain/sponsorship/entities/Sponsorship.ts';
 import type { ProductionStep } from '../../../domain/production/entities/ProductionStep.ts';
+import { formatDuration } from '../../../domain/production/entities/TimeEntry.ts';
 import { formatDate, formatMoney } from '../../../shared/format.ts';
 import { Badge } from '../ui/badge.tsx';
 import { Button } from '../ui/button.tsx';
@@ -26,12 +39,21 @@ import { cn } from '../../../shared/cn.ts';
 interface ProductionCardProps {
   production: Production;
   steps: ProductionStep[];
-  onToggleStep: (stepId: string, checked: boolean) => void;
+  /** Ouvre les tâches d'une étape. Cocher ne se fait plus depuis la carte. */
+  onOpenStep: (step: ProductionStep) => void;
+  /** Lance le chronomètre sur cette vidéo (l'étape est demandée dans la foulée). */
+  onStartTimer: () => void;
   /** `null` quand la carte est en tête ou en queue : le bouton disparaît. */
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   /** Mise en avant de la prochaine vidéo à travailler. */
   highlighted?: boolean;
+  /** Le chronomètre tourne sur cette vidéo : le bouton devient un état, pas une action. */
+  timerRunning?: boolean;
+  /** Carte réduite à une ligne. */
+  compact?: boolean;
+  /** Bascule le repli de cette carte seule, par-dessus le réglage global. */
+  onToggleCompact?: () => void;
 }
 
 const days = (from: string): number =>
@@ -52,20 +74,117 @@ const relativeDay = (date: string): string => {
  * Tout ce qui sert à décider si c'est bien celle-ci qu'on attaque maintenant tient sur
  * la carte : l'avancement, la date visée, ce qui bloque, et l'argent déjà engagé. La
  * fiche ne s'ouvre que quand on a décidé.
+ *
+ * **En mode réduit, la carte tient sur une ligne** : titre, chaîne, date et avancement,
+ * rien d'autre. Au-delà de cinq ou six vidéos en cours, la version détaillée oblige à
+ * faire défiler pour voir sa propre file — le repli rend la vue d'ensemble à nouveau
+ * possible, et le chevron rouvre la carte qu'on veut regarder de près.
  */
 export const ProductionCard = ({
   production,
   steps,
-  onToggleStep,
+  onOpenStep,
+  onStartTimer,
   onMoveUp,
   onMoveDown,
   highlighted,
+  timerRunning,
+  compact,
+  onToggleCompact,
 }: ProductionCardProps) => {
   const counts = partnerCounts(production);
+  const progress = progressCounts(production, steps.length);
   const late =
     production.plannedDate !== null &&
     days(production.plannedDate) < 0 &&
     production.status !== 'done';
+
+  const timerButton = (
+    <Button
+      variant={timerRunning ? 'secondary' : 'ghost'}
+      size="icon"
+      className={cn('h-7 w-7 shrink-0', timerRunning && 'text-[var(--positive)]')}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onStartTimer();
+      }}
+      title={timerRunning ? 'Le chronomètre tourne sur cette vidéo' : 'Démarrer le chronomètre'}
+      disabled={timerRunning}
+    >
+      {timerRunning ? <Timer className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+      <span className="sr-only">Démarrer le chronomètre</span>
+    </Button>
+  );
+
+  if (compact) {
+    return (
+      <Card
+        className={cn(
+          'flex items-center gap-2 px-3 py-2 transition-colors',
+          highlighted && 'border-[var(--positive)]/50 bg-[var(--positive)]/5',
+        )}
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 shrink-0"
+          onClick={onToggleCompact}
+          title="Déplier"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+          <span className="sr-only">Déplier</span>
+        </Button>
+
+        <Link
+          to={`/production/${production.id}`}
+          className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
+          title={production.title}
+        >
+          {production.title}
+        </Link>
+
+        <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground sm:flex">
+          <span
+            className="h-2 w-2 rounded-full"
+            style={{ backgroundColor: production.channelColor ?? 'var(--muted-foreground)' }}
+            aria-hidden
+          />
+          {production.channelName ?? 'Chaîne à décider'}
+        </span>
+
+        {production.plannedDate && (
+          <span
+            className={cn(
+              'hidden shrink-0 text-xs tabular text-muted-foreground md:inline',
+              late && 'text-[var(--negative)]',
+            )}
+          >
+            {formatDate(production.plannedDate)}
+          </span>
+        )}
+
+        {counts.products > 0 && <Gift className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+        {counts.sponsorships > 0 && (
+          <Handshake className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        )}
+
+        <span className="shrink-0 text-xs tabular text-muted-foreground">
+          {progress.done}/{progress.total}
+        </span>
+
+        <Badge
+          variant="outline"
+          style={{ color: STATUS_COLORS[production.status] }}
+          className="hidden shrink-0 lg:inline-flex"
+        >
+          {STATUS_LABELS[production.status]}
+        </Badge>
+
+        {timerButton}
+      </Card>
+    );
+  }
 
   return (
     <Card
@@ -126,16 +245,33 @@ export const ProductionCard = ({
                   Créneau {relativeDay(production.nextSlotDate)}
                 </span>
               )}
+              {production.trackedMinutes > 0 && (
+                <span className="flex items-center gap-1" title="Temps déjà passé sur cette vidéo">
+                  <Timer className="h-3 w-3" aria-hidden />
+                  {formatDuration(production.trackedMinutes)}
+                </span>
+              )}
             </div>
           </div>
 
-          <Badge
-            variant="outline"
-            style={{ color: STATUS_COLORS[production.status] }}
-            className="shrink-0"
-          >
-            {STATUS_LABELS[production.status]}
-          </Badge>
+          <div className="flex shrink-0 items-center gap-1">
+            <Badge variant="outline" style={{ color: STATUS_COLORS[production.status] }}>
+              {STATUS_LABELS[production.status]}
+            </Badge>
+            {timerButton}
+            {onToggleCompact && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={onToggleCompact}
+                title="Réduire"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+                <span className="sr-only">Réduire</span>
+              </Button>
+            )}
+          </div>
         </div>
 
         {production.status === 'paused' && (
@@ -145,7 +281,7 @@ export const ProductionCard = ({
           </p>
         )}
 
-        <StepChips production={production} steps={steps} onToggle={onToggleStep} />
+        <StepChips production={production} steps={steps} onOpenStep={onOpenStep} />
         <StepProgress production={production} steps={steps} />
 
         {(counts.products > 0 || counts.sponsorships > 0) && (

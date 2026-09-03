@@ -89,6 +89,8 @@ export class YouTubeAnalyticsClient {
   async getChannelTotals(): Promise<{
     channelId: string;
     title: string;
+    /** Miniature de la chaîne, pour le sélecteur de l'en-tête. */
+    thumbnailUrl: string | null;
     subscribers: number;
     totalViews: number;
     totalVideos: number;
@@ -106,6 +108,12 @@ export class YouTubeAnalyticsClient {
       return {
         channelId: item.id ?? '',
         title: item.snippet?.title ?? '',
+        // Une seule taille stockée : `medium` (240 px) reste net en 24 comme en 40 px.
+        thumbnailUrl:
+          item.snippet?.thumbnails?.medium?.url ??
+          item.snippet?.thumbnails?.high?.url ??
+          item.snippet?.thumbnails?.default?.url ??
+          null,
         subscribers: Number(item.statistics?.subscriberCount ?? 0),
         totalViews: Number(item.statistics?.viewCount ?? 0),
         totalVideos: Number(item.statistics?.videoCount ?? 0),

@@ -64,7 +64,7 @@ export const BrandsPage = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Marques</h1>
+          <h2 className="font-semibold">Marques</h2>
           <p className="text-sm text-muted-foreground">
             Le référentiel commun aux produits et aux sponsos. Une marque encore utilisée s'archive,
             elle ne se supprime pas.

@@ -93,7 +93,7 @@ export const CompanyPage = () => {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-lg font-semibold">Société &amp; obligations</h1>
+        <h2 className="font-semibold">Société &amp; obligations</h2>
         <p className="text-sm text-muted-foreground">
           Les informations de la société, et les démarches qui reviennent chaque mois. Chacune
           devient une case à cocher dans l'onglet Légal.

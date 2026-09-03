@@ -6,14 +6,10 @@ import { DashboardPage } from './presentation/pages/DashboardPage.tsx';
 import { TurnoverPage } from './presentation/pages/TurnoverPage.tsx';
 import { ContentPage } from './presentation/pages/ContentPage.tsx';
 import { LegalPage } from './presentation/pages/LegalPage.tsx';
-import { CompanyPage } from './presentation/pages/CompanyPage.tsx';
-import { ChannelsPage } from './presentation/pages/ChannelsPage.tsx';
-import { CategoriesPage } from './presentation/pages/CategoriesPage.tsx';
+import { SettingsPage } from './presentation/pages/SettingsPage.tsx';
 import { ProductionPage } from './presentation/pages/ProductionPage.tsx';
 import { ProductionDetailPage } from './presentation/pages/ProductionDetailPage.tsx';
 import { PartnersPage } from './presentation/pages/PartnersPage.tsx';
-import { BrandsPage } from './presentation/pages/BrandsPage.tsx';
-import { StepsPage } from './presentation/pages/StepsPage.tsx';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,11 +49,21 @@ export const App = () => (
               path="taxes"
               element={<Navigate to="/chiffre-affaires?onglet=depenses" replace />}
             />
-            <Route path="chaines" element={<ChannelsPage />} />
-            <Route path="categories" element={<CategoriesPage />} />
-            <Route path="marques" element={<BrandsPage />} />
-            <Route path="etapes" element={<StepsPage />} />
-            <Route path="societe" element={<CompanyPage />} />
+            {/* Tous les réglages vivent dans un seul écran à onglets : on configure
+                rarement une seule chose. Les anciennes adresses mènent au bon onglet. */}
+            <Route path="parametres" element={<SettingsPage />} />
+            <Route path="chaines" element={<Navigate to="/parametres?onglet=chaines" replace />} />
+            <Route
+              path="categories"
+              element={<Navigate to="/parametres?onglet=categories" replace />}
+            />
+            <Route path="marques" element={<Navigate to="/parametres?onglet=marques" replace />} />
+            <Route path="etapes" element={<Navigate to="/parametres?onglet=etapes" replace />} />
+            <Route path="societe" element={<Navigate to="/parametres?onglet=societe" replace />} />
+            <Route
+              path="abonnements"
+              element={<Navigate to="/parametres?onglet=abonnements" replace />}
+            />
           </Route>
         </Routes>
       </BrowserRouter>

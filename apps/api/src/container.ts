@@ -11,6 +11,9 @@ import { SqliteBrandRepository } from './infrastructure/brand/repositories/Sqlit
 import { SqliteProductionRepository } from './infrastructure/production/repositories/SqliteProductionRepository.ts';
 import { SqliteProductionStepRepository } from './infrastructure/production/repositories/SqliteProductionStepRepository.ts';
 import { SqliteProductionSlotRepository } from './infrastructure/production/repositories/SqliteProductionSlotRepository.ts';
+import { SqliteTimeEntryRepository } from './infrastructure/production/repositories/SqliteTimeEntryRepository.ts';
+import { SqliteTodoRepository } from './infrastructure/production/repositories/SqliteTodoRepository.ts';
+import { SqliteRecurringExpenseRepository } from './infrastructure/expense/repositories/SqliteRecurringExpenseRepository.ts';
 import { SqliteProductRepository } from './infrastructure/product/repositories/SqliteProductRepository.ts';
 import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/repositories/SqliteSponsorshipRepository.ts';
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
@@ -18,11 +21,15 @@ import { SqliteCompanyRepository } from './infrastructure/legal/repositories/Sql
 import { SqliteLegalObligationRepository } from './infrastructure/legal/repositories/SqliteLegalObligationRepository.ts';
 import { seedDefaultCategories } from './application/category/usecases/SeedDefaultCategories.ts';
 import { seedDefaultSteps } from './application/production/usecases/SeedDefaultSteps.ts';
+import { seedDefaultStepTodos } from './application/production/usecases/SeedDefaultStepTodos.ts';
 import { seedLegalObligations } from './application/legal/usecases/SeedLegalObligations.ts';
 import { ManageProducts } from './application/product/usecases/ManageProducts.ts';
 import { ManageSponsorships } from './application/sponsorship/usecases/ManageSponsorships.ts';
 import { ManageProductions } from './application/production/usecases/ManageProductions.ts';
 import { GetProductionOverview } from './application/production/usecases/GetProductionOverview.ts';
+import { ManageTodos } from './application/production/usecases/ManageTodos.ts';
+import { TrackTime } from './application/production/usecases/TrackTime.ts';
+import { SyncRecurringExpenses } from './application/expense/usecases/SyncRecurringExpenses.ts';
 import { GetLegalOverview } from './application/legal/usecases/GetLegalOverview.ts';
 import { CollectMetrics } from './application/metrics/usecases/CollectMetrics.ts';
 import { GetAnalytics } from './application/analytics/usecases/GetAnalytics.ts';
@@ -41,6 +48,12 @@ export interface Container {
   productions: SqliteProductionRepository;
   productionSteps: SqliteProductionStepRepository;
   productionSlots: SqliteProductionSlotRepository;
+  /** Sessions de travail chronométrées ou saisies à la main. */
+  timeEntries: SqliteTimeEntryRepository;
+  /** Référentiel des tâches d'étape, tâches ponctuelles et coches, dans un seul dépôt. */
+  todos: SqliteTodoRepository;
+  /** Règles de dépense récurrente. Les occurrences, elles, sont des `expenses`. */
+  recurringExpenses: SqliteRecurringExpenseRepository;
   products: SqliteProductRepository;
   sponsorships: SqliteSponsorshipRepository;
   ideas: SqliteIdeaRepository;
@@ -56,6 +69,15 @@ export interface Container {
   manageSponsorships: ManageSponsorships;
   manageProductions: ManageProductions;
   getProductionOverview: GetProductionOverview;
+  /**
+   * Cocher une tâche a un effet sur son étape : la règle vit dans ce use case, et les
+   * routes ne touchent jamais les coches directement.
+   */
+  manageTodos: ManageTodos;
+  /** Démarrage, arrêt et correction des sessions de travail. */
+  trackTime: TrackTime;
+  /** Projette les échéances des dépenses récurrentes. Idempotent. */
+  syncRecurringExpenses: SyncRecurringExpenses;
   /** Tableau des obligations mensuelles + alertes reprises par le dashboard. */
   getLegalOverview: GetLegalOverview;
   /** `null` tant qu'aucune clé API YouTube n'est configurée. */
@@ -67,6 +89,7 @@ export const buildContainer = (config: Config): Container => {
   const db = getDatabase(config.databasePath);
   seedDefaultCategories(db);
   seedDefaultSteps(db);
+  seedDefaultStepTodos(db);
   seedLegalObligations(db);
 
   const channels = new SqliteChannelRepository(db);
@@ -79,6 +102,9 @@ export const buildContainer = (config: Config): Container => {
   const productions = new SqliteProductionRepository(db);
   const productionSteps = new SqliteProductionStepRepository(db);
   const productionSlots = new SqliteProductionSlotRepository(db);
+  const timeEntries = new SqliteTimeEntryRepository(db);
+  const todos = new SqliteTodoRepository(db);
+  const recurringExpenses = new SqliteRecurringExpenseRepository(db);
   const products = new SqliteProductRepository(db);
   const sponsorships = new SqliteSponsorshipRepository(db);
   const ideas = new SqliteIdeaRepository(db);
@@ -87,6 +113,11 @@ export const buildContainer = (config: Config): Container => {
 
   const manageProducts = new ManageProducts(products, productions, brands, revenues);
   const manageSponsorships = new ManageSponsorships(sponsorships, productions, brands, revenues);
+
+  // Les échéances à venir sont projetées au démarrage : l'écran des dépenses doit
+  // montrer ce qui arrive même si aucune écriture n'a eu lieu depuis des semaines.
+  const syncRecurringExpenses = new SyncRecurringExpenses(recurringExpenses, expenses);
+  syncRecurringExpenses.execute();
 
   return {
     db,
@@ -101,6 +132,9 @@ export const buildContainer = (config: Config): Container => {
     productions,
     productionSteps,
     productionSlots,
+    timeEntries,
+    todos,
+    recurringExpenses,
     products,
     sponsorships,
     ideas,
@@ -121,7 +155,12 @@ export const buildContainer = (config: Config): Container => {
       productionSlots,
       products,
       sponsorships,
+      productionSteps,
+      timeEntries,
     ),
+    manageTodos: new ManageTodos(todos, productions),
+    trackTime: new TrackTime(timeEntries),
+    syncRecurringExpenses,
     getLegalOverview: new GetLegalOverview(company, legalObligations),
     collectMetrics: new CollectMetrics(channels, metrics, videos, {
       youtubeApiKey: config.youtubeApiKey,

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronUp, DollarSign, Package } from 'lucide-react';
 import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from 'date-fns';
@@ -19,11 +19,21 @@ import { cn } from '../../../shared/cn.ts';
 
 type Zoom = 'weeks' | 'month' | 'quarter';
 
+/**
+ * Les fenêtres du planning.
+ *
+ * `before` couvre volontairement du passé : la vue défile horizontalement et s'ouvre
+ * centrée sur aujourd'hui, donc ce qui vient de sortir doit rester atteignable d'un
+ * glissement vers la gauche — sans quoi on ne pourrait jamais reculer.
+ */
 const ZOOM: Record<Zoom, { label: string; before: number; after: number; cell: number }> = {
-  weeks: { label: '3 semaines', before: 3, after: 17, cell: 44 },
-  month: { label: '2 mois', before: 7, after: 52, cell: 22 },
-  quarter: { label: '4 mois', before: 14, after: 106, cell: 11 },
+  weeks: { label: '3 semaines', before: 14, after: 35, cell: 44 },
+  month: { label: '2 mois', before: 30, after: 75, cell: 22 },
+  quarter: { label: '4 mois', before: 60, after: 150, cell: 11 },
 };
+
+/** Largeur de la colonne des titres, retranchée pour centrer le jour et non la grille. */
+const TITLE_WIDTH = 224;
 
 /** Au-delà, le planning prend toute la page avant même qu'on ait vu la file d'attente. */
 const COLLAPSED_ROWS = 5;
@@ -101,6 +111,7 @@ interface ProductionGanttProps {
 export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttProps) => {
   const [zoom, setZoom] = useState<Zoom>('month');
   const [expanded, setExpanded] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const { before, after, cell } = ZOOM[zoom];
 
   const { days, first } = useMemo(() => {
@@ -151,6 +162,20 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
   const todayColumn = columnOf(toIsoDate(new Date()));
   const gridStyle = { gridTemplateColumns: `repeat(${days.length}, ${cell}px)` };
 
+  /**
+   * Ouvre la vue centrée sur aujourd'hui, et la recentre à chaque changement de zoom.
+   *
+   * Sans ça, le planning s'ouvrait collé à sa borne gauche : on voyait d'abord des jours
+   * passés, et il fallait faire défiler pour trouver le présent — exactement ce qu'on
+   * vient chercher. Le décalage retranche la colonne des titres, qui ne défile pas.
+   */
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const visibleWidth = container.clientWidth - TITLE_WIDTH;
+    container.scrollLeft = Math.max(0, todayColumn * cell - visibleWidth / 2);
+  }, [zoom, todayColumn, cell]);
+
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between gap-3 pb-3">
@@ -187,11 +212,11 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
           </p>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div ref={scrollRef} className="overflow-x-auto">
               <div className="min-w-max">
                 {/* En-tête : le lundi porte l'étiquette, les autres jours le numéro. */}
                 <div className="sticky top-0 z-10 flex bg-card">
-                  <div className="w-56 shrink-0" />
+                  <div className="sticky left-0 z-20 w-56 shrink-0 bg-card" />
                   <div className="grid" style={gridStyle}>
                     {days.map((day) => {
                       const monday = day.getDay() === 1;
@@ -234,10 +259,12 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
 
                     return (
                       <div key={production.id} className="flex items-center">
+                        {/* Collée à gauche : en défilant vers le futur, on doit continuer
+                            de savoir de quelle vidéo est la barre qu'on regarde. */}
                         <Link
                           to={`/production/${production.id}`}
                           className={cn(
-                            'w-56 shrink-0 truncate pr-3 text-sm hover:underline',
+                            'sticky left-0 z-20 w-56 shrink-0 truncate bg-card pr-3 text-sm hover:underline',
                             done && 'text-muted-foreground',
                           )}
                           title={production.title}

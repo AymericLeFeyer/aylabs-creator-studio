@@ -2,13 +2,17 @@ import { useState } from 'react';
 import { Archive, ArchiveRestore, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import {
   useCreateStep,
+  useCreateStepTodo,
   useDeleteStep,
+  useDeleteStepTodo,
   useProductionSteps,
+  useStepTodos,
   useUpdateStep,
+  useUpdateStepTodo,
 } from '../../application/production/usecases/useProductions.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { Card, CardHeader, CardTitle } from '../components/ui/card.tsx';
+import { Card } from '../components/ui/card.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Label } from '../components/ui/label.tsx';
 import {
@@ -19,32 +23,38 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../components/ui/dialog.tsx';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../components/ui/table.tsx';
 import { cn } from '../../shared/cn.ts';
 
 /**
- * Le référentiel des étapes d'une vidéo.
+ * Le référentiel des étapes **et de leurs tâches habituelles**.
  *
  * L'ordre défini ici n'est qu'un **ordre d'affichage** : les cases se cochent dans le
- * sens qu'on veut. C'est justement pour ça que les étapes sont des lignes en base et
- * non des colonnes — en ajouter une ne demande aucune migration.
+ * sens qu'on veut. Étapes et tâches sont des lignes en base et non des colonnes — en
+ * ajouter demande zéro migration.
+ *
+ * Une carte par étape plutôt qu'un tableau : chaque étape porte maintenant sa liste de
+ * tâches, et une sous-liste dans une cellule de tableau devient illisible dès la
+ * deuxième ligne.
+ *
+ * Les champs sont **non contrôlés, validés à la sortie** (`defaultValue` + `onBlur`) :
+ * un `onChange` branché sur la mutation enverrait une requête par lettre tapée.
  */
 export const StepsPage = () => {
   const { data: steps = [] } = useProductionSteps(true);
+  const { data: todos = [] } = useStepTodos(true);
+
   const create = useCreateStep();
   const update = useUpdateStep();
   const remove = useDeleteStep();
+  const createTodo = useCreateStepTodo();
+  const updateTodo = useUpdateStepTodo();
+  const removeTodo = useDeleteStepTodo();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ name: '', color: '#64748b' });
   const [error, setError] = useState<string | null>(null);
+  /** Le brouillon de nouvelle tâche, par étape : on en ajoute souvent deux d'affilée. */
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -67,14 +77,21 @@ export const StepsPage = () => {
     update.mutate({ id: other.id, input: { sortOrder: current.sortOrder } });
   };
 
+  const addTodo = (stepId: string) => {
+    const label = (drafts[stepId] ?? '').trim();
+    if (!label) return;
+    createTodo.mutate({ stepId, label });
+    setDrafts((current) => ({ ...current, [stepId]: '' }));
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Étapes</h1>
+          <h2 className="font-semibold">Étapes et tâches</h2>
           <p className="text-sm text-muted-foreground">
-            Les cases à cocher de chaque vidéo. L'ordre ci-dessous est celui de l'affichage : tu les
-            coches dans le sens que tu veux.
+            Les étapes sont les pastilles d'une vidéo ; les tâches sont ce qu'il y a dedans. Une
+            tâche pèse autant qu'une étape dans l'avancement affiché.
           </p>
         </div>
         <Button size="sm" onClick={() => setDialogOpen(true)}>
@@ -83,119 +100,185 @@ export const StepsPage = () => {
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{steps.length} étape(s)</CardTitle>
-        </CardHeader>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nom</TableHead>
-              <TableHead>Couleur</TableHead>
-              <TableHead className="w-40" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {steps.map((step, index) => (
-              <TableRow key={step.id} className={cn(step.isArchived && 'opacity-50')}>
-                <TableCell className="font-medium">
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: step.color }}
-                      aria-hidden
-                    />
-                    {/* Champs non contrôlés, validés à la sortie : une mutation par
-                        frappe partirait à chaque lettre du nom. */}
-                    <Input
-                      key={`${step.id}-name`}
-                      defaultValue={step.name}
-                      onBlur={(event) => {
-                        const name = event.target.value.trim();
-                        if (name && name !== step.name) {
-                          update.mutate({ id: step.id, input: { name } });
-                        }
-                      }}
-                      className="h-8 max-w-56"
-                    />
-                    {step.isArchived && <Badge variant="outline">Archivée</Badge>}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <Input
-                    key={`${step.id}-color`}
-                    type="color"
-                    defaultValue={step.color}
-                    onBlur={(event) => {
-                      if (event.target.value !== step.color) {
-                        update.mutate({ id: step.id, input: { color: event.target.value } });
+      <div className="grid gap-3 lg:grid-cols-2">
+        {steps.map((step, index) => {
+          const stepTodos = todos.filter((todo) => todo.stepId === step.id);
+
+          return (
+            <Card key={step.id} className={cn('space-y-3 p-4', step.isArchived && 'opacity-60')}>
+              <div className="flex items-center gap-2">
+                <Input
+                  key={`${step.id}-color`}
+                  type="color"
+                  defaultValue={step.color}
+                  onBlur={(event) => {
+                    if (event.target.value !== step.color) {
+                      update.mutate({ id: step.id, input: { color: event.target.value } });
+                    }
+                  }}
+                  className="h-8 w-10 shrink-0 p-1"
+                  aria-label={`Couleur de ${step.name}`}
+                />
+                <Input
+                  key={`${step.id}-name`}
+                  defaultValue={step.name}
+                  onBlur={(event) => {
+                    const name = event.target.value.trim();
+                    if (name && name !== step.name) {
+                      update.mutate({ id: step.id, input: { name } });
+                    }
+                  }}
+                  className="h-8 min-w-0 flex-1 font-medium"
+                />
+                {step.isArchived && <Badge variant="outline">Archivée</Badge>}
+
+                <div className="flex shrink-0 gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    disabled={index === 0}
+                    onClick={() => swap(index, -1)}
+                    title="Monter"
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                    <span className="sr-only">Monter</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    disabled={index === steps.length - 1}
+                    onClick={() => swap(index, 1)}
+                    title="Descendre"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    <span className="sr-only">Descendre</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    title={step.isArchived ? 'Réactiver' : 'Archiver'}
+                    onClick={() =>
+                      update.mutate({ id: step.id, input: { isArchived: !step.isArchived } })
+                    }
+                  >
+                    {step.isArchived ? (
+                      <ArchiveRestore className="h-3.5 w-3.5" />
+                    ) : (
+                      <Archive className="h-3.5 w-3.5" />
+                    )}
+                    <span className="sr-only">{step.isArchived ? 'Réactiver' : 'Archiver'}</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => {
+                      // Supprimer efface la case sur toutes les vidéos qui l'avaient
+                      // cochée : l'archivage la retire de la vue sans perdre l'historique.
+                      if (
+                        window.confirm(
+                          `Supprimer « ${step.name} » ? Elle disparaîtra de toutes les vidéos, avec ses tâches.`,
+                        )
+                      ) {
+                        remove.mutate(step.id);
                       }
                     }}
-                    className="h-8 w-16 p-1"
-                  />
-                </TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-1">
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    <span className="sr-only">Supprimer</span>
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-1 border-t border-border pt-2">
+                {stepTodos.length === 0 && (
+                  <p className="px-1 py-1 text-xs text-muted-foreground">
+                    Aucune tâche. Sans tâche, l'étape se coche d'un clic comme avant.
+                  </p>
+                )}
+
+                {stepTodos.map((todo) => (
+                  <div key={todo.id} className="group flex items-center gap-1.5">
+                    <span
+                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50"
+                      aria-hidden
+                    />
+                    <Input
+                      key={`${todo.id}-label`}
+                      defaultValue={todo.label}
+                      onBlur={(event) => {
+                        const label = event.target.value.trim();
+                        if (label && label !== todo.label) {
+                          updateTodo.mutate({ id: todo.id, input: { label } });
+                        }
+                      }}
+                      className={cn(
+                        'h-7 min-w-0 flex-1 border-transparent bg-transparent px-1 text-sm hover:border-border focus:border-border',
+                        todo.isArchived && 'text-muted-foreground line-through',
+                      )}
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
-                      disabled={index === 0}
-                      onClick={() => swap(index, -1)}
-                      title="Monter"
-                    >
-                      <ChevronUp className="h-3.5 w-3.5" />
-                      <span className="sr-only">Monter</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      disabled={index === steps.length - 1}
-                      onClick={() => swap(index, 1)}
-                      title="Descendre"
-                    >
-                      <ChevronDown className="h-3.5 w-3.5" />
-                      <span className="sr-only">Descendre</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title={step.isArchived ? 'Réactiver' : 'Archiver'}
+                      className="h-6 w-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                      title={todo.isArchived ? 'Réactiver' : 'Archiver'}
                       onClick={() =>
-                        update.mutate({ id: step.id, input: { isArchived: !step.isArchived } })
+                        updateTodo.mutate({ id: todo.id, input: { isArchived: !todo.isArchived } })
                       }
                     >
-                      {step.isArchived ? (
-                        <ArchiveRestore className="h-3.5 w-3.5" />
+                      {todo.isArchived ? (
+                        <ArchiveRestore className="h-3 w-3" />
                       ) : (
-                        <Archive className="h-3.5 w-3.5" />
+                        <Archive className="h-3 w-3" />
                       )}
-                      <span className="sr-only">{step.isArchived ? 'Réactiver' : 'Archiver'}</span>
+                      <span className="sr-only">{todo.isArchived ? 'Réactiver' : 'Archiver'}</span>
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="h-6 w-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
                       onClick={() => {
-                        // Supprimer efface la case sur toutes les vidéos qui l'avaient
-                        // cochée : l'archivage la retire de la vue sans perdre l'historique.
                         if (
                           window.confirm(
-                            `Supprimer « ${step.name} » ? Elle disparaîtra de toutes les vidéos.`,
+                            `Supprimer « ${todo.label} » ? Elle disparaîtra de toutes les vidéos.`,
                           )
                         ) {
-                          remove.mutate(step.id);
+                          removeTodo.mutate(todo.id);
                         }
                       }}
                     >
-                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      <Trash2 className="h-3 w-3 text-destructive" />
                       <span className="sr-only">Supprimer</span>
                     </Button>
                   </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+                ))}
+
+                <div className="flex items-center gap-1.5 pt-1">
+                  <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <Input
+                    value={drafts[step.id] ?? ''}
+                    onChange={(event) =>
+                      setDrafts((current) => ({ ...current, [step.id]: event.target.value }))
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addTodo(step.id);
+                      }
+                    }}
+                    onBlur={() => addTodo(step.id)}
+                    placeholder="Ajouter une tâche habituelle…"
+                    className="h-7 border-dashed px-1 text-sm"
+                  />
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>

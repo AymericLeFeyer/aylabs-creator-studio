@@ -1,11 +1,11 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { subDays, subMonths, subYears, startOfMonth, startOfYear } from 'date-fns';
+import { subDays, subMonths, subYears, startOfMonth, startOfQuarter, startOfYear } from 'date-fns';
 import { useLocalStorage } from './useLocalStorage.ts';
 import { toIsoDate } from '../../shared/format.ts';
 import type { Granularity } from '../../domain/analytics/entities/Analytics.ts';
 import type { MoneyMode } from '../../domain/analytics/services/revenueMath.ts';
 
-export type PeriodPreset = '7d' | '30d' | '90d' | '12m' | 'mtd' | 'ytd' | 'all' | 'custom';
+export type PeriodPreset = '7d' | '30d' | '90d' | '12m' | 'mtd' | 'qtd' | 'ytd' | 'all' | 'custom';
 
 export const PERIOD_LABELS: Record<PeriodPreset, string> = {
   '7d': '7 jours',
@@ -13,10 +13,26 @@ export const PERIOD_LABELS: Record<PeriodPreset, string> = {
   '90d': '90 jours',
   '12m': '12 mois',
   mtd: 'Ce mois',
+  qtd: 'Ce trimestre',
   ytd: 'Cette année',
   all: 'Tout',
   custom: 'Personnalisé',
 };
+
+/**
+ * Les deux familles de périodes, telles que le sélecteur les présente.
+ *
+ * **Glissantes** : une fenêtre de N jours qui se termine aujourd'hui — « comment ça va
+ * en ce moment ». **Calendaires** : un mois, un trimestre, une année qui commencent à
+ * leur premier jour — « où j'en suis sur la période comptable ». Les deux répondent à
+ * des questions différentes, d'où deux boutons plutôt qu'une liste unique de sept.
+ */
+export const ROLLING_PRESETS: PeriodPreset[] = ['7d', '30d', '90d', '12m'];
+export const CALENDAR_PRESETS: PeriodPreset[] = ['mtd', 'qtd', 'ytd', 'all'];
+
+/** Le préréglage mis en avant dans chaque famille : celui qu'on choisit neuf fois sur dix. */
+export const DEFAULT_ROLLING: PeriodPreset = '30d';
+export const DEFAULT_CALENDAR: PeriodPreset = 'mtd';
 
 /** Granularité par défaut d'un préréglage : un an en jours serait illisible. */
 const DEFAULT_GRANULARITY: Record<PeriodPreset, Granularity> = {
@@ -25,6 +41,7 @@ const DEFAULT_GRANULARITY: Record<PeriodPreset, Granularity> = {
   '90d': 'week',
   '12m': 'month',
   mtd: 'day',
+  qtd: 'week',
   ytd: 'month',
   all: 'month',
   custom: 'day',
@@ -74,6 +91,9 @@ const resolveRange = (state: FiltersState): { from: string; to: string } => {
       // Depuis le 1er du mois en cours, pas « les 30 derniers jours » : c'est la borne
       // qui compte pour un bilan mensuel.
       return { from: toIsoDate(startOfMonth(today)), to };
+    case 'qtd':
+      // Depuis le premier jour du trimestre en cours : la maille des échéances fiscales.
+      return { from: toIsoDate(startOfQuarter(today)), to };
     case 'ytd':
       return { from: toIsoDate(startOfYear(today)), to };
     case 'all':

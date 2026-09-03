@@ -17,6 +17,7 @@ import { MoneyChart } from '../components/charts/MoneyChart.tsx';
 import { MoneyBreakdowns } from '../components/money/MoneyBreakdowns.tsx';
 import { RevenuesPanel } from '../components/money/RevenuesPanel.tsx';
 import { ExpensesPanel } from '../components/money/ExpensesPanel.tsx';
+import { UpcomingExpensesCard } from '../components/money/UpcomingExpensesCard.tsx';
 
 const TABS = ['synthese', 'revenus', 'depenses'] as const;
 type TurnoverTab = (typeof TABS)[number];
@@ -57,7 +58,7 @@ export const TurnoverPage = () => {
       </div>
 
       {data && (
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
           <StatCard
             label="Chiffre d'affaires"
             value={formatMoney(grossRevenue(data.totals, filters.includeInKind))}
@@ -90,6 +91,9 @@ export const TurnoverPage = () => {
             icon={<Wallet className="h-4 w-4" />}
             accent={data.totals.inKindCents > 0 ? 'var(--in-kind)' : undefined}
           />
+          {/* Ce qui est engagé mais pas encore passé. Hors des quatre chiffres
+              précédents, qui s'arrêtent à la fin de la période. */}
+          <UpcomingExpensesCard />
         </div>
       )}
 

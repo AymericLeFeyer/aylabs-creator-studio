@@ -72,13 +72,18 @@ export const productionsRouter = (container: Container): Router => {
     res.json(container.manageProductions.publish(param(req, 'id'), videoId));
   });
 
+  /**
+   * Cocher une étape entraîne **ses tâches** : laisser des tâches ouvertes sous une
+   * étape terminée la rouvrirait à la resynchronisation suivante, et le geste
+   * paraîtrait ne pas avoir pris. La règle vit dans `ManageTodos`, jamais dans la route.
+   */
   router.put('/:id/steps/:stepId', (req, res) => {
-    container.productions.checkStep(param(req, 'id'), param(req, 'stepId'));
+    container.manageTodos.toggleStep(param(req, 'id'), param(req, 'stepId'), true);
     res.status(204).end();
   });
 
   router.delete('/:id/steps/:stepId', (req, res) => {
-    container.productions.uncheckStep(param(req, 'id'), param(req, 'stepId'));
+    container.manageTodos.toggleStep(param(req, 'id'), param(req, 'stepId'), false);
     res.status(204).end();
   });
 

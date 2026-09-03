@@ -19,6 +19,8 @@ interface PublishDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   production: Production;
+  /** Appelé après un rattachement réussi. C'est le seul moment de l'outil qui se fête. */
+  onPublished?: () => void;
 }
 
 /**
@@ -28,7 +30,12 @@ interface PublishDialogProps {
  * qu'on cherche est presque toujours celle qui est sortie près du jour prévu, et elle
  * doit se trouver en tête sans avoir à faire défiler des mois d'historique.
  */
-export const PublishDialog = ({ open, onOpenChange, production }: PublishDialogProps) => {
+export const PublishDialog = ({
+  open,
+  onOpenChange,
+  production,
+  onPublished,
+}: PublishDialogProps) => {
   const { data: videos = [], isLoading } = useVideos();
   const publish = usePublishProduction();
   const [videoId, setVideoId] = useState('');
@@ -62,6 +69,7 @@ export const PublishDialog = ({ open, onOpenChange, production }: PublishDialogP
     try {
       await publish.mutateAsync({ id: production.id, videoId });
       onOpenChange(false);
+      onPublished?.();
     } catch (mutationError) {
       setError(mutationError instanceof Error ? mutationError.message : 'Rattachement impossible');
     }

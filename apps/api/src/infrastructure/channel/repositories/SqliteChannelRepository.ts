@@ -17,6 +17,7 @@ interface ChannelRow {
   external_id: string | null;
   handle: string | null;
   color: string;
+  thumbnail_url: string | null;
   refresh_token: string | null;
   is_archived: number;
   created_at: string;
@@ -31,6 +32,7 @@ const toDomain = (row: ChannelRow): Channel => ({
   externalId: row.external_id,
   handle: row.handle,
   color: row.color,
+  thumbnailUrl: row.thumbnail_url,
   refreshToken: row.refresh_token,
   isArchived: fromSqlBool(row.is_archived),
   createdAt: row.created_at,
@@ -84,8 +86,9 @@ export class SqliteChannelRepository implements ChannelRepository {
     this.db
       .prepare(
         `INSERT INTO channels
-           (id, name, platform, mode, external_id, handle, color, refresh_token, is_archived, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+           (id, name, platform, mode, external_id, handle, color, thumbnail_url,
+            refresh_token, is_archived, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       )
       .run(
         id,
@@ -95,6 +98,7 @@ export class SqliteChannelRepository implements ChannelRepository {
         input.externalId ?? null,
         input.handle ?? null,
         color,
+        input.thumbnailUrl ?? null,
         input.refreshToken ?? null,
         now,
         now,
@@ -119,6 +123,7 @@ export class SqliteChannelRepository implements ChannelRepository {
     if (input.externalId !== undefined) set('external_id', input.externalId);
     if (input.handle !== undefined) set('handle', input.handle);
     if (input.color !== undefined) set('color', input.color);
+    if (input.thumbnailUrl !== undefined) set('thumbnail_url', input.thumbnailUrl);
     if (input.isArchived !== undefined) set('is_archived', toSqlBool(input.isArchived));
     // Une chaîne vide efface le token ; `undefined` le laisse intact (le front ne le renvoie jamais).
     if (input.refreshToken !== undefined) {

@@ -19,6 +19,16 @@ import type {
 import type { Video } from '../../../domain/video/entities/Video.ts';
 import { emptyTotals } from '../../../domain/analytics/services/revenueMath.ts';
 
+/**
+ * Bornes du catalogue. Le plancher couvre tout historique YouTube plausible, et la
+ * limite garde un tableau lisible : au-delà de cent lignes, on ne lit plus, on exporte.
+ */
+const CATALOG_FLOOR: IsoDate = '2005-01-01';
+const CATALOG_LIMIT = 100;
+
+/** Veille d'une date : la borne haute du catalogue, exclusive de la période affichée. */
+const previousDay = (date: IsoDate): IsoDate => addDays(date, -1);
+
 const emptyPoint = (date: IsoDate): TimeSeriesPoint => ({
   date,
   views: 0,
@@ -106,6 +116,7 @@ export class GetAnalytics {
       byChannel: this.buildChannelBreakdown(activeIds, allChannels, query),
       videos: this.buildVideoMarkers(videos, allChannels, query),
       videoPerformance: this.buildVideoPerformance(videos, allChannels),
+      catalogPerformance: this.buildCatalogPerformance(query, activeIds, allChannels),
       previousTotals: this.buildPreviousTotals(activeIds, query),
     };
   }
@@ -442,6 +453,29 @@ export class GetAnalytics {
         ];
       })
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  }
+
+  /**
+   * Le catalogue : les sorties **antérieures** à la période, les plus vues d'abord.
+   *
+   * Une chaîne fait le plus gros de son audience sur ce qu'elle a déjà publié. Sans
+   * cette liste, l'écran Contenu ne montre que les nouvelles sorties et laisse penser
+   * que le reste n'existe plus.
+   */
+  private buildCatalogPerformance(
+    query: AnalyticsQuery,
+    channelIds: string[],
+    allChannels: ReturnType<ChannelRepository['findAll']>,
+  ): VideoPerformanceRow[] {
+    const older = this.videos.findAll({
+      range: { from: CATALOG_FLOOR, to: previousDay(query.from) },
+      channelIds,
+      limit: 500,
+    });
+
+    return this.buildVideoPerformance(older, allChannels)
+      .sort((a, b) => b.views - a.views)
+      .slice(0, CATALOG_LIMIT);
   }
 
   /** Détail par chaîne, pour comparer les chaînes entre elles sur la période. */

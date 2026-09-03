@@ -42,6 +42,7 @@ import { AudienceChart } from '../components/charts/AudienceChart.tsx';
 import { AlertsBanner } from '../components/production/AlertsBanner.tsx';
 import { LatestVideoCard } from '../components/content/LatestVideoCard.tsx';
 import { LegalAlertsCard } from '../components/legal/LegalAlertsCard.tsx';
+import { UpcomingExpensesCard } from '../components/money/UpcomingExpensesCard.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 
 /**
@@ -217,6 +218,9 @@ export const DashboardPage = () => {
               icon={<PackageOpen className="h-4 w-4" />}
               accent={pipeline.productsLate > 0 ? 'var(--color-negative)' : undefined}
             />
+            {/* La seule carte qui regarde devant : ce qui est déjà daté et va tomber,
+                impôts en tête. Hors période, comme les deux précédentes. */}
+            <UpcomingExpensesCard />
           </div>
 
           {/* La dernière sortie, en pleine largeur : c'est la question qui suit

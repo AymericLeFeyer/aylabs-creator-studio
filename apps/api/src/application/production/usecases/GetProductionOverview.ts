@@ -4,7 +4,11 @@ import type { ProductionView } from '../../../domain/production/entities/Product
 import type {
   ProductionAlert,
   ProductionOverview,
+  ProductionStats,
 } from '../../../domain/production/entities/ProductionOverview.ts';
+import { entryMinutes } from '../../../domain/production/entities/TimeEntry.ts';
+import type { SqliteTimeEntryRepository } from '../../../infrastructure/production/repositories/SqliteTimeEntryRepository.ts';
+import type { ProductionStepRepository } from '../../../domain/production/repositories/ProductionRepository.ts';
 import { slotMinutes } from '../../../domain/production/entities/ProductionSlot.ts';
 import type {
   ProductionRepository,
@@ -37,17 +41,23 @@ export class GetProductionOverview {
   private readonly slots: ProductionSlotRepository;
   private readonly products: ProductRepository;
   private readonly sponsorships: SponsorshipRepository;
+  private readonly steps: ProductionStepRepository;
+  private readonly times: SqliteTimeEntryRepository;
 
   constructor(
     productions: ProductionRepository,
     slots: ProductionSlotRepository,
     products: ProductRepository,
     sponsorships: SponsorshipRepository,
+    steps: ProductionStepRepository,
+    times: SqliteTimeEntryRepository,
   ) {
     this.productions = productions;
     this.slots = slots;
     this.products = products;
     this.sponsorships = sponsorships;
+    this.steps = steps;
+    this.times = times;
   }
 
   execute(): ProductionOverview {
@@ -74,6 +84,56 @@ export class GetProductionOverview {
       alerts: this.buildAlerts(now, queue),
       upcomingSlots,
       weekLoadMinutes,
+      stats: this.buildStats(now, queue),
+      running: this.times.findRunning(),
+    };
+  }
+
+  /**
+   * Les chiffres du bandeau, tous dérivés de la file déjà chargée.
+   *
+   * L'avancement moyen compte **une étape et une tâche du même poids** : c'est la règle
+   * annoncée par la barre de progression d'une carte, et deux pondérations différentes
+   * feraient dire deux choses au même écran.
+   */
+  private buildStats(now: IsoDate, queue: ProductionView[]): ProductionStats {
+    const weekEnd = addDays(now, 6);
+    const stepsCount = this.steps.findAll().length;
+
+    const dated = queue
+      .filter((production) => production.plannedDate !== null)
+      .sort((a, b) => (a.plannedDate! < b.plannedDate! ? -1 : 1));
+    const nextRelease = dated.find((production) => production.plannedDate! >= now) ?? null;
+
+    const progressOf = (production: ProductionView): number => {
+      const total = stepsCount + production.todos.length;
+      if (total === 0) return 0;
+      const done = production.steps.length + production.todos.filter((todo) => todo.checked).length;
+      return Math.min(1, done / total);
+    };
+
+    // Le chronomètre en cours compte dans le total de la semaine : sinon le chiffre
+    // resterait figé pendant qu'on travaille, exactement quand on le regarde.
+    const weekTrackedMinutes = this.times
+      .findAll({ from: addDays(now, -6), to: now })
+      .reduce((total, entry) => total + entryMinutes(entry), 0);
+
+    return {
+      inQueue: queue.length,
+      inProgress: queue.filter((production) => production.status === 'in_progress').length,
+      paused: queue.filter((production) => production.status === 'paused').length,
+      dueThisWeek: dated.filter(
+        (production) => production.plannedDate! >= now && production.plannedDate! <= weekEnd,
+      ).length,
+      late: dated.filter((production) => production.plannedDate! < now).length,
+      nextRelease: nextRelease
+        ? { id: nextRelease.id, title: nextRelease.title, date: nextRelease.plannedDate! }
+        : null,
+      weekTrackedMinutes,
+      averageProgress:
+        queue.length === 0
+          ? 0
+          : queue.reduce((total, production) => total + progressOf(production), 0) / queue.length,
     };
   }
 

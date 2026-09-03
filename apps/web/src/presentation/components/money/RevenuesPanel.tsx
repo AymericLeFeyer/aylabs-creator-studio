@@ -5,6 +5,7 @@ import {
   useDeleteRevenue,
   useRevenues,
 } from '../../../application/revenue/usecases/useRevenues.ts';
+import { useUpcomingRevenues } from '../../../application/expense/usecases/useUpcoming.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
 import type { RevenueEntry } from '../../../domain/revenue/entities/Revenue.ts';
 import { ORIGIN_LABELS, ORIGIN_TARGET } from '../../../domain/revenue/entities/Revenue.ts';
@@ -17,6 +18,126 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { RevenueDialog } from '../forms/RevenueDialog.tsx';
 import { ProductDialog } from '../forms/ProductDialog.tsx';
 import { EmptyState } from '../EmptyState.tsx';
+import { UpcomingSection } from './UpcomingSection.tsx';
+
+interface RevenueTableProps {
+  entries: RevenueEntry[];
+  onEdit: (entry: RevenueEntry) => void;
+  onDelete: (entry: RevenueEntry) => void;
+  onDocument: (entry: RevenueEntry) => void;
+}
+
+/**
+ * Le tableau des revenus, partagé par la période et par le bloc « à venir ».
+ * Une seule définition : deux tableaux qui divergeraient d'une colonne rendraient la
+ * comparaison entre ce qui est encaissé et ce qui arrive plus difficile qu'elle ne doit
+ * l'être.
+ */
+const RevenueTable = ({ entries, onEdit, onDelete, onDocument }: RevenueTableProps) => (
+  <Table>
+    <TableHeader>
+      <TableRow>
+        <TableHead>Date</TableHead>
+        <TableHead>Libellé</TableHead>
+        <TableHead>Catégorie</TableHead>
+        <TableHead>Chaîne</TableHead>
+        <TableHead>Vidéo</TableHead>
+        <TableHead className="text-right">Montant</TableHead>
+        <TableHead className="w-20" />
+      </TableRow>
+    </TableHeader>
+    <TableBody>
+      {entries.map((entry) => (
+        <TableRow key={entry.id}>
+          <TableCell className="whitespace-nowrap text-muted-foreground tabular">
+            {formatDate(entry.date)}
+          </TableCell>
+          <TableCell className="font-medium">
+            {entry.label}
+            {/* Une entrée générée dit d'où elle vient et où la corriger : sans ça,
+                le bouton grisé serait vécu comme une panne. */}
+            {entry.origin !== 'manual' && (
+              <Link
+                to={ORIGIN_TARGET[entry.origin]}
+                className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-normal text-muted-foreground hover:text-foreground hover:underline"
+                title="Cette entrée est générée : elle se modifie depuis sa fiche."
+              >
+                <Lock className="h-3 w-3" aria-hidden />
+                {ORIGIN_LABELS[entry.origin]}
+              </Link>
+            )}
+            {entry.notes && (
+              <span className="block text-xs font-normal text-muted-foreground">{entry.notes}</span>
+            )}
+          </TableCell>
+          <TableCell>
+            <span className="flex items-center gap-2">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: entry.categoryColor }}
+                aria-hidden
+              />
+              {entry.categoryName}
+              {entry.categoryNature === 'in_kind' && (
+                <Badge variant="inKind">{NATURE_LABELS.in_kind}</Badge>
+              )}
+            </span>
+          </TableCell>
+          <TableCell className="text-muted-foreground">{entry.channelName ?? 'Global'}</TableCell>
+          <TableCell className="max-w-[14rem] text-muted-foreground">
+            <span className="line-clamp-1" title={entry.videoTitle ?? undefined}>
+              {entry.videoTitle ?? '—'}
+            </span>
+          </TableCell>
+          <TableCell className="text-right tabular font-medium">
+            {formatMoney(entry.amountCents)}
+          </TableCell>
+          <TableCell>
+            <div className="flex justify-end gap-1">
+              {/* Un produit reçu saisi à la main n'a pas de fiche : marque,
+                  échéance, sponso associée, tout est perdu. Le + ouvre le
+                  formulaire produit pré-rempli pour le documenter enfin. */}
+              {entry.origin === 'manual' && entry.categoryNature === 'in_kind' && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Créer la fiche produit correspondante"
+                  onClick={() => onDocument(entry)}
+                >
+                  <PackagePlus className="h-3.5 w-3.5" />
+                  <span className="sr-only">Documenter « {entry.label} »</span>
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={entry.origin !== 'manual'}
+                title={
+                  entry.origin === 'manual'
+                    ? 'Modifier'
+                    : 'Généré automatiquement : modifie-le depuis sa fiche.'
+                }
+                onClick={() => onEdit(entry)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                <span className="sr-only">Modifier</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={entry.origin !== 'manual'}
+                onClick={() => onDelete(entry)}
+              >
+                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                <span className="sr-only">Supprimer</span>
+              </Button>
+            </div>
+          </TableCell>
+        </TableRow>
+      ))}
+    </TableBody>
+  </Table>
+);
 
 export const RevenuesPanel = () => {
   const filters = useFilters();
@@ -25,6 +146,7 @@ export const RevenuesPanel = () => {
     to: filters.to,
     channelIds: filters.channelIds,
   });
+  const upcoming = useUpcomingRevenues(filters.channelIds);
   const remove = useDeleteRevenue();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -50,6 +172,10 @@ export const RevenuesPanel = () => {
   const openEdit = (entry: RevenueEntry) => {
     setEditing(entry);
     setDialogOpen(true);
+  };
+
+  const confirmDelete = (entry: RevenueEntry) => {
+    if (window.confirm(`Supprimer « ${entry.label} » ?`)) remove.mutate(entry.id);
   };
 
   return (
@@ -89,119 +215,31 @@ export const RevenuesPanel = () => {
           <CardHeader>
             <CardTitle>{entries.length} revenu(s)</CardTitle>
           </CardHeader>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Libellé</TableHead>
-                <TableHead>Catégorie</TableHead>
-                <TableHead>Chaîne</TableHead>
-                <TableHead>Vidéo</TableHead>
-                <TableHead className="text-right">Montant</TableHead>
-                <TableHead className="w-20" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.map((entry) => (
-                <TableRow key={entry.id}>
-                  <TableCell className="whitespace-nowrap text-muted-foreground tabular">
-                    {formatDate(entry.date)}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {entry.label}
-                    {/* Une entrée générée dit d'où elle vient et où la corriger : sans ça,
-                        le bouton grisé serait vécu comme une panne. */}
-                    {entry.origin !== 'manual' && (
-                      <Link
-                        to={ORIGIN_TARGET[entry.origin]}
-                        className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-normal text-muted-foreground hover:text-foreground hover:underline"
-                        title="Cette entrée est générée : elle se modifie depuis sa fiche."
-                      >
-                        <Lock className="h-3 w-3" aria-hidden />
-                        {ORIGIN_LABELS[entry.origin]}
-                      </Link>
-                    )}
-                    {entry.notes && (
-                      <span className="block text-xs font-normal text-muted-foreground">
-                        {entry.notes}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <span className="flex items-center gap-2">
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: entry.categoryColor }}
-                        aria-hidden
-                      />
-                      {entry.categoryName}
-                      {entry.categoryNature === 'in_kind' && (
-                        <Badge variant="inKind">{NATURE_LABELS.in_kind}</Badge>
-                      )}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {entry.channelName ?? 'Global'}
-                  </TableCell>
-                  <TableCell className="max-w-[14rem] text-muted-foreground">
-                    <span className="line-clamp-1" title={entry.videoTitle ?? undefined}>
-                      {entry.videoTitle ?? '—'}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right tabular font-medium">
-                    {formatMoney(entry.amountCents)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-1">
-                      {/* Un produit reçu saisi à la main n'a pas de fiche : marque,
-                          échéance, sponso associée, tout est perdu. Le + ouvre le
-                          formulaire produit pré-rempli pour le documenter enfin. */}
-                      {entry.origin === 'manual' && entry.categoryNature === 'in_kind' && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Créer la fiche produit correspondante"
-                          onClick={() => setDocumenting(entry)}
-                        >
-                          <PackagePlus className="h-3.5 w-3.5" />
-                          <span className="sr-only">Documenter « {entry.label} »</span>
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={entry.origin !== 'manual'}
-                        title={
-                          entry.origin === 'manual'
-                            ? 'Modifier'
-                            : 'Généré automatiquement : modifie-le depuis sa fiche.'
-                        }
-                        onClick={() => openEdit(entry)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        <span className="sr-only">Modifier</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={entry.origin !== 'manual'}
-                        onClick={() => {
-                          if (window.confirm(`Supprimer « ${entry.label} » ?`)) {
-                            remove.mutate(entry.id);
-                          }
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                        <span className="sr-only">Supprimer</span>
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <RevenueTable
+            entries={entries}
+            onEdit={openEdit}
+            onDelete={confirmDelete}
+            onDocument={setDocumenting}
+          />
         </Card>
       )}
+
+      {/* Ce qui est déjà daté en avant : une sponso encaissable le mois prochain, une
+          facture d'affiliation programmée. Hors des totaux ci-dessus, et le bloc le dit. */}
+      <UpcomingSection
+        kind="revenue"
+        count={upcoming.revenues.length}
+        totalCents={upcoming.totalCents}
+        from={formatDate(upcoming.range.from)}
+        to={formatDate(upcoming.range.to)}
+      >
+        <RevenueTable
+          entries={upcoming.revenues}
+          onEdit={openEdit}
+          onDelete={confirmDelete}
+          onDocument={setDocumenting}
+        />
+      </UpcomingSection>
 
       <RevenueDialog open={dialogOpen} onOpenChange={setDialogOpen} entry={editing} />
 

@@ -21,6 +21,11 @@ export const queryKeys = {
   productionOverview: () => ['productionOverview'] as const,
   productionSteps: (includeArchived: boolean) => ['productionSteps', includeArchived] as const,
   productionSlots: (params: unknown) => ['productionSlots', params] as const,
+  stepTodos: (includeArchived: boolean) => ['stepTodos', includeArchived] as const,
+  productionTodos: (id: string) => ['productionTodos', id] as const,
+  productionTime: (params: unknown) => ['productionTime', params] as const,
+  runningTimer: () => ['runningTimer'] as const,
+  recurringExpenses: () => ['recurringExpenses'] as const,
   products: (params: unknown) => ['products', params] as const,
   sponsorships: (params: unknown) => ['sponsorships', params] as const,
   ideas: () => ['ideas'] as const,
@@ -33,6 +38,13 @@ export const queryKeys = {
 export const MONEY_ROOTS = ['analytics', 'revenues', 'expenses'] as const;
 
 /**
+ * Écrire une règle récurrente crée, réécrit ou supprime des dépenses : les vues d'argent
+ * repartent avec elle. Le contraire n'est pas vrai — supprimer une occurrence à la main
+ * ne touche pas la règle.
+ */
+export const RECURRING_ROOTS = [...MONEY_ROOTS, 'recurringExpenses'] as const;
+
+/**
  * Racines du module de production. Toute écriture les invalide toutes : les cartes de
  * la file d'attente portent les compteurs de produits et de sponsos, l'aperçu porte les
  * alertes, et un seul changement de statut peut faire bouger les trois.
@@ -41,6 +53,9 @@ export const PRODUCTION_ROOTS = [
   'productions',
   'productionOverview',
   'productionSlots',
+  'productionTodos',
+  'productionTime',
+  'runningTimer',
   'products',
   'sponsorships',
 ] as const;

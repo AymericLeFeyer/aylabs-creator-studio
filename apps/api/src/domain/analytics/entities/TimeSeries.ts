@@ -158,6 +158,18 @@ export interface AnalyticsResult {
   videos: VideoMarker[];
   /** Performance de chaque vidéo sortie dans la période, argent rattaché compris. */
   videoPerformance: VideoPerformanceRow[];
+  /**
+   * Les vidéos publiées **avant** la période, avec leurs compteurs cumulés.
+   *
+   * Elles continuent de faire des vues : sur un mois donné, une bonne part de l'audience
+   * vient du catalogue, et un tableau qui ne montre que les sorties de la période laisse
+   * croire le contraire. Les compteurs sont des cumuls **depuis la sortie** — comme ceux
+   * de `videoPerformance` — et ne se découpent donc pas par période : YouTube Analytics
+   * n'est collecté par vidéo qu'en cumul, jamais jour par jour.
+   *
+   * Limité aux 100 plus vues : au-delà, c'est un export, pas un tableau qu'on lit.
+   */
+  catalogPerformance: VideoPerformanceRow[];
   /** Cumuls sur la période immédiatement précédente, de même longueur, pour les variations. */
   previousTotals: AnalyticsTotals | null;
 }

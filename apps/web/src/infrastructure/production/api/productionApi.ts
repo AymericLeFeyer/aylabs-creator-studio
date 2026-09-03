@@ -13,6 +13,12 @@ import type {
   ProductionStep,
   ProductionStepInput,
 } from '../../../domain/production/entities/ProductionStep.ts';
+import type {
+  StepTodo,
+  StepTodoInput,
+  TodoItem,
+} from '../../../domain/production/entities/StepTodo.ts';
+import type { TimeEntry, TimeEntryInput } from '../../../domain/production/entities/TimeEntry.ts';
 
 export interface ProductionListParams {
   statuses?: ProductionStatus[];
@@ -101,4 +107,79 @@ export const productionSlotApi = {
     request<ProductionSlot>(`/api/production-slots/${id}`, { method: 'PATCH', body: input }),
 
   remove: (id: string) => request<void>(`/api/production-slots/${id}`, { method: 'DELETE' }),
+};
+
+/** Le référentiel des tâches : ce qu'il y a à faire dans une étape, pour toutes les vidéos. */
+export const stepTodoApi = {
+  list: (includeArchived = false) =>
+    request<StepTodo[]>('/api/step-todos', { query: { includeArchived } }),
+
+  create: (input: StepTodoInput) =>
+    request<StepTodo>('/api/step-todos', { method: 'POST', body: input }),
+
+  update: (id: string, input: Partial<Omit<StepTodoInput, 'stepId'>>) =>
+    request<StepTodo>(`/api/step-todos/${id}`, { method: 'PATCH', body: input }),
+
+  remove: (id: string) => request<void>(`/api/step-todos/${id}`, { method: 'DELETE' }),
+};
+
+/**
+ * Les tâches d'une vidéo. Chaque écriture renvoie la **liste complète** plutôt qu'un
+ * accusé : cocher une tâche peut cocher son étape, et le front doit repartir de l'état
+ * que l'API vient de décider, pas d'une déduction locale.
+ */
+export const productionTodoApi = {
+  list: (productionId: string) => request<TodoItem[]>(`/api/productions/${productionId}/todos`),
+
+  add: (productionId: string, label: string, stepId: string | null) =>
+    request<TodoItem[]>(`/api/productions/${productionId}/todos`, {
+      method: 'POST',
+      body: { label, stepId },
+    }),
+
+  toggle: (productionId: string, todoId: string, checked: boolean) =>
+    request<TodoItem[]>(`/api/productions/${productionId}/todos/${todoId}`, {
+      method: 'PUT',
+      body: { checked },
+    }),
+
+  remove: (productionId: string, todoId: string) =>
+    request<void>(`/api/productions/${productionId}/todos/${todoId}`, { method: 'DELETE' }),
+};
+
+export interface TimeListParams {
+  productionIds?: string[];
+  from?: string;
+  to?: string;
+}
+
+export const productionTimeApi = {
+  list: (params: TimeListParams = {}) =>
+    request<TimeEntry[]>('/api/production-time', {
+      query: {
+        productionIds: csv(params.productionIds),
+        from: params.from,
+        to: params.to,
+      },
+    }),
+
+  running: () => request<TimeEntry | null>('/api/production-time/running'),
+
+  /** Démarre un chronomètre. Celui qui tournait, s'il y en avait un, est arrêté. */
+  start: (productionId: string, stepId: string | null) =>
+    request<TimeEntry>('/api/production-time/start', {
+      method: 'POST',
+      body: { productionId, stepId },
+    }),
+
+  stop: (id: string) => request<TimeEntry>(`/api/production-time/${id}/stop`, { method: 'POST' }),
+
+  /** Saisie manuelle : un début et une durée, jamais une fin. */
+  create: (input: TimeEntryInput) =>
+    request<TimeEntry>('/api/production-time', { method: 'POST', body: input }),
+
+  update: (id: string, input: Partial<Omit<TimeEntryInput, 'productionId'>>) =>
+    request<TimeEntry>(`/api/production-time/${id}`, { method: 'PATCH', body: input }),
+
+  remove: (id: string) => request<void>(`/api/production-time/${id}`, { method: 'DELETE' }),
 };

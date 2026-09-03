@@ -1,37 +1,51 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarClock, Clock, ExternalLink, Plus } from 'lucide-react';
+import {
+  CalendarClock,
+  Clapperboard,
+  Clock,
+  ExternalLink,
+  ListChecks,
+  Pause,
+  Plus,
+  Rocket,
+  Rows2,
+  Rows3,
+  Timer,
+} from 'lucide-react';
 import {
   useProductionOverview,
   useProductions,
   useProductionSlots,
   useProductionSteps,
   useReorderProductions,
-  useToggleStep,
 } from '../../application/production/usecases/useProductions.ts';
 import { useDeleteIdea } from '../../application/idea/usecases/useIdeas.ts';
 import type { Idea } from '../../domain/idea/entities/Idea.ts';
+import type { Production } from '../../domain/production/entities/Production.ts';
+import type { ProductionStep } from '../../domain/production/entities/ProductionStep.ts';
+import { formatDuration } from '../../domain/production/entities/TimeEntry.ts';
+import { usePreferences } from '../hooks/usePreferences.ts';
 import { formatDate, toIsoDate } from '../../shared/format.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
+import { StatCard } from '../components/StatCard.tsx';
 import { AlertsBanner } from '../components/production/AlertsBanner.tsx';
 import { ProductionCard } from '../components/production/ProductionCard.tsx';
 import { ProductionGantt } from '../components/production/ProductionGantt.tsx';
 import { IdeaBox } from '../components/production/IdeaBox.tsx';
+import { StepTodosDialog } from '../components/production/StepTodosDialog.tsx';
+import { StartTimerDialog } from '../components/production/StartTimerDialog.tsx';
 import { cn } from '../../shared/cn.ts';
 import { SlotSummary } from '../components/production/SlotSummary.tsx';
 import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
 
 /** « 4 h 30 » — la charge d'une semaine se lit en heures, pas en minutes. */
-const formatLoad = (minutes: number): string => {
-  if (minutes === 0) return 'aucun horaire posé';
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest === 0 ? `${hours} h` : `${hours} h ${String(rest).padStart(2, '0')}`;
-};
+const formatLoad = (minutes: number): string =>
+  minutes === 0 ? 'aucun horaire posé' : formatDuration(minutes);
 
 export const ProductionPage = () => {
   const { data: overview, isLoading } = useProductionOverview();
@@ -40,14 +54,37 @@ export const ProductionPage = () => {
   const { data: slots = [] } = useProductionSlots();
 
   const reorder = useReorderProductions();
-  const toggleStep = useToggleStep();
   const deleteIdea = useDeleteIdea();
+  const { preferences, set } = usePreferences();
+
   const [dialogOpen, setDialogOpen] = useState(false);
   /** Idée en cours de promotion : son texte remplit le titre, et elle part à la création. */
   const [promoted, setPromoted] = useState<Idea | null>(null);
+  /** L'étape dont on regarde les tâches, avec sa vidéo. */
+  const [openStep, setOpenStep] = useState<{ production: Production; step: ProductionStep } | null>(
+    null,
+  );
+  const [timerFor, setTimerFor] = useState<Production | null>(null);
+  /**
+   * Les cartes dépliées à contre-courant du réglage global : on veut souvent une file
+   * compacte *sauf* la vidéo sur laquelle on travaille.
+   */
+  const [exceptions, setExceptions] = useState<Set<string>>(new Set());
 
   const queue = overview?.queue ?? [];
+  const stats = overview?.stats;
   const today = toIsoDate(new Date());
+
+  const toggleException = (id: string) =>
+    setExceptions((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const isCompact = (id: string) =>
+    exceptions.has(id) ? !preferences.compactQueue : preferences.compactQueue;
 
   const openCreate = () => {
     setPromoted(null);
@@ -92,8 +129,7 @@ export const ProductionPage = () => {
         <div>
           <h1 className="text-lg font-semibold">Production</h1>
           <p className="text-sm text-muted-foreground">
-            {queue.length} vidéo(s) en cours · {formatLoad(overview?.weekLoadMinutes ?? 0)} planifié
-            cette semaine
+            Ce qui est en cours, ce qui sort quand, et le temps que ça prend vraiment.
           </p>
         </div>
         <Button size="sm" onClick={openCreate}>
@@ -102,18 +138,84 @@ export const ProductionPage = () => {
         </Button>
       </div>
 
+      {/* Les chiffres de la file. Aucun ne dépend d'une période — ce sont des états, et
+          c'est pour ça que cet écran n'a pas de barre de filtres. La seule fenêtre qui
+          ait un sens ici est la semaine : ce sur quoi on peut encore agir. */}
+      {stats && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
+          <StatCard
+            label="En cours"
+            value={String(stats.inQueue)}
+            hint={`${stats.inProgress} attaquée(s)`}
+            icon={<Clapperboard className="h-4 w-4" />}
+          />
+          <StatCard
+            label="Avancement moyen"
+            value={`${Math.round(stats.averageProgress * 100)} %`}
+            hint="étapes et tâches cochées"
+            icon={<ListChecks className="h-4 w-4" />}
+          />
+          <StatCard
+            label="Prochaine sortie"
+            value={stats.nextRelease ? formatDate(stats.nextRelease.date) : '—'}
+            hint={stats.nextRelease?.title ?? 'aucune date posée'}
+            icon={<Rocket className="h-4 w-4" />}
+          />
+          <StatCard
+            label="Temps cette semaine"
+            value={formatDuration(stats.weekTrackedMinutes)}
+            hint={`${formatLoad(overview?.weekLoadMinutes ?? 0)} planifié`}
+            icon={<Timer className="h-4 w-4" />}
+            accent={stats.weekTrackedMinutes > 0 ? 'var(--positive)' : undefined}
+          />
+          <StatCard
+            label="En retard"
+            value={String(stats.late)}
+            hint={`${stats.dueThisWeek} à sortir cette semaine`}
+            icon={<CalendarClock className="h-4 w-4" />}
+            accent={stats.late > 0 ? 'var(--negative)' : undefined}
+          />
+          <StatCard
+            label="Bloquées"
+            value={String(stats.paused)}
+            hint="en attente de quelqu'un d'autre"
+            icon={<Pause className="h-4 w-4" />}
+            accent={stats.paused > 0 ? 'var(--expense)' : undefined}
+          />
+        </div>
+      )}
+
       {overview && <AlertsBanner alerts={overview.alerts} />}
 
       {/* Le planning se lit à l'arrivée, pas derrière un onglet : c'est la vue qui
-          répond à « qu'est-ce qui sort quand », la première question de la page. Il se
-          replie à cinq lignes pour ne pas repousser la file d'attente sous le pli. */}
+          répond à « qu'est-ce qui sort quand », la première question de la page. */}
       <ProductionGantt productions={[...queue, ...done]} slots={slots} steps={steps} />
 
       <Tabs defaultValue="queue">
-        <TabsList>
-          <TabsTrigger value="queue">File d'attente</TabsTrigger>
-          <TabsTrigger value="done">Terminées ({done.length})</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList>
+            <TabsTrigger value="queue">File d'attente</TabsTrigger>
+            <TabsTrigger value="done">Terminées ({done.length})</TabsTrigger>
+          </TabsList>
+
+          {/* Le repli est une préférence, pas un état d'écran : au-delà de cinq vidéos
+              en cours, la version détaillée oblige à faire défiler pour voir sa file. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              set({ compactQueue: !preferences.compactQueue });
+              setExceptions(new Set());
+            }}
+          >
+            {preferences.compactQueue ? (
+              <Rows3 className="h-4 w-4" />
+            ) : (
+              <Rows2 className="h-4 w-4" />
+            )}
+            {preferences.compactQueue ? 'Vue détaillée' : 'Vue compacte'}
+          </Button>
+        </div>
 
         <TabsContent value="queue">
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
@@ -124,9 +226,11 @@ export const ProductionPage = () => {
                   production={production}
                   steps={steps}
                   highlighted={production.id === overview?.nextId}
-                  onToggleStep={(stepId, checked) =>
-                    toggleStep.mutate({ id: production.id, stepId, checked })
-                  }
+                  timerRunning={overview?.running?.productionId === production.id}
+                  compact={isCompact(production.id)}
+                  onToggleCompact={() => toggleException(production.id)}
+                  onOpenStep={(step) => setOpenStep({ production, step })}
+                  onStartTimer={() => setTimerFor(production)}
                   onMoveUp={index > 0 ? () => move(index, -1) : undefined}
                   onMoveDown={index < queue.length - 1 ? () => move(index, 1) : undefined}
                 />
@@ -220,6 +324,12 @@ export const ProductionPage = () => {
                           {formatDate(production.plannedDate)}
                         </span>
                       )}
+                      {production.trackedMinutes > 0 && (
+                        <span className="flex items-center gap-1" title="Temps passé au total">
+                          <Timer className="h-3 w-3" aria-hidden />
+                          {formatDuration(production.trackedMinutes)}
+                        </span>
+                      )}
                       {production.videoExternalId && (
                         <a
                           href={`https://www.youtube.com/watch?v=${production.videoExternalId}`}
@@ -239,6 +349,25 @@ export const ProductionPage = () => {
           )}
         </TabsContent>
       </Tabs>
+
+      {openStep && (
+        <StepTodosDialog
+          open
+          onOpenChange={(value) => !value && setOpenStep(null)}
+          // La liste vient de l'aperçu rechargé, pas de l'instantané capturé au clic :
+          // cocher une tâche doit se voir dans la modale restée ouverte.
+          production={
+            queue.find((item) => item.id === openStep.production.id) ?? openStep.production
+          }
+          step={openStep.step}
+        />
+      )}
+
+      <StartTimerDialog
+        open={timerFor !== null}
+        onOpenChange={(value) => !value && setTimerFor(null)}
+        production={timerFor}
+      />
 
       <ProductionDialog
         open={dialogOpen}

@@ -23,6 +23,12 @@ export interface Channel {
   handle: string | null;
   /** Couleur d'affichage dans les graphiques (hex). */
   color: string;
+  /**
+   * Miniature de la chaîne, telle que YouTube la renvoie. Rafraîchie à chaque collecte.
+   * `null` pour une chaîne manuelle ou tant qu'aucune collecte n'a abouti : l'interface
+   * retombe alors sur une pastille de couleur.
+   */
+  thumbnailUrl: string | null;
   /** Refresh token OAuth, requis en mode `oauth`. Jamais renvoyé par l'API. */
   refreshToken: string | null;
   isArchived: boolean;
@@ -45,6 +51,7 @@ export interface CreateChannelInput {
   externalId?: string | null;
   handle?: string | null;
   color?: string;
+  thumbnailUrl?: string | null;
   refreshToken?: string | null;
 }
 

@@ -9,6 +9,7 @@ import {
   Handshake,
   Pencil,
   Plus,
+  Timer,
   Trash2,
   Unlink,
   Upload,
@@ -19,7 +20,6 @@ import {
   useProduction,
   useProductionSlots,
   useProductionSteps,
-  useToggleStep,
   useUpdateProduction,
   useUpdateSlot,
 } from '../../application/production/usecases/useProductions.ts';
@@ -30,6 +30,8 @@ import {
 } from '../../application/sponsorship/usecases/useSponsorships.ts';
 import { STATUS_COLORS, STATUS_LABELS } from '../../domain/production/entities/Production.ts';
 import type { ProductionSlot } from '../../domain/production/entities/ProductionSlot.ts';
+import type { ProductionStep } from '../../domain/production/entities/ProductionStep.ts';
+import { formatDuration } from '../../domain/production/entities/TimeEntry.ts';
 import { PRODUCT_STATUS_LABELS } from '../../domain/product/entities/Product.ts';
 import { SPONSORSHIP_STATUS_LABELS } from '../../domain/sponsorship/entities/Sponsorship.ts';
 import { formatDate, formatMoney } from '../../shared/format.ts';
@@ -38,6 +40,10 @@ import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { StepChips, StepProgress } from '../components/production/StepChips.tsx';
+import { StepTodosDialog } from '../components/production/StepTodosDialog.tsx';
+import { StartTimerDialog } from '../components/production/StartTimerDialog.tsx';
+import { TimeEntriesPanel } from '../components/production/TimeEntriesPanel.tsx';
+import { Confetti } from '../components/Confetti.tsx';
 import { ScriptEditor } from '../components/production/ScriptEditor.tsx';
 import { SlotSummary } from '../components/production/SlotSummary.tsx';
 import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
@@ -67,7 +73,6 @@ export const ProductionDetailPage = () => {
   const remove = useDeleteProduction();
   const updateProduct = useUpdateProduct();
   const updateSponsorship = useUpdateSponsorship();
-  const toggleStep = useToggleStep();
   const updateSlot = useUpdateSlot();
   const deleteSlot = useDeleteSlot();
 
@@ -77,6 +82,11 @@ export const ProductionDetailPage = () => {
   const [sponsorshipOpen, setSponsorshipOpen] = useState(false);
   const [slotOpen, setSlotOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<ProductionSlot | null>(null);
+  /** L'étape dont on regarde les tâches. Cliquer une pastille ne coche plus rien. */
+  const [openStep, setOpenStep] = useState<ProductionStep | null>(null);
+  const [timerOpen, setTimerOpen] = useState(false);
+  /** Un tir de confettis à la publication : le seul moment de l'outil qui se fête. */
+  const [celebrating, setCelebrating] = useState(false);
 
   const products = useMemo(
     () => allProducts.filter((product) => product.productionId === id),
@@ -174,6 +184,10 @@ export const ProductionDetailPage = () => {
               <Pencil className="h-4 w-4" />
               Modifier
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setTimerOpen(true)}>
+              <Timer className="h-4 w-4" />
+              Chronomètre
+            </Button>
             <Button size="sm" onClick={() => setPublishOpen(true)}>
               <Upload className="h-4 w-4" />
               {production.videoId ? 'Changer la sortie' : 'Marquer publiée'}
@@ -200,14 +214,7 @@ export const ProductionDetailPage = () => {
         )}
 
         <div className="space-y-2">
-          <StepChips
-            production={production}
-            steps={steps}
-            size="md"
-            onToggle={(stepId, checked) =>
-              toggleStep.mutate({ id: production.id, stepId, checked })
-            }
-          />
+          <StepChips production={production} steps={steps} size="md" onOpenStep={setOpenStep} />
           <StepProgress production={production} steps={steps} />
         </div>
       </Card>
@@ -216,6 +223,10 @@ export const ProductionDetailPage = () => {
         <TabsList>
           <TabsTrigger value="script">Script</TabsTrigger>
           <TabsTrigger value="slots">Créneaux ({slots.length})</TabsTrigger>
+          <TabsTrigger value="time">
+            Temps
+            {production.trackedMinutes > 0 && ` (${formatDuration(production.trackedMinutes)})`}
+          </TabsTrigger>
           <TabsTrigger value="money">
             Produits &amp; sponsos ({products.length + sponsorships.length})
           </TabsTrigger>
@@ -308,6 +319,14 @@ export const ProductionDetailPage = () => {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="time">
+          <TimeEntriesPanel
+            production={production}
+            steps={steps}
+            onStartTimer={() => setTimerOpen(true)}
+          />
         </TabsContent>
 
         <TabsContent value="money">
@@ -482,7 +501,24 @@ export const ProductionDetailPage = () => {
       </Tabs>
 
       <ProductionDialog open={editOpen} onOpenChange={setEditOpen} production={production} />
-      <PublishDialog open={publishOpen} onOpenChange={setPublishOpen} production={production} />
+      <PublishDialog
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+        production={production}
+        onPublished={() => setCelebrating(true)}
+      />
+      <Confetti active={celebrating} onDone={() => setCelebrating(false)} />
+      <StepTodosDialog
+        open={openStep !== null}
+        onOpenChange={(value) => !value && setOpenStep(null)}
+        production={production}
+        step={openStep}
+      />
+      <StartTimerDialog
+        open={timerOpen}
+        onOpenChange={setTimerOpen}
+        production={timerOpen ? production : null}
+      />
       <ProductDialog
         open={productOpen}
         onOpenChange={setProductOpen}

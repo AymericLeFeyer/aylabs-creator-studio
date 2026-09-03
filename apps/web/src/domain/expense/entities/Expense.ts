@@ -17,6 +17,12 @@ export interface ExpenseEntry {
   amountCents: number;
   label: string;
   notes: string | null;
+  /**
+   * Règle récurrente qui a engendré cette ligne. `null` = saisie à la main.
+   * Sert à la signaler dans le tableau : une occurrence ne se corrige pas ligne à ligne,
+   * elle se corrige sur sa règle.
+   */
+  recurringId: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -48,7 +48,7 @@ export const ChannelsPage = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Chaînes</h1>
+          <h2 className="font-semibold">Chaînes</h2>
           <p className="text-sm text-muted-foreground">{channels.length} chaîne(s) suivie(s)</p>
         </div>
         <Button size="sm" onClick={openCreate}>

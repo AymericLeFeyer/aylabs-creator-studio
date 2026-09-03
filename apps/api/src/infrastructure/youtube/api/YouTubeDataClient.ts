@@ -11,7 +11,23 @@ export interface PublicChannelStats {
   subscribers: number;
   totalViews: number;
   totalVideos: number;
+  /** Miniature de la chaîne, `null` si YouTube n'en renvoie pas. */
+  thumbnailUrl: string | null;
 }
+
+/**
+ * La meilleure miniature disponible, du plus grand au plus petit format.
+ * Une seule taille est stockée : l'interface l'affiche en 24 px comme en 40 px, et
+ * `medium` (240 px) reste net dans les deux sans peser.
+ */
+const pickThumbnail = (
+  thumbnails?: {
+    medium?: { url?: string | null } | null;
+    default?: { url?: string | null } | null;
+    high?: { url?: string | null } | null;
+  } | null,
+): string | null =>
+  thumbnails?.medium?.url ?? thumbnails?.high?.url ?? thumbnails?.default?.url ?? null;
 
 /**
  * Accès aux données PUBLIQUES d'une chaîne via une simple clé API.
@@ -52,6 +68,7 @@ export class YouTubeDataClient {
         subscribers: Number(item.statistics?.subscriberCount ?? 0),
         totalViews: Number(item.statistics?.viewCount ?? 0),
         totalVideos: Number(item.statistics?.videoCount ?? 0),
+        thumbnailUrl: pickThumbnail(item.snippet?.thumbnails),
       };
     } catch (error) {
       if (error instanceof Error && error.name === 'AppError') throw error;
@@ -87,6 +104,7 @@ export class YouTubeDataClient {
             subscribers: Number(item.statistics?.subscriberCount ?? 0),
             totalViews: Number(item.statistics?.viewCount ?? 0),
             totalVideos: Number(item.statistics?.videoCount ?? 0),
+            thumbnailUrl: pickThumbnail(item.snippet?.thumbnails),
           };
         }
       }

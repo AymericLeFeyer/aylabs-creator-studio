@@ -409,3 +409,89 @@ export const updateLegalObligationSchema = createLegalObligationSchema.partial()
 });
 
 export const legalMonthParamSchema = isoMonth;
+
+// ---------------------------------------------------------------------------
+// Tâches d'étape, suivi du temps, dépenses récurrentes
+// ---------------------------------------------------------------------------
+
+/** Une tâche du référentiel : elle appartient à une étape et porte un intitulé. */
+export const createStepTodoSchema = z.object({
+  stepId: z.string().min(1, "L'étape est obligatoire"),
+  label: z.string().trim().min(1, "L'intitulé est obligatoire").max(200),
+  sortOrder: z.number().int().optional(),
+});
+
+export const updateStepTodoSchema = z.object({
+  label: z.string().trim().min(1).max(200).optional(),
+  sortOrder: z.number().int().optional(),
+  isArchived: z.boolean().optional(),
+});
+
+/** Une tâche ponctuelle, posée sur une seule vidéo. */
+export const createProductionTodoSchema = z.object({
+  stepId: z.string().nullable().optional(),
+  label: z.string().trim().min(1, "L'intitulé est obligatoire").max(200),
+});
+
+export const toggleTodoSchema = z.object({
+  checked: z.boolean(),
+});
+
+/** Horodatage ISO complet : le chronomètre travaille à la minute, pas à la journée. */
+const isoInstant = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), 'Horodatage invalide');
+
+export const startTimerSchema = z.object({
+  productionId: z.string().min(1, 'La vidéo est obligatoire'),
+  /** Sur quoi ce temps est passé. Facultatif : on peut chronométrer sans qualifier. */
+  stepId: z.string().nullable().optional(),
+});
+
+/** Saisie manuelle : on donne un début et une durée, jamais une fin. */
+export const createTimeEntrySchema = z.object({
+  productionId: z.string().min(1, 'La vidéo est obligatoire'),
+  stepId: z.string().nullable().optional(),
+  startedAt: isoInstant,
+  minutes: z
+    .number()
+    .int()
+    .min(1, 'Au moins une minute')
+    .max(24 * 60),
+  notes: z.string().trim().max(500).nullable().optional(),
+});
+
+export const updateTimeEntrySchema = z.object({
+  stepId: z.string().nullable().optional(),
+  startedAt: isoInstant.optional(),
+  minutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60)
+    .optional(),
+  notes: z.string().trim().max(500).nullable().optional(),
+});
+
+export const timeEntryQuerySchema = z.object({
+  productionIds: csvList,
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+});
+
+export const createRecurringExpenseSchema = z.object({
+  channelId: z.string().nullable().optional(),
+  categoryId: z.string().min(1, 'La catégorie est obligatoire'),
+  label: z.string().trim().min(1, 'Le libellé est obligatoire').max(200),
+  /** Montant en euros, converti en centimes comme toute écriture d'argent. */
+  amount,
+  frequency: z.enum(['monthly', 'yearly']),
+  dayOfMonth: z.number().int().min(1).max(31).optional(),
+  monthOfYear: z.number().int().min(1).max(12).nullable().optional(),
+  startDate: isoDate,
+  endDate: optionalIsoDate,
+  notes: z.string().trim().max(500).nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const updateRecurringExpenseSchema = createRecurringExpenseSchema.partial();

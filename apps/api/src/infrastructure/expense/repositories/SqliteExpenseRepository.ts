@@ -23,6 +23,7 @@ interface ExpenseRow {
   amount_cents: number;
   label: string;
   notes: string | null;
+  recurring_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -43,6 +44,7 @@ const toDomain = (row: ExpenseRow): ExpenseEntry => ({
   amountCents: row.amount_cents,
   label: row.label,
   notes: row.notes,
+  recurringId: row.recurring_id,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -117,8 +119,8 @@ export class SqliteExpenseRepository implements ExpenseRepository {
       .prepare(
         `INSERT INTO expense_entries
            (id, channel_id, category_id, video_id, date, amount_cents, label, notes,
-            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            recurring_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -129,6 +131,7 @@ export class SqliteExpenseRepository implements ExpenseRepository {
         input.amountCents,
         input.label,
         input.notes ?? null,
+        input.recurringId ?? null,
         now,
         now,
       );

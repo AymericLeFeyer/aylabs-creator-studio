@@ -139,10 +139,14 @@ export class CollectMetrics {
       source: 'youtube_data',
     });
 
-    // Renseigne l'identifiant de chaîne au premier passage, pour l'affichage.
-    if (!channel.externalId && totals.channelId) {
-      this.channels.update(channel.id, { externalId: totals.channelId });
+    // Renseigne l'identifiant de chaîne au premier passage, et rafraîchit la miniature :
+    // une chaîne qui change de logo doit le voir arriver sans ressaisie.
+    const patch: { externalId?: string; thumbnailUrl?: string } = {};
+    if (!channel.externalId && totals.channelId) patch.externalId = totals.channelId;
+    if (totals.thumbnailUrl && totals.thumbnailUrl !== channel.thumbnailUrl) {
+      patch.thumbnailUrl = totals.thumbnailUrl;
     }
+    if (Object.keys(patch).length > 0) this.channels.update(channel.id, patch);
 
     const from = this.resolveStartDate(channel.id);
     const to = snapshotDate;
@@ -185,6 +189,11 @@ export class CollectMetrics {
 
     const client = new YouTubeDataClient(this.config.youtubeApiKey);
     const stats = await client.getChannelStats(channel.externalId);
+
+    // Même raison qu'en mode OAuth : la miniature suit la chaîne, sans ressaisie.
+    if (stats.thumbnailUrl && stats.thumbnailUrl !== channel.thumbnailUrl) {
+      this.channels.update(channel.id, { thumbnailUrl: stats.thumbnailUrl });
+    }
 
     const capturedAt = new Date();
     const snapshotDate = toIsoDate(capturedAt);

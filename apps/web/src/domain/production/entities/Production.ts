@@ -5,6 +5,7 @@ import {
   PENDING_SPONSORSHIP_STATUSES,
   type SponsorshipStatus,
 } from '../../sponsorship/entities/Sponsorship.ts';
+import type { TodoItem } from './StepTodo.ts';
 
 export type ProductionStatus = 'idea' | 'in_progress' | 'paused' | 'done';
 
@@ -87,6 +88,10 @@ export interface Production {
   slotsCount: number;
   products: ProductionProductRef[];
   sponsorships: ProductionSponsorshipRef[];
+  /** Tâches de la vidéo, référentiel d'étape et ponctuelles réunies, avec leur état. */
+  todos: TodoItem[];
+  /** Temps déjà enregistré, en minutes (sessions closes seulement). */
+  trackedMinutes: number;
 }
 
 export interface ProductionInput {
@@ -101,9 +106,32 @@ export interface ProductionInput {
   notes?: string | null;
 }
 
-/** Part d'étapes cochées, entre 0 et 1. `0` quand aucune étape n'est configurée. */
-export const stepProgress = (production: Production, totalSteps: number): number =>
-  totalSteps === 0 ? 0 : production.steps.length / totalSteps;
+/**
+ * Avancement d'une vidéo, entre 0 et 1.
+ *
+ * **Une tâche pèse autant qu'une étape.** Une étape à cinq tâches vaut donc six points
+ * dans le total, ce qui est voulu : c'est là qu'est le travail, et une barre qui ne
+ * compterait que les étapes sauterait de 0 à 20 % sans rien montrer entre les deux.
+ *
+ * Le même calcul tourne côté API pour l'avancement moyen de la file
+ * (`GetProductionOverview.buildStats`) : deux pondérations différentes feraient dire
+ * deux choses au même écran.
+ */
+export const stepProgress = (production: Production, totalSteps: number): number => {
+  const total = totalSteps + production.todos.length;
+  if (total === 0) return 0;
+  const done = production.steps.length + production.todos.filter((todo) => todo.checked).length;
+  return Math.min(1, done / total);
+};
+
+/** Le détail derrière la barre : « 7/12 » se lit mieux qu'un pourcentage sur une carte. */
+export const progressCounts = (
+  production: Production,
+  totalSteps: number,
+): { done: number; total: number } => ({
+  done: production.steps.length + production.todos.filter((todo) => todo.checked).length,
+  total: totalSteps + production.todos.length,
+});
 
 export const isStepChecked = (production: Production, stepId: string): boolean =>
   production.steps.some((step) => step.stepId === stepId);

@@ -469,6 +469,117 @@ const migrations: Migration[] = [
       CREATE INDEX idx_sponsorship_requirements ON sponsorship_requirements(sponsorship_id);
     `,
   },
+  {
+    version: 12,
+    name: 'time_tracking_todos_recurring',
+    // Trois ajouts qui partagent la meme journee de travail :
+    //
+    // 1. LE TEMPS PASSE. Une ligne par session de travail. `ended_at` a NULL signifie
+    //    « le chronometre tourne encore » — c'est ce qui permet de retrouver la session
+    //    en cours apres un rechargement de page, sans rien stocker cote navigateur.
+    //    `minutes` est FIGE a l'arret plutot que recalcule a la lecture : une saisie
+    //    manuelle (« j'ai monte 2 h hier ») n'a pas d'horodatage fiable a soustraire.
+    //
+    // 2. LES TODOS D'ETAPE. Meme parti pris que les etapes elles-memes : ce sont des
+    //    LIGNES, pas des colonnes. `step_todos` est le referentiel (les taches
+    //    habituelles d'une etape, configurees une fois dans les parametres),
+    //    `production_todos` porte les taches PONCTUELLES d'une seule video. Les deux se
+    //    cochent dans la meme table `production_todo_checks`, ou la PRESENCE de la ligne
+    //    vaut « fait » — comme `production_step_checks`. `todo_id` n'a donc pas de cle
+    //    etrangere : il designe l'une ou l'autre des deux tables, et le nettoyage se
+    //    fait a la suppression cote depot.
+    //
+    // 3. LES DEPENSES RECURRENTES. Un abonnement n'est pas une ligne de plus a saisir
+    //    tous les mois : c'est une REGLE qui engendre des lignes. Les occurrences sont
+    //    de vraies `expense_entries` (rien a changer dans les cumuls, les graphiques ou
+    //    les categories), reliees a leur regle par `recurring_id`. L'index unique
+    //    (recurring_id, date) rend la generation idempotente : la relancer ne cree
+    //    jamais de doublon.
+    up: `
+      CREATE TABLE production_time_entries (
+        id            TEXT PRIMARY KEY,
+        production_id TEXT NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+        -- Sur quoi ce temps a ete passe. NULL = travail non qualifie.
+        step_id       TEXT REFERENCES production_steps(id) ON DELETE SET NULL,
+        started_at    TEXT NOT NULL,
+        -- NULL = le chronometre tourne encore.
+        ended_at      TEXT,
+        -- Duree figee a l'arret. NULL tant que la session est en cours.
+        minutes       INTEGER,
+        notes         TEXT,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      );
+      CREATE INDEX idx_time_entries_production ON production_time_entries(production_id);
+      CREATE INDEX idx_time_entries_started ON production_time_entries(started_at);
+      -- Retrouver la session en cours doit rester instantane : c'est la requete jouee
+      -- a chaque chargement de l'ecran de production.
+      CREATE INDEX idx_time_entries_running ON production_time_entries(ended_at)
+        WHERE ended_at IS NULL;
+
+      CREATE TABLE step_todos (
+        id          TEXT PRIMARY KEY,
+        step_id     TEXT NOT NULL REFERENCES production_steps(id) ON DELETE CASCADE,
+        label       TEXT NOT NULL,
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        is_archived INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+      CREATE INDEX idx_step_todos_step ON step_todos(step_id);
+
+      CREATE TABLE production_todos (
+        id            TEXT PRIMARY KEY,
+        production_id TEXT NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+        step_id       TEXT REFERENCES production_steps(id) ON DELETE CASCADE,
+        label         TEXT NOT NULL,
+        sort_order    INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      );
+      CREATE INDEX idx_production_todos_production ON production_todos(production_id);
+
+      CREATE TABLE production_todo_checks (
+        production_id TEXT NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+        -- Identifiant d'un step_todo OU d'un production_todo : pas de cle etrangere
+        -- possible sur deux tables, le nettoyage se fait a la suppression.
+        todo_id       TEXT NOT NULL,
+        checked_at    TEXT NOT NULL,
+        PRIMARY KEY (production_id, todo_id)
+      );
+
+      CREATE TABLE recurring_expenses (
+        id            TEXT PRIMARY KEY,
+        channel_id    TEXT REFERENCES channels(id) ON DELETE SET NULL,
+        category_id   TEXT NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+        label         TEXT NOT NULL,
+        amount_cents  INTEGER NOT NULL,
+        frequency     TEXT NOT NULL CHECK (frequency IN ('monthly','yearly')),
+        -- Jour de prelevement. Un 31 sur un mois de 30 jours est ramene au dernier jour.
+        day_of_month  INTEGER NOT NULL DEFAULT 1,
+        -- Mois de prelevement (1-12), pour une echeance annuelle uniquement.
+        month_of_year INTEGER,
+        start_date    TEXT NOT NULL,
+        -- NULL = sans fin : la regle continue de projeter des occurrences.
+        end_date      TEXT,
+        notes         TEXT,
+        is_active     INTEGER NOT NULL DEFAULT 1,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      );
+
+      ALTER TABLE expense_entries ADD COLUMN recurring_id TEXT
+        REFERENCES recurring_expenses(id) ON DELETE SET NULL;
+      CREATE INDEX idx_expense_entries_recurring ON expense_entries(recurring_id);
+      -- Rend la generation idempotente : relancer la projection ne cree pas de doublon.
+      CREATE UNIQUE INDEX idx_expense_recurring_date
+        ON expense_entries(recurring_id, date) WHERE recurring_id IS NOT NULL;
+
+      -- La miniature de la chaine, pour le selecteur compact de l'en-tete : une
+      -- pastille de couleur ne suffit plus des qu'on en a cinq.
+      ALTER TABLE channels ADD COLUMN thumbnail_url TEXT;
+    `,
+  },
 ];
 
 /**

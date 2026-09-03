@@ -13,6 +13,9 @@ import {
   productionSlotsRouter,
   productionStepsRouter,
 } from './routes/productions.ts';
+import { productionTimeRouter } from './routes/productionTime.ts';
+import { productionTodosRouter, stepTodosRouter } from './routes/productionTodos.ts';
+import { recurringExpensesRouter } from './routes/recurringExpenses.ts';
 import { productsRouter } from './routes/products.ts';
 import { sponsorshipsRouter } from './routes/sponsorships.ts';
 import { ideasRouter } from './routes/ideas.ts';
@@ -41,9 +44,15 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/videos', videosRouter(container));
   app.use('/api/analytics', analyticsRouter(container));
   app.use('/api/brands', brandsRouter(container));
+  // Monté AVANT `/api/productions` : un router de préfixe plus long doit passer en
+  // premier, sinon c'est le plus court qui capte la requête et répond 404.
+  app.use('/api/productions/:id/todos', productionTodosRouter(container));
   app.use('/api/productions', productionsRouter(container));
   app.use('/api/production-steps', productionStepsRouter(container));
   app.use('/api/production-slots', productionSlotsRouter(container));
+  app.use('/api/production-time', productionTimeRouter(container));
+  app.use('/api/step-todos', stepTodosRouter(container));
+  app.use('/api/recurring-expenses', recurringExpensesRouter(container));
   app.use('/api/products', productsRouter(container));
   app.use('/api/sponsorships', sponsorshipsRouter(container));
   app.use('/api/ideas', ideasRouter(container));

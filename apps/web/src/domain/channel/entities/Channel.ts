@@ -20,6 +20,11 @@ export interface Channel {
   externalId: string | null;
   handle: string | null;
   color: string;
+  /**
+   * Miniature de la chaîne, rafraîchie à chaque collecte. `null` en mode manuel ou tant
+   * qu'aucune collecte n'a abouti : l'interface retombe alors sur une pastille de couleur.
+   */
+  thumbnailUrl: string | null;
   /** Le refresh token n'est jamais renvoyé : seule sa présence est exposée. */
   hasCredentials: boolean;
   isArchived: boolean;
@@ -46,6 +51,7 @@ export interface ResolvedChannel {
   subscribers: number;
   totalViews: number;
   totalVideos: number;
+  thumbnailUrl: string | null;
 }
 
 export interface CollectResult {

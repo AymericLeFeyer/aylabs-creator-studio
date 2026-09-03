@@ -146,5 +146,12 @@ export interface AnalyticsResult {
   videos: VideoMarker[];
   /** Performance de chaque vidéo sortie dans la période, argent rattaché compris. */
   videoPerformance: VideoPerformanceRow[];
+  /**
+   * Les sorties **antérieures** à la période, avec leurs compteurs cumulés depuis leur
+   * publication. Une chaîne fait le plus gros de son audience sur son catalogue : un
+   * tableau qui ne montre que les nouvelles sorties laisse croire le contraire.
+   * Limité aux 100 plus vues.
+   */
+  catalogPerformance: VideoPerformanceRow[];
   previousTotals: AnalyticsTotals | null;
 }

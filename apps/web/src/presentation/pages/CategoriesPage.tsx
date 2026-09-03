@@ -54,7 +54,7 @@ export const CategoriesPage = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Catégories</h1>
+          <h2 className="font-semibold">Catégories</h2>
           <p className="text-sm text-muted-foreground">
             Chaque catégorie sert aux revenus, aux dépenses, ou aux deux. La nature ne concerne que
             les revenus : elle dit si l'argent est encaissé ou reçu sous forme de produit.

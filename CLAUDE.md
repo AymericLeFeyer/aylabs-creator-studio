@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-02
+> Dernière mise à jour : 2026-09-03
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -243,6 +243,90 @@ Table `production_step_checks` (PK `(production_id, step_id)`, colonne `checked_
 
 `ProductionSlot { id, productionId, stepId, date, startTime, endTime, label, done, notes }` — table `production_slots`. **Les heures sont facultatives** : « samedi » est un créneau valable, et les exiger ferait renoncer à en poser un. `slotMinutes()` renvoie `0` sans horaire complet — mieux vaut sous-estimer la charge que d'inventer une durée par défaut. Le helper est dupliqué à l'identique côté front.
 
+### `timeEntry` — le temps passé
+
+`TimeEntry { id, productionId, stepId, startedAt, endedAt, minutes, notes }` — table
+`production_time_entries` (migration 12).
+
+`endedAt` à `null` signifie **le chronomètre tourne encore**. L'état vit en base et non
+dans le navigateur : recharger la page, fermer l'onglet ou reprendre sur une autre
+machine ne perd rien. `minutes` est **figé à l'arrêt** plutôt que recalculé à la
+lecture — une saisie manuelle (« j'ai monté 2 h hier ») n'a pas d'horodatage fiable à
+soustraire, et corriger une durée ne doit pas déplacer l'heure de début.
+
+**Une seule session tourne à la fois** : `TrackTime.start()` arrête celle qui courait au
+lieu de refuser. Un refus obligerait à retrouver soi-même la session oubliée de la
+veille — qui aurait alors compté douze heures de montage. L'arrêt plancher à **1 minute** :
+un démarrage suivi d'un arrêt immédiat laisserait sinon une ligne à zéro.
+
+Le jour de rattachement est celui du **début** (`entry.date`) : une session commencée à
+23 h 40 appartient à la soirée où on s'y est mis.
+
+`entryMinutes()` (dupliqué côté front) mesure une session en cours jusqu'à maintenant :
+sinon le cumul de la semaine resterait figé pendant qu'on travaille.
+
+### `stepTodo` — les tâches d'étape
+
+Deux origines, **une seule façon de les cocher**.
+
+| Table                    | Ce que c'est                                            |
+| ------------------------ | ------------------------------------------------------- |
+| `step_todos`             | Le **référentiel** : les tâches habituelles d'une étape |
+| `production_todos`       | Les tâches **ponctuelles** d'une seule vidéo            |
+| `production_todo_checks` | La coche. **La présence de la ligne vaut « fait »**     |
+
+`production_todo_checks.todo_id` désigne l'une **ou** l'autre des deux tables : aucune
+clé étrangère n'est possible, le nettoyage se fait à la suppression côté dépôt
+(`deleteStepTodo` / `deleteProductionTodo` effacent leurs coches).
+
+`TodoItem { id, stepId, label, origin: 'step' | 'production', checked, checkedAt, sortOrder }`
+est la vue à plat, portée par `ProductionView.todos` — les pastilles affichent « 2/5 »
+sur chaque carte de la file, et une requête par pastille ferait autant d'allers-retours
+que d'étapes multipliées par le nombre de vidéos.
+
+**La règle, en une phrase : une étape est cochée exactement quand toutes ses tâches le
+sont.** Elle vit dans `ManageTodos` (jamais dans une route, jamais dans le front) :
+
+- cocher la dernière tâche de « montage » coche « montage » ;
+- en décocher une le décoche — symétrique, sinon on afficherait une étape terminée
+  portant un reste à faire, et le pourcentage compterait deux fois le même travail ;
+- **ajouter** une tâche ponctuelle à une étape close la **rouvre** ;
+- `PUT /steps/:stepId` coche l'étape **et toutes ses tâches** — laisser des tâches
+  ouvertes sous une étape terminée la rouvrirait à la resynchronisation suivante ;
+- une étape **sans aucune tâche** échappe à la règle : elle se coche à la main, comme avant.
+
+`seedDefaultStepTodos` pose 23 tâches de départ (identifiants fixes). Comme les étapes et
+les catégories par défaut, **une tâche supprimée revient au redémarrage** : c'est
+l'archivage qui la retire durablement.
+
+### `recurringExpense` — les dépenses qui reviennent
+
+`RecurringExpense { id, channelId, categoryId, label, amountCents, frequency, dayOfMonth, monthOfYear, startDate, endDate, notes, isActive }` — table `recurring_expenses`.
+
+Ce n'est **pas** une ligne de dépense, c'est une **règle qui en engendre**. Les
+occurrences sont de vraies `expense_entries` reliées par `recurring_id` : rien dans les
+cumuls, les graphiques ou les catégories n'a à connaître les récurrences.
+
+`SyncRecurringExpenses.execute()` garde toujours **douze échéances d'avance**
+(`OCCURRENCES_AHEAD`). Il ne cherche pas ce qui manque : il redemande les douze
+prochaines et insère en ignorant les conflits sur l'index unique
+`(recurring_id, date)` — la projection est donc **idempotente**. Elle repart du **début
+du mois courant** et non d'aujourd'hui : l'échéance du 5 alors qu'on est le 12 fait
+partie du mois qu'on est en train de lire.
+
+Elle tourne au **démarrage**, et à **chaque écriture d'une règle** (`reproject`, qui
+efface d'abord les occurrences du mois courant et des suivants).
+
+Conséquence assumée : **supprimer à la main une occurrence future la fait revenir**. Pour
+retirer une échéance pour de bon, on arrête la règle (`isActive: false`) ou on la borne
+(`endDate`). `ExpensesPanel` le dit dans sa confirmation de suppression.
+
+Supprimer la règle supprime ses occurrences **futures** et **détache** les passées
+(`ON DELETE SET NULL`) : ce qui a été payé fait partie de la comptabilité, la projection non.
+
+`dueDateIn()` ramène un 31 au dernier jour d'un mois plus court, comme `dueDateOf` du
+module légal.
+
 ### `product`
 
 `Product { id, brandId, productionId, videoId, sponsorshipId, channelId, revenueEntryId, name, url, valueCents, status, requestedAt, deadline, receivedAt, notes }` — table `products`.
@@ -330,100 +414,158 @@ Chaque `TimeSeriesPoint` porte aussi `revenueByCategory` et `expenseByCategory` 
 
 Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneur API.
 
-| Méthode  | Route                                | Rôle                                                                                                                                                                                                  |
-| -------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/health`                            | Sonde du conteneur                                                                                                                                                                                    |
-| `GET`    | `/api/analytics`                     | Séries + cumuls. Params : `from`, `to`, `granularity` (`day\|week\|month`), `channelIds` (CSV, vide = cumulé), `includeUnassigned`                                                                    |
-| `POST`   | `/api/analytics/collect`             | Collecte immédiate de toutes les chaînes                                                                                                                                                              |
-| `GET`    | `/api/channels`                      | Liste + `latestSnapshot` + `lastMetricDate`. Param `includeArchived`                                                                                                                                  |
-| `POST`   | `/api/channels`                      | Créer                                                                                                                                                                                                 |
-| `POST`   | `/api/channels/resolve`              | `{ query }` (@handle / URL / UC…) → identifiant + stats                                                                                                                                               |
-| `PATCH`  | `/api/channels/:id`                  | Modifier (`refreshToken: ""` efface, absent = conserve)                                                                                                                                               |
-| `DELETE` | `/api/channels/:id`                  | Supprimer                                                                                                                                                                                             |
-| `POST`   | `/api/channels/:id/collect`          | Collecter cette chaîne                                                                                                                                                                                |
-| `PUT`    | `/api/channels/:id/metrics`          | Saisie manuelle d'une journée (`source = manual`)                                                                                                                                                     |
-| `DELETE` | `/api/channels/:id/metrics/:date`    | Supprimer une journée                                                                                                                                                                                 |
-| `PUT`    | `/api/channels/:id/snapshots`        | Saisie manuelle d'un total d'abonnés                                                                                                                                                                  |
-| `GET`    | `/api/videos`                        | Sorties de vidéo. Params `from`, `to`, `channelIds`, `limit` (200 par défaut). Période **facultative** : le sélecteur de rattachement doit proposer des vidéos plus anciennes que la période affichée |
-| `GET`    | `/api/categories`                    | Params `includeArchived`, `scope` (`revenue                                                                                                                                                           | expense | both`;`both` répond toujours) |
-| `POST`   | `/api/categories`                    | Créer (`scope` défaut `revenue`)                                                                                                                                                                      |
-| `PATCH`  | `/api/categories/:id`                | Modifier / archiver                                                                                                                                                                                   |
-| `DELETE` | `/api/categories/:id`                | Refusé si `isAuto` ou si des revenus/dépenses y sont rattachés                                                                                                                                        |
-| `GET`    | `/api/revenues`                      | Params `from`, `to`, `channelIds`                                                                                                                                                                     |
-| `POST`   | `/api/revenues`                      | `amount` **en euros**, `videoId` facultatif. Refusé sur une catégorie `isAuto` ou `scope: expense`                                                                                                    |
-| `PATCH`  | `/api/revenues/:id`                  | Modifier                                                                                                                                                                                              |
-| `DELETE` | `/api/revenues/:id`                  | Supprimer                                                                                                                                                                                             |
-| `GET`    | `/api/expenses`                      | Params `from`, `to`, `channelIds`                                                                                                                                                                     |
-| `POST`   | `/api/expenses`                      | `amount` **en euros**, positif, `videoId` facultatif. `categoryId` obligatoire, refusé sur `scope: revenue`                                                                                           |
-| `PATCH`  | `/api/expenses/:id`                  | Modifier                                                                                                                                                                                              |
-| `DELETE` | `/api/expenses/:id`                  | Supprimer                                                                                                                                                                                             |
-| `GET`    | `/api/brands`                        | Param `includeArchived`                                                                                                                                                                               |
-| `GET`    | `/api/brands/stats`                  | Classements du dashboard. Params `from`, `to`, `channelIds`. **Déclaré avant `/:id`**                                                                                                                 |
-| `POST`   | `/api/brands`                        | Créer                                                                                                                                                                                                 |
-| `PATCH`  | `/api/brands/:id`                    | Modifier / archiver                                                                                                                                                                                   |
-| `DELETE` | `/api/brands/:id`                    | Refusé en 409 si des produits ou sponsos y sont rattachés                                                                                                                                             |
-| `GET`    | `/api/productions`                   | Params `statuses` (CSV), `channelIds`, `from`/`to` (sur `plannedDate`), `search`                                                                                                                      |
-| `GET`    | `/api/productions/overview`          | File d'attente + alertes + créneaux + charge de la semaine. **Déclaré avant `/:id`**                                                                                                                  |
-| `GET`    | `/api/productions/:id`               | Une production (`ProductionView`)                                                                                                                                                                     |
-| `POST`   | `/api/productions`                   | Créer (entre en **fin** de file)                                                                                                                                                                      |
-| `POST`   | `/api/productions/reorder`           | `{ ids }` → l'ordre manuel de la file, le rang est l'index                                                                                                                                            |
-| `PATCH`  | `/api/productions/:id`               | Modifier (dont `script`)                                                                                                                                                                              |
-| `DELETE` | `/api/productions/:id`               | Supprimer ; produits et sponsos sont **détachés**, pas supprimés                                                                                                                                      |
-| `POST`   | `/api/productions/:id/publish`       | `{ videoId }` → rattache la sortie, coche la publication, passe en `done`                                                                                                                             |
-| `PUT`    | `/api/productions/:id/steps/:stepId` | Cocher une étape (idempotent)                                                                                                                                                                         |
-| `DELETE` | `/api/productions/:id/steps/:stepId` | Décocher                                                                                                                                                                                              |
-| `GET`    | `/api/production-steps`              | Référentiel des étapes. Param `includeArchived`                                                                                                                                                       |
-| `POST`   | `/api/production-steps`              | Créer                                                                                                                                                                                                 |
-| `PATCH`  | `/api/production-steps/:id`          | Modifier / archiver / réordonner                                                                                                                                                                      |
-| `DELETE` | `/api/production-steps/:id`          | Supprimer (les cases cochées partent en cascade)                                                                                                                                                      |
-| `GET`    | `/api/production-slots`              | Params `productionIds`, `from`, `to`, `includeDone`                                                                                                                                                   |
-| `POST`   | `/api/production-slots`              | `productionId` dans le corps                                                                                                                                                                          |
-| `PATCH`  | `/api/production-slots/:id`          | Modifier / marquer fait                                                                                                                                                                               |
-| `DELETE` | `/api/production-slots/:id`          | Supprimer                                                                                                                                                                                             |
-| `GET`    | `/api/products`                      | Params `statuses`, `brandIds`, `productionIds`, `channelIds`                                                                                                                                          |
-| `POST`   | `/api/products`                      | `value` **en euros**. `received` déclenche le revenu en nature                                                                                                                                        |
-| `PATCH`  | `/api/products/:id`                  | Modifier (re-synchronise le revenu)                                                                                                                                                                   |
-| `DELETE` | `/api/products/:id`                  | Supprimer (le revenu lié part avec)                                                                                                                                                                   |
-| `GET`    | `/api/sponsorships`                  | Mêmes params que les produits                                                                                                                                                                         |
-| `POST`   | `/api/sponsorships`                  | `amount` **en euros**. `paid` déclenche le revenu cash                                                                                                                                                |
-| `PATCH`  | `/api/sponsorships/:id`              | Modifier (re-synchronise le revenu)                                                                                                                                                                   |
-| `DELETE` | `/api/sponsorships/:id`              | Supprimer (le revenu lié part avec)                                                                                                                                                                   |
-| `POST`   | `/api/sponsorships/:id/requirements` | Ajouter un plan à filmer (entre en fin de liste) |
-| `PATCH`  | `/api/sponsorships/:id/requirements/:requirementId` | Cocher / renommer / réordonner un plan |
-| `DELETE` | `/api/sponsorships/:id/requirements/:requirementId` | Retirer un plan |
+| Méthode  | Route                                               | Rôle                                                                                                                                                                                                  |
+| -------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/health`                                           | Sonde du conteneur                                                                                                                                                                                    |
+| `GET`    | `/api/analytics`                                    | Séries + cumuls. Params : `from`, `to`, `granularity` (`day\|week\|month`), `channelIds` (CSV, vide = cumulé), `includeUnassigned`                                                                    |
+| `POST`   | `/api/analytics/collect`                            | Collecte immédiate de toutes les chaînes                                                                                                                                                              |
+| `GET`    | `/api/channels`                                     | Liste + `latestSnapshot` + `lastMetricDate`. Param `includeArchived`                                                                                                                                  |
+| `POST`   | `/api/channels`                                     | Créer                                                                                                                                                                                                 |
+| `POST`   | `/api/channels/resolve`                             | `{ query }` (@handle / URL / UC…) → identifiant + stats                                                                                                                                               |
+| `PATCH`  | `/api/channels/:id`                                 | Modifier (`refreshToken: ""` efface, absent = conserve)                                                                                                                                               |
+| `DELETE` | `/api/channels/:id`                                 | Supprimer                                                                                                                                                                                             |
+| `POST`   | `/api/channels/:id/collect`                         | Collecter cette chaîne                                                                                                                                                                                |
+| `PUT`    | `/api/channels/:id/metrics`                         | Saisie manuelle d'une journée (`source = manual`)                                                                                                                                                     |
+| `DELETE` | `/api/channels/:id/metrics/:date`                   | Supprimer une journée                                                                                                                                                                                 |
+| `PUT`    | `/api/channels/:id/snapshots`                       | Saisie manuelle d'un total d'abonnés                                                                                                                                                                  |
+| `GET`    | `/api/videos`                                       | Sorties de vidéo. Params `from`, `to`, `channelIds`, `limit` (200 par défaut). Période **facultative** : le sélecteur de rattachement doit proposer des vidéos plus anciennes que la période affichée |
+| `GET`    | `/api/categories`                                   | Params `includeArchived`, `scope` (`revenue                                                                                                                                                           | expense | both`;`both` répond toujours) |
+| `POST`   | `/api/categories`                                   | Créer (`scope` défaut `revenue`)                                                                                                                                                                      |
+| `PATCH`  | `/api/categories/:id`                               | Modifier / archiver                                                                                                                                                                                   |
+| `DELETE` | `/api/categories/:id`                               | Refusé si `isAuto` ou si des revenus/dépenses y sont rattachés                                                                                                                                        |
+| `GET`    | `/api/revenues`                                     | Params `from`, `to`, `channelIds`                                                                                                                                                                     |
+| `POST`   | `/api/revenues`                                     | `amount` **en euros**, `videoId` facultatif. Refusé sur une catégorie `isAuto` ou `scope: expense`                                                                                                    |
+| `PATCH`  | `/api/revenues/:id`                                 | Modifier                                                                                                                                                                                              |
+| `DELETE` | `/api/revenues/:id`                                 | Supprimer                                                                                                                                                                                             |
+| `GET`    | `/api/expenses`                                     | Params `from`, `to`, `channelIds`                                                                                                                                                                     |
+| `POST`   | `/api/expenses`                                     | `amount` **en euros**, positif, `videoId` facultatif. `categoryId` obligatoire, refusé sur `scope: revenue`                                                                                           |
+| `PATCH`  | `/api/expenses/:id`                                 | Modifier                                                                                                                                                                                              |
+| `DELETE` | `/api/expenses/:id`                                 | Supprimer                                                                                                                                                                                             |
+| `GET`    | `/api/brands`                                       | Param `includeArchived`                                                                                                                                                                               |
+| `GET`    | `/api/brands/stats`                                 | Classements du dashboard. Params `from`, `to`, `channelIds`. **Déclaré avant `/:id`**                                                                                                                 |
+| `POST`   | `/api/brands`                                       | Créer                                                                                                                                                                                                 |
+| `PATCH`  | `/api/brands/:id`                                   | Modifier / archiver                                                                                                                                                                                   |
+| `DELETE` | `/api/brands/:id`                                   | Refusé en 409 si des produits ou sponsos y sont rattachés                                                                                                                                             |
+| `GET`    | `/api/productions`                                  | Params `statuses` (CSV), `channelIds`, `from`/`to` (sur `plannedDate`), `search`                                                                                                                      |
+| `GET`    | `/api/productions/overview`                         | File d'attente + alertes + créneaux + charge de la semaine. **Déclaré avant `/:id`**                                                                                                                  |
+| `GET`    | `/api/productions/:id`                              | Une production (`ProductionView`)                                                                                                                                                                     |
+| `POST`   | `/api/productions`                                  | Créer (entre en **fin** de file)                                                                                                                                                                      |
+| `POST`   | `/api/productions/reorder`                          | `{ ids }` → l'ordre manuel de la file, le rang est l'index                                                                                                                                            |
+| `PATCH`  | `/api/productions/:id`                              | Modifier (dont `script`)                                                                                                                                                                              |
+| `DELETE` | `/api/productions/:id`                              | Supprimer ; produits et sponsos sont **détachés**, pas supprimés                                                                                                                                      |
+| `POST`   | `/api/productions/:id/publish`                      | `{ videoId }` → rattache la sortie, coche la publication, passe en `done`                                                                                                                             |
+| `PUT`    | `/api/productions/:id/steps/:stepId`                | Cocher une étape (idempotent)                                                                                                                                                                         |
+| `DELETE` | `/api/productions/:id/steps/:stepId`                | Décocher                                                                                                                                                                                              |
+| `GET`    | `/api/production-steps`                             | Référentiel des étapes. Param `includeArchived`                                                                                                                                                       |
+| `POST`   | `/api/production-steps`                             | Créer                                                                                                                                                                                                 |
+| `PATCH`  | `/api/production-steps/:id`                         | Modifier / archiver / réordonner                                                                                                                                                                      |
+| `DELETE` | `/api/production-steps/:id`                         | Supprimer (les cases cochées partent en cascade)                                                                                                                                                      |
+| `GET`    | `/api/production-slots`                             | Params `productionIds`, `from`, `to`, `includeDone`                                                                                                                                                   |
+| `POST`   | `/api/production-slots`                             | `productionId` dans le corps                                                                                                                                                                          |
+| `PATCH`  | `/api/production-slots/:id`                         | Modifier / marquer fait                                                                                                                                                                               |
+| `DELETE` | `/api/production-slots/:id`                         | Supprimer                                                                                                                                                                                             |
+| `GET`    | `/api/products`                                     | Params `statuses`, `brandIds`, `productionIds`, `channelIds`                                                                                                                                          |
+| `POST`   | `/api/products`                                     | `value` **en euros**. `received` déclenche le revenu en nature                                                                                                                                        |
+| `PATCH`  | `/api/products/:id`                                 | Modifier (re-synchronise le revenu)                                                                                                                                                                   |
+| `DELETE` | `/api/products/:id`                                 | Supprimer (le revenu lié part avec)                                                                                                                                                                   |
+| `GET`    | `/api/sponsorships`                                 | Mêmes params que les produits                                                                                                                                                                         |
+| `POST`   | `/api/sponsorships`                                 | `amount` **en euros**. `paid` déclenche le revenu cash                                                                                                                                                |
+| `PATCH`  | `/api/sponsorships/:id`                             | Modifier (re-synchronise le revenu)                                                                                                                                                                   |
+| `DELETE` | `/api/sponsorships/:id`                             | Supprimer (le revenu lié part avec)                                                                                                                                                                   |
+| `POST`   | `/api/sponsorships/:id/requirements`                | Ajouter un plan à filmer (entre en fin de liste)                                                                                                                                                      |
+| `PATCH`  | `/api/sponsorships/:id/requirements/:requirementId` | Cocher / renommer / réordonner un plan                                                                                                                                                                |
+| `DELETE` | `/api/sponsorships/:id/requirements/:requirementId` | Retirer un plan                                                                                                                                                                                       |
 
 Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube.
 
 ## Routes front
 
-| Route               | Page                   | Contenu                                                                                                                                                |
-| ------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, alertes (production + légal), puis **les deux graphiques seulement** (argent, audience)      |
-| `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                            |
-| `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                 |
-| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / Créneaux / Produits & sponsos / Notes                                                         |
-| `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis deux onglets Produits et Sponsors (`?onglet=`). Bouton **Script** par sponso                           |
-| `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                  |
-| `/legal`            | `LegalPage`            | Fiche société, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                         |
-| `/chaines`          | `ChannelsPage`         | Cartes des chaînes, collecte, saisie manuelle                                                                                                          |
-| `/categories`       | `CategoriesPage`       | Gestion des catégories : portée, nature, couleur                                                                                                       |
-| `/marques`          | `BrandsPage`           | Référentiel des marques (paramètres)                                                                                                                   |
-| `/etapes`           | `StepsPage`            | Référentiel des étapes de production (paramètres)                                                                                                      |
-| `/societe`          | `CompanyPage`          | Fiche société éditable + référentiel des obligations mensuelles (paramètres)                                                                           |
+| Route               | Page                   | Contenu                                                                                                                                            |
+| ------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, alertes (production + légal), puis **les deux graphiques seulement** (argent, audience) |
+| `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                        |
+| `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                             |
+| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / Créneaux / Produits & sponsos / Notes                                                     |
+| `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis deux onglets Produits et Sponsors (`?onglet=`). Bouton **Script** par sponso                       |
+| `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                              |
+| `/legal`            | `LegalPage`            | Fiche société, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                     |
+| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, Catégories, Abonnements, Marques, Étapes, Société                           |
+
+`/chaines`, `/categories`, `/marques`, `/etapes`, `/societe` et `/abonnements`
+**redirigent** vers `/parametres` sur le bon onglet : c'étaient six entrées d'un menu
+déroulant, donc six adresses à connaître et autant d'allers-retours pour comparer deux
+référentiels. Les pages existent toujours comme composants, montées dans les onglets —
+leur titre est passé en `<h2>`, `SettingsPage` porte le `<h1>`.
 
 `/revenus`, `/depenses` et `/taxes` **redirigent** vers `/chiffre-affaires` sur le bon
 onglet : ce sont les deux moitiés de la même soustraction, et elles se consultent l'une
 après l'autre. Les tables vivent désormais dans `components/money/RevenuesPanel.tsx` et
 `ExpensesPanel.tsx` — ce sont les anciennes pages, déplacées telles quelles.
 
-`AppLayout` porte la navigation : Dashboard / Contenu / Production / Partenariats / Chiffre d'affaires / Légal dans la barre, **Chaînes, Catégories, Marques, Étapes et Société dans le menu ⚙ Paramètres** en haut à droite. L'ordre des deux boutons de droite est **thème puis paramètres** : le thème se change une fois, les paramètres s'ouvrent souvent, et ce qui s'ouvre en menu déroulant est à l'extrémité pour ne pas déborder (ce sont des écrans de configuration, pas de lecture). Le bouton ⚙ s'allume sur `SETTINGS_NAV`, pas sur l'absence de filtres : `/production` n'a pas de barre de filtres sans être pour autant un écran de configuration. La largeur du site est fixée une fois pour toutes par la constante `CONTAINER` (`max-w-[1800px]`), partagée par l'en-tête et le contenu.
+`AppLayout` porte la navigation dans une **barre latérale à gauche**, pas dans une rangée
+d'onglets horizontale. Trois raisons : la liste des écrans peut grandir sans se disputer
+la largeur avec la barre de filtres ; l'écran actif se repère à sa position plutôt qu'à
+sa couleur ; et sur mobile la même barre devient un **tiroir** (bouton hamburger dans
+l'en-tête, overlay + `Échap` par clic sur le fond), au lieu d'une rangée qui défile
+horizontalement.
 
-La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/chaines`, `/categories`, `/marques`, `/etapes`, `/societe`, `/production`, `/partenariats`, `/legal` — une vidéo à écrire n'appartient à aucune fenêtre de temps, et le tableau légal a sa propre maille, le mois) — configurer une chaîne ne dépend d'aucune période — et les pages ne la rendent donc plus elles-mêmes. Deux rangées, dans l'ordre où on s'en sert :
+**Repliée, la barre ne montre que les icônes** (`SIDEBAR_CLOSED` 3,75 rem contre
+`SIDEBAR_OPEN` 15 rem), le libellé revenant en infobulle. L'état est une préférence
+persistée (`usePreferences`), pas un état d'écran : on choisit une fois. Le contenu suit
+par un `lg:pl-[var(--sidebar-width)]`.
 
-1. **quand** : préréglages de période (dont `mtd`, « Ce mois », qui part du 1er du mois en cours), dates personnalisées, pas d'agrégation, et le bouton « Collecter » à l'autre bout de cette même rangée ;
-2. **quoi et comment le lire** : puces de chaînes, puis l'interrupteur **CA / Bénéfices** et les coches « Compter les produits reçus » et « Marquer les sorties de vidéo ».
+**Paramètres et thème sont en bas**, séparés par un filet : on n'y va pas dans le fil du
+travail, et les mettre en tête ferait descendre les écrans qu'on ouvre chaque jour. Le
+repli ne s'affiche qu'en colonne fixe (`lg`) — dans un tiroir il n'aurait pas de sens.
 
-Ces trois réglages pilotent **tous** les graphiques et toutes les cartes : les laisser dans l'un des graphiques obligeait à remonter pour changer d'avis. Le titre du graphique d'argent suit l'interrupteur, il ne le porte plus. `FiltersBar` lit le nombre de sorties via `useAnalytics(useAnalyticsParams())` — même clé de cache que le dashboard, donc requête partagée et non dupliquée.
+Le tiroir mobile se referme à la navigation, **dérivé pendant le rendu** (comparaison du
+`pathname` précédent) et non dans un `useEffect` : c'est le pattern des formulaires du
+projet, et la règle ESLint `react-hooks/set-state-in-effect` refuse l'autre.
+
+La largeur du contenu reste fixée par `CONTAINER` (`max-w-[1800px]`).
+
+Le **bandeau du chronomètre** (`RunningTimerBar`) vit **dans l'en-tête collant**, sous la
+barre de filtres : on démarre une session sur la production puis on part consulter ses
+revenus — et c'est là qu'on oublie de l'arrêter. L'y poser plutôt que de lui donner son
+propre `sticky` à décalage fixe évite de le désaligner dès que la barre de filtres change
+de hauteur. La durée est **recalculée en local à la seconde** depuis l'heure de début ; le
+serveur n'est interrogé qu'une fois par minute (`useRunningTimer`), assez pour voir un
+arrêt fait depuis un autre onglet sans marteler l'API pour animer un compteur.
+
+La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait
+partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/parametres`,
+`/production`, `/partenariats`, `/legal`). Elle tient désormais sur **une seule ligne** —
+elle en occupait deux — grâce à deux déclencheurs compacts :
+
+- **`PeriodPicker`** : deux boutons au lieu de sept. Une famille **glissante** (30 jours
+  par défaut, 7/90/12 mois derrière la flèche) et une famille **calendaire** (Ce mois,
+  puis trimestre/année/tout). Chaque bouton affiche le préréglage actif de sa famille.
+  Il n'y a **plus de bouton « Personnalisé »** : la période affichée est elle-même le
+  bouton — cliquer « 5 août – 3 sept. 2026 » ouvre deux champs de date, préremplis avec
+  les bornes courantes. Le préréglage `qtd` (« Ce trimestre ») a été ajouté pour cette
+  famille : c'est la maille des échéances fiscales.
+- **`ChannelPicker`** : un déclencheur unique qui empile les **miniatures** des chaînes
+  retenues (`ChannelAvatar`, jusqu'à 3, puis un compteur) et affiche le nom quand il n'y
+  en a qu'une. « Toutes » n'est pas une case mais **l'absence de sélection** — c'est déjà
+  ce que l'API attend. `onSelect` est neutralisé (`preventDefault`) pour que le menu ne se
+  referme pas au premier clic : on en coche souvent deux.
+
+`ChannelAvatar` affiche `channel.thumbnailUrl` (collecté par `CollectMetrics`, migration 12) et retombe sur l'**initiale sur la couleur de la chaîne** — ce n'est pas un cas
+d'erreur : une chaîne manuelle n'a jamais de miniature. La couleur du texte passe par
+`readableTextColor`.
+
+La case **« Marquer les sorties de vidéo »** a quitté la barre pour **Paramètres →
+Application** : c'était le seul réglage de la barre à ne jamais bouger, et il occupait
+une place que la barre n'avait plus. La distinction est nette et vaut pour la suite : un
+**filtre** change _ce qu'on regarde_ et se règle plusieurs fois par session ; une
+**préférence** change _comment l'outil se présente_ et se règle une fois
+(`usePreferences`, clé `acs.preferences` : `sidebarCollapsed`, `compactQueue`).
+
+Ce qui reste dans la barre, dans l'ordre où on s'en sert : période, chaînes, pas
+d'agrégation, puis l'interrupteur CA / Bénéfices, la case « Produits reçus » et le bouton
+« Collecter ».
+
+Ces réglages pilotent **tous** les graphiques et toutes les cartes : les laisser dans l'un des graphiques obligeait à remonter pour changer d'avis. Le titre du graphique d'argent suit l'interrupteur, il ne le porte plus. L'onglet Application lit le nombre de sorties via `useAnalytics(useAnalyticsParams())` — même clé de cache que le dashboard, donc requête partagée et non dupliquée.
 
 Deux cartes déplient un panneau au survol (prop `details` de `StatCard`, ouvert aussi au clavier via `focus-within`) : « Vidéos publiées » montre les miniatures des sorties, « Produits reçus » la liste des produits et leur valeur. Le détail des produits ne vient pas d'`analytics`, qui n'expose que des agrégats, mais de `useRevenues` borné **exactement** comme le dashboard — sans quoi le panneau contredirait le total juste au-dessus.
 
@@ -454,12 +596,22 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useProductionSlots`, `useCreateSlot`, `useUpdateSlot`, `useDeleteSlot`                                                                                                                           | idem                                                  | Créneaux de travail                                                                                 |
 | `useProducts`, `useCreateProduct`, …                                                                                                                                                              | `application/product/usecases/useProducts.ts`         | Produits reçus                                                                                      |
 | `useSponsorships`, `useCreateSponsorship`, …                                                                                                                                                      | `application/sponsorship/usecases/useSponsorships.ts` | Sponsos                                                                                             |
-| `useAddRequirement`, `useUpdateRequirement`, `useDeleteRequirement` | idem | Plans à filmer exigés par la marque |
-| `useLegalOverview`, `useLegalObligations`, `useUpdateCompany`, `useCreateObligation`, `useUpdateObligation`, `useDeleteObligation`, `useToggleLegalCheck` | `application/legal/usecases/useLegal.ts` | Société + obligations mensuelles |
+| `useAddRequirement`, `useUpdateRequirement`, `useDeleteRequirement`                                                                                                                               | idem                                                  | Plans à filmer exigés par la marque                                                                 |
+| `useLegalOverview`, `useLegalObligations`, `useUpdateCompany`, `useCreateObligation`, `useUpdateObligation`, `useDeleteObligation`, `useToggleLegalCheck`                                         | `application/legal/usecases/useLegal.ts`              | Société + obligations mensuelles                                                                    |
+| `useStepTodos`, `useCreateStepTodo`, `useUpdateStepTodo`, `useDeleteStepTodo`                                                                                                                     | `application/production/usecases/useProductions.ts`   | Référentiel des tâches d'étape (cache 5 min)                                                        |
+| `useProductionTodos`, `useToggleTodo`, `useAddProductionTodo`, `useDeleteProductionTodo`                                                                                                          | idem                                                  | Tâches d'une vidéo, coches comprises                                                                |
+| `useTimeEntries`, `useRunningTimer`, `useStartTimer`, `useStopTimer`, `useCreateTimeEntry`, `useUpdateTimeEntry`, `useDeleteTimeEntry`                                                            | idem                                                  | Chronomètre et sessions de travail                                                                  |
+| `useRecurringExpenses`, `useCreateRecurringExpense`, `useUpdateRecurringExpense`, `useDeleteRecurringExpense`                                                                                     | `application/expense/usecases/useExpenses.ts`         | Règles de dépense récurrente                                                                        |
+| `useUpcomingExpenses`, `useUpcomingRevenues`, `useUpcomingRange`                                                                                                                                  | `application/expense/usecases/useUpcoming.ts`         | Ce qui est daté en avant (demain → +3 mois)                                                         |
+| `usePreferences`                                                                                                                                                                                  | `presentation/hooks/usePreferences.ts`                | Menu replié, file compacte. Persisté en localStorage                                                |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
 
 `LEGAL_ROOTS` (`legalOverview`, `legalObligations`) part en entier à chaque écriture du module légal : changer un jour limite déplace l'échéance sur tous les mois déjà affichés, et cocher une case retire une alerte du dashboard.
+
+`RECURRING_ROOTS` = `MONEY_ROOTS` + `recurringExpenses` : écrire une règle crée, réécrit
+ou supprime des dépenses, les vues d'argent repartent avec elle. Le contraire n'est pas
+vrai — supprimer une occurrence à la main ne touche pas la règle.
 
 `PRODUCTION_ROOTS` couvre le module de production, et `PARTNER_ROOTS` y ajoute `MONEY_ROOTS` + `brandStats` : **une écriture de produit ou de sponso crée, modifie ou supprime un revenu**, les vues d'argent doivent donc repartir en même temps. Le découpage n'est pas plus fin volontairement — un seul changement de statut peut faire bouger les alertes, les compteurs de la file et les classements, et le module est assez petit pour que le refetch soit indolore.
 
@@ -475,7 +627,7 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 - **Sentinelle des `Select` facultatifs** : `NONE` / `toSelectValue` / `fromSelectValue` (`presentation/components/forms/selectNone.ts`). Radix refuse une `SelectItem` de valeur vide ; la sentinelle est partagée pour que trois formulaires n'en inventent pas trois différentes.
 - **Référentiel plutôt que colonnes** : les étapes de production sont des lignes (`production_steps`) et l'état « coché » est la **présence** d'une ligne dans `production_step_checks`. En ajouter une ne demande aucune migration, et la date de complétion vient gratuitement.
 - **Migration 5** ajoute `brands`, `production_steps`, `productions`, `production_step_checks`, `production_slots`, `products`, `sponsorships`, et la colonne `revenue_entries.origin`. **Migration 6** ajoute `products.sponsorship_id`, **migration 7** la table `ideas`, **migration 8** `products.video_id` et `sponsorships.video_id`.
-- **Migration 9** ajoute `company` (ligne unique), `legal_obligations` et `legal_checks`. **Migration 10** ajoute `sponsorships.script`, **migration 11** la table `sponsorship_requirements`.
+- **Migration 9** ajoute `company` (ligne unique), `legal_obligations` et `legal_checks`. **Migration 10** ajoute `sponsorships.script`, **migration 11** la table `sponsorship_requirements`. **Migration 12** en ajoute trois d'un coup — `production_time_entries` (le temps passé), `step_todos` / `production_todos` / `production_todo_checks` (les tâches d'étape), `recurring_expenses` + `expense_entries.recurring_id` (les dépenses qui reviennent) — et la colonne `channels.thumbnail_url`.
 - **Un panneau plutôt qu'une page dès que deux écrans le partagent** : `RevenuesPanel` et `ExpensesPanel` (ex-pages) sont montés dans les onglets de `/chiffre-affaires` ; `MoneyBreakdowns` porte les trois anneaux et les deux classements ; `PartnerStatCards` les quatre chiffres du pipeline. Le dupliquer ferait diverger deux écrans qui doivent annoncer le même montant.
 - **Le calcul du pipeline vit dans le domaine** (`domain/partner/services/pipeline.ts`, `partnerPipeline`) et non dans les écrans : le dashboard et `/partenariats` affichent le même « à encaisser », et deux comptages parallèles finiraient par se contredire.
 - **Contraste calculé, pas choisi** : `shared/contrast.ts` (`readableTextColor`) prend une couleur de fond libre et renvoie le blanc ou l'encre du thème, selon le meilleur **ratio WCAG réel** des deux. Les couleurs de chaîne sont libres — un vert clair et un bleu nuit peuvent cohabiter, et écrire en blanc sur les deux rend le premier illisible.
@@ -545,6 +697,20 @@ Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY
 - **Le mois d'une case est `AAAA-MM`, jamais une date.** `/api/legal/checks/:id/:month` valide le format en 422 : un `2026-3` passerait silencieusement à côté de toutes les lignes existantes, et la case paraîtrait ne jamais se cocher.
 - **Le script d'une sponso a son propre bouton**, pas une case dans la modale d'édition : `SponsorshipScriptDialog` réutilise le `ScriptEditor` des productions (même markdown, même durée de lecture, même absence d'enregistrement automatique). `PartnersPage` garde l'**identifiant** de la sponso ouverte et non la fiche : après enregistrement la liste est rechargée, et un instantané figé laisserait l'éditeur croire éternellement qu'il reste du non-enregistré.
 - **Les plans exigés se cochent sans bouton d'enregistrement**, contrairement au script juste en dessous. Ce n'est pas une incohérence : cocher est un geste unique et sans perte possible, alors qu'un texte en cours de réflexion demande une décision explicite. Leurs mutations n'invalident que `['sponsorships']` et pas `PARTNER_ROOTS` — cocher « macro du logo » ne change ni un revenu, ni une alerte, ni un classement de marque, et repartir sur tout le module ferait clignoter le dashboard pour une case.
+
+- **Le chronomètre vit en base, pas dans le navigateur.** Une session en cours est une ligne sans `ended_at`. Conséquence : il n'y en a **qu'une à la fois** pour tout l'outil, et démarrer un chronomètre arrête celui qui courait au lieu de refuser — un refus obligerait à retrouver soi-même la session oubliée de la veille, qui aurait alors compté douze heures de montage.
+- **Un temps non qualifié ne se rattrape pas.** L'étape est demandée **au démarrage** (`StartTimerDialog`), pas à l'arrêt : au moment de couper, on ne sait déjà plus si l'heure passée était de l'écriture ou du montage — et c'est exactement la question à laquelle ce suivi doit répondre. « Sans étape » reste possible : mieux vaut un temps mal rangé qu'un temps jamais mesuré.
+- **Cliquer une pastille d'étape ne coche plus l'étape** : elle ouvre `StepTodosDialog`. Une étape n'est pas un interrupteur, c'est une liste de choses à faire, et la marquer terminée alors qu'il reste le sound design est ce qui fait perdre le fil. La pastille affiche « 2/5 » dès qu'il y a des tâches, et un trait plein (au lieu de pointillé) quand elle est commencée sans être finie.
+- **Une tâche pèse autant qu'une étape dans l'avancement.** `stepProgress` et `progressCounts` comptent `étapes + tâches` au dénominateur : une étape à cinq tâches vaut donc six points. C'est voulu — le travail est dans les tâches, et une barre qui ne compterait que les étapes sauterait de 0 à 20 % sans rien montrer entre les deux. Le même calcul tourne côté API (`GetProductionOverview.buildStats`) : deux pondérations feraient dire deux choses au même écran.
+- **Le référentiel de tâches se gère dans les paramètres, jamais depuis une vidéo.** `StepTodosDialog` ne supprime que les tâches `origin: 'production'` : retirer une tâche du référentiel depuis une fiche l'enlèverait de toutes les vidéos, y compris celles où elle était cochée.
+- **Une occurrence de dépense récurrente supprimée à la main revient.** La projection garde douze échéances d'avance sans mémoire de ce qu'on a effacé. `ExpensesPanel` le dit dans sa confirmation, et la vraie solution est d'arrêter la règle (`isActive: false`) ou de la borner (`endDate`). Corriger un montant se fait sur la règle : `reproject` réécrit le mois courant et les suivants, jamais les mois clos.
+- **Les lignes futures sont hors des totaux, et le bloc le dit.** `UpcomingSection` liste ce qui est daté de demain à +3 mois (`UPCOMING_MONTHS`), sous le tableau de la période et en fond estompé. Les mélanger au tableau ferait gonfler les dépenses du mois en cours d'un trimestre d'URSSAF qui n'est pas encore tombé ; les ignorer ferait tomber ce même trimestre sans prévenir. La fenêtre démarre à **demain** : une dépense datée du jour est déjà comptée dans la période, la faire apparaître aussi ici la ferait lire deux fois.
+- **« Dont X d'impôts » s'appuie sur l'identifiant fixe `impots`** (`TAX_CATEGORY_ID`), celui du seed et de la migration 2 — pas sur le libellé, qui casserait au premier renommage. Une autre catégorie fiscale (URSSAF, TVA) compte dans le total mais pas dans cette baseline ; le panneau déplié de la carte donne le détail par catégorie.
+- **Les « vues du catalogue » sont une estimation, et l'écran le dit.** C'est `totals.views` moins les vues cumulées des vidéos sorties **pendant** la période. YouTube ne fournit les compteurs par vidéo qu'en **cumul depuis la sortie**, jamais jour par jour : la soustraction ne tombe juste que sur une période qui va jusqu'à aujourd'hui, d'où le plancher à zéro. Le tableau `catalogPerformance`, lui, est exact — ce sont des cumuls assumés comme tels.
+- **Le planning s'ouvre centré sur aujourd'hui.** `ProductionGantt` pose `scrollLeft` au montage et à chaque changement de zoom, en retranchant la largeur de la colonne des titres (`TITLE_WIDTH`). Sans ça il s'ouvrait collé à sa borne gauche, sur des jours passés. Les fenêtres couvrent donc volontairement du passé (`before` : 14, 30 ou 60 jours) pour qu'on puisse reculer. La colonne des titres est `sticky left-0` : en défilant vers le futur, on doit continuer de savoir de quelle vidéo est la barre qu'on regarde.
+- **La file d'attente a une vue compacte** (`preferences.compactQueue`) : une ligne par vidéo. Au-delà de cinq ou six vidéos en cours, la version détaillée oblige à faire défiler pour voir sa propre file. Le chevron d'une carte l'ouvre **à contre-courant du réglage global** (`exceptions`, un `Set` d'identifiants) : on veut souvent une file compacte _sauf_ la vidéo sur laquelle on travaille. Changer le réglage global vide les exceptions.
+- **Les confettis sont maison** (`Confetti`, canvas, ~50 lignes, aucune dépendance) et ne se déclenchent qu'à la **publication** : c'est le seul moment de l'outil qui mérite d'être fêté, tout le reste est de la comptabilité et de la planification. Le canvas est `pointer-events-none` en position fixe — il recouvre l'écran sans jamais intercepter un clic — et se démonte tout seul.
+- **`/api/productions/:id/todos` est monté AVANT `/api/productions`** dans `server.ts` : un router de préfixe plus long doit passer en premier, sinon le plus court capte la requête et répond 404. Même vigilance que `/overview` déclaré avant `/:id`.
 
 ## Déploiement
 

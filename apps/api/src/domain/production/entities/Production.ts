@@ -1,6 +1,7 @@
 import type { IsoDate } from '../../../shared/dates.ts';
 import type { Cents } from '../../../shared/money.ts';
 import type { ProductStatus } from '../../product/entities/Product.ts';
+import type { TodoItem } from './StepTodo.ts';
 import type { SponsorshipStatus } from '../../sponsorship/entities/Sponsorship.ts';
 
 /**
@@ -93,6 +94,15 @@ export interface ProductionView extends Production {
   /** Produits et sponsos rattachés, en version courte. Les compteurs s'en dérivent. */
   products: ProductionProductRef[];
   sponsorships: ProductionSponsorshipRef[];
+  /**
+   * Tâches de la vidéo, référentiel d'étape et ponctuelles réunies, avec leur état.
+   * Portées par la vue plutôt que chargées à la demande : les pastilles d'étape
+   * affichent « 2/5 » sur chaque carte de la file, et une requête par pastille ferait
+   * autant d'allers-retours que d'étapes multipliées par le nombre de vidéos.
+   */
+  todos: TodoItem[];
+  /** Temps déjà enregistré sur cette vidéo, en minutes (sessions closes seulement). */
+  trackedMinutes: number;
 }
 
 export interface CreateProductionInput {

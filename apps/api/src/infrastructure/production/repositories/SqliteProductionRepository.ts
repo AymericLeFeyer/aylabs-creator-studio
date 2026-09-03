@@ -10,10 +10,12 @@ import type {
   ProductionView,
   UpdateProductionInput,
 } from '../../../domain/production/entities/Production.ts';
+import type { TodoItem } from '../../../domain/production/entities/StepTodo.ts';
 import type {
   ProductionFilter,
   ProductionRepository,
 } from '../../../domain/production/repositories/ProductionRepository.ts';
+import { SqliteTodoRepository } from './SqliteTodoRepository.ts';
 import { placeholders } from '../../db/filters.ts';
 import { newId } from '../../../shared/id.ts';
 import { notFound } from '../../../shared/errors.ts';
@@ -90,9 +92,36 @@ const VIEW_JOINS = `
 
 export class SqliteProductionRepository implements ProductionRepository {
   private readonly db: DatabaseSync;
+  /**
+   * Les tâches font partie de la vue d'une production : la pastille « Montage 2/5 » se
+   * lit sur chaque carte de la file. Les charger ici évite une requête par pastille.
+   */
+  private readonly todos: SqliteTodoRepository;
 
   constructor(db: DatabaseSync) {
     this.db = db;
+    this.todos = new SqliteTodoRepository(db);
+  }
+
+  /** Temps enregistré par production, en minutes closes, pour tout le lot d'un coup. */
+  private loadTracked(productionIds: string[]): Map<string, number> {
+    const totals = new Map<string, number>();
+    if (productionIds.length === 0) return totals;
+
+    const rows = this.db
+      .prepare(
+        `SELECT production_id, COALESCE(SUM(minutes), 0) AS total
+           FROM production_time_entries
+          WHERE production_id IN (${placeholders(productionIds.length)})
+          GROUP BY production_id`,
+      )
+      .all(...(productionIds as never[])) as unknown as Array<{
+      production_id: string;
+      total: number;
+    }>;
+
+    for (const row of rows) totals.set(row.production_id, row.total);
+    return totals;
   }
 
   private buildWhere(filter: ProductionFilter): { clause: string; params: unknown[] } {
@@ -230,6 +259,8 @@ export class SqliteProductionRepository implements ProductionRepository {
     checks: ProductionStepCheck[],
     products: ProductionProductRef[],
     sponsorships: ProductionSponsorshipRef[],
+    todos: TodoItem[],
+    trackedMinutes: number,
   ): ProductionView {
     return {
       ...toDomain(row),
@@ -243,6 +274,8 @@ export class SqliteProductionRepository implements ProductionRepository {
       slotsCount: row.slots_count,
       products,
       sponsorships,
+      todos,
+      trackedMinutes,
     };
   }
 
@@ -258,6 +291,8 @@ export class SqliteProductionRepository implements ProductionRepository {
     const ids = rows.map((row) => row.id);
     const checks = this.loadChecks(ids);
     const partners = this.loadPartners(ids);
+    const todos = this.todos.listForProductions(ids);
+    const tracked = this.loadTracked(ids);
 
     return rows.map((row) =>
       this.toView(
@@ -265,6 +300,8 @@ export class SqliteProductionRepository implements ProductionRepository {
         checks.get(row.id) ?? [],
         partners.products.get(row.id) ?? [],
         partners.sponsorships.get(row.id) ?? [],
+        todos.get(row.id) ?? [],
+        tracked.get(row.id) ?? 0,
       ),
     );
   }
@@ -286,6 +323,8 @@ export class SqliteProductionRepository implements ProductionRepository {
       this.loadChecks([id]).get(id) ?? [],
       partners.products.get(id) ?? [],
       partners.sponsorships.get(id) ?? [],
+      this.todos.listForProduction(id),
+      this.loadTracked([id]).get(id) ?? 0,
     );
   }
 

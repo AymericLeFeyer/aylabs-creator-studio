@@ -53,6 +53,15 @@ const columnsFor = (includeInKind: boolean): Column[] =>
 
 interface VideoPerformanceTableProps {
   data: AnalyticsResult;
+  /**
+   * Les lignes à afficher. Par défaut les sorties de la période ; l'écran Contenu passe
+   * ici le **catalogue** (les vidéos publiées avant la période) pour montrer, avec le
+   * même tableau, que l'audience ne vient pas que des nouveautés.
+   */
+  rows?: AnalyticsResult['videoPerformance'];
+  title?: string;
+  subtitle?: string;
+  emptyLabel?: string;
 }
 
 /**
@@ -69,13 +78,20 @@ interface VideoPerformanceTableProps {
  * des euros, c'est presque toujours ce qu'on cherche ; la date fait exception et part
  * du plus récent.
  */
-export const VideoPerformanceTable = ({ data }: VideoPerformanceTableProps) => {
+export const VideoPerformanceTable = ({
+  data,
+  rows: source,
+  title = 'Vidéos de la période',
+  subtitle,
+  emptyLabel = 'Aucune sortie sur cette période.',
+}: VideoPerformanceTableProps) => {
   const { moneyMode, includeInKind } = useFilters();
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'date', desc: true });
 
+  const input = source ?? data.videoPerformance;
   const rows = useMemo(
-    () => withMoney(data.videoPerformance, { mode: moneyMode, includeInKind }),
-    [data.videoPerformance, moneyMode, includeInKind],
+    () => withMoney(input, { mode: moneyMode, includeInKind }),
+    [input, moneyMode, includeInKind],
   );
 
   const columns = useMemo(() => columnsFor(includeInKind), [includeInKind]);
@@ -114,11 +130,9 @@ export const VideoPerformanceTable = ({ data }: VideoPerformanceTableProps) => {
     return (
       <Card className="flex flex-col">
         <CardHeader>
-          <CardTitle>Vidéos de la période</CardTitle>
+          <CardTitle>{title}</CardTitle>
         </CardHeader>
-        <p className="px-5 pb-8 text-center text-sm text-muted-foreground">
-          Aucune sortie sur cette période.
-        </p>
+        <p className="px-5 pb-8 text-center text-sm text-muted-foreground">{emptyLabel}</p>
       </Card>
     );
   }
@@ -126,9 +140,10 @@ export const VideoPerformanceTable = ({ data }: VideoPerformanceTableProps) => {
   return (
     <Card className="flex flex-col overflow-hidden">
       <CardHeader className="pb-3">
-        <CardTitle>Vidéos de la période</CardTitle>
+        <CardTitle>{title}</CardTitle>
         <p className="text-xs text-muted-foreground">
-          {rows.length} sortie{rows.length > 1 ? 's' : ''} · clique un en-tête pour trier
+          {subtitle ??
+            `${rows.length} sortie${rows.length > 1 ? 's' : ''} · clique un en-tête pour trier`}
         </p>
       </CardHeader>
 
