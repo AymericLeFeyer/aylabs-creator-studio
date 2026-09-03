@@ -26,6 +26,12 @@ export interface VideoRepository {
   /** Remplace les compteurs d'une vidéo. Les compteurs sont des cumuls, jamais additionnés. */
   upsertStats(updates: VideoStatsUpdate[]): number;
   /**
+   * Marque comme retirées les vidéos de la chaîne absentes du lot collecté, dans la
+   * fenêtre `since`. Lève le marquage de celles qui réapparaissent. Un lot vide ne
+   * marque rien. Renvoie le nombre de vidéos nouvellement marquées.
+   */
+  markMissing(channelId: string, since: IsoDate, presentExternalIds: string[]): number;
+  /**
    * Ce que des vidéos ont fait sur une période, par différence de relevés datés.
    * Une vidéo sans relevé antérieur à la période est **absente** du résultat : on ne
    * peut pas séparer sa part de période de son cumul d'avant.

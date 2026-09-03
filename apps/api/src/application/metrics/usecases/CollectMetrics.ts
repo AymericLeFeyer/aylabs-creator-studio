@@ -283,7 +283,7 @@ export class CollectMetrics {
 
     try {
       const uploads = await fetch(since);
-      return this.videos.upsertMany(
+      const upserted = this.videos.upsertMany(
         uploads.map((upload) => ({
           channelId,
           externalId: upload.externalId,
@@ -293,6 +293,19 @@ export class CollectMetrics {
           thumbnailUrl: upload.thumbnailUrl,
         })),
       );
+
+      // Ce que YouTube ne renvoie plus dans la fenêtre a été retiré de la chaîne : on le
+      // marque au lieu de le supprimer, pour ne pas emporter l'argent qui s'y rattache.
+      const removed = this.videos.markMissing(
+        channelId,
+        since,
+        uploads.map((upload) => upload.externalId),
+      );
+      if (removed > 0) {
+        console.log(`[collect] ${removed} vidéo(s) retirée(s) de YouTube (${channelId})`);
+      }
+
+      return upserted;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[collect] vidéos non collectées (${channelId}) : ${message}`);

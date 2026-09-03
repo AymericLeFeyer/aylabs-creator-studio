@@ -190,7 +190,31 @@ Catégories créées au premier démarrage (`SeedDefaultCategories`, identifiant
 
 La vidéo sert donc à trois choses : **repère temporel** (trait vertical au jour de sortie sur les graphiques d'argent et d'audience), **porte-clé** (les revenus et dépenses s'y rattachent par `video_id`) et **support de mesure** (tableau de performance par vidéo).
 
-`VideoRepository` : `findAll`, `findAllWithChannel`, `findById`, `upsertMany` (titre/miniature, jamais les compteurs), `upsertStats` (compteurs seuls, **UPDATE sans INSERT** : une stat sans ligne de vidéo n'a nulle part où aller), `findLatestDate`, `countByChannel`.
+`VideoRepository` : `findAll`, `findAllWithChannel`, `findById`, `upsertMany` (titre/miniature, jamais les compteurs), `upsertStats` (compteurs seuls, **UPDATE sans INSERT** : une stat sans ligne de vidéo n'a nulle part où aller), `markMissing`, `findLatestDate`, `countByChannel`.
+
+**Une vidéo retirée de YouTube est marquée, jamais supprimée** (`videos.deleted_at`,
+migration 17). La supprimer emporterait tout ce qui s'y rattache : revenus et dépenses
+détachés (`ON DELETE SET NULL`), production privée de sa sortie, relevés de
+`video_stat_snapshots` partis en cascade. Le marquage garde l'argent là où il a été
+gagné, et reste **réversible**.
+
+`markMissing(channelId, since, presentExternalIds)` tourne après chaque `upsertMany` :
+tout ce que YouTube ne renvoie plus **dans la fenêtre collectée** est marqué, et tout ce
+qui réapparaît est démarqué. Trois garde-fous, chacun pour une raison précise :
+
+- **borné à `since`** — la collecte ne remonte qu'à la dernière vidéo connue moins
+  quelques jours ; comparer au-delà ferait passer tout l'historique antérieur pour
+  supprimé ;
+- **un lot vide ne marque rien** — une liste vide est bien plus souvent un quota épuisé
+  ou une réponse tronquée qu'une chaîne entièrement effacée ;
+- **le démarquage est automatique** — en mode `public`, la playlist « uploads » ne
+  renvoie pas les vidéos **privées ou non listées** : une vidéo simplement masquée est
+  indiscernable d'une vidéo effacée, et elle revient d'elle-même si elle repasse en public.
+
+Le filtre `deleted_at IS NULL` vit dans le seul `buildWhere` du dépôt : toutes les
+lectures en héritent (liste, compteurs de période, repères de graphique, performance par
+vidéo), et `findLatestDate` l'applique aussi — une vidéo retirée ne doit pas servir de
+point de reprise à la collecte suivante.
 
 La collecte passe par la **playlist « uploads »** de la chaîne (`infrastructure/youtube/api/uploads.ts`, partagé par les deux clients) et non par `search.list` : 1 unité de quota par page de 50 contre 100 pour une recherche, et l'ordre antéchronologique garanti permet de s'arrêter dès qu'on dépasse la date voulue. Fonctionne en mode `public` (clé API) comme en mode `oauth` (`mine: true`). Les Shorts en font partie, YouTube ne les distingue pas à ce niveau.
 
@@ -661,12 +685,26 @@ partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/param
 elle en occupait deux — grâce à deux déclencheurs compacts :
 
 - **`PeriodPicker`** : deux boutons au lieu de sept. Une famille **glissante** (30 jours
-  par défaut, 7/90/12 mois derrière la flèche) et une famille **calendaire** (Ce mois,
-  puis trimestre/année/tout). Chaque bouton affiche le préréglage actif de sa famille.
+  par défaut, 7/90/12 mois derrière la flèche) et une famille **calendaire**. Chaque
+  bouton affiche la période active de sa famille.
+
+  Le menu calendaire ne liste pas que des préréglages : il descend dans les **périodes
+  closes**, en trois mailles séparées par un filet — « Ce mois » puis les 12 mois révolus
+  (« Août 2026 »), « Ce trimestre » puis les 4 derniers (« T2 2026 »), « Cette année »
+  puis toutes les années jusqu'à `company.foundedOn`, et « Tout » pour finir. L'ordre suit
+  la façon dont on cherche : le mois d'abord, puis on élargit.
+
+  Ces entrées posent un `preset: 'custom'` avec des bornes **figées** — « Août 2026 »
+  désigne août 2026 pour toujours, là où un préréglage se recalcule chaque jour — et un
+  `customLabel` que le bouton affiche à la place du préréglage. Éditer les dates à la main
+  efface ce nom : deux bornes libres ne sont plus « Août 2026 ». Sans `foundedOn`, la
+  liste des années retombe sur trois ans (`MAX_YEARS` plafonne à 15 : une date de création
+  saisie de travers ne doit pas produire un menu de cent lignes).
   Il n'y a **plus de bouton « Personnalisé »** : la période affichée est elle-même le
   bouton — cliquer « 5 août – 3 sept. 2026 » ouvre deux champs de date, préremplis avec
   les bornes courantes. Le préréglage `qtd` (« Ce trimestre ») a été ajouté pour cette
   famille : c'est la maille des échéances fiscales.
+
 - **`ChannelPicker`** : un déclencheur unique qui empile les **miniatures** des chaînes
   retenues (`ChannelAvatar`, jusqu'à 3, puis un compteur) et affiche le nom quand il n'y
   en a qu'une. « Toutes » n'est pas une case mais **l'absence de sélection** — c'est déjà
@@ -755,7 +793,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Sentinelle des `Select` facultatifs** : `NONE` / `toSelectValue` / `fromSelectValue` (`presentation/components/forms/selectNone.ts`). Radix refuse une `SelectItem` de valeur vide ; la sentinelle est partagée pour que trois formulaires n'en inventent pas trois différentes.
 - **Référentiel plutôt que colonnes** : les étapes de production sont des lignes (`production_steps`) et l'état « coché » est la **présence** d'une ligne dans `production_step_checks`. En ajouter une ne demande aucune migration, et la date de complétion vient gratuitement.
 - **Migration 5** ajoute `brands`, `production_steps`, `productions`, `production_step_checks`, `production_slots`, `products`, `sponsorships`, et la colonne `revenue_entries.origin`. **Migration 6** ajoute `products.sponsorship_id`, **migration 7** la table `ideas`, **migration 8** `products.video_id` et `sponsorships.video_id`.
-- **Migration 9** ajoute `company` (ligne unique), `legal_obligations` et `legal_checks`. **Migration 10** ajoute `sponsorships.script`, **migration 11** la table `sponsorship_requirements`. **Migration 16** remplace `frequency` par `interval_months` sur les récurrences.
+- **Migration 9** ajoute `company` (ligne unique), `legal_obligations` et `legal_checks`. **Migration 10** ajoute `sponsorships.script`, **migration 11** la table `sponsorship_requirements`. **Migration 17** ajoute `videos.deleted_at`. **Migration 16** remplace `frequency` par
+  `interval_months` sur les récurrences.
   **Migration 15** ajoute `affiliate_platforms`, `affiliate_platform_brands` et
   `revenue_entries.platform_id`. **Migration 14** ajoute `video_stat_snapshots`.
   **Migration 13** ajoute `legal_bookmarks`. **Migration 12** en ajoute trois d'un coup — `production_time_entries` (le temps passé), `step_todos` / `production_todos` / `production_todo_checks` (les tâches d'étape), `recurring_expenses` + `expense_entries.recurring_id` (les dépenses qui reviennent) — et la colonne `channels.thumbnail_url`.
@@ -841,6 +880,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Le planning s'ouvre centré sur aujourd'hui.** `ProductionGantt` pose `scrollLeft` au montage et à chaque changement de zoom, en retranchant la largeur de la colonne des titres (`TITLE_WIDTH`). Sans ça il s'ouvrait collé à sa borne gauche, sur des jours passés. Les fenêtres couvrent donc volontairement du passé (`before` : 14, 30 ou 60 jours) pour qu'on puisse reculer. La colonne des titres est `sticky left-0` : en défilant vers le futur, on doit continuer de savoir de quelle vidéo est la barre qu'on regarde.
 - **La file d'attente a une vue compacte** (`preferences.compactQueue`) : une ligne par vidéo. Au-delà de cinq ou six vidéos en cours, la version détaillée oblige à faire défiler pour voir sa propre file. Le chevron d'une carte l'ouvre **à contre-courant du réglage global** (`exceptions`, un `Set` d'identifiants) : on veut souvent une file compacte _sauf_ la vidéo sur laquelle on travaille. Changer le réglage global vide les exceptions.
 - **Les confettis sont maison** (`Confetti`, canvas, ~50 lignes, aucune dépendance) et ne se déclenchent qu'à la **publication** : c'est le seul moment de l'outil qui mérite d'être fêté, tout le reste est de la comptabilité et de la planification. Le canvas est `pointer-events-none` en position fixe — il recouvre l'écran sans jamais intercepter un clic — et se démonte tout seul.
+- **Une vidéo supprimée sur YouTube disparaît des chiffres à la collecte suivante**, mais sa ligne reste en base (`deleted_at`). Les revenus et dépenses qui lui étaient rattachés gardent leur rattachement : l'argent a bien été gagné, même si la vidéo n'est plus en ligne. Conséquence à connaître : ces montants ne se lisent plus dans le tableau de performance, alors qu'ils comptent toujours dans les totaux de la période. C'est voulu — « ne plus être comptabilisée » porte sur la vidéo, pas sur l'euro.
 - **La colonne « Plateforme » du tableau des revenus signale ce qui manque, pas ce qui est vide.** Un « À renseigner » en accent n'apparaît que sur les revenus de catégorie `affiliation` (identifiant fixe `AFFILIATE_CATEGORY_ID`) sans plateforme rattachée : AdSense, une sponso ou un produit reçu n'ont aucune raison d'en avoir une, et les marquer tous ferait une colonne d'avertissements qu'on cesserait de lire. Un compteur en tête donne le total à rattacher. La colonne entière disparaît tant qu'aucune plateforme n'existe — il n'y aurait rien à y renseigner.
 - **Les identifiants fixes de catégorie vivent dans `domain/category/entities/Category.ts`**, des deux côtés (`ADSENSE_CATEGORY_ID`, `AFFILIATE_CATEGORY_ID`, `TAX_CATEGORY_ID`). Les règles qui doivent désigner _une_ catégorie précise s'y réfèrent : se fier au libellé casserait au premier renommage, qui est justement permis.
 - **« Vues (période) » et « Vues (total) » ne mesurent pas la même chose.** La première vient de la différence de deux relevés datés (`video_stat_snapshots`), la seconde est le cumul depuis la sortie. Sur un catalogue, c'est l'écart entre les deux qui est l'information : une vidéo à 40 000 vues dont 30 sur le mois ne travaille plus, une à 4 000 dont 800 travaille encore. Le catalogue est d'ailleurs **trié sur la période** quand elle est connue, pas sur le cumul — sinon le classement ne bougerait jamais.

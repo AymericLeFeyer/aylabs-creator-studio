@@ -31,6 +31,8 @@ import {
 } from '../components/ui/table.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { PlatformsPanel } from '../components/partners/PlatformsPanel.tsx';
+import { usePlatforms } from '../../application/affiliate/usecases/usePlatforms.ts';
+import { useFilters } from '../hooks/useFilters.tsx';
 import { PartnerStatCards } from '../components/partners/PartnerStatCards.tsx';
 import { SponsorshipScriptDialog } from '../components/partners/SponsorshipScriptDialog.tsx';
 import { ProductDialog } from '../components/forms/ProductDialog.tsx';
@@ -63,6 +65,15 @@ export const PartnersPage = () => {
     requestedTab === 'sponsors' || requestedTab === 'plateformes' ? requestedTab : 'produits';
 
   const { data: products = [] } = useProducts();
+  // Mêmes paramètres que `PlatformsPanel` : la requête est partagée, pas dupliquée.
+  // Le compteur de l'onglet exclut les archivées, comme les deux autres onglets.
+  const filters = useFilters();
+  const { data: platforms = [] } = usePlatforms({
+    includeArchived: true,
+    from: filters.from,
+    to: filters.to,
+  });
+  const activePlatforms = platforms.filter((platform) => !platform.isArchived).length;
   const { data: sponsorships = [] } = useSponsorships();
   const removeProduct = useDeleteProduct();
   const removeSponsorship = useDeleteSponsorship();
@@ -108,7 +119,7 @@ export const PartnersPage = () => {
           <TabsTrigger value="sponsors">Sponsors ({sponsorships.length})</TabsTrigger>
           {/* Les plateformes ne sont pas un partenariat de plus : c'est l'endroit où se
               gère l'affiliation, et ce qu'elle rapporte. D'où un onglet à part. */}
-          <TabsTrigger value="plateformes">Plateformes</TabsTrigger>
+          <TabsTrigger value="plateformes">Plateformes ({activePlatforms})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="produits">

@@ -63,9 +63,16 @@ export class SqliteVideoRepository implements VideoRepository {
     this.db = db;
   }
 
-  /** Clause commune aux deux lectures, pour que la liste enrichie filtre à l'identique. */
+  /**
+   * Clause commune à toutes les lectures, pour qu'elles filtrent à l'identique.
+   *
+   * Les vidéos **retirées de YouTube** en sont exclues d'office : leur ligne survit pour
+   * ne pas emporter l'argent qui s'y rattache, mais elles ne comptent plus dans aucun
+   * total, aucun repère de graphique, aucun tableau. C'est le seul endroit où l'écrire —
+   * une lecture qui oublierait ce filtre les ferait réapparaître dans un cumul.
+   */
   private buildWhere(filter: VideoFilter, alias: string): { clause: string; params: unknown[] } {
-    const conditions: string[] = [];
+    const conditions: string[] = [`${alias}.deleted_at IS NULL`];
     const params: unknown[] = [];
 
     if (filter.range) {
@@ -78,10 +85,7 @@ export class SqliteVideoRepository implements VideoRepository {
       params.push(...channelIds);
     }
 
-    return {
-      clause: conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
-      params,
-    };
+    return { clause: `WHERE ${conditions.join(' AND ')}`, params };
   }
 
   findAll(filter: VideoFilter = {}): Video[] {
@@ -305,6 +309,51 @@ export class SqliteVideoRepository implements VideoRepository {
     return result;
   }
 
+  /**
+   * Marque comme retirées les vidéos absentes du dernier lot collecté.
+   *
+   * La comparaison est **bornée à la fenêtre réellement collectée** (`since`) : la
+   * collecte ne remonte que jusqu'à la dernière vidéo connue moins quelques jours, et
+   * comparer au-delà ferait passer tout l'historique antérieur pour supprimé.
+   *
+   * Symétrique : une vidéo présente dans le lot voit son `deleted_at` remis à `NULL`.
+   * C'est ce qui rattrape une vidéo repassée en public après un passage en privé — en
+   * mode `public`, la playlist « uploads » ne renvoie pas les vidéos masquées, et une
+   * mise en privé est indiscernable d'une suppression.
+   *
+   * **Un lot vide ne marque rien.** Une chaîne peut légitimement n'avoir aucune sortie
+   * dans la fenêtre, mais une liste vide est bien plus souvent le signe d'un quota
+   * épuisé ou d'une réponse tronquée — et l'interpréter comme « tout a été supprimé »
+   * viderait l'écran d'un coup.
+   *
+   * Renvoie le nombre de vidéos nouvellement marquées.
+   */
+  markMissing(channelId: string, since: IsoDate, presentExternalIds: string[]): number {
+    if (presentExternalIds.length === 0) return 0;
+    const now = new Date().toISOString();
+    const holes = placeholders(presentExternalIds.length);
+
+    // Une vidéo revenue : on lève le marquage avant de compter les disparues.
+    this.db
+      .prepare(
+        `UPDATE videos SET deleted_at = NULL, updated_at = ?
+          WHERE channel_id = ? AND deleted_at IS NOT NULL AND external_id IN (${holes})`,
+      )
+      .run(now, channelId, ...(presentExternalIds as never[]));
+
+    const result = this.db
+      .prepare(
+        `UPDATE videos SET deleted_at = ?, updated_at = ?
+          WHERE channel_id = ?
+            AND deleted_at IS NULL
+            AND date >= ?
+            AND external_id NOT IN (${holes})`,
+      )
+      .run(now, now, channelId, since, ...(presentExternalIds as never[]));
+
+    return Number(result.changes);
+  }
+
   countInRange(channelIds: string[], range: DateRange): number {
     const { clause, params } = this.buildWhere({ channelIds, range }, 'v');
     return (
@@ -318,14 +367,16 @@ export class SqliteVideoRepository implements VideoRepository {
 
   findLatestDate(channelId: string): IsoDate | null {
     const row = this.db
-      .prepare('SELECT MAX(date) AS d FROM videos WHERE channel_id = ?')
+      .prepare('SELECT MAX(date) AS d FROM videos WHERE channel_id = ? AND deleted_at IS NULL')
       .get(channelId) as { d: string | null } | undefined;
     return row?.d ?? null;
   }
 
   countByChannel(channelId: string): number {
     return (
-      this.db.prepare('SELECT COUNT(*) AS n FROM videos WHERE channel_id = ?').get(channelId) as {
+      this.db
+        .prepare('SELECT COUNT(*) AS n FROM videos WHERE channel_id = ? AND deleted_at IS NULL')
+        .get(channelId) as {
         n: number;
       }
     ).n;

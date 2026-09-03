@@ -52,6 +52,14 @@ interface FiltersState {
   /** Utilisés seulement quand `preset` vaut `custom`. */
   customFrom: string;
   customTo: string;
+  /**
+   * Nom de la période choisie dans le menu calendaire (« Août 2026 », « T2 2026 »).
+   *
+   * `null` quand les dates ont été saisies à la main : le bouton affiche alors les
+   * bornes, faute de nom à donner. C'est ce champ qui distingue un mois clos choisi dans
+   * la liste d'une plage libre — les deux sont des `custom`, mais l'un a un nom.
+   */
+  customLabel: string | null;
   granularity: Granularity | 'auto';
   channelIds: string[];
   includeUnassigned: boolean;
@@ -65,6 +73,7 @@ const DEFAULT_STATE: FiltersState = {
   preset: '30d',
   customFrom: toIsoDate(subDays(new Date(), 29)),
   customTo: toIsoDate(new Date()),
+  customLabel: null,
   granularity: 'auto',
   channelIds: [],
   includeUnassigned: true,

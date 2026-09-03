@@ -730,6 +730,28 @@ const migrations: Migration[] = [
          AND month_of_year <> CAST(substr(start_date, 6, 2) AS INTEGER);
     `,
   },
+  {
+    version: 17,
+    name: 'video_deleted_at',
+    // Une video retiree de YouTube ne doit plus compter nulle part — mais sa ligne, elle,
+    // doit rester.
+    //
+    // La SUPPRIMER emporterait tout ce qui s'y rattache : les revenus et depenses
+    // imputes seraient detaches (`ON DELETE SET NULL`), la production qui l'a publiee
+    // perdrait sa sortie, et les releves de `video_stat_snapshots` partiraient en
+    // cascade. Un marquage garde l'argent la ou il a ete gagne et reste REVERSIBLE : si
+    // la video reapparait — c'est le cas d'une video repassee en public apres un passage
+    // en prive —, la collecte suivante remet `deleted_at` a NULL toute seule.
+    //
+    // C'est justement ce qui rend le marquage obligatoire plutot que la suppression : en
+    // mode `public`, la playlist « uploads » ne renvoie PAS les videos privees ou non
+    // listees. Une video simplement masquee est donc indiscernable d'une video effacee,
+    // et supprimer sur cette base perdrait un historique qu'on ne peut pas reconstituer.
+    up: `
+      ALTER TABLE videos ADD COLUMN deleted_at TEXT;
+      CREATE INDEX idx_videos_deleted ON videos(deleted_at);
+    `,
+  },
 ];
 
 /**
