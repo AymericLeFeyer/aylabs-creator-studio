@@ -833,9 +833,17 @@ un contexte non sécurisé ou une navigation privée ne doit pas empêcher l'app
 - `location = /sw.js`, `= /index.html`, `= /manifest.webmanifest` → `no-cache,
 must-revalidate`. Un service worker figé par un cache HTTP d'un an rendrait
   l'application impossible à mettre à jour sans vider le navigateur à la main.
-- `types { application/manifest+json webmanifest; }` — sans ça le manifeste sort en
-  `application/octet-stream` et n'est pas lu : plus de bannière d'installation, plus
-  d'icône.
+- `default_type application/manifest+json;` **dans le `location = /manifest.webmanifest`**,
+  pour que le manifeste ne sorte pas en `application/octet-stream` sur une version de
+  nginx qui ignore l'extension.
+
+  **Surtout pas un bloc `types` au niveau `server`.** La directive `types` _remplace_ la
+  table MIME héritée du contexte `http` (`include mime.types`) au lieu de la compléter :
+  plus de `text/html`, plus de `text/css`, plus d'`application/javascript`. Tout part en
+  `application/octet-stream` et le navigateur **télécharge la page** au lieu de
+  l'afficher. L'erreur a été commise une fois : elle rend le site entièrement
+  inaccessible, et rien ne la signale — nginx répond 200 sur tout.
+
 - `location ^~ /assets/` (et non `location /assets/`) : le `^~` fait passer ce préfixe
   **avant** la règle en expression régulière des icônes, qui sinon retirerait leur cache
   d'un an aux PNG hachés.
