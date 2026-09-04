@@ -265,12 +265,17 @@ export const useRunningTimer = () =>
  * L'ordre des étapes et celui des tâches sont **globaux** : ils valent pour toutes les
  * vidéos. C'est voulu — une étape n'a qu'un rang, et le déplacer depuis une fiche revient
  * à le déplacer partout. Les écrans qui le proposent le disent.
+ *
+ * Ils passent par `useStepMutation` / `useStepTodoMutation` et **non** par
+ * `useProductionMutation` : celui-ci n'invalide ni `productionSteps` ni `stepTodos`, si
+ * bien que le nouvel ordre était bien écrit en base mais que l'écran continuait d'afficher
+ * la liste servie par le cache — les flèches paraissaient ne rien faire.
  */
 export const useReorderSteps = () =>
-  useProductionMutation((ids: string[]) => productionStepApi.reorder(ids));
+  useStepMutation((ids: string[]) => productionStepApi.reorder(ids));
 
 export const useReorderStepTodos = () =>
-  useProductionMutation((ids: string[]) => stepTodoApi.reorder(ids));
+  useStepTodoMutation((ids: string[]) => stepTodoApi.reorder(ids));
 
 export const useStartTimer = () =>
   useProductionMutation(
@@ -285,7 +290,19 @@ export const useStartTimer = () =>
     }) => productionTimeApi.start(productionId, stepId, todoId ?? null),
   );
 
-export const useStopTimer = () => useProductionMutation((id: string) => productionTimeApi.stop(id));
+/**
+ * Arrête le chronomètre.
+ *
+ * `from` et `nowMinutes` sont transmis pour le replan que l'API déclenche quand la session
+ * venait d'un créneau du planning — sans eux, il repartirait de l'horloge du serveur, qui
+ * est en UTC.
+ */
+export const useStopTimer = () =>
+  useProductionMutation((input: string | { id: string; from?: string; nowMinutes?: number }) =>
+    typeof input === 'string'
+      ? productionTimeApi.stop(input)
+      : productionTimeApi.stop(input.id, { from: input.from, nowMinutes: input.nowMinutes }),
+  );
 
 export const useCreateTimeEntry = () =>
   useProductionMutation((input: TimeEntryInput) => productionTimeApi.create(input));

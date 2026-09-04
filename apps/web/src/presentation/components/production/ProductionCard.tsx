@@ -47,6 +47,7 @@ interface ProductionCardProps {
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   /** Mise en avant de la prochaine vidéo à travailler. */
+  /** La prochaine à travailler : un anneau la désigne, sans lui donner un fond de plus. */
   highlighted?: boolean;
   /** Le chronomètre tourne sur cette vidéo : le bouton devient un état, pas une action. */
   timerRunning?: boolean;
@@ -99,6 +100,10 @@ export const ProductionCard = ({
     days(production.plannedDate) < 0 &&
     production.status !== 'done';
 
+  // Dérivé du statut plutôt que passé en prop : « en cours » est une propriété de la
+  // vidéo, pas une décision de l'écran qui l'affiche.
+  const inProgress = production.status === 'in_progress';
+
   const timerButton = (
     <Button
       variant={timerRunning ? 'secondary' : 'ghost'}
@@ -122,7 +127,11 @@ export const ProductionCard = ({
       <Card
         className={cn(
           'flex items-center gap-2 px-3 py-2 transition-colors',
-          highlighted && 'border-[var(--positive)]/50 bg-[var(--positive)]/5',
+          // Le fond vert marque **le travail en cours**, pas la prochaine vidéo : c'est
+          // ce qu'on cherche des yeux en ouvrant la file, et une seule carte surlignée
+          // ne disait pas où on en était sur les autres.
+          inProgress && 'border-[var(--positive)]/40 bg-[var(--positive)]/10',
+          highlighted && 'ring-1 ring-[var(--positive)]',
         )}
       >
         <Link
@@ -196,7 +205,8 @@ export const ProductionCard = ({
     <Card
       className={cn(
         'flex gap-3 p-4 transition-colors',
-        highlighted && 'border-[var(--positive)]/50 bg-[var(--positive)]/5',
+        inProgress && 'border-[var(--positive)]/40 bg-[var(--positive)]/10',
+        highlighted && 'ring-1 ring-[var(--positive)]',
       )}
     >
       {/* L'ordre de la file est entièrement manuel : deux flèches, pas de tri déduit. */}

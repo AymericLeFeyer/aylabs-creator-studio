@@ -14,11 +14,20 @@ export interface AppPreferences {
   sidebarCollapsed: boolean;
   /** File d'attente en cartes compactes : une ligne par vidéo au lieu d'un bloc. */
   compactQueue: boolean;
+  /**
+   * Ordre des entrées de la barre latérale, par adresse.
+   *
+   * Vide = l'ordre par défaut. On stocke les **adresses** et non des index : un écran
+   * ajouté ou retiré par une mise à jour décalerait tous les rangs suivants, et le menu
+   * se retrouverait mélangé sans que personne n'y ait touché.
+   */
+  navOrder: string[];
 }
 
 const DEFAULTS: AppPreferences = {
   sidebarCollapsed: false,
   compactQueue: false,
+  navOrder: [],
 };
 
 export const usePreferences = () => {

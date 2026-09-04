@@ -647,6 +647,38 @@ Un replan **complet** efface aussi les suggestions **passées jamais approuvées
 (`clearSuggestions(null, to)`) : elles n'ont rien raconté, et les laisser traîner ferait
 croire que ce travail est déjà casé.
 
+#### Le chronomètre lancé depuis un créneau
+
+`POST /api/planning/slots/:id/start-timer` est **l'autre chemin vers le même résultat
+qu'`approve`** : au lieu de confirmer après coup un temps qu'on estime, on le mesure
+pendant qu'on travaille.
+
+Le lien tient dans `production_slots.time_entry_id`, **sans colonne supplémentaire** : le
+démarrage l'écrit, et l'arrêt s'en sert pour retrouver le créneau à compléter. La
+sous-étape vient de la ligne de pile que le créneau couvre, si bien que le temps se range
+à la même maille que ce qui avait été estimé sans rien demander de plus.
+
+À l'arrêt (`ManagePlanning.stopTimer`, appelé par `POST /api/production-time/:id/stop`),
+le créneau **cesse d'être une suggestion** : ses horaires sont recalés sur le début et la
+durée réels, il passe en `done` **et** `manual` — donc immobile —, il est publié dans
+l'agenda, puis le reste est replanifié.
+
+Deux différences volontaires avec `approve` :
+
+- **`plannedMinutes` n'est pas gonflé.** Le temps mesuré se déduit de l'estimation : après
+  40 minutes chronométrées sur une tâche estimée à 45, il reste 5 minutes que le replan
+  ira caler. Un chronomètre mesure, il ne renégocie pas la charge.
+- **Aucune question « as-tu terminé ? »** — on la pose à l'approbation parce qu'on y
+  confirme un temps prévu ; ici on constate un temps vécu, et la tâche se coche
+  normalement quand elle l'est.
+
+Démarrer sur un créneau alors qu'un chronomètre courait **sur un autre créneau** complète
+d'abord celui-là : le laisser arrêter par `TrackTime.start` figerait sa durée sans jamais
+recaler son créneau, qui resterait une suggestion alors que le travail a eu lieu.
+
+Un chronomètre lancé depuis une fiche de production n'a aucun créneau lié : l'arrêt se
+contente alors d'arrêter la session.
+
 #### Approuver n'est pas terminer
 
 C'est toute la mécanique de `ManagePlanning.approve()`, et elle fait **quatre** choses pour
@@ -1236,6 +1268,12 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   référentiel vidé par accident ne laisse pas un écran qui se lit comme une panne.
   Conséquence assumée : un futur défaut ajouté au code n'apparaîtra pas sur une base déjà
   remplie.
+- **Une mutation de référentiel doit invalider SA clé, pas seulement `PRODUCTION_ROOTS`.**
+  `useProductionMutation` n'invalide ni `productionSteps` ni `stepTodos` — ce sont
+  `useStepMutation` et `useStepTodoMutation` qui s'en chargent. Brancher le
+  réordonnancement sur le mauvais helper écrivait bien le nouvel ordre en base mais
+  laissait l'écran afficher la liste servie par le cache (`staleTime` 5 min) : les flèches
+  paraissaient ne rien faire. Vérifier la clé invalidée avant de conclure à un bug d'API.
 - **L'ordre d'un référentiel se réécrit en entier.** `reorder` pose `1..n` sur toute la
   liste en transaction. Ne jamais revenir à un échange de deux `sortOrder` : rien ne
   garantit qu'ils soient distincts, et deux rangs égaux s'échangent sans effet visible.
@@ -1266,6 +1304,21 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   dernier à droite. Le déplacer d'un bord à l'autre en repliant obligerait à le rechercher
   à chaque fois, sur le seul bouton qu'on utilise en rafale.
 - **Le planning s'ouvre centré sur aujourd'hui.** `ProductionGantt` pose `scrollLeft` au montage et à chaque changement de zoom, en retranchant la largeur de la colonne des titres (`TITLE_WIDTH`). Sans ça il s'ouvrait collé à sa borne gauche, sur des jours passés. Les fenêtres couvrent donc volontairement du passé (`before` : 14, 30 ou 60 jours) pour qu'on puisse reculer. La colonne des titres est `sticky left-0` : en défilant vers le futur, on doit continuer de savoir de quelle vidéo est la barre qu'on regarde.
+- **Dans la file d'attente, le fond vert marque le travail EN COURS**
+  (`production.status === 'in_progress'`), pas la prochaine vidéo. Celle-ci se repère à un
+  anneau (`highlighted`). Le fond répondait avant à `nextId` : une seule carte surlignée ne
+  disait pas où on en était sur toutes les autres, alors que c'est précisément ce qu'on
+  cherche des yeux en ouvrant l'écran. `inProgress` est **dérivé du statut dans la carte**
+  et non passé en prop : « en cours » est une propriété de la vidéo, pas une décision de
+  l'écran qui l'affiche.
+- **L'ordre de la barre latérale est une préférence** (`preferences.navOrder`), réglable
+  dans Paramètres → Application. Il est stocké **par adresse** et non par rang : un écran
+  ajouté ou retiré par une mise à jour décalerait sinon tout ce qui suit, et le menu se
+  mélangerait tout seul. `orderedNav` fait fermer la marche aux entrées absentes de l'ordre
+  persisté — un nouvel écran doit apparaître, pas disparaître. La liste vit dans
+  `presentation/navigation.ts`, qui **n'exporte aucun composant** : la mettre dans
+  `AppLayout.tsx` déclencherait `react-refresh/only-export-components`, même découpage que
+  `videoMarkers.tsx`.
 - **La file d'attente a une vue compacte** (`preferences.compactQueue`) : une ligne par vidéo. Au-delà de cinq ou six vidéos en cours, la version détaillée oblige à faire défiler pour voir sa propre file. Le chevron d'une carte l'ouvre **à contre-courant du réglage global** (`exceptions`, un `Set` d'identifiants) : on veut souvent une file compacte _sauf_ la vidéo sur laquelle on travaille. Changer le réglage global vide les exceptions.
 - **Les confettis sont maison** (`Confetti`, canvas, ~50 lignes, aucune dépendance) et ne se déclenchent qu'à la **publication** : c'est le seul moment de l'outil qui mérite d'être fêté, tout le reste est de la comptabilité et de la planification. Le canvas est `pointer-events-none` en position fixe — il recouvre l'écran sans jamais intercepter un clic — et se démonte tout seul.
 - **Une vidéo supprimée sur YouTube disparaît des chiffres à la collecte suivante**, mais sa ligne reste en base (`deleted_at`). Les revenus et dépenses qui lui étaient rattachés gardent leur rattachement : l'argent a bien été gagné, même si la vidéo n'est plus en ligne. Conséquence à connaître : ces montants ne se lisent plus dans le tableau de performance, alors qu'ils comptent toujours dans les totaux de la période. C'est voulu — « ne plus être comptabilisée » porte sur la vidéo, pas sur l'euro.
@@ -1277,6 +1330,14 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
 - **La barre de progression affiche le pourcentage, le détail est au survol.** Le pourcentage se compare d'une carte à l'autre ; le compte exact (« 18 sur 30 ») ne sert qu'à savoir combien il reste, ce qu'on ne demande que sur la vidéo qu'on s'apprête à attaquer.
 - **L'en-tête n'a de hauteur que s'il porte la barre de filtres.** Sur `/production`, `/partenariats`, `/legal` et `/parametres`, il perd son trait et son padding : un bandeau vide repoussait le contenu pour rien. Le bandeau du chronomètre, lui, porte une bordure **haut et bas** (`border-y`) parce qu'il peut se retrouver seul tout en haut — c'est même le cas le plus probable, `/production` étant l'écran sans filtres où un chronomètre tourne.
 - **Les liens utiles s'intercalent entre la fiche société et les alertes**, avant le tableau à cocher : on ouvre le portail, on fait la démarche, on revient cocher la case juste en dessous. La carte **entière** est le lien (cible la plus large) et s'ouvre dans un **nouvel onglet** — une navigation ferait perdre l'année choisie et la position dans le tableau. Le bloc ne s'affiche pas du tout tant qu'aucun lien n'est configuré : un encart vide prendrait la place de ce qu'on vient réellement faire sur cet écran.
+- **L'arrêt du chronomètre passe par `ManagePlanning`, pas par `TrackTime`.** Si la session
+  venait d'un créneau du planning, l'arrêt doit aussi recaler ce créneau sur les horaires
+  réellement passés et replanifier la suite. La route `/api/production-time/:id/stop`
+  délègue donc à `stopTimer` — un appel direct à `TrackTime.stop` laisserait le créneau en
+  suggestion alors que le travail a eu lieu.
+- **`production_slots.time_entry_id` sert deux fois** : la session créée à l'approbation,
+  et celle démarrée depuis le créneau. Dans les deux cas il relie un créneau à son temps
+  vécu — c'est ce qui a permis d'ajouter le chronomètre sur créneau sans migration.
 - **Transformer une session en créneau ne crée aucune session.** La session existe déjà et
   c'est elle qui compte dans les totaux ; le créneau n'en est que la représentation dans le
   temps. Il naît `manual` **et** `done` — donc immobile, et occupant la place aux yeux du

@@ -1,22 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import {
-  BarChart3,
-  CalendarClock,
-  Clapperboard,
-  Handshake,
-  Instagram,
-  Menu,
-  Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PlaySquare,
-  ScrollText,
-  Settings,
-  Sun,
-  Wallet,
-  X,
-} from 'lucide-react';
+import { Menu, Moon, PanelLeftClose, PanelLeftOpen, Settings, Sun, X } from 'lucide-react';
+import { orderedNav, type NavItem } from './navigation.ts';
 import { useTheme } from './hooks/useTheme.ts';
 import { usePreferences } from './hooks/usePreferences.ts';
 import { Button } from './components/ui/button.tsx';
@@ -26,18 +11,6 @@ import { cn } from '../shared/cn.ts';
 
 /** Largeur du contenu, généreuse sur grand écran : les graphiques côte à côte en ont besoin. */
 const CONTAINER = 'mx-auto w-full max-w-[1800px] px-3 sm:px-5';
-
-/** Les écrans de travail, dans l'ordre où une journée les traverse. */
-const NAV = [
-  { to: '/', label: 'Dashboard', icon: BarChart3, end: true },
-  { to: '/contenu', label: 'Contenu', icon: PlaySquare, end: false },
-  { to: '/instagram', label: 'Instagram', icon: Instagram, end: false },
-  { to: '/planning', label: 'Planning', icon: CalendarClock, end: false },
-  { to: '/production', label: 'Production', icon: Clapperboard, end: false },
-  { to: '/partenariats', label: 'Partenariats', icon: Handshake, end: false },
-  { to: '/chiffre-affaires', label: "Chiffre d'affaires", icon: Wallet, end: false },
-  { to: '/legal', label: 'Légal', icon: ScrollText, end: false },
-];
 
 /**
  * Routes sans barre de filtres : configurer une chaîne ou une catégorie ne dépend ni
@@ -79,6 +52,9 @@ export const AppLayout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const collapsed = preferences.sidebarCollapsed;
+  // L'ordre se règle dans Paramètres → Application : la liste grandit à chaque écran
+  // ajouté, et celui qu'on ouvre chaque matin n'est pas le même pour tout le monde.
+  const nav = orderedNav(preferences.navOrder);
   const showFilters = !ROUTES_WITHOUT_FILTERS.some((route) => location.pathname.startsWith(route));
 
   // Naviguer referme le tiroir : sur mobile, il recouvre le contenu qu'on vient
@@ -90,10 +66,7 @@ export const AppLayout = () => {
     setMobileOpen(false);
   }
 
-  const navLink = (
-    { to, label, icon: Icon, end }: (typeof NAV)[number],
-    { compact }: { compact: boolean },
-  ) => (
+  const navLink = ({ to, label, icon: Icon, end }: NavItem, { compact }: { compact: boolean }) => (
     <NavLink
       key={to}
       to={to}
@@ -123,7 +96,7 @@ export const AppLayout = () => {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
-        {NAV.map((item) => navLink(item, { compact }))}
+        {nav.map((item) => navLink(item, { compact }))}
       </nav>
 
       {/* Le pied : ce qui se règle une fois, hors du fil du travail. */}
