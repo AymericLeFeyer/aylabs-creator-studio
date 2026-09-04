@@ -71,8 +71,11 @@ export const planningApi = {
    * Démarre le chronomètre sur un créneau. À l'arrêt, le créneau sera recalé sur les
    * horaires réellement passés.
    */
-  startTimerOnSlot: (slotId: string) =>
-    request<TimeEntry>(`/api/planning/slots/${slotId}/start-timer`, { method: 'POST' }),
+  startTimerOnSlot: (slotId: string, date: string, startTime: string) =>
+    request<TimeEntry>(`/api/planning/slots/${slotId}/start-timer`, {
+      method: 'POST',
+      body: { date, startTime },
+    }),
 
   /**
    * Transforme une session de travail en créneau approuvé.

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { planningApi, type ReplanInput } from '../../../infrastructure/planning/api/planningApi.ts';
+import { toTime } from '../../../domain/planning/entities/Planning.ts';
 import type {
   ApproveSlotInput,
   PlanningSettingsInput,
@@ -113,7 +114,11 @@ export const useApproveSlot = () =>
  * approbation — mesurer pendant, plutôt qu'estimer après.
  */
 export const useStartSlotTimer = () =>
-  usePlanningMutation((slotId: string) => planningApi.startTimerOnSlot(slotId));
+  usePlanningMutation((slotId: string) =>
+    // Le jour et l'heure viennent du navigateur : le serveur tourne en UTC, et lui laisser
+    // déduire « maintenant » poserait le créneau deux heures trop tôt en été.
+    planningApi.startTimerOnSlot(slotId, localToday(), toTime(nowMinutes())),
+  );
 
 /** Matérialise une session de travail dans le planning, à l'heure où elle a eu lieu. */
 export const useSlotFromTimeEntry = () =>

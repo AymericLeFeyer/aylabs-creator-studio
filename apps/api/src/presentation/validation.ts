@@ -769,6 +769,18 @@ export const slotFromTimeEntrySchema = z.object({
   startTime: clockTime,
 });
 
+/**
+ * Le démarrage d'un chronomètre sur un créneau.
+ *
+ * Le jour et l'heure sont **fournis par le navigateur** et obligatoires : `startedAt` est
+ * produit en UTC côté serveur, et en tirer une heure locale poserait le créneau deux
+ * heures trop tôt en été. Même règle que `nowMinutes` et `slotFromTimeEntrySchema`.
+ */
+export const startSlotTimerSchema = z.object({
+  date: isoDate,
+  startTime: clockTime,
+});
+
 export const approveSlotSchema = z.object({
   finished: z.boolean(),
   /** Temps réellement passé, si différent de la durée prévue. */

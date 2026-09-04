@@ -654,7 +654,18 @@ qu'`approve`** : au lieu de confirmer après coup un temps qu'on estime, on le m
 pendant qu'on travaille.
 
 Le lien tient dans `production_slots.time_entry_id`, **sans colonne supplémentaire** : le
-démarrage l'écrit, et l'arrêt s'en sert pour retrouver le créneau à compléter. La
+démarrage l'écrit, et l'arrêt s'en sert (`findByTimeEntry`) pour retrouver le créneau à
+compléter.
+
+**Le créneau est déplacé à l'instant du démarrage, et cet instant vient du navigateur**
+(`date` + `startTime`, obligatoires dans `startSlotTimerSchema`). Il ne peut pas venir de
+`TimeEntry.startedAt`, qui est un horodatage **UTC** produit par
+`new Date().toISOString()` : en extraire l'heure posait le créneau deux heures trop tôt en
+été. À l'arrêt, **seule la durée** est reprise de la session — elle ne dépend d'aucun
+fuseau — et la fin se calcule depuis le début déjà posé en heure locale.
+
+Le créneau passe en `manual` dès le démarrage : on travaille dessus, le replan n'a plus à
+le déplacer, et on le voit au bon endroit pendant que le chronomètre tourne. La
 sous-étape vient de la ligne de pile que le créneau couvre, si bien que le temps se range
 à la même maille que ce qui avait été estimé sans rien demander de plus.
 
@@ -1335,6 +1346,11 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   réellement passés et replanifier la suite. La route `/api/production-time/:id/stop`
   délègue donc à `stopTimer` — un appel direct à `TrackTime.stop` laisserait le créneau en
   suggestion alors que le travail a eu lieu.
+- **Ne jamais tirer une heure locale de `TimeEntry.startedAt`.** C'est un instant **UTC**
+  (`new Date().toISOString()`), alors que `production_slots` stocke des heures locales sans
+  fuseau. `slice(11, 16)` dessus donnait 12:00 pour 14:00 à Paris — le créneau se posait
+  deux heures dans le passé. La règle du module s'applique **aussi** quand l'horodatage est
+  produit par le serveur : l'heure locale vient du navigateur, toujours.
 - **`production_slots.time_entry_id` sert deux fois** : la session créée à l'approbation,
   et celle démarrée depuis le créneau. Dans les deux cas il relie un créneau à son temps
   vécu — c'est ce qui a permis d'ajouter le chronomètre sur créneau sans migration.

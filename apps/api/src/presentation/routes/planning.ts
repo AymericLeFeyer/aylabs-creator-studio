@@ -3,6 +3,7 @@ import type { Container } from '../../container.ts';
 import {
   approveSlotSchema,
   slotFromTimeEntrySchema,
+  startSlotTimerSchema,
   planningBoardQuerySchema,
   planningSettingsSchema,
   planTargetsSchema,
@@ -133,7 +134,8 @@ export const planningRouter = (container: Container): Router => {
    * réellement passés — c'est le lien `time_entry_id` qui le permet.
    */
   router.post('/slots/:id/start-timer', (req, res) => {
-    res.status(201).json(container.managePlanning.startTimerOnSlot(param(req, 'id')));
+    const body = startSlotTimerSchema.parse(req.body);
+    res.status(201).json(container.managePlanning.startTimerOnSlot(param(req, 'id'), body));
   });
 
   /** Défait une approbation : la session de travail part, le créneau redevient mobile. */

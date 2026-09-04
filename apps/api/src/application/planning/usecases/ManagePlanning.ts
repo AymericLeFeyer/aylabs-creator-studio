@@ -409,12 +409,20 @@ export class ManagePlanning {
    * C'est l'autre chemin vers le même résultat qu'`approve` : au lieu de confirmer après
    * coup un temps qu'on estime, on mesure pendant qu'on travaille. Le créneau retient
    * l'identifiant de la session (`time_entry_id`), et c'est ce lien qui permettra à
-   * l'arrêt de le compléter avec les **vrais** horaires.
+   * l'arrêt de le compléter.
    *
-   * La sous-étape vient de la ligne de pile que le créneau couvre : le temps se retrouve
-   * ainsi rangé à la même maille que ce qui avait été estimé, sans rien demander de plus.
+   * **Le créneau est déplacé à l'instant où l'on démarre**, et cet instant vient du
+   * navigateur (`date`, `startTime`). Il ne peut pas venir de `TimeEntry.startedAt`, qui
+   * est un horodatage **UTC** : en extraire l'heure poserait le créneau deux heures trop
+   * tôt en été — c'est exactement le bug qu'avait la première version. C'est la même règle
+   * que partout ailleurs dans ce module, et elle vaut aussi ici bien que l'horodatage soit
+   * produit par le serveur.
+   *
+   * Il passe en `manual` du même geste : on travaille dessus, le replan n'a plus à le
+   * déplacer. La sous-étape vient de la ligne de pile que le créneau couvre, si bien que
+   * le temps se range à la même maille que ce qui avait été estimé.
    */
-  startTimerOnSlot(slotId: string): TimeEntryView {
+  startTimerOnSlot(slotId: string, at: { date: IsoDate; startTime: string }): TimeEntryView {
     const slot = this.slots.findById(slotId);
     if (!slot) throw notFound('Créneau');
     if (slot.done) throw conflict('Ce créneau est déjà terminé.');
@@ -428,7 +436,17 @@ export class ManagePlanning {
     const item = slot.itemId ? this.items.findById(slot.itemId) : null;
     const entry = this.trackTime.start(slot.productionId, slot.stepId, item?.todoId ?? null);
 
-    this.slots.update(slot.id, { timeEntryId: entry.id });
+    // La durée prévue est conservée le temps que ça tourne : elle sera remplacée par la
+    // durée vécue à l'arrêt, et entre-temps le bloc occupe une place plausible.
+    const planned = Math.max(15, slotMinutes(slot) || item?.plannedMinutes || 30);
+    this.slots.update(slot.id, {
+      date: at.date,
+      startTime: at.startTime,
+      endTime: toTime(toMinutes(at.startTime) + planned),
+      origin: 'manual',
+      timeEntryId: entry.id,
+    });
+
     return entry;
   }
 
@@ -450,20 +468,16 @@ export class ManagePlanning {
   async stopTimer(entryId: string, options: ReplanOptions = {}): Promise<TimeEntry> {
     const entry = this.trackTime.stop(entryId);
 
-    const slot = this.slots
-      .findAll({ range: { from: addDays(entry.startedAt.slice(0, 10), -1), to: today() } })
-      .find((candidate) => candidate.timeEntryId === entryId && !candidate.done);
+    const slot = this.slots.findByTimeEntry(entryId);
     if (!slot) return entry;
 
+    // **Seule la durée est reprise de la session** — elle ne dépend d'aucun fuseau. Le
+    // début, lui, a été posé à l'heure locale au démarrage : le relire dans `startedAt`,
+    // qui est en UTC, décalerait le créneau de deux heures en été.
     const minutes = Math.max(1, entry.minutes ?? 1);
-    // Le début réel plutôt que celui qui avait été proposé : on a commencé quand on a
-    // commencé, et la grille doit le raconter.
-    const date = entry.startedAt.slice(0, 10);
-    const startMinutes = toMinutes(entry.startedAt.slice(11, 16));
+    const startMinutes = toMinutes(slot.startTime ?? '00:00');
 
     this.slots.update(slot.id, {
-      date,
-      startTime: toTime(startMinutes),
       endTime: toTime(startMinutes + minutes),
       done: true,
       origin: 'manual',

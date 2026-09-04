@@ -188,6 +188,20 @@ export class SqliteProductionSlotRepository implements ProductionSlotRepository 
   }
 
   /**
+   * Le créneau d'où une session a été lancée, s'il existe et n'est pas déjà clos.
+   *
+   * Une recherche par identifiant plutôt que par fenêtre de dates : la fenêtre se
+   * déduisait de `startedAt`, qui est un instant **UTC** — sur une session démarrée après
+   * 22 h heure de Paris, elle visait déjà le lendemain.
+   */
+  findByTimeEntry(timeEntryId: string): ProductionSlot | null {
+    const row = this.db
+      .prepare('SELECT * FROM production_slots WHERE time_entry_id = ? AND done = 0 LIMIT 1')
+      .get(timeEntryId) as SlotRow | undefined;
+    return row ? toDomain(row) : null;
+  }
+
+  /**
    * Efface les créneaux **déplaçables** d'une fenêtre : ceux que le moteur a posés et
    * qui ne sont pas encore approuvés.
    *
