@@ -21,6 +21,11 @@ import { SqliteCompanyRepository } from './infrastructure/legal/repositories/Sql
 import { SqliteLegalObligationRepository } from './infrastructure/legal/repositories/SqliteLegalObligationRepository.ts';
 import { SqliteLegalBookmarkRepository } from './infrastructure/legal/repositories/SqliteLegalBookmarkRepository.ts';
 import { SqliteAffiliatePlatformRepository } from './infrastructure/affiliate/repositories/SqliteAffiliatePlatformRepository.ts';
+import { SqliteWorkHoursRepository } from './infrastructure/planning/repositories/SqliteWorkHoursRepository.ts';
+import { SqlitePlanningSettingsRepository } from './infrastructure/planning/repositories/SqlitePlanningSettingsRepository.ts';
+import { SqlitePlanningItemRepository } from './infrastructure/planning/repositories/SqlitePlanningItemRepository.ts';
+import { HomeAssistantClient } from './infrastructure/planning/api/HomeAssistantClient.ts';
+import { ManagePlanning } from './application/planning/usecases/ManagePlanning.ts';
 import { seedDefaultCategories } from './application/category/usecases/SeedDefaultCategories.ts';
 import { seedDefaultSteps } from './application/production/usecases/SeedDefaultSteps.ts';
 import { seedDefaultStepTodos } from './application/production/usecases/SeedDefaultStepTodos.ts';
@@ -65,6 +70,12 @@ export interface Container {
   legalBookmarks: SqliteLegalBookmarkRepository;
   /** Plateformes d'affiliation, avec leurs marques et ce qu'elles rapportent. */
   affiliatePlatforms: SqliteAffiliatePlatformRepository;
+  /** Plages travaillables de la semaine type. */
+  workHours: SqliteWorkHoursRepository;
+  /** Réglages du planning et connexion à l'agenda. Le jeton n'en sort jamais. */
+  planningSettings: SqlitePlanningSettingsRepository;
+  /** La pile de ce qui est en cours et attend des créneaux. */
+  planningItems: SqlitePlanningItemRepository;
   collectMetrics: CollectMetrics;
   getAnalytics: GetAnalytics;
   /**
@@ -86,6 +97,12 @@ export interface Container {
   syncRecurringExpenses: SyncRecurringExpenses;
   /** Tableau des obligations mensuelles + alertes reprises par le dashboard. */
   getLegalOverview: GetLegalOverview;
+  /**
+   * Le planning : placement des créneaux, approbation, publication dans l'agenda.
+   * Seul point d'écriture du module — les routes ne touchent jamais la pile ni les
+   * créneaux planifiés.
+   */
+  managePlanning: ManagePlanning;
   /** `null` tant qu'aucune clé API YouTube n'est configurée. */
   youtubeData: YouTubeDataClient | null;
 }
@@ -118,6 +135,13 @@ export const buildContainer = (config: Config): Container => {
   const legalObligations = new SqliteLegalObligationRepository(db);
   const legalBookmarks = new SqliteLegalBookmarkRepository(db);
   const affiliatePlatforms = new SqliteAffiliatePlatformRepository(db);
+  const workHours = new SqliteWorkHoursRepository(db);
+  const planningSettings = new SqlitePlanningSettingsRepository(db);
+  const planningItems = new SqlitePlanningItemRepository(db);
+
+  // Partagé : le planning enregistre une session de travail à chaque approbation, et
+  // ce doit être exactement le même chemin que le chronomètre de la fiche.
+  const trackTime = new TrackTime(timeEntries);
 
   const manageProducts = new ManageProducts(products, productions, brands, revenues);
   const manageSponsorships = new ManageSponsorships(sponsorships, productions, brands, revenues);
@@ -150,6 +174,9 @@ export const buildContainer = (config: Config): Container => {
     legalObligations,
     legalBookmarks,
     affiliatePlatforms,
+    workHours,
+    planningSettings,
+    planningItems,
     manageProducts,
     manageSponsorships,
     manageProductions: new ManageProductions(
@@ -168,8 +195,19 @@ export const buildContainer = (config: Config): Container => {
       productionSteps,
       timeEntries,
     ),
-    manageTodos: new ManageTodos(todos, productions),
-    trackTime: new TrackTime(timeEntries),
+    manageTodos: new ManageTodos(todos, productions, planningItems),
+    trackTime,
+    managePlanning: new ManagePlanning(
+      planningItems,
+      workHours,
+      planningSettings,
+      productionSlots,
+      productions,
+      productionSteps,
+      todos,
+      trackTime,
+      (baseUrl, token) => new HomeAssistantClient(baseUrl, token),
+    ),
     syncRecurringExpenses,
     getLegalOverview: new GetLegalOverview(company, legalObligations),
     collectMetrics: new CollectMetrics(channels, metrics, videos, {

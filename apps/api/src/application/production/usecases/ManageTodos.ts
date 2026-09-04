@@ -1,5 +1,6 @@
 import type { SqliteTodoRepository } from '../../../infrastructure/production/repositories/SqliteTodoRepository.ts';
 import type { ProductionRepository } from '../../../domain/production/repositories/ProductionRepository.ts';
+import type { PlanningItemRepository } from '../../../domain/planning/repositories/PlanningRepository.ts';
 import type { TodoItem } from '../../../domain/production/entities/StepTodo.ts';
 
 /**
@@ -18,20 +19,36 @@ import type { TodoItem } from '../../../domain/production/entities/StepTodo.ts';
  * Le calcul vit ici et non dans le front : la pastille de la file d'attente, la fiche
  * et le planning affichent tous le même avancement, et trois déductions parallèles
  * finiraient par se contredire.
+ *
+ * **Cocher une tâche la retire aussi de la pile du planning.** C'est le même geste : une
+ * tâche faite n'a plus à être calée. Le contraire vaut aussi — la décocher la remet dans
+ * la pile, et le prochain replan lui rendra un créneau. Les créneaux déjà posés, eux, ne
+ * bougent pas : ils racontent le temps passé, pas le travail restant.
  */
 export class ManageTodos {
   private readonly todos: SqliteTodoRepository;
   private readonly productions: ProductionRepository;
+  private readonly planningItems: PlanningItemRepository;
 
-  constructor(todos: SqliteTodoRepository, productions: ProductionRepository) {
+  constructor(
+    todos: SqliteTodoRepository,
+    productions: ProductionRepository,
+    planningItems: PlanningItemRepository,
+  ) {
     this.todos = todos;
     this.productions = productions;
+    this.planningItems = planningItems;
   }
 
   /** `checked` dit l'état **voulu**, pas l'état courant. */
   toggle(productionId: string, todoId: string, checked: boolean): TodoItem[] {
-    if (checked) this.todos.check(productionId, todoId);
-    else this.todos.uncheck(productionId, todoId);
+    if (checked) {
+      this.todos.check(productionId, todoId);
+      this.planningItems.closeForTodo(productionId, todoId);
+    } else {
+      this.todos.uncheck(productionId, todoId);
+      this.planningItems.reopenForTodo(productionId, todoId);
+    }
 
     const items = this.todos.listForProduction(productionId);
     const stepId = items.find((item) => item.id === todoId)?.stepId ?? null;
@@ -70,7 +87,13 @@ export class ManageTodos {
     for (const item of items) {
       if (checked && !item.checked) this.todos.check(productionId, item.id);
       if (!checked && item.checked) this.todos.uncheck(productionId, item.id);
+      if (checked) this.planningItems.closeForTodo(productionId, item.id);
+      else this.planningItems.reopenForTodo(productionId, item.id);
     }
+
+    // L'étape entière peut aussi figurer dans la pile, quand elle n'a aucune tâche.
+    if (checked) this.planningItems.closeForStep(productionId, stepId);
+    else this.planningItems.reopenForStep(productionId, stepId);
 
     if (checked) this.productions.checkStep(productionId, stepId);
     else this.productions.uncheckStep(productionId, stepId);

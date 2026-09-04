@@ -11,6 +11,14 @@ export interface ProductionStep {
   name: string;
   color: string;
   sortOrder: number;
+  /**
+   * Durée moyenne du travail sur cette étape, en minutes.
+   *
+   * `null` et non zéro : « je ne sais pas » et « ça ne prend pas de temps » sont deux
+   * réponses différentes, et seule la première doit faire chercher ailleurs. C'est ce
+   * chiffre que le planning utilise pour savoir quelle place réserver.
+   */
+  defaultMinutes: number | null;
   isArchived: boolean;
   createdAt: string;
   updatedAt: string;
@@ -20,6 +28,7 @@ export interface CreateProductionStepInput {
   name: string;
   color?: string;
   sortOrder?: number;
+  defaultMinutes?: number | null;
 }
 
 export type UpdateProductionStepInput = Partial<CreateProductionStepInput> & {

@@ -8,6 +8,7 @@ import { ContentPage } from './presentation/pages/ContentPage.tsx';
 import { LegalPage } from './presentation/pages/LegalPage.tsx';
 import { SettingsPage } from './presentation/pages/SettingsPage.tsx';
 import { ProductionPage } from './presentation/pages/ProductionPage.tsx';
+import { PlanningPage } from './presentation/pages/PlanningPage.tsx';
 import { ProductionDetailPage } from './presentation/pages/ProductionDetailPage.tsx';
 import { PartnersPage } from './presentation/pages/PartnersPage.tsx';
 
@@ -30,6 +31,7 @@ export const App = () => (
           <Route element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="contenu" element={<ContentPage />} />
+            <Route path="planning" element={<PlanningPage />} />
             <Route path="production" element={<ProductionPage />} />
             <Route path="production/:id" element={<ProductionDetailPage />} />
             <Route path="partenariats" element={<PartnersPage />} />
@@ -63,6 +65,10 @@ export const App = () => (
             <Route
               path="abonnements"
               element={<Navigate to="/parametres?onglet=abonnements" replace />}
+            />
+            <Route
+              path="horaires"
+              element={<Navigate to="/parametres?onglet=planning" replace />}
             />
           </Route>
         </Routes>

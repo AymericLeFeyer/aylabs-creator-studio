@@ -752,6 +752,112 @@ const migrations: Migration[] = [
       CREATE INDEX idx_videos_deleted ON videos(deleted_at);
     `,
   },
+  {
+    version: 18,
+    name: 'planning',
+    // Le planning : poser dans un agenda ce qu'il reste a faire.
+    //
+    // Quatre choses arrivent d'un coup parce qu'elles n'ont aucun sens separement — un
+    // moteur de placement sans duree ne sait rien caler, et une duree sans horaires de
+    // travail ne sait pas ou la poser.
+    //
+    // 1. `default_minutes` sur les etapes et les taches : la duree moyenne du travail.
+    //    NULLABLE et non zero — « je ne sais pas » et « ca ne prend pas de temps » sont
+    //    deux reponses differentes, et seule la premiere doit faire retomber la tache
+    //    sur la duree de son etape.
+    //
+    // 2. `work_hours` : les plages travaillables d'une semaine type. PLUSIEURS LIGNES
+    //    par jour — une journee coupee par la pause du midi est le cas normal, et une
+    //    seule plage par jour ferait planifier a l'heure du dejeuner. Un jour sans
+    //    aucune ligne n'est simplement pas travaille.
+    //
+    // 3. `planning_items` : la PILE de ce qui est en cours. Ajouter une video au
+    //    planning en cochant « Ecriture » y depose une ligne par sous-etape ; le moteur
+    //    les couvre de creneaux, et cocher la tache retire la ligne de la pile. C'est
+    //    cette table qui distingue « planifie » de « fait » — les creneaux, eux, restent.
+    //
+    // 4. Trois colonnes sur `production_slots`. Pas de `status` : `origin` dit qui a
+    //    pose le creneau et le `done` existant dit s'il est passe. Un `status` en plus
+    //    redirait la meme chose et finirait par la contredire.
+    //    La regle de deplacement en decoule : le moteur ne touche QUE
+    //    `origin = 'planner' AND done = 0`. Un creneau approuve (donc `done = 1`) ou
+    //    pose a la main ne bouge jamais.
+    up: `
+      ALTER TABLE production_steps  ADD COLUMN default_minutes INTEGER;
+      ALTER TABLE step_todos        ADD COLUMN default_minutes INTEGER;
+      ALTER TABLE production_todos  ADD COLUMN default_minutes INTEGER;
+
+      CREATE TABLE work_hours (
+        id         TEXT PRIMARY KEY,
+        -- 0 = lundi, 6 = dimanche. Meme convention que bucketStart : la semaine
+        -- commence le lundi, c'est celle qu'affiche le planning.
+        weekday    INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+        start_time TEXT NOT NULL,
+        end_time   TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_work_hours_weekday ON work_hours(weekday);
+
+      -- Reglages du planning, LIGNE UNIQUE comme "company".
+      -- "calendar_token" est le jeton d'acces longue duree Home Assistant : il est
+      -- stocke en clair, comme le refresh token des chaines, et ne sort jamais de
+      -- l'API (le depot le remplace par "hasToken" dans la vue).
+      CREATE TABLE planning_settings (
+        id                       TEXT PRIMARY KEY,
+        calendar_base_url        TEXT,
+        calendar_token           TEXT,
+        -- Entite calendrier ou les creneaux approuves sont publies.
+        target_calendar_id       TEXT,
+        -- Entites lues pour connaitre l'occupation. CSV : la liste est courte et ne se
+        -- requete jamais autrement qu'en entier.
+        busy_calendar_ids        TEXT NOT NULL DEFAULT '',
+        slot_granularity_minutes INTEGER NOT NULL DEFAULT 15,
+        min_block_minutes        INTEGER NOT NULL DEFAULT 30,
+        max_block_minutes        INTEGER NOT NULL DEFAULT 180,
+        break_minutes            INTEGER NOT NULL DEFAULT 10,
+        horizon_days             INTEGER NOT NULL DEFAULT 21,
+        push_to_calendar         INTEGER NOT NULL DEFAULT 1,
+        created_at               TEXT NOT NULL,
+        updated_at               TEXT NOT NULL
+      );
+      INSERT INTO planning_settings (id, created_at, updated_at)
+      VALUES ('default', datetime('now'), datetime('now'));
+
+      CREATE TABLE planning_items (
+        id             TEXT PRIMARY KEY,
+        production_id  TEXT NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+        step_id        TEXT REFERENCES production_steps(id) ON DELETE CASCADE,
+        -- Designe "step_todos" OU "production_todos" : aucune cle etrangere n'est
+        -- possible, exactement comme "production_todo_checks.todo_id". Le menage se
+        -- fait cote depot.
+        todo_id        TEXT,
+        label          TEXT NOT NULL,
+        planned_minutes INTEGER NOT NULL,
+        -- Rang voulu : le moteur cale les items dans cet ordre et jamais autrement.
+        sequence       INTEGER NOT NULL DEFAULT 0,
+        status         TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending', 'done', 'cancelled')),
+        created_at     TEXT NOT NULL,
+        updated_at     TEXT NOT NULL
+      );
+      -- Une meme tache ne se met pas deux fois dans la pile. COALESCE parce qu'une
+      -- etape sans tache porte "todo_id" a NULL, et NULL n'est jamais egal a NULL.
+      CREATE UNIQUE INDEX idx_planning_items_unique
+        ON planning_items(production_id, COALESCE(step_id, ''), COALESCE(todo_id, ''));
+      CREATE INDEX idx_planning_items_status ON planning_items(status);
+
+      ALTER TABLE production_slots ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual';
+      ALTER TABLE production_slots ADD COLUMN item_id TEXT
+        REFERENCES planning_items(id) ON DELETE SET NULL;
+      -- Identifiant du creneau une fois publie dans l'agenda. Sa presence vaut
+      -- « deja pousse » : republier creerait un doublon qu'on ne peut pas retirer.
+      ALTER TABLE production_slots ADD COLUMN calendar_uid TEXT;
+      -- Session de travail creee a l'approbation, pour pouvoir la defaire.
+      ALTER TABLE production_slots ADD COLUMN time_entry_id TEXT;
+      CREATE INDEX idx_slots_item ON production_slots(item_id);
+    `,
+  },
 ];
 
 /**

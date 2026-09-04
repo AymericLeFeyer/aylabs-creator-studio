@@ -11,6 +11,7 @@ import { ChannelsPage } from './ChannelsPage.tsx';
 import { CategoriesPage } from './CategoriesPage.tsx';
 import { BrandsPage } from './BrandsPage.tsx';
 import { StepsPage } from './StepsPage.tsx';
+import { PlanningSettingsPage } from './PlanningSettingsPage.tsx';
 import { CompanyPage } from './CompanyPage.tsx';
 import { RecurringExpensesPanel } from '../components/money/RecurringExpensesPanel.tsx';
 
@@ -21,6 +22,7 @@ const TABS = [
   'abonnements',
   'marques',
   'etapes',
+  'planning',
   'societe',
 ] as const;
 type SettingsTab = (typeof TABS)[number];
@@ -62,6 +64,7 @@ export const SettingsPage = () => {
           <TabsTrigger value="abonnements">Abonnements</TabsTrigger>
           <TabsTrigger value="marques">Marques</TabsTrigger>
           <TabsTrigger value="etapes">Étapes</TabsTrigger>
+          <TabsTrigger value="planning">Planning</TabsTrigger>
           <TabsTrigger value="societe">Société</TabsTrigger>
         </TabsList>
 
@@ -82,6 +85,9 @@ export const SettingsPage = () => {
         </TabsContent>
         <TabsContent value="etapes">
           <StepsPage />
+        </TabsContent>
+        <TabsContent value="planning">
+          <PlanningSettingsPage />
         </TabsContent>
         <TabsContent value="societe">
           <CompanyPage />

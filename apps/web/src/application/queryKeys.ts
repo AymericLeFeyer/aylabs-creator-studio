@@ -34,6 +34,12 @@ export const queryKeys = {
   legalObligations: (includeArchived: boolean) => ['legalObligations', includeArchived] as const,
   legalBookmarks: (includeArchived: boolean) => ['legalBookmarks', includeArchived] as const,
   affiliatePlatforms: (params: unknown) => ['affiliatePlatforms', params] as const,
+
+  planningBoard: (params: unknown) => ['planningBoard', params] as const,
+  planningItems: () => ['planningItems'] as const,
+  planningSettings: () => ['planningSettings'] as const,
+  workHours: () => ['workHours'] as const,
+  calendars: () => ['calendars'] as const,
 };
 
 /** Racines à invalider après une écriture qui change les chiffres agrégés. */
@@ -60,6 +66,11 @@ export const PRODUCTION_ROOTS = [
   'runningTimer',
   'products',
   'sponsorships',
+  // Cocher une tâche la retire de la pile du planning (`ManageTodos`) : la grille et la
+  // pile doivent repartir avec la file, sinon elles proposeraient encore de caler du
+  // travail déjà fait.
+  'planningBoard',
+  'planningItems',
 ] as const;
 
 /**
@@ -67,6 +78,20 @@ export const PRODUCTION_ROOTS = [
  * d'argent doivent repartir en même temps que celles de production.
  */
 export const PARTNER_ROOTS = [...PRODUCTION_ROOTS, ...MONEY_ROOTS, 'brandStats'] as const;
+
+/**
+ * Racines du planning — le module **et** celui de production.
+ *
+ * Approuver un créneau enregistre une session de travail et peut cocher une tâche :
+ * l'avancement de la file d'attente et le compteur de temps de la fiche bougent en même
+ * temps que la grille. Ne rafraîchir que le planning laisserait la file annoncer un
+ * travail déjà fait.
+ *
+ * `calendars` n'en fait **pas** partie : la liste des calendriers de l'instance ne
+ * dépend d'aucune écriture de notre côté, et la relire à chaque approbation ferait un
+ * aller-retour réseau vers la domotique pour rien.
+ */
+export const PLANNING_ROOTS = [...PRODUCTION_ROOTS, 'planningSettings', 'workHours'] as const;
 
 /**
  * Racines du suivi administratif. Le référentiel part avec l'aperçu : changer un jour

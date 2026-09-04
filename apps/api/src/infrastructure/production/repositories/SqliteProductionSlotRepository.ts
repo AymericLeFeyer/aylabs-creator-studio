@@ -23,6 +23,10 @@ interface SlotRow {
   label: string;
   done: number;
   notes: string | null;
+  origin: string;
+  item_id: string | null;
+  calendar_uid: string | null;
+  time_entry_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -32,6 +36,7 @@ interface SlotViewRow extends SlotRow {
   channel_id: string | null;
   channel_color: string | null;
   step_name: string | null;
+  step_color: string | null;
 }
 
 const toDomain = (row: SlotRow): ProductionSlot => ({
@@ -44,6 +49,10 @@ const toDomain = (row: SlotRow): ProductionSlot => ({
   label: row.label,
   done: row.done === 1,
   notes: row.notes,
+  origin: row.origin === 'planner' ? 'planner' : 'manual',
+  itemId: row.item_id,
+  calendarUid: row.calendar_uid,
+  timeEntryId: row.time_entry_id,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -69,6 +78,10 @@ export class SqliteProductionSlotRepository implements ProductionSlotRepository 
       params.push(filter.range.from, filter.range.to);
     }
     if (filter.includeDone === false) conditions.push('s.done = 0');
+    if (filter.origins && filter.origins.length > 0) {
+      conditions.push(`s.origin IN (${placeholders(filter.origins.length)})`);
+      params.push(...filter.origins);
+    }
 
     const clause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -78,7 +91,8 @@ export class SqliteProductionSlotRepository implements ProductionSlotRepository 
                 p.title    AS production_title,
                 p.channel_id AS channel_id,
                 ch.color   AS channel_color,
-                st.name    AS step_name
+                st.name    AS step_name,
+                st.color   AS step_color
            FROM production_slots s
            JOIN productions p ON p.id = s.production_id
            LEFT JOIN channels ch ON ch.id = p.channel_id
@@ -94,6 +108,7 @@ export class SqliteProductionSlotRepository implements ProductionSlotRepository 
       channelId: row.channel_id,
       channelColor: row.channel_color,
       stepName: row.step_name,
+      stepColor: row.step_color,
     }));
   }
 
@@ -111,8 +126,8 @@ export class SqliteProductionSlotRepository implements ProductionSlotRepository 
       .prepare(
         `INSERT INTO production_slots
            (id, production_id, step_id, date, start_time, end_time, label, done, notes,
-            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            origin, item_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -124,6 +139,8 @@ export class SqliteProductionSlotRepository implements ProductionSlotRepository 
         input.label ?? '',
         input.done ? 1 : 0,
         input.notes ?? null,
+        input.origin ?? 'manual',
+        input.itemId ?? null,
         now,
         now,
       );
@@ -149,6 +166,10 @@ export class SqliteProductionSlotRepository implements ProductionSlotRepository 
     if (input.label !== undefined) set('label', input.label);
     if (input.done !== undefined) set('done', input.done ? 1 : 0);
     if (input.notes !== undefined) set('notes', input.notes);
+    if (input.origin !== undefined) set('origin', input.origin);
+    if (input.itemId !== undefined) set('item_id', input.itemId);
+    if (input.calendarUid !== undefined) set('calendar_uid', input.calendarUid);
+    if (input.timeEntryId !== undefined) set('time_entry_id', input.timeEntryId);
 
     if (fields.length === 0) return existing;
 
@@ -164,5 +185,35 @@ export class SqliteProductionSlotRepository implements ProductionSlotRepository 
   delete(id: string): void {
     const result = this.db.prepare('DELETE FROM production_slots WHERE id = ?').run(id);
     if (result.changes === 0) throw notFound('Créneau');
+  }
+
+  /**
+   * Efface les créneaux **déplaçables** d'une fenêtre : ceux que le moteur a posés et
+   * qui ne sont pas encore approuvés.
+   *
+   * C'est le préalable de tout replan. Le filtre `origin = 'planner' AND done = 0` est
+   * la règle de déplacement du planning, écrite une fois ici : un créneau posé à la main
+   * a été voulu là où il est, et un créneau approuvé raconte du temps déjà passé.
+   *
+   * `from` à `null` remonte **jusqu'au début** : un replan complet balaie aussi les
+   * suggestions passées qu'on n'a jamais approuvées. Elles n'ont rien raconté — les
+   * laisser traîner ferait croire que ce travail-là est déjà casé, et le moteur n'en
+   * reposerait jamais.
+   */
+  clearSuggestions(from: string | null, to: string): number {
+    const result = from
+      ? this.db
+          .prepare(
+            `DELETE FROM production_slots
+              WHERE origin = 'planner' AND done = 0 AND date BETWEEN ? AND ?`,
+          )
+          .run(from, to)
+      : this.db
+          .prepare(
+            `DELETE FROM production_slots
+              WHERE origin = 'planner' AND done = 0 AND date <= ?`,
+          )
+          .run(to);
+    return Number(result.changes ?? 0);
   }
 }

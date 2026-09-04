@@ -13,6 +13,7 @@ interface StepRow {
   name: string;
   color: string;
   sort_order: number;
+  default_minutes: number | null;
   is_archived: number;
   created_at: string;
   updated_at: string;
@@ -23,6 +24,7 @@ const toDomain = (row: StepRow): ProductionStep => ({
   name: row.name,
   color: row.color,
   sortOrder: row.sort_order,
+  defaultMinutes: row.default_minutes,
   isArchived: row.is_archived === 1,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -63,10 +65,18 @@ export class SqliteProductionStepRepository implements ProductionStepRepository 
     this.db
       .prepare(
         `INSERT INTO production_steps
-           (id, name, color, sort_order, is_archived, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 0, ?, ?)`,
+           (id, name, color, sort_order, default_minutes, is_archived, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
       )
-      .run(id, input.name, input.color ?? '#64748b', nextOrder, now, now);
+      .run(
+        id,
+        input.name,
+        input.color ?? '#64748b',
+        nextOrder,
+        input.defaultMinutes ?? null,
+        now,
+        now,
+      );
 
     return this.findById(id)!;
   }
@@ -85,6 +95,7 @@ export class SqliteProductionStepRepository implements ProductionStepRepository 
     if (input.name !== undefined) set('name', input.name);
     if (input.color !== undefined) set('color', input.color);
     if (input.sortOrder !== undefined) set('sort_order', input.sortOrder);
+    if (input.defaultMinutes !== undefined) set('default_minutes', input.defaultMinutes);
     if (input.isArchived !== undefined) set('is_archived', input.isArchived ? 1 : 0);
 
     if (fields.length === 0) return existing;

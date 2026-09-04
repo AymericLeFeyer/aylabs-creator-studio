@@ -221,10 +221,20 @@ export const brandStatsQuerySchema = z.object({
   channelIds: csvList,
 });
 
+/** Durée moyenne d'un travail, en minutes. `null` = « je ne sais pas », et c'est valide. */
+const durationMinutes = z
+  .number()
+  .int()
+  .min(5, 'Au moins 5 minutes')
+  .max(24 * 60)
+  .nullable()
+  .optional();
+
 export const createProductionStepSchema = z.object({
   name: z.string().trim().min(1, 'Le nom est obligatoire').max(60),
   color: hexColor,
   sortOrder: z.number().int().optional(),
+  defaultMinutes: durationMinutes,
 });
 
 export const updateProductionStepSchema = createProductionStepSchema.partial().extend({
@@ -272,7 +282,17 @@ export const createProductionSlotSchema = z.object({
   notes: z.string().trim().nullable().optional(),
 });
 
-export const updateProductionSlotSchema = createProductionSlotSchema.partial();
+/**
+ * `origin` n'est modifiable qu'ici, pas à la création.
+ *
+ * Déplacer un créneau à la main le fait passer en `manual`, et le rend donc **immobile**
+ * pour le moteur de placement : le poser soi-même est une décision, et le prochain
+ * repositionnement n'a pas à la défaire. Sans ce champ, le glisser-déposer serait
+ * silencieusement annulé au replacement suivant.
+ */
+export const updateProductionSlotSchema = createProductionSlotSchema.partial().extend({
+  origin: z.enum(['manual', 'planner']).optional(),
+});
 
 /** Création depuis le router des créneaux : la production fait partie du corps. */
 export const createSlotBodySchema = createProductionSlotSchema.extend({
@@ -453,18 +473,21 @@ export const createStepTodoSchema = z.object({
   stepId: z.string().min(1, "L'étape est obligatoire"),
   label: z.string().trim().min(1, "L'intitulé est obligatoire").max(200),
   sortOrder: z.number().int().optional(),
+  defaultMinutes: durationMinutes,
 });
 
 export const updateStepTodoSchema = z.object({
   label: z.string().trim().min(1).max(200).optional(),
   sortOrder: z.number().int().optional(),
   isArchived: z.boolean().optional(),
+  defaultMinutes: durationMinutes,
 });
 
 /** Une tâche ponctuelle, posée sur une seule vidéo. */
 export const createProductionTodoSchema = z.object({
   stepId: z.string().nullable().optional(),
   label: z.string().trim().min(1, "L'intitulé est obligatoire").max(200),
+  defaultMinutes: durationMinutes,
 });
 
 export const toggleTodoSchema = z.object({
@@ -574,4 +597,112 @@ export const platformQuerySchema = z.object({
     .transform((value) => value === 'true'),
   from: isoDate.optional(),
   to: isoDate.optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Planning
+// ---------------------------------------------------------------------------
+
+/** `HH:MM` sur 24 h. Les créneaux et les horaires de travail n'ont pas d'autre format. */
+const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Heure attendue au format HH:MM');
+
+/**
+ * Une plage travaillable. `weekday` va de 0 (lundi) à 6 (dimanche), même convention que
+ * le découpage hebdomadaire des séries.
+ */
+export const workHoursSchema = z.object({
+  weekday: z.number().int().min(0).max(6),
+  startTime: clockTime,
+  endTime: clockTime,
+});
+
+/**
+ * La grille complète de la semaine, envoyée d'un bloc.
+ * Un remplacement total et non des différences : sans ça, retirer une plage demanderait
+ * un identifiant que le formulaire n'a aucune raison de connaître.
+ */
+export const replaceWorkHoursSchema = z.object({
+  ranges: z.array(workHoursSchema).max(50),
+});
+
+export const planningSettingsSchema = z.object({
+  /** Absolue et sans slash final. Le front complète le `https://` manquant. */
+  calendarBaseUrl: z.string().trim().url('Adresse invalide (https://…)').nullable().optional(),
+  /** `""` efface le jeton, absent le conserve — même convention que `refreshToken`. */
+  calendarToken: z.string().nullable().optional(),
+  targetCalendarId: z.string().trim().nullable().optional(),
+  busyCalendarIds: z.array(z.string().trim().min(1)).max(20).optional(),
+  slotGranularityMinutes: z.number().int().min(5).max(60).optional(),
+  minBlockMinutes: z
+    .number()
+    .int()
+    .min(5)
+    .max(8 * 60)
+    .optional(),
+  maxBlockMinutes: z
+    .number()
+    .int()
+    .min(15)
+    .max(12 * 60)
+    .optional(),
+  breakMinutes: z.number().int().min(0).max(120).optional(),
+  horizonDays: z.number().int().min(1).max(120).optional(),
+  pushToCalendar: z.boolean().optional(),
+});
+
+/** Fenêtre affichée par l'écran de planning. */
+export const planningBoardQuerySchema = z.object({
+  from: isoDate,
+  to: isoDate,
+});
+
+/**
+ * L'heure locale du navigateur, en minutes depuis minuit.
+ *
+ * Elle vient du client et non de l'horloge du serveur : l'API tourne en UTC dans un
+ * conteneur, et s'y fier proposerait un créneau à 9 h alors qu'il est midi.
+ */
+const nowMinutes = z
+  .number()
+  .int()
+  .min(0)
+  .max(24 * 60)
+  .optional();
+
+export const planTargetsSchema = z.object({
+  productionId: z.string().min(1, 'La vidéo est obligatoire'),
+  stepIds: z.array(z.string().min(1)).default([]),
+  todoIds: z.array(z.string().min(1)).default([]),
+  from: isoDate.optional(),
+  nowMinutes,
+});
+
+export const replanSchema = z.object({
+  from: isoDate.optional(),
+  /** Ne réorganiser qu'un jour : le bouton d'une colonne du planning. */
+  onlyDate: isoDate.optional(),
+  nowMinutes,
+});
+
+export const reorderPlanningItemsSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, 'Aucune ligne à réordonner'),
+  nowMinutes,
+});
+
+/**
+ * L'approbation d'un créneau. `finished` est **obligatoire** : c'est la question qu'on
+ * pose à l'utilisateur, et une valeur par défaut y répondrait à sa place.
+ */
+export const approveSlotSchema = z.object({
+  finished: z.boolean(),
+  /** Temps réellement passé, si différent de la durée prévue. */
+  minutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60)
+    .optional(),
+  notes: z.string().trim().max(500).nullable().optional(),
+  from: isoDate.optional(),
+  nowMinutes,
 });

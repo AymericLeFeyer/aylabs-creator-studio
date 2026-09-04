@@ -10,6 +10,7 @@ import type {
   CreateProductionSlotInput,
   ProductionSlot,
   ProductionSlotView,
+  SlotOrigin,
   UpdateProductionSlotInput,
 } from '../entities/ProductionSlot.ts';
 import type {
@@ -56,6 +57,8 @@ export interface ProductionSlotFilter {
   range?: { from: IsoDate; to: IsoDate };
   /** `false` = uniquement les créneaux pas encore faits. */
   includeDone?: boolean;
+  /** Vide ou absent = les deux origines. */
+  origins?: SlotOrigin[];
 }
 
 export interface ProductionSlotRepository {
@@ -64,4 +67,10 @@ export interface ProductionSlotRepository {
   create(input: CreateProductionSlotInput): ProductionSlot;
   update(id: string, input: UpdateProductionSlotInput): ProductionSlot;
   delete(id: string): void;
+  /**
+   * Efface les suggestions déplaçables d'une fenêtre, préalable de tout replan.
+   * `from` à `null` remonte jusqu'au début : un replan complet balaie aussi les
+   * suggestions passées jamais approuvées, qui n'ont rien raconté.
+   */
+  clearSuggestions(from: IsoDate | null, to: IsoDate): number;
 }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   BarChart3,
+  CalendarClock,
   Clapperboard,
   Handshake,
   Menu,
@@ -29,6 +30,7 @@ const CONTAINER = 'mx-auto w-full max-w-[1800px] px-3 sm:px-5';
 const NAV = [
   { to: '/', label: 'Dashboard', icon: BarChart3, end: true },
   { to: '/contenu', label: 'Contenu', icon: PlaySquare, end: false },
+  { to: '/planning', label: 'Planning', icon: CalendarClock, end: false },
   { to: '/production', label: 'Production', icon: Clapperboard, end: false },
   { to: '/partenariats', label: 'Partenariats', icon: Handshake, end: false },
   { to: '/chiffre-affaires', label: "Chiffre d'affaires", icon: Wallet, end: false },
@@ -41,7 +43,13 @@ const NAV = [
  * vidéo à écrire n'appartient à aucune fenêtre de temps —, et le tableau légal a sa
  * propre maille, le mois.
  */
-const ROUTES_WITHOUT_FILTERS = ['/parametres', '/production', '/partenariats', '/legal'];
+const ROUTES_WITHOUT_FILTERS = [
+  '/parametres',
+  '/planning',
+  '/production',
+  '/partenariats',
+  '/legal',
+];
 
 /** Largeurs de la barre latérale. Repliée, elle ne montre que les icônes. */
 const SIDEBAR_OPEN = '15rem';

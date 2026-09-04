@@ -26,6 +26,43 @@ import {
 import { cn } from '../../shared/cn.ts';
 
 /**
+ * La durée moyenne, en minutes.
+ *
+ * Vide vaut `null` et **non zéro** : « je ne sais pas » et « ça ne prend pas de temps »
+ * sont deux réponses différentes, et seule la première fait retomber la tâche sur la
+ * durée de son étape. Le champ est non contrôlé et validé à la sortie, comme le reste de
+ * l'écran — un `onChange` branché sur la mutation enverrait une requête par chiffre tapé.
+ */
+const DurationInput = ({
+  value,
+  label,
+  placeholder = 'min',
+  onCommit,
+}: {
+  value: number | null;
+  label: string;
+  placeholder?: string;
+  onCommit: (minutes: number | null) => void;
+}) => (
+  <Input
+    type="number"
+    min={5}
+    step={5}
+    defaultValue={value ?? ''}
+    placeholder={placeholder}
+    aria-label={label}
+    title={label}
+    onBlur={(event) => {
+      const raw = event.target.value.trim();
+      const next = raw === '' ? null : Math.round(Number(raw));
+      if (next !== null && (!Number.isFinite(next) || next < 5)) return;
+      if (next !== value) onCommit(next);
+    }}
+    className="h-7 w-16 shrink-0 px-1.5 text-center text-xs"
+  />
+);
+
+/**
  * Le référentiel des étapes **et de leurs tâches habituelles**.
  *
  * L'ordre défini ici n'est qu'un **ordre d'affichage** : les cases se cochent dans le
@@ -51,7 +88,7 @@ export const StepsPage = () => {
   const removeTodo = useDeleteStepTodo();
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', color: '#64748b' });
+  const [form, setForm] = useState({ name: '', color: '#64748b', defaultMinutes: '' });
   const [error, setError] = useState<string | null>(null);
   /** Le brouillon de nouvelle tâche, par étape : on en ajoute souvent deux d'affilée. */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -60,8 +97,13 @@ export const StepsPage = () => {
     event.preventDefault();
     setError(null);
     try {
-      await create.mutateAsync({ name: form.name.trim(), color: form.color });
-      setForm({ name: '', color: '#64748b' });
+      const minutes = Number(form.defaultMinutes);
+      await create.mutateAsync({
+        name: form.name.trim(),
+        color: form.color,
+        defaultMinutes: Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes) : null,
+      });
+      setForm({ name: '', color: '#64748b', defaultMinutes: '' });
       setDialogOpen(false);
     } catch (mutationError) {
       setError(mutationError instanceof Error ? mutationError.message : 'Création impossible');
@@ -91,7 +133,8 @@ export const StepsPage = () => {
           <h2 className="font-semibold">Étapes et tâches</h2>
           <p className="text-sm text-muted-foreground">
             Les étapes sont les pastilles d'une vidéo ; les tâches sont ce qu'il y a dedans. Une
-            tâche pèse autant qu'une étape dans l'avancement affiché.
+            tâche pèse autant qu'une étape dans l'avancement affiché. La durée moyenne dit au
+            planning quelle place réserver — vide, la tâche reprend celle de son étape.
           </p>
         </div>
         <Button size="sm" onClick={() => setDialogOpen(true)}>
@@ -129,6 +172,14 @@ export const StepsPage = () => {
                     }
                   }}
                   className="h-8 min-w-0 flex-1 font-medium"
+                />
+                <DurationInput
+                  key={`${step.id}-minutes`}
+                  value={step.defaultMinutes}
+                  label={`Durée moyenne de ${step.name}`}
+                  onCommit={(defaultMinutes) =>
+                    update.mutate({ id: step.id, input: { defaultMinutes } })
+                  }
                 />
                 {step.isArchived && <Badge variant="outline">Archivée</Badge>}
 
@@ -220,6 +271,17 @@ export const StepsPage = () => {
                         todo.isArchived && 'text-muted-foreground line-through',
                       )}
                     />
+                    <DurationInput
+                      key={`${todo.id}-minutes`}
+                      value={todo.defaultMinutes}
+                      label={`Durée moyenne de ${todo.label}`}
+                      placeholder={
+                        step.defaultMinutes !== null ? String(step.defaultMinutes) : 'min'
+                      }
+                      onCommit={(defaultMinutes) =>
+                        updateTodo.mutate({ id: todo.id, input: { defaultMinutes } })
+                      }
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
@@ -301,15 +363,31 @@ export const StepsPage = () => {
                   required
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="step-color">Couleur</Label>
-                <Input
-                  id="step-color"
-                  type="color"
-                  className="h-9 w-20 p-1"
-                  value={form.color}
-                  onChange={(event) => setForm((f) => ({ ...f, color: event.target.value }))}
-                />
+              <div className="flex gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="step-minutes">Durée (min)</Label>
+                  <Input
+                    id="step-minutes"
+                    type="number"
+                    min={5}
+                    placeholder="60"
+                    className="h-9 w-24"
+                    value={form.defaultMinutes}
+                    onChange={(event) =>
+                      setForm((f) => ({ ...f, defaultMinutes: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="step-color">Couleur</Label>
+                  <Input
+                    id="step-color"
+                    type="color"
+                    className="h-9 w-20 p-1"
+                    value={form.color}
+                    onChange={(event) => setForm((f) => ({ ...f, color: event.target.value }))}
+                  />
+                </div>
               </div>
             </div>
 

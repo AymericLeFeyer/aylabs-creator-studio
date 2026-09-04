@@ -1,5 +1,11 @@
 /** Contrat de `/api/production-slots`. */
 
+/**
+ * Qui a posé le créneau. C'est ce qui dit si le planning a le droit de le déplacer : il
+ * ne réécrit **que** les `planner` encore non approuvés.
+ */
+export type SlotOrigin = 'manual' | 'planner';
+
 export interface ProductionSlot {
   id: string;
   productionId: string;
@@ -9,8 +15,14 @@ export interface ProductionSlot {
   startTime: string | null;
   endTime: string | null;
   label: string;
+  /** Approuvé : ce temps a été passé. Un créneau approuvé ne se déplace plus. */
   done: boolean;
   notes: string | null;
+  origin: SlotOrigin;
+  /** Ligne de la pile de travail que ce créneau couvre. */
+  itemId: string | null;
+  calendarUid: string | null;
+  timeEntryId: string | null;
   createdAt: string;
   updatedAt: string;
 
@@ -18,6 +30,7 @@ export interface ProductionSlot {
   channelId: string | null;
   channelColor: string | null;
   stepName: string | null;
+  stepColor: string | null;
 }
 
 export interface ProductionSlotInput {
@@ -29,6 +42,8 @@ export interface ProductionSlotInput {
   label?: string;
   done?: boolean;
   notes?: string | null;
+  origin?: SlotOrigin;
+  itemId?: string | null;
 }
 
 /**

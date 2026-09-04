@@ -19,6 +19,8 @@ export interface StepTodo {
   id: string;
   stepId: string;
   label: string;
+  /** Durée moyenne, en minutes. `null` = retombe sur celle de l'étape. */
+  defaultMinutes: number | null;
   sortOrder: number;
   isArchived: boolean;
   createdAt: string;
@@ -28,6 +30,7 @@ export interface StepTodo {
 export interface CreateStepTodoInput {
   stepId: string;
   label: string;
+  defaultMinutes?: number | null;
   sortOrder?: number;
 }
 
@@ -41,6 +44,7 @@ export interface ProductionTodo {
   productionId: string;
   stepId: string | null;
   label: string;
+  defaultMinutes: number | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -50,11 +54,13 @@ export interface CreateProductionTodoInput {
   productionId: string;
   stepId?: string | null;
   label: string;
+  defaultMinutes?: number | null;
 }
 
 export type UpdateProductionTodoInput = {
   label?: string;
   stepId?: string | null;
+  defaultMinutes?: number | null;
   sortOrder?: number;
 };
 
@@ -67,6 +73,8 @@ export interface TodoItem {
   id: string;
   stepId: string | null;
   label: string;
+  /** Durée moyenne retenue pour le planning, `null` si personne ne l'a renseignée. */
+  defaultMinutes: number | null;
   origin: 'step' | 'production';
   checked: boolean;
   checkedAt: string | null;

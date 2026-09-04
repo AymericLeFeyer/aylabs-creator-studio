@@ -16,6 +16,7 @@ interface StepTodoRow {
   id: string;
   step_id: string;
   label: string;
+  default_minutes: number | null;
   sort_order: number;
   is_archived: number;
   created_at: string;
@@ -27,6 +28,7 @@ interface ProductionTodoRow {
   production_id: string;
   step_id: string | null;
   label: string;
+  default_minutes: number | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -36,6 +38,7 @@ const toStepTodo = (row: StepTodoRow): StepTodo => ({
   id: row.id,
   stepId: row.step_id,
   label: row.label,
+  defaultMinutes: row.default_minutes,
   sortOrder: row.sort_order,
   isArchived: row.is_archived === 1,
   createdAt: row.created_at,
@@ -47,6 +50,7 @@ const toProductionTodo = (row: ProductionTodoRow): ProductionTodo => ({
   productionId: row.production_id,
   stepId: row.step_id,
   label: row.label,
+  defaultMinutes: row.default_minutes,
   sortOrder: row.sort_order,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -97,10 +101,10 @@ export class SqliteTodoRepository {
     this.db
       .prepare(
         `INSERT INTO step_todos
-           (id, step_id, label, sort_order, is_archived, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 0, ?, ?)`,
+           (id, step_id, label, default_minutes, sort_order, is_archived, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
       )
-      .run(id, input.stepId, input.label, nextOrder, now, now);
+      .run(id, input.stepId, input.label, input.defaultMinutes ?? null, nextOrder, now, now);
 
     return this.findStepTodoById(id)!;
   }
@@ -117,6 +121,7 @@ export class SqliteTodoRepository {
     };
 
     if (input.label !== undefined) set('label', input.label);
+    if (input.defaultMinutes !== undefined) set('default_minutes', input.defaultMinutes);
     if (input.sortOrder !== undefined) set('sort_order', input.sortOrder);
     if (input.isArchived !== undefined) set('is_archived', input.isArchived ? 1 : 0);
 
@@ -184,10 +189,19 @@ export class SqliteTodoRepository {
     this.db
       .prepare(
         `INSERT INTO production_todos
-           (id, production_id, step_id, label, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           (id, production_id, step_id, label, default_minutes, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, input.productionId, input.stepId ?? null, input.label, nextOrder, now, now);
+      .run(
+        id,
+        input.productionId,
+        input.stepId ?? null,
+        input.label,
+        input.defaultMinutes ?? null,
+        nextOrder,
+        now,
+        now,
+      );
 
     return this.findProductionTodoById(id)!;
   }
@@ -205,6 +219,7 @@ export class SqliteTodoRepository {
 
     if (input.label !== undefined) set('label', input.label);
     if (input.stepId !== undefined) set('step_id', input.stepId);
+    if (input.defaultMinutes !== undefined) set('default_minutes', input.defaultMinutes);
     if (input.sortOrder !== undefined) set('sort_order', input.sortOrder);
 
     if (fields.length === 0) return existing;
@@ -288,6 +303,7 @@ export class SqliteTodoRepository {
       id: todo.id,
       stepId: todo.stepId,
       label: todo.label,
+      defaultMinutes: todo.defaultMinutes,
       origin: 'step' as const,
       checked: checks.has(todo.id),
       checkedAt: checks.get(todo.id) ?? null,
@@ -298,6 +314,7 @@ export class SqliteTodoRepository {
       id: todo.id,
       stepId: todo.stepId,
       label: todo.label,
+      defaultMinutes: todo.defaultMinutes,
       origin: 'production' as const,
       checked: checks.has(todo.id),
       checkedAt: checks.get(todo.id) ?? null,
@@ -329,6 +346,7 @@ export class SqliteTodoRepository {
         id: todo.id,
         stepId: todo.stepId,
         label: todo.label,
+        defaultMinutes: todo.defaultMinutes,
         origin: 'step' as const,
         checked: done.has(todo.id),
         checkedAt: done.get(todo.id) ?? null,
@@ -340,6 +358,7 @@ export class SqliteTodoRepository {
           id: todo.id,
           stepId: todo.stepId,
           label: todo.label,
+          defaultMinutes: todo.defaultMinutes,
           origin: 'production',
           checked: done.has(todo.id),
           checkedAt: done.get(todo.id) ?? null,

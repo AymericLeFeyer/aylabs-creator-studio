@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-03
+> Dernière mise à jour : 2026-09-04
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -528,6 +528,143 @@ heures, et douze lignes quotidiennes par vidéo ne diraient rien de plus.
 (période) » n'apparaît donc pas tant qu'aucune ligne ne sait répondre — une colonne
 entièrement remplie de « — » se lirait comme une panne.
 
+### `planning` — poser le travail dans le temps qui reste
+
+Trois tables, un moteur, et une règle de déplacement qui gouverne tout le reste.
+
+`WorkHours { id, weekday, startTime, endTime }` — table `work_hours`. **0 = lundi**, même
+convention que `bucketStart`. **Plusieurs lignes par jour** : une journée coupée par la
+pause du midi est le cas normal, et une seule plage ferait poser un montage à 12 h 30. Un
+jour sans aucune ligne n'est simplement pas travaillé — c'est ce qui remplace un
+« actif oui/non » qui n'aurait rien dit de plus. L'écriture est un **remplacement total**
+(`PUT`), comme `brandIds` : faire des différences ligne à ligne demanderait des
+identifiants stables à un formulaire qui n'en a aucun besoin.
+
+`PlanningSettings` — table `planning_settings`, **ligne unique** (`id = 'default'`), comme
+`company`. Porte l'adresse Home Assistant, le jeton, le calendrier cible, les calendriers
+à respecter, et la forme des créneaux (`minBlockMinutes`, `maxBlockMinutes`,
+`breakMinutes`, `slotGranularityMinutes`, `horizonDays`, `pushToCalendar`). Le **jeton ne
+sort jamais de l'API** : `PlanningSettingsView` le remplace par `hasToken`, et seul
+`SqlitePlanningSettingsRepository.token()` le lit — même règle que `refreshToken` sur les
+chaînes, pour la même raison.
+
+`PlanningItem { id, productionId, stepId, todoId, label, plannedMinutes, sequence, status }`
+— table `planning_items`. **La pile de ce qui est en cours.** Ajouter une vidéo au planning
+en cochant « Écriture » y dépose **une ligne par tâche non cochée** de cette étape — c'est
+ce qui donne les cinq créneaux attendus plutôt qu'un bloc opaque de trois heures. Une
+étape **sans aucune tâche** entre entière : il n'y a rien de plus fin à viser. `todo_id`
+désigne `step_todos` **ou** `production_todos` — aucune clé étrangère n'est possible,
+exactement comme `production_todo_checks`. Index unique sur
+`(production_id, COALESCE(step_id,''), COALESCE(todo_id,''))` : remettre la même tâche
+dans la pile **la rouvre** au lieu d'échouer, parce que c'est le geste normal.
+
+`sequence` est l'ordre voulu et il est **strictement respecté** : la tâche n+1 ne commence
+pas avant que la n ait reçu toutes ses minutes. Caler le montage avant le tournage
+remplirait joliment un agenda sans rien permettre de faire.
+
+**Les durées.** `production_steps.default_minutes`, `step_todos.default_minutes` et
+`production_todos.default_minutes` sont **nullables et non à zéro** : « je ne sais pas » et
+« ça ne prend pas de temps » sont deux réponses différentes, et seule la première fait
+retomber la tâche sur la durée de son étape, puis sur `FALLBACK_MINUTES` (60).
+
+#### La règle de déplacement
+
+**Il n'y a pas de colonne `status` sur `production_slots`.** `origin`
+(`manual` | `planner`) dit qui a posé le créneau, et le `done` existant dit s'il est
+approuvé. Un troisième champ redirait la même chose et finirait par la contredire —
+« suggéré » n'est rien d'autre que `planner` et pas encore `done`.
+
+Il en découle une règle unique, écrite une seule fois dans
+`SqliteProductionSlotRepository.clearSuggestions` : **le moteur ne réécrit que
+`origin = 'planner' AND done = 0`**. Un créneau approuvé raconte du temps déjà passé ; un
+créneau posé à la main a été voulu là où il est. Ni l'un ni l'autre ne bouge jamais.
+
+Déplacer un créneau au doigt le fait passer en `manual` — c'est
+`updateProductionSlotSchema` qui autorise ce champ, **et lui seul** : sans lui, zod
+l'aurait silencieusement filtré et le glisser-déposer aurait été annulé au replacement
+suivant.
+
+#### Le moteur (`domain/planning/services/scheduler.ts`)
+
+Fonction **pure**, sans accès aux dépôts : plages travaillables, occupations, tâches
+ordonnées → blocs. C'est ce qui permet de la rejouer autant qu'on veut (« réorganiser ce
+jour », « repositionner tout ») sans dépendre de ce qui est déjà en base.
+
+Les **occupations** réunissent les événements de l'agenda et les créneaux immobiles
+(approuvés ou manuels). Une tâche plus longue que `maxBlockMinutes` est **découpée en
+plusieurs séances** ; le reliquat final est posé même sous `minBlockMinutes`, sinon les
+dernières minutes ne trouveraient jamais leur place et la ligne resterait ouverte à vie.
+
+`notBeforeMinutes` vient **du navigateur**, jamais de l'horloge du serveur : l'API tourne
+en UTC dans un conteneur, et s'y fier proposerait un créneau à 9 h alors qu'il est midi.
+Même raison pour `from`, envoyé par le front (`localToday()`).
+
+#### Le replan est un effacement, pas un ajustement
+
+`ManagePlanning.replan()` **efface les suggestions déplaçables puis repose tout**.
+Chercher quoi bouger reviendrait à réimplémenter le moteur à l'envers, et un placement à
+moitié appliqué laisserait deux créneaux au même endroit — exactement ce que le replan
+doit corriger.
+
+L'ordre des deux opérations est un piège à lui seul : **le nettoyage vient avant le calcul
+du reste à faire.** Ce qui survit à l'effacement — les créneaux manuels, et ceux des autres
+jours quand on ne réorganise qu'une colonne — couvre déjà du travail ; le compter après les
+avoir effacés est la seule façon de ne pas poser deux fois les mêmes heures. D'où
+`minutes = plannedMinutes - approvedMinutes - scheduledMinutes`.
+
+Un replan **complet** efface aussi les suggestions **passées jamais approuvées**
+(`clearSuggestions(null, to)`) : elles n'ont rien raconté, et les laisser traîner ferait
+croire que ce travail est déjà casé.
+
+#### Approuver n'est pas terminer
+
+C'est toute la mécanique de `ManagePlanning.approve()`, et elle fait **quatre** choses pour
+un clic — d'où le use case propriétaire, les routes ne touchant jamais la pile :
+
+1. une `TimeEntry` est créée : c'est elle qui fait monter le compteur de la vidéo ;
+2. le créneau est **redimensionné sur le temps réellement passé** (approuver 30 min d'un
+   bloc de 45 laisse un bloc de 30), puis figé — la grille se lit comme un journal de ce
+   qui a eu lieu, et ça évite de stocker la durée une seconde fois ;
+3. il est publié dans l'agenda, **si** la connexion existe. L'échec est **avalé** : le
+   temps passé est déjà enregistré, l'événement est du confort ;
+4. `finished` décide de la suite. **Oui** : la ligne quitte la pile et la tâche est cochée.
+   **Non** : `plannedMinutes` est recalé sur `approvedMinutes + durée prévue du créneau`,
+   et le replan repose un créneau de cette durée. Répondre à la place de l'utilisateur
+   ferait disparaître de la pile un travail à moitié fait, ou l'y laisserait pour toujours.
+
+`unapprove` retire la session et rend le créneau mobile. La durée d'origine, elle, ne
+revient pas : l'approbation l'a recalée sur le temps vécu, et l'estimation d'avant n'est
+écrite nulle part. `calendarUid` est **conservé** — l'événement est toujours dans l'agenda
+et rien ne permet de l'en retirer ; le garder évite d'en créer un second.
+
+#### Home Assistant : ce qu'on peut, et ce qu'on ne peut pas
+
+`infrastructure/planning/api/HomeAssistantClient.ts`. L'API REST permet de **lister** les
+calendriers (`GET /api/calendars`), de **lire** leurs événements
+(`GET /api/calendars/<entity>?start=&end=`) et d'en **créer** un
+(`POST /api/services/calendar/create_event`). Elle ne permet **ni de modifier ni de
+supprimer** : le core n'expose aucun service pour ça.
+
+**C'est cette limite qui décide de toute l'architecture du planning.** Les suggestions
+vivent dans l'outil, où elles se déplacent et se suppriment librement ; **seul un créneau
+approuvé part dans l'agenda**, précisément parce qu'il ne bougera plus. Pousser les
+suggestions laisserait au premier replan une traînée d'événements fantômes impossibles à
+retirer.
+
+Les heures sont lues **textuellement** dans la chaîne renvoyée
+(`2026-09-04T14:00:00+02:00` donne 14 h 00) et écrites **sans décalage**
+(`2026-09-04 14:00:00`, que Home Assistant interprète dans son propre fuseau). Passer par
+un `Date` recomposerait l'heure dans le fuseau du serveur — UTC — et décalerait la journée
+de deux heures en été.
+
+Les événements de **journée entière** sont affichés mais **n'occupent rien** : « congés »
+couvrirait 24 h et rendrait la journée impossible, alors qu'ils servent surtout à
+étiqueter.
+
+Une lecture d'agenda qui échoue **ne fait pas échouer le planning** : la grille sort sans
+occupations externes, avec `calendarError` renseigné. Une page vide dirait moins qu'une
+page qui prévient qu'elle est incomplète.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -622,6 +759,19 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/legal/bookmarks`                              | Créer. `url` doit être **absolue** (le front complète le `https://` manquant)                                                                                                                         |
 | `PATCH`  | `/api/legal/bookmarks/:id`                          | Modifier / réordonner                                                                                                                                                                                 |
 | `DELETE` | `/api/legal/bookmarks/:id`                          | Supprimer (pas d'archivage : rien n'en dépend)                                                                                                                                                        |
+| `GET`    | `/api/planning/board`                               | Grille, occupations et pile de travail en une requête. Params `from`, `to` (obligatoires)                                                                                                             |
+| `GET`    | `/api/planning/settings`                            | Réglages. **Le jeton n'en sort jamais**, remplacé par `hasToken`                                                                                                                                      |
+| `PATCH`  | `/api/planning/settings`                            | Modifier. `calendarToken: ""` efface, absent conserve                                                                                                                                                 |
+| `GET`    | `/api/planning/calendars`                           | Entités calendrier de l'instance. 400 tant qu'aucune connexion n'est configurée                                                                                                                       |
+| `GET`    | `/api/planning/work-hours`                          | Plages travaillables de la semaine type                                                                                                                                                               |
+| `PUT`    | `/api/planning/work-hours`                          | **Remplacement total** de la grille (`{ ranges }`)                                                                                                                                                    |
+| `GET`    | `/api/planning/items`                               | La pile de ce qui est en cours                                                                                                                                                                        |
+| `POST`   | `/api/planning/items`                               | Ajouter une vidéo : `{ productionId, stepIds, todoIds, from?, nowMinutes? }`. Replanifie dans la foulée                                                                                               |
+| `POST`   | `/api/planning/items/reorder`                       | `{ ids }` → l'ordre de placement, le rang est l'index                                                                                                                                                 |
+| `DELETE` | `/api/planning/items/:id`                           | Retirer de la pile. Les créneaux déjà posés **restent**                                                                                                                                               |
+| `POST`   | `/api/planning/replan`                              | Repositionner. `onlyDate` = une seule colonne, sinon tout l'horizon                                                                                                                                   |
+| `POST`   | `/api/planning/slots/:id/approve`                   | `{ finished }` **obligatoire**. Crée la session, fige et redimensionne le créneau, publie dans l'agenda ; renvoie `{ next }`, le créneau reposé si le travail continue                                |
+| `POST`   | `/api/planning/slots/:id/unapprove`                 | Défaire : la session part, le créneau redevient mobile                                                                                                                                                |
 
 Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube.
 
@@ -631,12 +781,13 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 | ------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, alertes (production + légal), puis **les deux graphiques seulement** (argent, audience) |
 | `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                        |
+| `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail à droite, bouton « Ajouter une vidéo »                                                                |
 | `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                             |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / Créneaux / Produits & sponsos / Notes                                                     |
 | `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis trois onglets Produits, Sponsors et **Plateformes** (`?onglet=`). Bouton **Script** par sponso     |
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                              |
 | `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                   |
-| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, Catégories, Abonnements, Marques, Étapes, Société                           |
+| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, Catégories, Abonnements, Marques, Étapes, **Planning**, Société             |
 
 `/chaines`, `/categories`, `/marques`, `/etapes`, `/societe` et `/abonnements`
 **redirigent** vers `/parametres` sur le bon onglet : c'étaient six entrées d'un menu
@@ -648,6 +799,36 @@ leur titre est passé en `<h2>`, `SettingsPage` porte le `<h1>`.
 onglet : ce sont les deux moitiés de la même soustraction, et elles se consultent l'une
 après l'autre. Les tables vivent désormais dans `components/money/RevenuesPanel.tsx` et
 `ExpensesPanel.tsx` — ce sont les anciennes pages, déplacées telles quelles.
+
+`/horaires` **redirige** vers `/parametres?onglet=planning`.
+
+`PlanningPage` porte **deux vues seulement, jour et semaine, et pas de vue mois** : un
+créneau de montage se décide à l'heure près, et une grille mensuelle ne montre plus les
+heures. Ce qui se regarde au mois, c'est la sortie des vidéos — et le Gantt de
+`/production` le dit déjà.
+
+`PlanningGrid` est **écrite à la main**, sans bibliothèque de calendrier ni de
+glisser-déposer : le besoin tient en une conversion « pixels ↔ minutes » et trois
+écouteurs de pointeur, là où une dépendance imposerait son modèle d'événement, son thème et
+sa gestion du fuseau — même parti pris que le Gantt, les confettis et le service worker. Le
+pointeur est **capturé** sur le bloc, sans quoi sortir de sa colonne pendant le geste
+l'interromprait — or c'est exactement ce qu'on fait pour changer de jour. Le déplacement
+est arrondi au quart d'heure : on ne cale pas un créneau à la minute près.
+
+Les bornes verticales viennent de `dayBounds` : la grille s'ouvre sur la première plage
+travaillable et se ferme sur la dernière, **élargies par ce qui déborde** — un créneau
+déplacé à la main hors des horaires doit rester visible, sinon il disparaîtrait sans
+prévenir.
+
+`AddToPlanDialog` se lit en deux temps : la vidéo (prise dans la file d'attente), puis les
+étapes et leurs tâches. Cocher une étape coche ses tâches ; en décocher une laisse l'étape
+partiellement retenue — c'est le cas normal (« je fais l'écriture, mais pas le repérage »).
+Ce qui est **déjà coché sur la vidéo** est grisé et non sélectionnable. Le total attendu
+s'affiche en continu, pour qu'on sache qu'on vient de demander onze heures **avant** de
+cliquer.
+
+`ROUTES_WITHOUT_FILTERS` inclut `/planning` : la période s'y choisit dans l'écran lui-même,
+et une seconde barre de dates au-dessus dirait autre chose que la grille.
 
 `AppLayout` porte la navigation dans une **barre latérale à gauche**, pas dans une rangée
 d'onglets horizontale. Trois raisons : la liste des écrans peut grandir sans se disputer
@@ -765,6 +946,9 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useRecurringExpenses`, `useCreateRecurringExpense`, `useUpdateRecurringExpense`, `useDeleteRecurringExpense`                                                                                     | `application/expense/usecases/useExpenses.ts`         | Règles de dépense récurrente                                                                        |
 | `useUpcomingExpenses`, `useUpcomingRevenues`, `useUpcomingRange`                                                                                                                                  | `application/expense/usecases/useUpcoming.ts`         | Ce qui est daté en avant (demain → +3 mois)                                                         |
 | `usePreferences`                                                                                                                                                                                  | `presentation/hooks/usePreferences.ts`                | Menu replié, file compacte. Persisté en localStorage                                                |
+| `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useReorderPlanningItems`, `useRemovePlanningItem`                                | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                  |
+| `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                         | idem                                                  | Horaires de travail et connexion à l'agenda                                                         |
+| `nowMinutes`, `localToday`, `shiftDate`, `startOfWeek`                                                                                                                                            | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                            |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
 
@@ -774,6 +958,14 @@ ni au dashboard — repartir sur tout l'écran ferait clignoter le tableau pour 
 changement de libellé.
 
 `LEGAL_ROOTS` (`legalOverview`, `legalObligations`) part en entier à chaque écriture du module légal : changer un jour limite déplace l'échéance sur tous les mois déjà affichés, et cocher une case retire une alerte du dashboard.
+
+`PLANNING_ROOTS` = `PRODUCTION_ROOTS` + `planningSettings` + `workHours`, et
+`PRODUCTION_ROOTS` porte désormais `planningBoard` / `planningItems` : le croisement va dans
+les **deux** sens. Approuver un créneau enregistre une session et peut cocher une tâche —
+l'avancement de la file et le compteur de la fiche bougent ; cocher une tâche depuis une
+fiche la retire de la pile — la grille et la pile bougent. `calendars` n'est dans aucune
+racine : la liste des calendriers de l'instance ne dépend d'aucune écriture de notre côté,
+et la relire à chaque approbation ferait un aller-retour vers la domotique pour rien.
 
 `RECURRING_ROOTS` = `MONEY_ROOTS` + `recurringExpenses` : écrire une règle crée, réécrit
 ou supprime des dépenses, les vues d'argent repartent avec elle. Le contraire n'est pas
@@ -800,6 +992,15 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   **Migration 13** ajoute `legal_bookmarks`. **Migration 12** en ajoute trois d'un coup — `production_time_entries` (le temps passé), `step_todos` / `production_todos` / `production_todo_checks` (les tâches d'étape), `recurring_expenses` + `expense_entries.recurring_id` (les dépenses qui reviennent) — et la colonne `channels.thumbnail_url`.
 - **Un panneau plutôt qu'une page dès que deux écrans le partagent** : `RevenuesPanel` et `ExpensesPanel` (ex-pages) sont montés dans les onglets de `/chiffre-affaires` ; `MoneyBreakdowns` porte les trois anneaux et les deux classements ; `PartnerStatCards` les quatre chiffres du pipeline. Le dupliquer ferait diverger deux écrans qui doivent annoncer le même montant.
 - **Le calcul du pipeline vit dans le domaine** (`domain/partner/services/pipeline.ts`, `partnerPipeline`) et non dans les écrans : le dashboard et `/partenariats` affichent le même « à encaisser », et deux comptages parallèles finiraient par se contredire.
+- **Migration 18** ajoute `work_hours`, `planning_settings`, `planning_items`, les colonnes
+  `default_minutes` (étapes et tâches) et quatre colonnes sur `production_slots`
+  (`origin`, `item_id`, `calendar_uid`, `time_entry_id`). Elle n'ajoute **pas** de `status`
+  aux créneaux : `origin` + `done` disent déjà tout, et un troisième champ finirait par les
+  contredire.
+- **Le SQL des migrations n'accepte pas de backtick.** Le bloc `up` est un template
+  literal : un `` `nom_de_table` `` dans un commentaire SQL le referme et casse tout le
+  fichier. Les commentaires des migrations citent donc les identifiants entre guillemets
+  doubles, et sans accents — comme le reste du fichier.
 - **Contraste calculé, pas choisi** : `shared/contrast.ts` (`readableTextColor`) prend une couleur de fond libre et renvoie le blanc ou l'encre du thème, selon le meilleur **ratio WCAG réel** des deux. Les couleurs de chaîne sont libres — un vert clair et un bleu nuit peuvent cohabiter, et écrire en blanc sur les deux rend le premier illisible.
 
 ## Points d'attention
@@ -889,6 +1090,72 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **La barre de progression affiche le pourcentage, le détail est au survol.** Le pourcentage se compare d'une carte à l'autre ; le compte exact (« 18 sur 30 ») ne sert qu'à savoir combien il reste, ce qu'on ne demande que sur la vidéo qu'on s'apprête à attaquer.
 - **L'en-tête n'a de hauteur que s'il porte la barre de filtres.** Sur `/production`, `/partenariats`, `/legal` et `/parametres`, il perd son trait et son padding : un bandeau vide repoussait le contenu pour rien. Le bandeau du chronomètre, lui, porte une bordure **haut et bas** (`border-y`) parce qu'il peut se retrouver seul tout en haut — c'est même le cas le plus probable, `/production` étant l'écran sans filtres où un chronomètre tourne.
 - **Les liens utiles s'intercalent entre la fiche société et les alertes**, avant le tableau à cocher : on ouvre le portail, on fait la démarche, on revient cocher la case juste en dessous. La carte **entière** est le lien (cible la plus large) et s'ouvre dans un **nouvel onglet** — une navigation ferait perdre l'année choisie et la position dans le tableau. Le bloc ne s'affiche pas du tout tant qu'aucun lien n'est configuré : un encart vide prendrait la place de ce qu'on vient réellement faire sur cet écran.
+- **Le planning ne déplace jamais un créneau approuvé ni un créneau posé à la main.** La
+  règle vit dans un seul `DELETE` (`clearSuggestions` : `origin = 'planner' AND done = 0`)
+  et elle est le contrat du module. Toute nouvelle écriture qui touche `production_slots`
+  doit s'y ramener : un créneau approuvé raconte du temps déjà passé, un créneau manuel a
+  été voulu là où il est.
+- **Déplacer un créneau au doigt le rend immobile.** Le glisser-déposer envoie
+  `origin: 'manual'`, sans quoi le prochain « Repositionner » annulerait le geste. Ce champ
+  n'existe que dans `updateProductionSlotSchema` — s'il en disparaissait, zod le filtrerait
+  en silence et le drag paraîtrait ne rien faire. C'est exactement le bug qui s'est produit
+  la première fois.
+- **Le replan efface avant de compter, jamais l'inverse.** Le reste à faire d'une ligne est
+  `plannedMinutes − approvedMinutes − scheduledMinutes`, et `scheduledMinutes` n'a de sens
+  qu'**après** l'effacement : il ne compte alors que les créneaux qui ont survécu (les
+  manuels, et ceux des autres jours quand on ne réorganise qu'une colonne). Compter avant
+  ferait poser une seconde fois des heures déjà planifiées.
+- **Un replan complet balaie aussi le passé non approuvé.** Une suggestion d'hier qu'on n'a
+  jamais approuvée n'a rien raconté : la laisser ferait croire que ce travail est casé, et
+  le moteur ne le reposerait jamais. `clearSuggestions(null, to)` s'en charge ; la version
+  bornée ne sert qu'au bouton « réorganiser ce jour ».
+- **Approuver n'est pas terminer, et l'API ne répond pas à la place de l'utilisateur.**
+  `finished` est **obligatoire** dans le schéma zod. Un défaut ferait disparaître de la
+  pile un travail à moitié fait, ou l'y laisserait pour toujours.
+- **Approuver redimensionne le créneau sur le temps réellement passé.** Confirmer 30 minutes
+  d'un bloc de 45 laisse un bloc de 30, et c'est cette durée qui est publiée dans l'agenda.
+  Conséquence assumée : `unapprove` ne restaure pas la durée d'origine, qui n'est écrite
+  nulle part — on la corrige à la main, ce qui est plus honnête que de réafficher une durée
+  que personne n'a vécue.
+- **Home Assistant sait créer un événement, pas le modifier ni le supprimer.** C'est la
+  contrainte qui décide de toute l'architecture : les suggestions restent dans l'outil,
+  seuls les créneaux approuvés partent dans l'agenda. Y publier des suggestions laisserait
+  au premier replan une traînée d'événements fantômes qu'aucune API ne permet de retirer.
+  Ne jamais « améliorer » ça sans vérifier que le core expose enfin une suppression.
+- **La publication dans l'agenda ne peut pas faire échouer une approbation.** L'échec est
+  avalé (`console.warn`) : le temps passé est déjà enregistré, et une instance domotique en
+  train de redémarrer ne doit pas empêcher de cocher son travail. Même parti pris que
+  `collectVideos`.
+- **`calendar_uid` vaut « déjà poussé ».** Sa présence empêche de republier : sans lui, une
+  réapprobation créerait un second événement, et rien ne permettrait de retirer le premier.
+- **Les heures de l'agenda sont lues et écrites textuellement, jamais via un `Date`.**
+  `2026-09-04T14:00:00+02:00` donne 14 h 00, et on renvoie `2026-09-04 14:00:00` sans
+  décalage. L'API tourne en **UTC** dans un conteneur : recomposer l'heure avec l'horloge du
+  serveur décalerait toute la journée de deux heures en été. Pour la même raison, `from` et
+  `nowMinutes` viennent **du navigateur** (`localToday()`, `nowMinutes()`), jamais de
+  `today()` côté API.
+- **Les événements de journée entière n'occupent rien.** « Congés » couvrirait 24 h et
+  rendrait la journée impossible à planifier, alors qu'il ne fait qu'étiqueter. Ils
+  s'affichent en tête de colonne, hors de la grille horaire.
+- **Une durée moyenne vide n'est pas zéro.** `default_minutes` à `null` fait retomber la
+  tâche sur la durée de son étape, puis sur 60 minutes. Y écrire `0` ferait réserver zéro
+  minute et le créneau ne serait jamais posé.
+- **Cocher une tâche la retire de la pile, où qu'on le fasse.** La règle vit dans
+  `ManageTodos`, à côté de celle qui coche l'étape : cocher depuis une fiche, depuis le
+  planning ou par l'approbation d'un créneau doit avoir exactement le même effet. Décocher
+  la remet dans la pile — **sans rendre les créneaux déjà posés**, qui racontent du temps
+  passé et non du travail restant.
+- **Retirer une ligne de la pile ne supprime pas ses créneaux** (`ON DELETE SET NULL` sur
+  `item_id`), et supprimer un créneau ne retire pas la ligne de la pile — elle retrouvera
+  une place au prochain replacement. C'est l'usage : « pas maintenant » n'est pas
+  « jamais ».
+- **Les créneaux suggérés apparaissent aussi dans l'écran Production** (prochains créneaux,
+  charge de la semaine, Gantt) : ce sont de vrais `production_slots`. C'est voulu — du
+  travail planifié est du travail planifié, quelle que soit la main qui l'a posé.
+- **Le planning fonctionne sans agenda.** Sans connexion, il place les créneaux dans les
+  horaires de travail sans connaître les rendez-vous, et l'écran le dit. Sans **horaires**,
+  en revanche, il n'a nulle part où poser : c'est le seul blocage réel, et le bandeau
+  renvoie directement vers le réglage.
 - **`/api/productions/:id/todos` est monté AVANT `/api/productions`** dans `server.ts` : un router de préfixe plus long doit passer en premier, sinon le plus court capte la requête et répond 404. Même vigilance que `/overview` déclaré avant `/:id`.
 
 ## PWA

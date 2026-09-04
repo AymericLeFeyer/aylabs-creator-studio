@@ -4,6 +4,8 @@ export interface StepTodo {
   id: string;
   stepId: string;
   label: string;
+  /** Durée moyenne, en minutes. `null` = retombe sur celle de l'étape. */
+  defaultMinutes: number | null;
   sortOrder: number;
   isArchived: boolean;
   createdAt: string;
@@ -13,6 +15,7 @@ export interface StepTodo {
 export interface StepTodoInput {
   stepId: string;
   label: string;
+  defaultMinutes?: number | null;
   sortOrder?: number;
   isArchived?: boolean;
 }
@@ -26,6 +29,7 @@ export interface TodoItem {
   id: string;
   stepId: string | null;
   label: string;
+  defaultMinutes: number | null;
   origin: 'step' | 'production';
   checked: boolean;
   checkedAt: string | null;

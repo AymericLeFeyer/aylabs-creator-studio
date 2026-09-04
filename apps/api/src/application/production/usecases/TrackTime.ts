@@ -88,6 +88,17 @@ export class TrackTime {
   }
 
   /**
+   * Supprime une session.
+   *
+   * Passe par le use case et non par le dépôt : une approbation de créneau annulée doit
+   * retirer le temps qu'elle avait enregistré, et ce chemin-là doit rester le même que
+   * celui de l'écran d'historique.
+   */
+  remove(id: string): void {
+    this.entries.delete(id);
+  }
+
+  /**
    * Corrige une session existante.
    *
    * Changer la durée recale `endedAt` sur le début : les deux ne doivent jamais se
