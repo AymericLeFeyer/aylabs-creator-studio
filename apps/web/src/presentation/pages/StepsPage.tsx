@@ -6,6 +6,8 @@ import {
   useDeleteStep,
   useDeleteStepTodo,
   useProductionSteps,
+  useReorderStepTodos,
+  useReorderSteps,
   useStepTodos,
   useUpdateStep,
   useUpdateStepTodo,
@@ -86,6 +88,8 @@ export const StepsPage = () => {
   const createTodo = useCreateStepTodo();
   const updateTodo = useUpdateStepTodo();
   const removeTodo = useDeleteStepTodo();
+  const reorderSteps = useReorderSteps();
+  const reorderTodos = useReorderStepTodos();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ name: '', color: '#64748b', defaultMinutes: '' });
@@ -110,13 +114,43 @@ export const StepsPage = () => {
     }
   };
 
-  /** Échange les rangs de deux étapes : le tri est manuel, comme la file d'attente. */
-  const swap = (index: number, direction: -1 | 1) => {
-    const current = steps[index];
-    const other = steps[index + direction];
-    if (!current || !other) return;
-    update.mutate({ id: current.id, input: { sortOrder: other.sortOrder } });
-    update.mutate({ id: other.id, input: { sortOrder: current.sortOrder } });
+  /**
+   * Déplace un élément d'un cran et **réécrit toute la liste**.
+   *
+   * L'ancienne version échangeait les deux `sortOrder` concernés. Ça ne marchait que si
+   * les rangs étaient distincts — or rien ne le garantit : une étape créée à la main prend
+   * `MAX + 1`, et deux rangs égaux se seraient échangés sans que rien ne bouge. Réécrire
+   * la suite entière repart d'un ordre propre à chaque fois.
+   */
+  const moved = <T extends { id: string }>(
+    list: T[],
+    index: number,
+    direction: -1 | 1,
+  ): string[] => {
+    const next = [...list];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return [];
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    return next.map((item) => item.id);
+  };
+
+  const moveStep = (index: number, direction: -1 | 1) => {
+    const ids = moved(steps, index, direction);
+    if (ids.length > 0) reorderSteps.mutate(ids);
+  };
+
+  /**
+   * Les tâches se réordonnent **dans leur étape**, mais l'API réécrit une suite globale :
+   * on lui envoie donc l'ordre de toutes les tâches, celles des autres étapes inchangées.
+   * Un rang par étape n'aurait servi à rien — le tri les regroupe déjà par étape.
+   */
+  const moveTodo = (stepId: string, index: number, direction: -1 | 1) => {
+    const inStep = todos.filter((todo) => todo.stepId === stepId);
+    const reordered = moved(inStep, index, direction);
+    if (reordered.length === 0) return;
+
+    const rest = todos.filter((todo) => todo.stepId !== stepId).map((todo) => todo.id);
+    reorderTodos.mutate([...reordered, ...rest]);
   };
 
   const addTodo = (stepId: string) => {
@@ -189,7 +223,7 @@ export const StepsPage = () => {
                     size="icon"
                     className="h-7 w-7"
                     disabled={index === 0}
-                    onClick={() => swap(index, -1)}
+                    onClick={() => moveStep(index, -1)}
                     title="Monter"
                   >
                     <ChevronUp className="h-3.5 w-3.5" />
@@ -200,7 +234,7 @@ export const StepsPage = () => {
                     size="icon"
                     className="h-7 w-7"
                     disabled={index === steps.length - 1}
-                    onClick={() => swap(index, 1)}
+                    onClick={() => moveStep(index, 1)}
                     title="Descendre"
                   >
                     <ChevronDown className="h-3.5 w-3.5" />
@@ -251,12 +285,32 @@ export const StepsPage = () => {
                   </p>
                 )}
 
-                {stepTodos.map((todo) => (
+                {stepTodos.map((todo, todoIndex) => (
                   <div key={todo.id} className="group flex items-center gap-1.5">
-                    <span
-                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50"
-                      aria-hidden
-                    />
+                    {/* Deux flèches plutôt qu'un glisser-déposer : une liste de cinq
+                        lignes ne justifie pas une dépendance, et le clavier y accède. */}
+                    <div className="flex shrink-0 flex-col">
+                      <button
+                        type="button"
+                        className="h-3 text-muted-foreground transition-opacity hover:text-foreground disabled:opacity-20"
+                        disabled={todoIndex === 0}
+                        onClick={() => moveTodo(step.id, todoIndex, -1)}
+                        title="Monter"
+                      >
+                        <ChevronUp className="h-3 w-3" />
+                        <span className="sr-only">Monter {todo.label}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="h-3 text-muted-foreground transition-opacity hover:text-foreground disabled:opacity-20"
+                        disabled={todoIndex === stepTodos.length - 1}
+                        onClick={() => moveTodo(step.id, todoIndex, 1)}
+                        title="Descendre"
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                        <span className="sr-only">Descendre {todo.label}</span>
+                      </button>
+                    </div>
                     <Input
                       key={`${todo.id}-label`}
                       defaultValue={todo.label}

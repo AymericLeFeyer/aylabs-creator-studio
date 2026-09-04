@@ -11,6 +11,18 @@ let instance: DatabaseSync | null = null;
  * WAL est activé pour que la collecte planifiée puisse écrire pendant qu'une requête
  * du dashboard lit, sans se bloquer mutuellement.
  */
+/**
+ * `true` quand la base venait d'être créée à l'ouverture.
+ *
+ * Retenu ici parce que l'information ne survit pas à `runMigrations` : dès le premier
+ * appel, `user_version` vaut la dernière version et la base ne se distingue plus d'une
+ * base déjà utilisée. Ce sont les seeds qui en ont besoin — eux seuls doivent savoir s'ils
+ * ont affaire à une première ouverture.
+ */
+let createdNow = false;
+
+export const isFreshDatabase = (): boolean => createdNow;
+
 export const getDatabase = (databasePath: string): DatabaseSync => {
   if (instance) return instance;
 
@@ -23,7 +35,7 @@ export const getDatabase = (databasePath: string): DatabaseSync => {
   db.exec('PRAGMA foreign_keys = ON');
   db.exec('PRAGMA busy_timeout = 5000');
 
-  runMigrations(db);
+  createdNow = runMigrations(db);
 
   instance = db;
   return db;

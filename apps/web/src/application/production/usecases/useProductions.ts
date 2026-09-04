@@ -261,6 +261,17 @@ export const useRunningTimer = () =>
     refetchInterval: 60_000,
   });
 
+/**
+ * L'ordre des étapes et celui des tâches sont **globaux** : ils valent pour toutes les
+ * vidéos. C'est voulu — une étape n'a qu'un rang, et le déplacer depuis une fiche revient
+ * à le déplacer partout. Les écrans qui le proposent le disent.
+ */
+export const useReorderSteps = () =>
+  useProductionMutation((ids: string[]) => productionStepApi.reorder(ids));
+
+export const useReorderStepTodos = () =>
+  useProductionMutation((ids: string[]) => stepTodoApi.reorder(ids));
+
 export const useStartTimer = () =>
   useProductionMutation(
     ({

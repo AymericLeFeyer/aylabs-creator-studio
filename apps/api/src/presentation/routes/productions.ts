@@ -8,6 +8,7 @@ import {
   productionQuerySchema,
   publishProductionSchema,
   reorderProductionsSchema,
+  reorderSchema,
   slotQuerySchema,
   updateProductionSchema,
   updateProductionSlotSchema,
@@ -102,6 +103,15 @@ export const productionStepsRouter = (container: Container): Router => {
     res
       .status(201)
       .json(container.productionSteps.create(createProductionStepSchema.parse(req.body)));
+  });
+
+  /**
+   * Déclaré **avant** `/:id`, sinon Express prendrait « reorder » pour un identifiant —
+   * même vigilance que `/overview` sur les productions.
+   */
+  router.post('/reorder', (req, res) => {
+    container.productionSteps.reorder(reorderSchema.parse(req.body).ids);
+    res.status(204).end();
   });
 
   router.patch('/:id', (req, res) => {

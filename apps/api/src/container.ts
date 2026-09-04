@@ -21,6 +21,10 @@ import { SqliteCompanyRepository } from './infrastructure/legal/repositories/Sql
 import { SqliteLegalObligationRepository } from './infrastructure/legal/repositories/SqliteLegalObligationRepository.ts';
 import { SqliteLegalBookmarkRepository } from './infrastructure/legal/repositories/SqliteLegalBookmarkRepository.ts';
 import { SqliteAffiliatePlatformRepository } from './infrastructure/affiliate/repositories/SqliteAffiliatePlatformRepository.ts';
+import { SqliteInstagramAccountRepository } from './infrastructure/instagram/repositories/SqliteInstagramAccountRepository.ts';
+import { SqliteInstagramDataRepository } from './infrastructure/instagram/repositories/SqliteInstagramDataRepository.ts';
+import { CollectInstagram } from './application/instagram/usecases/CollectInstagram.ts';
+import { GetInstagramOverview } from './application/instagram/usecases/GetInstagramOverview.ts';
 import { SqliteWorkHoursRepository } from './infrastructure/planning/repositories/SqliteWorkHoursRepository.ts';
 import { SqlitePlanningSettingsRepository } from './infrastructure/planning/repositories/SqlitePlanningSettingsRepository.ts';
 import { SqlitePlanningItemRepository } from './infrastructure/planning/repositories/SqlitePlanningItemRepository.ts';
@@ -70,6 +74,10 @@ export interface Container {
   legalBookmarks: SqliteLegalBookmarkRepository;
   /** Plateformes d'affiliation, avec leurs marques et ce qu'elles rapportent. */
   affiliatePlatforms: SqliteAffiliatePlatformRepository;
+  /** Comptes Instagram suivis. Le jeton ne sort jamais de ce dépôt. */
+  instagramAccounts: SqliteInstagramAccountRepository;
+  /** Stories, publications et relevés archivés d'Instagram. */
+  instagramData: SqliteInstagramDataRepository;
   /** Plages travaillables de la semaine type. */
   workHours: SqliteWorkHoursRepository;
   /** Réglages du planning et connexion à l'agenda. Le jeton n'en sort jamais. */
@@ -103,6 +111,12 @@ export interface Container {
    * créneaux planifiés.
    */
   managePlanning: ManagePlanning;
+  /**
+   * La collecte Instagram. Les stories passent en premier : ce sont les seules données
+   * qu'aucun rattrapage ne pourra jamais retrouver.
+   */
+  collectInstagram: CollectInstagram;
+  getInstagramOverview: GetInstagramOverview;
   /** `null` tant qu'aucune clé API YouTube n'est configurée. */
   youtubeData: YouTubeDataClient | null;
 }
@@ -135,6 +149,8 @@ export const buildContainer = (config: Config): Container => {
   const legalObligations = new SqliteLegalObligationRepository(db);
   const legalBookmarks = new SqliteLegalBookmarkRepository(db);
   const affiliatePlatforms = new SqliteAffiliatePlatformRepository(db);
+  const instagramAccounts = new SqliteInstagramAccountRepository(db);
+  const instagramData = new SqliteInstagramDataRepository(db);
   const workHours = new SqliteWorkHoursRepository(db);
   const planningSettings = new SqlitePlanningSettingsRepository(db);
   const planningItems = new SqlitePlanningItemRepository(db);
@@ -174,6 +190,8 @@ export const buildContainer = (config: Config): Container => {
     legalObligations,
     legalBookmarks,
     affiliatePlatforms,
+    instagramAccounts,
+    instagramData,
     workHours,
     planningSettings,
     planningItems,
@@ -216,6 +234,11 @@ export const buildContainer = (config: Config): Container => {
       gcpClientSecret: config.gcpClientSecret,
       backfillDays: config.backfillDays,
     }),
+    collectInstagram: new CollectInstagram(instagramAccounts, instagramData, {
+      appId: config.metaAppId,
+      appSecret: config.metaAppSecret,
+    }),
+    getInstagramOverview: new GetInstagramOverview(instagramAccounts, instagramData),
     getAnalytics: new GetAnalytics(channels, metrics, revenues, categories, expenses, videos),
     youtubeData: config.youtubeApiKey ? new YouTubeDataClient(config.youtubeApiKey) : null,
   };

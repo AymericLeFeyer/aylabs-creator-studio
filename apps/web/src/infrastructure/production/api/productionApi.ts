@@ -86,6 +86,15 @@ export const productionStepApi = {
   update: (id: string, input: Partial<ProductionStepInput>) =>
     request<ProductionStep>(`/api/production-steps/${id}`, { method: 'PATCH', body: input }),
 
+  /**
+   * Réécrit l'ordre complet : le rang est la position dans le tableau envoyé.
+   *
+   * Un remplacement total plutôt qu'un échange deux à deux — les rangs en base ne sont pas
+   * garantis distincts, et échanger deux rangs égaux ne ferait rien du tout.
+   */
+  reorder: (ids: string[]) =>
+    request<void>('/api/production-steps/reorder', { method: 'POST', body: { ids } }),
+
   remove: (id: string) => request<void>(`/api/production-steps/${id}`, { method: 'DELETE' }),
 };
 
@@ -119,6 +128,10 @@ export const stepTodoApi = {
 
   update: (id: string, input: Partial<Omit<StepTodoInput, 'stepId'>>) =>
     request<StepTodo>(`/api/step-todos/${id}`, { method: 'PATCH', body: input }),
+
+  /** Réécrit l'ordre complet des tâches, toutes étapes confondues. */
+  reorder: (ids: string[]) =>
+    request<void>('/api/step-todos/reorder', { method: 'POST', body: { ids } }),
 
   remove: (id: string) => request<void>(`/api/step-todos/${id}`, { method: 'DELETE' }),
 };

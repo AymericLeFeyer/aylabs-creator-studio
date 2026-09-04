@@ -1,8 +1,12 @@
 import { useState } from 'react';
-import { Check, CircleCheck, Plus, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, CircleCheck, Plus, Trash2 } from 'lucide-react';
 import {
   useAddProductionTodo,
   useDeleteProductionTodo,
+  useProductionSteps,
+  useReorderStepTodos,
+  useReorderSteps,
+  useStepTodos,
   useToggleStep,
   useToggleTodo,
 } from '../../../application/production/usecases/useProductions.ts';
@@ -43,12 +47,25 @@ interface StepTodosDialogProps {
  * Le champ d'ajout crée une tâche **ponctuelle**, propre à cette vidéo. Les tâches
  * habituelles, elles, se gèrent dans Paramètres → Étapes : les mélanger ici ferait
  * ajouter « demander l'autorisation pour la musique » à toutes les vidéos à venir.
+ *
+ * **L'ordre se règle aussi d'ici**, sans passer par les paramètres — c'est en travaillant
+ * qu'on s'aperçoit que le sound design vient avant l'étalonnage. Il reste **global** : une
+ * étape et une tâche du référentiel n'ont qu'un rang, valable pour toutes les vidéos. Un
+ * ordre par vidéo aurait demandé une table de plus pour un besoin que personne n'a
+ * exprimé, et deux ordres concurrents finiraient par se contredire. L'écran le dit
+ * plutôt que de le laisser deviner.
  */
 export const StepTodosDialog = ({ open, onOpenChange, production, step }: StepTodosDialogProps) => {
   const toggleTodo = useToggleTodo();
   const toggleStep = useToggleStep();
   const addTodo = useAddProductionTodo();
   const removeTodo = useDeleteProductionTodo();
+  const reorderSteps = useReorderSteps();
+  const reorderTodos = useReorderStepTodos();
+  const { data: allSteps = [] } = useProductionSteps();
+  // Le référentiel complet : réécrire l'ordre demande d'envoyer TOUTES les tâches, pas
+  // seulement celles de l'étape ouverte.
+  const { data: referential = [] } = useStepTodos();
   const [draft, setDraft] = useState('');
 
   if (!step) return null;
@@ -56,6 +73,43 @@ export const StepTodosDialog = ({ open, onOpenChange, production, step }: StepTo
   const todos = todosOfStep(production.todos, step.id);
   const done = todos.filter((todo) => todo.checked).length;
   const stepChecked = isStepChecked(production, step.id);
+
+  /** Déplace un élément d'un cran et renvoie la liste complète des identifiants. */
+  const moved = <T extends { id: string }>(
+    list: T[],
+    index: number,
+    direction: -1 | 1,
+  ): string[] => {
+    const next = [...list];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return [];
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    return next.map((item) => item.id);
+  };
+
+  const stepIndex = allSteps.findIndex((candidate) => candidate.id === step.id);
+
+  const moveStep = (direction: -1 | 1) => {
+    const ids = moved(allSteps, stepIndex, direction);
+    if (ids.length > 0) reorderSteps.mutate(ids);
+  };
+
+  /**
+   * Seules les tâches du **référentiel** se réordonnent : les ponctuelles ferment la liste
+   * de leur étape par construction (`sortOrder + 1000`), et leur donner un rang ici
+   * laisserait croire qu'elles peuvent remonter au-dessus des habituelles.
+   */
+  const moveTodo = (todoId: string, direction: -1 | 1) => {
+    const inStep = referential.filter((todo) => todo.stepId === step.id);
+    const index = inStep.findIndex((todo) => todo.id === todoId);
+    const reordered = moved(inStep, index, direction);
+    if (reordered.length === 0) return;
+
+    const rest = referential.filter((todo) => todo.stepId !== step.id).map((todo) => todo.id);
+    reorderTodos.mutate([...reordered, ...rest]);
+  };
+
+  const referentialInStep = referential.filter((todo) => todo.stepId === step.id);
 
   const submitDraft = () => {
     const label = draft.trim();
@@ -75,7 +129,34 @@ export const StepTodosDialog = ({ open, onOpenChange, production, step }: StepTo
               style={{ backgroundColor: step.color }}
               aria-hidden
             />
-            {step.name}
+            <span className="flex-1">{step.name}</span>
+
+            {/* Déplacer l'étape dans l'ordre général, sans aller dans les paramètres :
+                c'est en travaillant qu'on s'aperçoit qu'elle est mal placée. */}
+            <span className="flex shrink-0 gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                disabled={stepIndex <= 0}
+                onClick={() => moveStep(-1)}
+                title="Déplacer cette étape avant la précédente (ordre commun à toutes les vidéos)"
+              >
+                <ChevronUp className="h-3.5 w-3.5" />
+                <span className="sr-only">Monter l’étape</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                disabled={stepIndex < 0 || stepIndex === allSteps.length - 1}
+                onClick={() => moveStep(1)}
+                title="Déplacer cette étape après la suivante (ordre commun à toutes les vidéos)"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+                <span className="sr-only">Descendre l’étape</span>
+              </Button>
+            </span>
           </DialogTitle>
           <DialogDescription>
             {todos.length === 0
@@ -122,6 +203,33 @@ export const StepTodosDialog = ({ open, onOpenChange, production, step }: StepTo
                   <span className="ml-1.5 text-[11px] text-muted-foreground">· ponctuelle</span>
                 )}
               </span>
+
+              {/* Seules les tâches du référentiel se réordonnent : les ponctuelles ferment
+                  la liste de leur étape par construction. */}
+              {todo.origin === 'step' && referentialInStep.length > 1 && (
+                <span className="flex shrink-0 flex-col opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                  <button
+                    type="button"
+                    className="h-3 text-muted-foreground hover:text-foreground disabled:opacity-20"
+                    disabled={referentialInStep[0]?.id === todo.id}
+                    onClick={() => moveTodo(todo.id, -1)}
+                    title="Monter (ordre commun à toutes les vidéos)"
+                  >
+                    <ChevronUp className="h-3 w-3" />
+                    <span className="sr-only">Monter {todo.label}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="h-3 text-muted-foreground hover:text-foreground disabled:opacity-20"
+                    disabled={referentialInStep[referentialInStep.length - 1]?.id === todo.id}
+                    onClick={() => moveTodo(todo.id, 1)}
+                    title="Descendre (ordre commun à toutes les vidéos)"
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                    <span className="sr-only">Descendre {todo.label}</span>
+                  </button>
+                </span>
+              )}
 
               {/* Seule une tâche ponctuelle se supprime ici : celles du référentiel
                   appartiennent à toutes les vidéos, elles se gèrent dans les paramètres. */}

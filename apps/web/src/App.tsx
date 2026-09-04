@@ -9,6 +9,7 @@ import { LegalPage } from './presentation/pages/LegalPage.tsx';
 import { SettingsPage } from './presentation/pages/SettingsPage.tsx';
 import { ProductionPage } from './presentation/pages/ProductionPage.tsx';
 import { PlanningPage } from './presentation/pages/PlanningPage.tsx';
+import { InstagramPage } from './presentation/pages/InstagramPage.tsx';
 import { ProductionDetailPage } from './presentation/pages/ProductionDetailPage.tsx';
 import { PartnersPage } from './presentation/pages/PartnersPage.tsx';
 
@@ -31,6 +32,7 @@ export const App = () => (
           <Route element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="contenu" element={<ContentPage />} />
+            <Route path="instagram" element={<InstagramPage />} />
             <Route path="planning" element={<PlanningPage />} />
             <Route path="production" element={<ProductionPage />} />
             <Route path="production/:id" element={<ProductionDetailPage />} />
@@ -69,6 +71,10 @@ export const App = () => (
             <Route
               path="horaires"
               element={<Navigate to="/parametres?onglet=planning" replace />}
+            />
+            <Route
+              path="comptes-instagram"
+              element={<Navigate to="/parametres?onglet=instagram" replace />}
             />
           </Route>
         </Routes>

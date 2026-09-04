@@ -110,6 +110,31 @@ export class SqliteProductionStepRepository implements ProductionStepRepository 
   }
 
   /**
+   * Réécrit l'ordre complet, dans l'ordre des identifiants reçus.
+   *
+   * Un remplacement total plutôt qu'un échange deux à deux : le seed pose des rangs
+   * consécutifs, mais rien ne garantit qu'ils le restent — une étape créée à la main
+   * prend `MAX + 1`, une base reprise à la main peut porter deux fois le même rang, et
+   * deux échanges sur des rangs égaux ne feraient alors rien du tout. Réécrire tout
+   * repart d'une suite propre à chaque fois.
+   *
+   * En transaction : un ordre à moitié appliqué afficherait deux fois le même rang.
+   */
+  reorder(ids: string[]): void {
+    if (ids.length === 0) return;
+    const stmt = this.db.prepare('UPDATE production_steps SET sort_order = ? WHERE id = ?');
+
+    this.db.exec('BEGIN');
+    try {
+      ids.forEach((id, index) => stmt.run(index + 1, id));
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  /**
    * Supprime l'étape. Les cases cochées partent en cascade (contrainte SQL) et les
    * créneaux qui la visaient sont détachés : perdre une étape ne doit pas effacer le
    * créneau qu'on avait posé pour elle.

@@ -5,6 +5,7 @@ import {
   CalendarClock,
   Clapperboard,
   Handshake,
+  Instagram,
   Menu,
   Moon,
   PanelLeftClose,
@@ -30,6 +31,7 @@ const CONTAINER = 'mx-auto w-full max-w-[1800px] px-3 sm:px-5';
 const NAV = [
   { to: '/', label: 'Dashboard', icon: BarChart3, end: true },
   { to: '/contenu', label: 'Contenu', icon: PlaySquare, end: false },
+  { to: '/instagram', label: 'Instagram', icon: Instagram, end: false },
   { to: '/planning', label: 'Planning', icon: CalendarClock, end: false },
   { to: '/production', label: 'Production', icon: Clapperboard, end: false },
   { to: '/partenariats', label: 'Partenariats', icon: Handshake, end: false },

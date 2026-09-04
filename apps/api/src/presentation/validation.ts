@@ -268,6 +268,17 @@ export const reorderProductionsSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, 'Aucune production à réordonner'),
 });
 
+/**
+ * L'ordre complet d'un référentiel (étapes, tâches), dans l'ordre reçu.
+ *
+ * Le tableau porte **tous** les identifiants et non les deux à échanger : les rangs en
+ * base ne sont pas garantis distincts, et un échange deux à deux sur deux rangs égaux ne
+ * ferait rien du tout.
+ */
+export const reorderSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, 'Rien à réordonner'),
+});
+
 export const publishProductionSchema = z.object({
   videoId: z.string().min(1, 'Choisis la sortie correspondante'),
 });
@@ -601,6 +612,38 @@ export const platformQuerySchema = z.object({
     .transform((value) => value === 'true'),
   from: isoDate.optional(),
   to: isoDate.optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Instagram
+// ---------------------------------------------------------------------------
+
+export const createInstagramAccountSchema = z.object({
+  username: z.string().trim().min(1, "Le nom d'utilisateur est obligatoire").max(60),
+  name: z.string().trim().nullable().optional(),
+  /** Identifiant du compte côté Meta : c'est lui que portent tous les appels. */
+  igUserId: z.string().trim().min(1, "L'identifiant du compte est obligatoire"),
+  /** Jeton d'accès longue durée. `""` efface, absent conserve — comme `refreshToken`. */
+  accessToken: z.string().trim().nullable().optional(),
+  tokenExpiresAt: z.string().nullable().optional(),
+  color: hexColor,
+});
+
+export const updateInstagramAccountSchema = createInstagramAccountSchema.partial().extend({
+  isArchived: z.boolean().optional(),
+});
+
+/**
+ * Fenêtre de l'écran Instagram.
+ *
+ * `accountIds` vide = vue cumulée sur tous les comptes, même convention que `channelIds`
+ * sur l'analytics.
+ */
+export const instagramQuerySchema = z.object({
+  from: isoDate,
+  to: isoDate,
+  granularity: z.enum(['day', 'week', 'month']).default('day'),
+  accountIds: csvList,
 });
 
 // ---------------------------------------------------------------------------

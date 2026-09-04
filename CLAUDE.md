@@ -262,7 +262,18 @@ C'est **la vidéo avant sa publication**. Le jour de la sortie, elle se rattache
 
 ### `productionStep` et `productionSlot`
 
-`ProductionStep { id, name, color, sortOrder, isArchived }` — table `production_steps`, seedée par `seedDefaultSteps` avec `ecriture`, `tournage`, `montage`, `miniature`, `publication` (identifiants fixes). **Ce sont des lignes, pas des colonnes** : ajouter une étape ne demande aucune migration. `sortOrder` est un ordre d'**affichage** ; les cases se cochent dans n'importe quel sens.
+`ProductionStep { id, name, color, sortOrder, defaultMinutes, isArchived }` — table
+`production_steps`, seedée **à la création de la base** par `seedDefaultSteps` avec
+`ecriture`, `tournage`, `montage`, `miniature`, `publication` (identifiants fixes).
+**Ce sont des lignes, pas des colonnes** : ajouter une étape ne demande aucune migration.
+`sortOrder` est un ordre d'**affichage** ; les cases se cochent dans n'importe quel sens.
+
+**L'ordre se réécrit en entier**, jamais par échange de deux rangs :
+`POST /api/production-steps/reorder` et `POST /api/step-todos/reorder` reçoivent la liste
+complète et posent `1..n` en transaction. L'échange deux à deux qui existait avant ne
+marchait que si les rangs étaient distincts — or une étape créée à la main prend `MAX + 1`,
+et deux rangs égaux s'échangeaient sans que rien ne bouge. L'ordre est **global** : il vaut
+pour toutes les vidéos, et les écrans qui le proposent depuis une fiche le disent.
 
 Table `production_step_checks` (PK `(production_id, step_id)`, colonne `checked_at`) : **la présence de la ligne vaut « coché »**. Cocher/décocher est un INSERT `DO NOTHING` / DELETE, et la date de complétion vient gratuitement. Recocher ne repousse pas la date.
 
@@ -338,9 +349,10 @@ sont.** Elle vit dans `ManageTodos` (jamais dans une route, jamais dans le front
   ouvertes sous une étape terminée la rouvrirait à la resynchronisation suivante ;
 - une étape **sans aucune tâche** échappe à la règle : elle se coche à la main, comme avant.
 
-`seedDefaultStepTodos` pose 23 tâches de départ (identifiants fixes). Comme les étapes et
-les catégories par défaut, **une tâche supprimée revient au redémarrage** : c'est
-l'archivage qui la retire durablement.
+`seedDefaultStepTodos` pose 23 tâches de départ (identifiants fixes). **Elles ne sont
+posées qu'à la création de la base**, comme les étapes, les catégories et les obligations
+légales : une tâche supprimée ne revient plus jamais. Voir « Les référentiels ne se sèment
+qu'une fois » dans les points d'attention.
 
 ### `recurringExpense` — les dépenses qui reviennent
 
@@ -464,8 +476,9 @@ Le suivi administratif : la société, et une ligne par mois depuis sa création
 décide du **premier mois** du tableau ; sans elle, il retombe sur les 12 derniers mois.
 
 `LegalObligation { id, label, dayOfMonth, notes, sortOrder, isArchived }` — table
-`legal_obligations`, seedée par `seedLegalObligations` avec `factures-affiliation`,
-`declaration-produits`, `urssaf` (jour 15), `des` (jour 15) — identifiants fixes.
+`legal_obligations`, seedée **à la création de la base** par `seedLegalObligations` avec
+`factures-affiliation`, `declaration-produits`, `urssaf` (jour 15), `des` (jour 15) —
+identifiants fixes.
 **Ce sont des lignes, pas des colonnes** : même raison que les étapes de production, en
 ajouter une ne demande aucune migration, et le référentiel se gère depuis
 Paramètres → Société.
@@ -683,6 +696,92 @@ Une lecture d'agenda qui échoue **ne fait pas échouer le planning** : la grill
 occupations externes, avec `calendarError` renseigné. Une page vide dirait moins qu'une
 page qui prévient qu'elle est incomplète.
 
+### `instagram` — le rythme de publication
+
+Un domaine **à part** et non une `channel` de plus. Une chaîne YouTube et un compte
+Instagram ne mesurent pas les mêmes choses : `daily_metrics` porte des minutes vues, une
+durée moyenne de visionnage et des revenus AdSense, dont aucun n'a de sens ici ; `videos`
+porte des compteurs YouTube. Les mélanger laisserait la moitié des colonnes à `NULL` des
+deux côtés, et le premier calcul de moyenne serait faux. Deux écrans, deux collectes, et
+l'argent continue de se rattacher aux chaînes.
+
+#### La contrainte qui décide de tout : les stories ne vivent que 24 heures
+
+L'API n'expose les stories que pendant leur fenêtre de vie — **ni archivées, ni à la une,
+ni par aucun autre point d'entrée**. « Combien de stories ai-je publiées ce mois-ci » n'est
+donc pas une question rétroactive : c'est une question à laquelle on ne peut répondre que
+si on a **archivé au fil de l'eau**. Trois conséquences, toutes assumées :
+
+- **L'historique commence à la première collecte**, exactement comme
+  `video_stat_snapshots`. `InstagramOverview.firstStoryDate` porte cet aveu, et l'écran
+  l'affiche : avant cette date, un zéro veut dire « rien collecté », pas « rien publié ».
+- **Une journée sans collecte est perdue pour de bon.** Le cron horaire couvre largement
+  la fenêtre, mais un serveur arrêté 24 h laisse un trou définitif — d'où la priorité
+  d'Instagram dans le scheduler.
+- **Un jeton expiré fait perdre des stories**, pas seulement des chiffres. C'est ce qui
+  justifie l'alerte en tête d'écran dès `tokenDaysLeft <= 10`.
+
+`ig_stories.insights_at` à `null` distingue « pas encore mesurée » de « zéro vue », et il
+reste à `null` **pour de bon** sur une story vue par **moins de cinq comptes** : Meta
+refuse alors toute statistique. L'écran affiche « — », jamais 0.
+
+#### Ce que Meta rend, et sous quelle forme
+
+| Donnée                                                                  | Endpoint                                           | Forme                     | Rétention |
+| ----------------------------------------------------------------------- | -------------------------------------------------- | ------------------------- | --------- |
+| Profil (abonnés, publications)                                          | `/{ig-user-id}`                                    | valeurs courantes         | —         |
+| `reach`                                                                 | `/{ig-user-id}/insights` `metric_type=time_series` | **série quotidienne**     | 90 j      |
+| `views`, `total_interactions`, `accounts_engaged`, `profile_links_taps` | idem, `metric_type=total_value`                    | **un total par requête**  | 90 j      |
+| Stories                                                                 | `/{ig-user-id}/stories`                            | les **actives** seulement | 24 h      |
+| Publications                                                            | `/{ig-user-id}/media` + `/{id}/insights`           | liste + compteurs         | 2 ans     |
+
+**`reach` est la seule métrique de compte disponible en série.** Tout le reste est un
+`total_value` qu'il faut demander **jour par jour** — c'est ce qui borne `BACKFILL_DAYS`
+à 30 : remonter trois mois coûterait près de quatre cents appels pour un seul compte.
+
+**`impressions` est mort** (avril 2025), remplacé partout par `views` ; `profile_views` a
+suivi. Demander une métrique dépréciée fait échouer **toute** la requête, pas seulement le
+champ — d'où le repli métrique par métrique de `fetchDayTotals`, même parti pris que
+`YouTubeAnalyticsClient.fetchDailyMetrics`.
+
+#### Les quatre étapes de la collecte, dans cet ordre
+
+`CollectInstagram.collectOne()` : **stories**, profil, compteurs quotidiens, publications.
+L'ordre n'est pas indifférent — les stories passent en premier parce que ce sont les seules
+données qu'aucun rattrapage ne retrouvera jamais, et un quota épuisé en fin de parcours ne
+doit pas les faire manquer. Chaque étape est **isolée** : son échec est journalisé et
+n'interrompt pas les autres.
+
+Une story déjà mesurée n'est **pas remesurée** : ses chiffres sont figés et chaque appel
+coûte du quota. `upsertStory` fait `DO NOTHING` — une réponse partielle ne doit jamais
+remplacer par du vide ce qu'une collecte complète avait ramené. Même raison pour le
+`COALESCE(excluded.x, x)` de `upsertDailyMetric`.
+
+#### FLUX et CUMUL, comme partout
+
+`stories`, `posts`, `reach`, `views` se somment dans le bucket **et** entre comptes ;
+`followers` non — c'est un cumul dont on prend la dernière valeur du bucket, reportée sur
+les périodes sans relevé (`GetInstagramOverview.buildSeries`, même mécanique que
+`applyCumulativeTotals`). Le gain d'abonnés se mesure contre `findSnapshotBefore(from)` :
+sans point de départ antérieur, 1 200 abonnés pourrait être un gain de 10 comme de 400.
+
+`storiesPerDay` rapporte au **nombre de jours de la période**, pas aux jours de
+publication : « 2,4 stories par jour » se compare d'un mois à l'autre, « 4 stories les
+jours où j'en poste » ne dit rien du rythme. `activeDays` reste exposé à côté pour la
+seconde lecture.
+
+#### Le jeton
+
+Meta ne délivre **pas** de jeton perpétuel : un jeton longue durée vit 60 jours.
+`ig_accounts.token_expires_at` existe pour que l'échéance soit visible avant la panne, et
+`POST /accounts/:id/refresh-token` l'échange contre un neuf — ce qui demande `META_APP_ID`
+et `META_APP_SECRET`. Sans ces deux variables tout fonctionne, mais le jeton se régénère à
+la main tous les deux mois.
+
+Comme le refresh token des chaînes, **il ne sort jamais de l'API** : `findAll` renvoie des
+`InstagramAccountView` où il est remplacé par `hasToken`, et les routes d'écriture
+relisent la vue plutôt que de renvoyer l'entité qu'elles viennent d'écrire.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -791,22 +890,31 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/planning/slots/:id/approve`                   | `{ finished }` **obligatoire**. Crée la session, fige et redimensionne le créneau, publie dans l'agenda ; renvoie `{ next }`, le créneau reposé si le travail continue                                |
 | `POST`   | `/api/planning/slots/:id/unapprove`                 | Défaire : la session part, le créneau redevient mobile                                                                                                                                                |
 | `POST`   | `/api/planning/time-entries/:id/slot`               | Transforme une session de travail en créneau approuvé. `{ date, startTime }` **fournis par le client** (le serveur est en UTC). 409 si la session tourne encore ou a déjà son créneau                 |
+| `GET`    | `/api/instagram/overview`                           | Séries, totaux, stories et publications. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                              |
+| `GET`    | `/api/instagram/accounts`                           | Comptes suivis. **Le jeton n'en sort jamais**, remplacé par `hasToken` et `tokenDaysLeft`                                                                                                             |
+| `POST`   | `/api/instagram/accounts`                           | Connecter un compte. 409 si l'`igUserId` est déjà suivi                                                                                                                                               |
+| `PATCH`  | `/api/instagram/accounts/:id`                       | Modifier / archiver. `accessToken: ""` efface, absent conserve                                                                                                                                        |
+| `DELETE` | `/api/instagram/accounts/:id`                       | Supprimer **et tout l'historique** (cascade). Irrécupérable : les stories ne se recollectent pas                                                                                                      |
+| `POST`   | `/api/instagram/collect`                            | Collecte immédiate de tous les comptes                                                                                                                                                                |
+| `POST`   | `/api/instagram/accounts/:id/collect`               | Collecter ce compte                                                                                                                                                                                   |
+| `POST`   | `/api/instagram/accounts/:id/refresh-token`         | Échange le jeton contre un neuf (60 j de plus). Demande `META_APP_ID` / `META_APP_SECRET`                                                                                                             |
 
 Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube.
 
 ## Routes front
 
-| Route               | Page                   | Contenu                                                                                                                                            |
-| ------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, alertes (production + légal), puis **les deux graphiques seulement** (argent, audience) |
-| `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                        |
-| `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail à droite, bouton « Ajouter une vidéo »                                                                |
-| `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                             |
-| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / Créneaux / Produits & sponsos / Notes                                                     |
-| `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis trois onglets Produits, Sponsors et **Plateformes** (`?onglet=`). Bouton **Script** par sponso     |
-| `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                              |
-| `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                   |
-| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, Catégories, Abonnements, Marques, Étapes, **Planning**, Société             |
+| Route               | Page                   | Contenu                                                                                                                                               |
+| ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, alertes (production + légal), puis **les deux graphiques seulement** (argent, audience)    |
+| `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                           |
+| `/instagram`        | `InstagramPage`        | 6 cartes, graphique à 3 onglets, puis calendrier des stories / tableau des publications                                                               |
+| `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail à droite, bouton « Ajouter une vidéo »                                                                   |
+| `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                |
+| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / Créneaux / Produits & sponsos / Notes                                                        |
+| `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis trois onglets Produits, Sponsors et **Plateformes** (`?onglet=`). Bouton **Script** par sponso        |
+| `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                 |
+| `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                      |
+| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, **Instagram**, Catégories, Abonnements, Marques, Étapes, **Planning**, Société |
 
 `/chaines`, `/categories`, `/marques`, `/etapes`, `/societe` et `/abonnements`
 **redirigent** vers `/parametres` sur le bon onglet : c'étaient six entrées d'un menu
@@ -967,6 +1075,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `usePreferences`                                                                                                                                                                                  | `presentation/hooks/usePreferences.ts`                | Menu replié, file compacte. Persisté en localStorage                                                |
 | `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useReorderPlanningItems`, `useRemovePlanningItem`                                | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                  |
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                         | idem                                                  | Horaires de travail et connexion à l'agenda                                                         |
+| `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`          | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                               |
 | `useSlotFromTimeEntry`                                                                                                                                                                            | idem                                                  | Transforme une session de travail en créneau approuvé                                               |
 | `nowMinutes`, `localToday`, `shiftDate`, `startOfWeek`                                                                                                                                            | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                            |
 
@@ -1017,6 +1126,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   (`origin`, `item_id`, `calendar_uid`, `time_entry_id`). Elle n'ajoute **pas** de `status`
   aux créneaux : `origin` + `done` disent déjà tout, et un troisième champ finirait par les
   contredire.
+- **Migration 20** ajoute `ig_accounts`, `ig_account_snapshots`, `ig_daily_metrics`,
+  `ig_stories` et `ig_media` — un domaine séparé, pas une extension de `channels`.
 - **Migration 19** ajoute `production_time_entries.todo_id` : le temps se qualifie à la
   sous-étape. Pas de clé étrangère — `todo_id` désigne l'une **ou** l'autre des deux tables
   de tâches, comme les coches et la pile du planning.
@@ -1088,6 +1199,49 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Le dashboard n'a plus que deux graphiques.** Les répartitions et les classements sont dans `/chiffre-affaires` → Synthèse, la performance par vidéo dans `/contenu`. Y remettre un graphique demande de se demander lequel il remplace : la page doit se lire d'un regard, pas se parcourir.
 - **Le bloc « Dernière sortie » du dashboard ignore la période** (`LatestVideoCard`, alimenté par `useVideos({ limit: 1 })` sans bornes de date) : « ma dernière vidéo marche comment » ne se pose pas dans une fenêtre de temps, et une période de 7 jours viderait le bloc précisément quand on vient le lire. Ses compteurs sont des **cumuls depuis la sortie** : ils ne s'additionnent pas avec les totaux affichés juste au-dessus, qui comptent aussi les vidéos plus anciennes. `stats.updatedAt` à `null` affiche « — » partout plutôt qu'une série de zéros.
 - **`/contenu` ne porte que de la mesure** : ce qui n'est pas encore publié se pilote sur `/production`, la dernière sortie se lit sur le dashboard. Y remettre une file ou un fil de sorties ferait trois endroits où lire la même chose.
+- **Une journée sans collecte Instagram est une journée de stories perdue pour toujours.**
+  L'API ne les expose que 24 h, et rien — ni archive, ni story à la une — ne permet de
+  revenir en arrière. C'est pour ça qu'Instagram passe **avant** YouTube dans le scheduler
+  et que son échec est avalé séparément : une collecte YouTube ratée se rattrape au passage
+  suivant, pas celle-là.
+- **Un zéro story avant `firstStoryDate` ne veut pas dire « rien publié ».** L'écran le dit
+  explicitement ; ne jamais retirer ce bandeau, un mois d'avant l'installation se lirait
+  sinon comme un mois sans activité.
+- **Une story vue par moins de cinq comptes ne renvoie aucune statistique** : Meta répond
+  une erreur, pas un zéro. `insightsAt` reste à `null` et l'affichage montre « — ». Ce
+  n'est pas une panne à corriger.
+- **`impressions` et `profile_views` sont morts** (2025), remplacés par `views`. Une
+  métrique dépréciée fait échouer **toute** la requête d'insights, pas seulement son champ
+  — d'où le repli métrique par métrique de `fetchDayTotals` et le double essai de
+  `fetchMediaInsights`. Ne jamais regrouper des métriques incertaines dans un seul appel.
+- **`reach` est la seule métrique de compte disponible en série quotidienne.** Tout le
+  reste est un `total_value` qui coûte **une requête par jour** : c'est ce qui borne
+  `BACKFILL_DAYS` à 30, et pourquoi élargir la fenêtre coûte cher très vite.
+- **`end_time` d'une série de portée désigne la FIN du jour mesuré** : le jour concerné est
+  la veille. Le prendre tel quel décalerait toute la courbe d'une journée.
+- **Le jeton Instagram expire au bout de 60 jours.** Meta n'en délivre pas de perpétuel.
+  L'alerte se déclenche à 10 jours ; `META_APP_ID` et `META_APP_SECRET` permettent
+  l'échange automatique, sans eux la régénération est manuelle.
+- **Supprimer un compte Instagram efface un historique irrécupérable.** Contrairement à une
+  chaîne YouTube, dont tout se recollecte, les stories parties ne reviendront jamais.
+  L'écran propose l'archivage et le dit dans sa confirmation.
+- **Les référentiels ne se sèment qu'une fois : à la création de la base, et plus jamais.**
+  Étapes, tâches d'étape, catégories et obligations légales tournaient à chaque démarrage
+  en n'insérant que ce qui manquait (`ON CONFLICT DO NOTHING`), ce qui ressuscitait tout ce
+  qu'on avait supprimé au redéploiement suivant — la suppression était de fait inopérante.
+  La condition est **`isFreshDatabase()`** (`user_version` à 0 avant migration), pas la
+  table vide : la migration 2 insère la catégorie « impots » avant que le moindre seed
+  n'ait tourné, et se fier au décompte sauterait le seed des catégories — AdSense comprise,
+  qui est structurelle. La table entièrement vide reste un filet en second, pour qu'un
+  référentiel vidé par accident ne laisse pas un écran qui se lit comme une panne.
+  Conséquence assumée : un futur défaut ajouté au code n'apparaîtra pas sur une base déjà
+  remplie.
+- **L'ordre d'un référentiel se réécrit en entier.** `reorder` pose `1..n` sur toute la
+  liste en transaction. Ne jamais revenir à un échange de deux `sortOrder` : rien ne
+  garantit qu'ils soient distincts, et deux rangs égaux s'échangent sans effet visible.
+  Les tâches se réordonnent dans leur étape mais l'API reçoit **toutes** les tâches, celles
+  des autres étapes inchangées — le tri les regroupe déjà par étape, un rang par étape
+  n'aurait rien apporté.
 - **Le tableau légal s'applique rétroactivement.** Une obligation ajoutée aujourd'hui apparaît sur **tous** les mois depuis la création de la société, donc immédiatement « en retard » sur les mois passés. C'est le comportement demandé (une ligne par mois depuis la création) ; pour retirer une obligation devenue caduque sans perdre l'historique coché, l'**archiver** plutôt que la supprimer — la supprimer efface les cases de tous les mois.
 - **Sans `company.foundedOn`, le tableau légal retombe sur les 12 derniers mois** (`FALLBACK_MONTHS`). Ce n'est pas un bug : c'est ce qui permet de cocher quelque chose avant d'avoir renseigné la fiche. La date se saisit dans Paramètres → Société.
 - **Le mois d'une case est `AAAA-MM`, jamais une date.** `/api/legal/checks/:id/:month` valide le format en 422 : un `2026-3` passerait silencieusement à côté de toutes les lignes existantes, et la case paraîtrait ne jamais se cocher.

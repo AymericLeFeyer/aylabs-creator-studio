@@ -877,18 +877,159 @@ const migrations: Migration[] = [
       CREATE INDEX idx_time_entries_todo ON production_time_entries(todo_id);
     `,
   },
+  {
+    version: 20,
+    name: 'instagram',
+    // Instagram : le compte, ses stories, ses publications.
+    //
+    // Un domaine a part et non une "channel" de plus : une chaine YouTube et un compte
+    // Instagram ne mesurent pas les memes choses. `daily_metrics` porte des minutes vues,
+    // une duree moyenne de visionnage et des revenus AdSense, dont aucun n'a de sens ici ;
+    // `videos` porte des compteurs YouTube. Les melanger obligerait a laisser la moitie des
+    // colonnes a NULL des deux cotes, et le premier calcul de moyenne serait faux.
+    //
+    // Le partage assume : deux ecrans, deux collectes, et l'argent continue de se rattacher
+    // aux chaines. Le jour ou un revenu devra viser un compte Instagram, ce sera une
+    // colonne de plus sur `revenue_entries`, pas une refonte.
+    up: `
+      -- Un compte Instagram Business ou Creator. Le jeton est stocke en clair, comme le
+      -- refresh token des chaines, et ne sort JAMAIS de l'API (toChannelView pour les
+      -- chaines, toAccountView ici).
+      --
+      -- "token_expires_at" existe parce que Meta ne delivre pas de jeton perpetuel : un
+      -- jeton longue duree vit 60 jours. Sans cette date, la collecte s'arreterait un
+      -- matin sans que rien ne l'ait annonce.
+      CREATE TABLE ig_accounts (
+        id               TEXT PRIMARY KEY,
+        username         TEXT NOT NULL,
+        name             TEXT,
+        -- Identifiant du compte cote Meta. Unique : deux lignes pour le meme compte
+        -- feraient deux fois les memes appels et deux fois les memes chiffres.
+        ig_user_id       TEXT NOT NULL UNIQUE,
+        access_token     TEXT,
+        token_expires_at TEXT,
+        profile_picture  TEXT,
+        color            TEXT NOT NULL DEFAULT '#e1306c',
+        is_archived      INTEGER NOT NULL DEFAULT 0,
+        last_collected_at TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+
+      -- CUMUL, une ligne par jour : abonnes, abonnements, nombre de publications.
+      -- Meme nature que channel_snapshots — ces valeurs ne se somment pas entre deux
+      -- jours, on prend la derniere connue du bucket.
+      CREATE TABLE ig_account_snapshots (
+        account_id      TEXT NOT NULL REFERENCES ig_accounts(id) ON DELETE CASCADE,
+        date            TEXT NOT NULL,
+        followers_count INTEGER,
+        follows_count   INTEGER,
+        media_count     INTEGER,
+        created_at      TEXT NOT NULL,
+        PRIMARY KEY (account_id, date)
+      );
+
+      -- FLUX, une ligne par jour. Se somment dans le bucket ET entre comptes.
+      --
+      -- Seul "reach" revient en serie quotidienne d'une traite (metric_type=time_series) ;
+      -- tout le reste est un total_value qu'il faut demander jour par jour. C'est ce qui
+      -- explique la fenetre de rattrapage courte de la collecte : rattraper trois mois
+      -- couterait quatre-vingt-dix requetes par metrique.
+      CREATE TABLE ig_daily_metrics (
+        account_id         TEXT NOT NULL REFERENCES ig_accounts(id) ON DELETE CASCADE,
+        date               TEXT NOT NULL,
+        reach              INTEGER,
+        views              INTEGER,
+        total_interactions INTEGER,
+        accounts_engaged   INTEGER,
+        profile_links_taps INTEGER,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL,
+        PRIMARY KEY (account_id, date)
+      );
+
+      -- Les stories. C'est LA table qui justifie ce module.
+      --
+      -- L'API ne les expose que pendant leurs 24 heures de vie — ni archivees, ni a la
+      -- une, ni via aucun autre point d'entree. Le comptage "combien de stories par jour"
+      -- ne peut donc pas etre reconstitue : il ne peut qu'etre ARCHIVE au fil de l'eau.
+      -- Chaque collecte insere ce qu'elle voit et n'ecrase jamais une ligne existante par
+      -- du vide. L'historique commence a la premiere collecte, exactement comme
+      -- video_stat_snapshots.
+      --
+      -- "insights_at" a NULL distingue "pas encore mesuree" de "zero vue" — et il reste a
+      -- NULL pour de bon sur une story vue par moins de cinq comptes, pour laquelle
+      -- l'API refuse toute statistique.
+      CREATE TABLE ig_stories (
+        id            TEXT PRIMARY KEY,
+        account_id    TEXT NOT NULL REFERENCES ig_accounts(id) ON DELETE CASCADE,
+        ig_media_id   TEXT NOT NULL,
+        media_type    TEXT,
+        permalink     TEXT,
+        thumbnail_url TEXT,
+        -- Horodatage complet renvoye par l'API, et le jour local qui en est tire. Le jour
+        -- est stocke plutot que calcule a la lecture : c'est la cle de tous les comptages,
+        -- et le recalculer a chaque requete referait la conversion de fuseau a chaque fois.
+        posted_at     TEXT NOT NULL,
+        date          TEXT NOT NULL,
+        views         INTEGER,
+        reach         INTEGER,
+        replies       INTEGER,
+        insights_at   TEXT,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        UNIQUE (account_id, ig_media_id)
+      );
+      CREATE INDEX idx_ig_stories_date ON ig_stories(account_id, date);
+
+      -- Les publications : posts, carrousels, reels. Rattrapables retroactivement, elles
+      -- (deux ans de retention cote Meta), contrairement aux stories.
+      CREATE TABLE ig_media (
+        id            TEXT PRIMARY KEY,
+        account_id    TEXT NOT NULL REFERENCES ig_accounts(id) ON DELETE CASCADE,
+        ig_media_id   TEXT NOT NULL,
+        media_type    TEXT,
+        caption       TEXT,
+        permalink     TEXT,
+        thumbnail_url TEXT,
+        posted_at     TEXT NOT NULL,
+        date          TEXT NOT NULL,
+        views         INTEGER,
+        reach         INTEGER,
+        likes         INTEGER,
+        comments      INTEGER,
+        saved         INTEGER,
+        shares        INTEGER,
+        -- NULL tant qu'aucune collecte n'a mesure la publication : l'ecran affiche alors
+        -- un tiret et non un zero, meme regle que videos.stats.updatedAt.
+        stats_at      TEXT,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        UNIQUE (account_id, ig_media_id)
+      );
+      CREATE INDEX idx_ig_media_date ON ig_media(account_id, date);
+    `,
+  },
 ];
 
 /**
  * Applique les migrations manquantes dans une transaction.
  * `user_version` est le compteur natif de SQLite : pas de table de suivi à maintenir.
+ *
+ * Renvoie `true` quand la base **vient d'être créée** (`user_version` à 0 avant l'appel).
+ * C'est la seule information qui permette aux seeds de distinguer « première ouverture »
+ * de « redémarrage » : une base neuve reçoit ses référentiels de départ, une base déjà
+ * utilisée n'y touche plus jamais. Sans ça, un référentiel ne peut pas se fier au fait que
+ * sa table soit vide — la migration 2 insère par exemple la catégorie « impots » avant que
+ * le moindre seed n'ait tourné.
  */
-export const runMigrations = (db: DatabaseSync): void => {
+export const runMigrations = (db: DatabaseSync): boolean => {
   const row = db.prepare('PRAGMA user_version').get() as { user_version: number } | undefined;
   const current = row?.user_version ?? 0;
+  const fresh = current === 0;
 
   const pending = migrations.filter((m) => m.version > current);
-  if (pending.length === 0) return;
+  if (pending.length === 0) return fresh;
 
   for (const migration of pending) {
     db.exec('BEGIN');
@@ -902,4 +1043,6 @@ export const runMigrations = (db: DatabaseSync): void => {
       throw error;
     }
   }
+
+  return fresh;
 };

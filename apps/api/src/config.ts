@@ -22,6 +22,13 @@ export interface Config {
   youtubeApiKey: string | null;
   gcpClientId: string | null;
   gcpClientSecret: string | null;
+  /**
+   * Identifiants de l'app Meta. Facultatifs : sans eux tout fonctionne, mais le jeton
+   * Instagram doit être régénéré à la main tous les 60 jours au lieu d'être échangé
+   * automatiquement.
+   */
+  metaAppId: string | null;
+  metaAppSecret: string | null;
   collectCron: string;
   collectAtStartup: boolean;
   backfillDays: number;
@@ -34,6 +41,8 @@ export const loadConfig = (): Config => ({
   youtubeApiKey: optional('YOUTUBE_API_KEY'),
   gcpClientId: optional('GCP_CLIENT_ID'),
   gcpClientSecret: optional('GCP_CLIENT_SECRET'),
+  metaAppId: optional('META_APP_ID'),
+  metaAppSecret: optional('META_APP_SECRET'),
   // Toutes les heures : YouTube consolide ses chiffres en continu, inutile d'aller plus vite.
   collectCron: optional('COLLECT_CRON') ?? '0 * * * *',
   collectAtStartup: bool('COLLECT_AT_STARTUP', false),

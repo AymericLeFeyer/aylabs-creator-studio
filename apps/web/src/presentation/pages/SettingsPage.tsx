@@ -12,12 +12,14 @@ import { CategoriesPage } from './CategoriesPage.tsx';
 import { BrandsPage } from './BrandsPage.tsx';
 import { StepsPage } from './StepsPage.tsx';
 import { PlanningSettingsPage } from './PlanningSettingsPage.tsx';
+import { InstagramSettingsPage } from './InstagramSettingsPage.tsx';
 import { CompanyPage } from './CompanyPage.tsx';
 import { RecurringExpensesPanel } from '../components/money/RecurringExpensesPanel.tsx';
 
 const TABS = [
   'app',
   'chaines',
+  'instagram',
   'categories',
   'abonnements',
   'marques',
@@ -60,6 +62,7 @@ export const SettingsPage = () => {
         <TabsList className="flex-wrap">
           <TabsTrigger value="app">Application</TabsTrigger>
           <TabsTrigger value="chaines">Chaînes</TabsTrigger>
+          <TabsTrigger value="instagram">Instagram</TabsTrigger>
           <TabsTrigger value="categories">Catégories</TabsTrigger>
           <TabsTrigger value="abonnements">Abonnements</TabsTrigger>
           <TabsTrigger value="marques">Marques</TabsTrigger>
@@ -73,6 +76,9 @@ export const SettingsPage = () => {
         </TabsContent>
         <TabsContent value="chaines">
           <ChannelsPage />
+        </TabsContent>
+        <TabsContent value="instagram">
+          <InstagramSettingsPage />
         </TabsContent>
         <TabsContent value="categories">
           <CategoriesPage />

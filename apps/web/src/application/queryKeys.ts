@@ -40,6 +40,9 @@ export const queryKeys = {
   planningSettings: () => ['planningSettings'] as const,
   workHours: () => ['workHours'] as const,
   calendars: () => ['calendars'] as const,
+
+  instagramOverview: (params: unknown) => ['instagramOverview', params] as const,
+  instagramAccounts: (includeArchived: boolean) => ['instagramAccounts', includeArchived] as const,
 };
 
 /** Racines à invalider après une écriture qui change les chiffres agrégés. */
@@ -92,6 +95,16 @@ export const PARTNER_ROOTS = [...PRODUCTION_ROOTS, ...MONEY_ROOTS, 'brandStats']
  * aller-retour réseau vers la domotique pour rien.
  */
 export const PLANNING_ROOTS = [...PRODUCTION_ROOTS, 'planningSettings', 'workHours'] as const;
+
+/**
+ * Racines d'Instagram.
+ *
+ * Le module ne croise aucun autre : ses données vivent dans leurs propres tables, et
+ * l'argent continue de se rattacher aux chaînes YouTube. Une collecte touche en revanche
+ * les comptes, les séries, les stories et les publications d'un coup — d'où deux racines
+ * seulement, invalidées ensemble.
+ */
+export const INSTAGRAM_ROOTS = ['instagramOverview', 'instagramAccounts'] as const;
 
 /**
  * Racines du suivi administratif. Le référentiel part avec l'aperçu : changer un jour

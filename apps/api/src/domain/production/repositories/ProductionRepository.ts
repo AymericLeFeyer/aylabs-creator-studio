@@ -48,6 +48,8 @@ export interface ProductionStepRepository {
   findById(id: string): ProductionStep | null;
   create(input: CreateProductionStepInput): ProductionStep;
   update(id: string, input: UpdateProductionStepInput): ProductionStep;
+  /** Réécrit l'ordre complet : le rang est la position dans le tableau reçu. */
+  reorder(ids: string[]): void;
   /** Supprime l'étape et toutes les cases cochées qui la référencent (cascade SQL). */
   delete(id: string): void;
 }

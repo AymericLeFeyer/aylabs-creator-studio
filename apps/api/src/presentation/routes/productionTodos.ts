@@ -4,6 +4,7 @@ import {
   createStepTodoSchema,
   updateStepTodoSchema,
   createProductionTodoSchema,
+  reorderSchema,
   toggleTodoSchema,
 } from '../validation.ts';
 import { param } from '../helpers.ts';
@@ -25,6 +26,12 @@ export const stepTodosRouter = (container: Container): Router => {
 
   router.post('/', (req, res) => {
     res.status(201).json(container.todos.createStepTodo(createStepTodoSchema.parse(req.body)));
+  });
+
+  /** Déclaré **avant** `/:id`, sinon Express prendrait « reorder » pour un identifiant. */
+  router.post('/reorder', (req, res) => {
+    container.todos.reorderStepTodos(reorderSchema.parse(req.body).ids);
+    res.status(204).end();
   });
 
   router.patch('/:id', (req, res) => {
