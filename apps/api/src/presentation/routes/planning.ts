@@ -7,7 +7,6 @@ import {
   planningBoardQuerySchema,
   planningSettingsSchema,
   planTargetsSchema,
-  reorderPlanningItemsSchema,
   replaceWorkHoursSchema,
   replanSchema,
 } from '../validation.ts';
@@ -78,27 +77,31 @@ export const planningRouter = (container: Container): Router => {
       );
   });
 
-  router.post('/items/reorder', async (req, res) => {
-    const body = reorderPlanningItemsSchema.parse(req.body);
-    res.json(
-      await container.managePlanning.reorderItems(body.ids, { nowMinutes: body.nowMinutes }),
-    );
-  });
-
-  router.delete('/items/:id', async (req, res) => {
-    await container.managePlanning.removeItem(param(req, 'id'));
+  /**
+   * Retire une ligne de la pile, et ses créneaux non vécus avec elle.
+   *
+   * **Rien n'est replanifié** : retirer une tâche ne doit pas réécrire la journée. C'est
+   * au bouton « Repositionner » de le décider.
+   */
+  router.delete('/items/:id', (req, res) => {
+    container.managePlanning.removeItem(param(req, 'id'));
     res.status(204).end();
   });
 
   // --- Placement et approbation ---------------------------------------------
 
   /**
-   * Repositionne les créneaux suggérés. Sans `onlyDate`, c'est tout l'horizon ; avec,
-   * c'est la seule colonne visée — le bouton « réorganiser » d'un jour.
+   * Repositionne les créneaux suggérés — **le seul endroit qui réécrit la journée**.
+   *
+   * Tout le reste (ajouter une vidéo, approuver, arrêter un chronomètre) se contente de
+   * poser ce qui manque sans rien déplacer. Réécrire l'agenda est une décision, pas un
+   * effet de bord.
+   *
+   * Sans `onlyDate`, c'est tout l'horizon ; avec, la seule colonne visée.
    */
   router.post('/replan', async (req, res) => {
     const body = replanSchema.parse(req.body);
-    res.json(await container.managePlanning.replan(body));
+    res.json(await container.managePlanning.replan({ ...body, mode: 'full' }));
   });
 
   /**

@@ -48,7 +48,24 @@ export interface PlanTargetInput {
   todoIds: string[];
 }
 
+/**
+ * Comment le moteur a le droit d'intervenir.
+ *
+ * - `incremental` — **il ne déplace rien**. Les créneaux déjà posés valent occupation, et
+ *   seules les minutes qu'aucun d'eux ne couvre reçoivent une place. C'est le mode de tout
+ *   ce qui se déclenche tout seul : ajouter une vidéo, approuver, arrêter un chronomètre.
+ * - `full` — la table rase : les suggestions déplaçables sont effacées et tout est reposé.
+ *   **Réservé au bouton « Repositionner »**, parce que c'est le seul moment où
+ *   l'utilisateur a demandé que sa journée soit réécrite.
+ *
+ * La distinction n'est pas cosmétique : un replan complet déclenché par une suppression
+ * de ligne réécrivait toute la journée sans qu'on l'ait demandé, et — faute de recevoir
+ * l'heure qu'il est — reposait des créneaux à des heures déjà passées.
+ */
+export type ReplanMode = 'incremental' | 'full';
+
 export interface ReplanOptions {
+  mode?: ReplanMode;
   /** Premier jour ouvert au moteur. Par défaut aujourd'hui. */
   from?: IsoDate;
   /**
@@ -213,40 +230,50 @@ export class ManagePlanning {
       });
     }
 
-    await this.replan(options);
+    // Incrémental : la nouvelle vidéo reçoit ses créneaux, celles qui étaient déjà calées
+    // ne bougent pas d'un pouce. Réécrire toute la journée à chaque ajout déplaçait ce
+    // qu'on venait de caler à la main.
+    await this.replan({ ...options, mode: 'incremental' });
     return this.items.findAll({ statuses: ['pending'] });
   }
 
-  /** Retire une ligne de la pile. Les créneaux déjà posés restent : ils ont eu lieu. */
-  async removeItem(id: string, options: ReplanOptions = {}): Promise<void> {
+  /**
+   * Retire une ligne de la pile, **et ses créneaux non vécus avec elle**.
+   *
+   * Les créneaux approuvés restent : ils racontent du temps passé, qui a bien eu lieu. Les
+   * suggestions, elles, n'ont plus d'objet — les laisser afficherait du travail à faire
+   * pour une tâche qu'on vient de retirer.
+   *
+   * **Aucun replan** : retirer une ligne ne doit pas réécrire la journée. Le bouton
+   * « Repositionner » est là pour ça, quand on le décide.
+   */
+  removeItem(id: string): void {
+    for (const slot of this.slots.findAll({})) {
+      if (slot.itemId === id && !slot.done) this.slots.delete(slot.id);
+    }
     this.items.delete(id);
-    await this.replan(options);
-  }
-
-  /** Réordonne la pile : le rang est la position dans le tableau reçu. */
-  async reorderItems(ids: string[], options: ReplanOptions = {}): Promise<PlanningItemView[]> {
-    ids.forEach((id, index) => {
-      this.items.update(id, { sequence: index + 1 });
-    });
-    await this.replan(options);
-    return this.items.findAll({ statuses: ['pending'] });
   }
 
   // --- Le placement ---------------------------------------------------------
 
   /**
-   * Recalcule les créneaux suggérés.
+   * Pose les créneaux qui manquent, ou réécrit tout — selon le mode.
    *
-   * Il n'y a pas de calcul incrémental : on **efface les suggestions déplaçables de la
-   * fenêtre et on repose tout**. Chercher quoi bouger reviendrait à réimplémenter le
-   * moteur à l'envers, et un placement à moitié appliqué laisserait deux créneaux au
-   * même endroit — exactement ce que le replan est censé corriger.
+   * En `full`, on **efface les suggestions déplaçables et on repose tout**. Chercher quoi
+   * bouger reviendrait à réimplémenter le moteur à l'envers, et un placement à moitié
+   * appliqué laisserait deux créneaux au même endroit.
+   *
+   * En `incremental` (le défaut), rien n'est effacé : les créneaux existants comptent
+   * comme occupation, et le reste à couvrir d'une ligne tombe naturellement à zéro dès
+   * qu'elle a déjà ses créneaux. Ajouter une vidéo ne déplace donc plus celles qui étaient
+   * déjà calées.
    *
    * L'appel est **asynchrone** parce qu'il lit l'agenda ; il ne l'est pas dans son
    * effet : les écritures en base sont faites avant qu'il rende la main.
    */
   async replan(options: ReplanOptions = {}): Promise<{ placed: number; unplacedMinutes: number }> {
     const config = this.settings.get();
+    const mode = options.mode ?? 'incremental';
     const from = options.onlyDate ?? options.from ?? today();
     const horizon = options.onlyDate ? 1 : config.horizonDays;
     const to = addDays(from, horizon - 1);
@@ -259,7 +286,10 @@ export class ManagePlanning {
     // jour quand on ne réorganise qu'une colonne — couvre déjà du travail. Compter le
     // reste avant les aurait comptés pour rien, et le moteur aurait posé une seconde fois
     // les mêmes heures.
-    this.slots.clearSuggestions(options.onlyDate ? from : null, to);
+    //
+    // En mode incrémental il n'y a rien à effacer : tout ce qui est posé reste posé, et
+    // c'est précisément ce qui garantit qu'un ajout ne déplace pas ce qui était déjà calé.
+    if (mode === 'full') this.slots.clearSuggestions(options.onlyDate ? from : null, to);
 
     const pending = this.items.findAll({ statuses: ['pending'] });
     const tasks: PlanTask[] = pending
@@ -270,7 +300,7 @@ export class ManagePlanning {
       .filter((task) => task.minutes > 0);
 
     const external = await this.readCalendar(from, to);
-    const busy = [...external.blocks, ...this.immovableBusy(from, to)];
+    const busy = [...external.blocks, ...this.immovableBusy(from, to, mode)];
 
     const result = schedule({
       from,
@@ -377,15 +407,15 @@ export class ManagePlanning {
       if (item) {
         this.items.update(item.id, { status: 'done' });
         if (item.todoId) this.todos.check(item.productionId, item.todoId);
+        // Les créneaux restants de la tâche n'ont plus d'objet : elle est terminée.
+        for (const slot of this.slots.findAll({})) {
+          if (slot.itemId === item.id && !slot.done) this.slots.delete(slot.id);
+        }
       }
-      await this.replan(options);
       return null;
     }
 
-    if (!item) {
-      await this.replan(options);
-      return null;
-    }
+    if (!item) return null;
 
     // Pas fini : le reste à faire redevient exactement la durée du créneau qu'on vient
     // de vivre. `plannedMinutes` est une estimation, pas un contrat — la recaler sur ce
@@ -395,7 +425,8 @@ export class ManagePlanning {
       .findAll({ statuses: ['pending'] })
       .find((candidate) => candidate.id === item.id)?.approvedMinutes;
     this.items.update(item.id, { plannedMinutes: (done ?? minutes) + plannedDuration });
-    await this.replan(options);
+    // Incrémental : le créneau promis est posé, sans déranger le reste de la journée.
+    await this.replan({ ...options, mode: 'incremental' });
 
     const next = this.slots
       .findAll({ range: { from: options.from ?? today(), to: addDays(today(), 60) } })
@@ -486,7 +517,9 @@ export class ManagePlanning {
     const calendarUid = await this.publish(slot.id);
     if (calendarUid) this.slots.update(slot.id, { calendarUid });
 
-    await this.replan(options);
+    // Incrémental : ce qui reste de la tâche trouve une place, le reste de la journée
+    // garde la sienne.
+    await this.replan({ ...options, mode: 'incremental' });
     return entry;
   }
 
@@ -534,9 +567,10 @@ export class ManagePlanning {
     const calendarUid = await this.publish(slot.id);
     if (calendarUid) this.slots.update(slot.id, { calendarUid });
 
-    // Le créneau occupe désormais la journée : ce qui était suggéré par-dessus doit
-    // laisser la place, sinon la grille afficherait deux choses au même moment.
-    await this.replan({ from: input.date });
+    // Le créneau occupe désormais la journée. En incrémental, il devient une occupation
+    // parmi d'autres et rien n'est déplacé : c'est au bouton « Repositionner » de décider
+    // si la journée doit être réécrite.
+    await this.replan({ from: input.date, mode: 'incremental' });
 
     return (
       this.slots
@@ -664,13 +698,21 @@ export class ManagePlanning {
   }
 
   /**
-   * Les créneaux que le moteur n'a pas le droit d'écraser : les approuvés et les
-   * manuels. Ils occupent la journée au même titre qu'un rendez-vous.
+   * Les créneaux que le moteur n'a pas le droit d'écraser.
+   *
+   * En `full`, ce sont les approuvés et les manuels — les suggestions viennent d'être
+   * effacées. En `incremental`, **tout compte**, y compris les suggestions : on ne les a
+   * pas effacées, et poser par-dessus mettrait deux blocs au même moment.
    */
-  private immovableBusy(from: IsoDate, to: IsoDate): BusyBlock[] {
+  private immovableBusy(from: IsoDate, to: IsoDate, mode: ReplanMode): BusyBlock[] {
     return this.slots
       .findAll({ range: { from, to } })
-      .filter((slot) => slot.startTime && slot.endTime && (slot.done || slot.origin === 'manual'))
+      .filter(
+        (slot) =>
+          slot.startTime &&
+          slot.endTime &&
+          (mode === 'incremental' || slot.done || slot.origin === 'manual'),
+      )
       .map((slot) => ({
         date: slot.date,
         start: toMinutes(slot.startTime!),

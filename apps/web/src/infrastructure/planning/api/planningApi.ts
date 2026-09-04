@@ -43,12 +43,6 @@ export const planningApi = {
   addTargets: (input: PlanTargetsInput) =>
     request<PlanningItem[]>('/api/planning/items', { method: 'POST', body: input }),
 
-  reorderItems: (ids: string[], nowMinutes?: number) =>
-    request<PlanningItem[]>('/api/planning/items/reorder', {
-      method: 'POST',
-      body: { ids, nowMinutes },
-    }),
-
   removeItem: (id: string) => request<void>(`/api/planning/items/${id}`, { method: 'DELETE' }),
 
   replan: (input: ReplanInput = {}) =>

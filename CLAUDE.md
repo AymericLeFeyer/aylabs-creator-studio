@@ -589,9 +589,20 @@ exactement comme `production_todo_checks`. Index unique sur
 `(production_id, COALESCE(step_id,''), COALESCE(todo_id,''))` : remettre la même tâche
 dans la pile **la rouvre** au lieu d'échouer, parce que c'est le geste normal.
 
-`sequence` est l'ordre voulu et il est **strictement respecté** : la tâche n+1 ne commence
-pas avant que la n ait reçu toutes ses minutes. Caler le montage avant le tournage
-remplirait joliment un agenda sans rien permettre de faire.
+**L'ordre de travail se déduit, il ne se règle pas dans la pile** :
+`productions.sort_order` (la file d'attente) d'abord, puis `production_steps.sort_order`,
+puis `sequence` — posé dans l'ordre des tâches au moment de l'ajout. On finit une vidéo
+avant d'attaquer la suivante, et le tournage avant le montage. Le tri vit dans le seul
+`ORDER BY` de `SqlitePlanningItemRepository.findAll`.
+
+Il est **strictement respecté** par le moteur : la ligne n+1 ne reçoit pas de créneau avant
+que la n ait eu toutes ses minutes.
+
+Un rang propre à la pile, réglable à la main, existait avant (`POST /items/reorder`, deux
+flèches dans l'écran) : il pouvait **contredire la file de production**, et deux ordres
+concurrents pour la même question finissent toujours par se répondre différemment. Il a été
+retiré ; on change les priorités en réordonnant la file sur `/production`, et l'écran le
+dit avec un lien.
 
 **Les durées.** `production_steps.default_minutes`, `step_todos.default_minutes` et
 `production_todos.default_minutes` sont **nullables et non à zéro** : « je ne sais pas » et
@@ -630,7 +641,25 @@ dernières minutes ne trouveraient jamais leur place et la ligne resterait ouver
 en UTC dans un conteneur, et s'y fier proposerait un créneau à 9 h alors qu'il est midi.
 Même raison pour `from`, envoyé par le front (`localToday()`).
 
-#### Le replan est un effacement, pas un ajustement
+#### Deux modes de placement, et un seul réécrit la journée
+
+`ManagePlanning.replan({ mode })` :
+
+- **`incremental`** (le défaut) — rien n'est effacé. Les créneaux déjà posés comptent comme
+  occupation, et le reste à couvrir d'une ligne tombe à zéro dès qu'elle a ses créneaux :
+  seules les minutes qu'aucun créneau ne couvre reçoivent une place. C'est le mode de tout
+  ce qui se déclenche **tout seul** — ajouter une vidéo, approuver, arrêter un chronomètre,
+  matérialiser une session.
+- **`full`** — table rase, réservé à `POST /api/planning/replan`, c'est-à-dire au bouton
+  « Repositionner ».
+
+**Réécrire un agenda est une décision, pas un effet de bord.** Un replan complet déclenché
+par une suppression de ligne réécrivait toute la journée sans qu'on l'ait demandé — et, la
+route ne transmettant pas `nowMinutes`, il reposait des créneaux à des heures déjà passées.
+Retirer une ligne de la pile ne replanifie donc plus rien : elle emporte seulement **ses
+propres créneaux non approuvés**, les approuvés restant puisqu'ils racontent du temps passé.
+
+#### Le replan complet est un effacement, pas un ajustement
 
 `ManagePlanning.replan()` **efface les suggestions déplaçables puis repose tout**.
 Chercher quoi bouger reviendrait à réimplémenter le moteur à l'envers, et un placement à
@@ -1384,6 +1413,14 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   partirait avec lui : le geste s'interromprait exactement au franchissement d'une
   frontière entre deux jours — c'est-à-dire dès qu'on essaie de déplacer un créneau d'un
   jour à l'autre. C'est le bug qu'avait la première version.
+- **Seul le bouton « Repositionner » réécrit la journée.** Tout le reste place en mode
+  `incremental` : ce qui manque est posé, rien n'est déplacé. Ne jamais rebrancher un
+  `mode: 'full'` sur une action automatique — c'est ce qui faisait réapparaître des créneaux
+  à des heures déjà passées après une simple suppression.
+- **Retirer une ligne de la pile ne replanifie rien**, et emporte ses créneaux **non
+  approuvés** seulement. Les laisser afficherait du travail à faire pour une tâche qu'on
+  vient de retirer ; emporter les approuvés effacerait du temps réellement passé.
+- **L'ordre de la pile se déduit de la file de production**, jamais d'un rang propre.
 - **Le planning ne déplace jamais un créneau approuvé ni un créneau posé à la main.** La
   règle vit dans un seul `DELETE` (`clearSuggestions` : `origin = 'planner' AND done = 0`)
   et elle est le contrat du module. Toute nouvelle écriture qui touche `production_slots`

@@ -8,9 +8,15 @@ import type { IsoDate } from '../../../shared/dates.ts';
  * cocher la tâche retire la ligne de la pile — **sans toucher aux créneaux déjà posés**,
  * qui racontent le temps réellement passé.
  *
- * `sequence` est l'ordre voulu, et il est respecté strictement : la deuxième tâche ne
- * commence pas avant que la première ait sa dose de créneaux. Planifier « montage »
- * avant « tournage » ne servirait à rien.
+ * **L'ordre de travail se déduit, il ne se règle pas ici** : file d'attente des vidéos
+ * d'abord (`productions.sort_order`), puis ordre des étapes, puis `sequence` — posé dans
+ * l'ordre des tâches au moment de l'ajout. On finit une vidéo avant d'attaquer la
+ * suivante, et le tournage avant le montage.
+ *
+ * Il est respecté **strictement** par le moteur : la deuxième ligne ne reçoit pas de
+ * créneau avant que la première ait eu toutes ses minutes. Pour changer l'ordre, on
+ * réordonne la file sur `/production` — un rang propre à la pile pouvait la contredire, et
+ * deux ordres concurrents pour la même question finissent par se répondre différemment.
  */
 export type PlanningItemStatus = 'pending' | 'done' | 'cancelled';
 
@@ -32,6 +38,10 @@ export interface PlanningItem {
 /** Ligne enrichie de tout ce que le planning affiche sur un bloc. */
 export interface PlanningItemView extends PlanningItem {
   productionTitle: string;
+  /** Rang de la vidéo dans la file d'attente : c'est lui qui ordonne le travail. */
+  productionOrder: number;
+  /** Rang de l'étape dans le référentiel, second critère de tri. */
+  stepOrder: number;
   channelId: string | null;
   channelColor: string | null;
   stepName: string | null;

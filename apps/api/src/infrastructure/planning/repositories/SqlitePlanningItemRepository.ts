@@ -27,6 +27,8 @@ interface Row {
 
 interface ViewRow extends Row {
   production_title: string;
+  production_order: number;
+  step_order: number;
   channel_id: string | null;
   channel_color: string | null;
   step_name: string | null;
@@ -99,8 +101,10 @@ export class SqlitePlanningItemRepository implements PlanningItemRepository {
       .prepare(
         `SELECT i.*,
                 p.title        AS production_title,
+                p.sort_order   AS production_order,
                 p.channel_id   AS channel_id,
                 p.planned_date AS planned_date,
+                COALESCE(st.sort_order, 9999) AS step_order,
                 ch.color       AS channel_color,
                 st.name        AS step_name,
                 st.color       AS step_color,
@@ -113,13 +117,23 @@ export class SqlitePlanningItemRepository implements PlanningItemRepository {
            LEFT JOIN channels ch ON ch.id = p.channel_id
            LEFT JOIN production_steps st ON st.id = i.step_id
            ${clause}
-          ORDER BY i.sequence, i.created_at`,
+          -- L'ordre de travail **se déduit**, il ne se règle pas séparément : la file
+          -- d'attente des vidéos d'abord, puis l'ordre des étapes, puis celui des tâches
+          -- (sequence, posé dans cet ordre à l'ajout). On finit une vidéo avant
+          -- d'attaquer la suivante, et le tournage avant le montage.
+          --
+          -- Un rang propre à la pile existait avant, réglable à la main : il pouvait
+          -- contredire la file de production, et deux ordres concurrents pour la même
+          -- question finissent toujours par se répondre différemment.
+          ORDER BY production_order, step_order, i.sequence, i.created_at`,
       )
       .all(...(params as never[])) as unknown as ViewRow[];
 
     return rows.map((row) => ({
       ...toDomain(row),
       productionTitle: row.production_title,
+      productionOrder: row.production_order,
+      stepOrder: row.step_order,
       channelId: row.channel_id,
       channelColor: row.channel_color,
       stepName: row.step_name,

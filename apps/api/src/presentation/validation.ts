@@ -748,11 +748,6 @@ export const replanSchema = z.object({
   nowMinutes,
 });
 
-export const reorderPlanningItemsSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1, 'Aucune ligne à réordonner'),
-  nowMinutes,
-});
-
 /**
  * L'approbation d'un créneau. `finished` est **obligatoire** : c'est la question qu'on
  * pose à l'utilisateur, et une valeur par défaut y répondrait à sa place.

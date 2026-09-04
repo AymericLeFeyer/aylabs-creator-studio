@@ -86,6 +86,10 @@ export type PlanningItemStatus = 'pending' | 'done' | 'cancelled';
  *
  * Elle disparaît de la pile quand la tâche est cochée — **sans emporter les créneaux
  * déjà posés**, qui racontent le temps passé et non le travail restant.
+ *
+ * **L'ordre de travail se déduit** : file d'attente des vidéos, puis ordre des étapes,
+ * puis ordre des tâches. On finit une vidéo avant d'attaquer la suivante. Pour le changer,
+ * on réordonne la file sur `/production` — un rang propre à la pile pouvait la contredire.
  */
 export interface PlanningItem {
   id: string;
@@ -97,6 +101,10 @@ export interface PlanningItem {
   sequence: number;
   status: PlanningItemStatus;
   productionTitle: string;
+  /** Rang de la vidéo dans la file d'attente : c'est lui qui ordonne le travail. */
+  productionOrder: number;
+  /** Rang de l'étape dans le référentiel, second critère de tri. */
+  stepOrder: number;
   channelId: string | null;
   channelColor: string | null;
   stepName: string | null;

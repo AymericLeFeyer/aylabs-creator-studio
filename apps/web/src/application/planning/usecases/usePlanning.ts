@@ -88,15 +88,16 @@ export const useReplaceWorkHours = () =>
 export const useAddPlanTargets = () =>
   usePlanningMutation((input: PlanTargetsInput) => planningApi.addTargets(input));
 
-export const useReorderPlanningItems = () =>
-  usePlanningMutation((input: { ids: string[]; nowMinutes?: number }) =>
-    planningApi.reorderItems(input.ids, input.nowMinutes),
-  );
-
 export const useRemovePlanningItem = () =>
   usePlanningMutation((id: string) => planningApi.removeItem(id));
 
-/** Repositionne les créneaux suggérés — tout l'horizon, ou une seule colonne. */
+/**
+ * Repositionne les créneaux suggérés — **le seul geste qui réécrit la journée**.
+ *
+ * Ajouter une vidéo, approuver un créneau ou arrêter un chronomètre se contentent de poser
+ * ce qui manque, sans rien déplacer : réécrire un agenda est une décision, pas un effet de
+ * bord.
+ */
 export const useReplan = () =>
   usePlanningMutation((input: ReplanInput) => planningApi.replan(input));
 

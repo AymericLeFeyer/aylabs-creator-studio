@@ -47,7 +47,11 @@ export interface PlanningItemRepository {
   /** Rouvre ce qu'une décoche vient de rendre à faire. */
   reopenForTodo(productionId: string, todoId: string): void;
   reopenForStep(productionId: string, stepId: string): void;
-  /** Prochain rang libre : une nouvelle vidéo entre en fin de pile. */
+  /**
+   * Prochain rang libre. Il ne sert plus qu'à **départager deux tâches d'une même étape**
+   * dans l'ordre où on les a ajoutées : la file d'attente et l'ordre des étapes passent
+   * avant lui.
+   */
   nextSequence(): number;
 }
 
