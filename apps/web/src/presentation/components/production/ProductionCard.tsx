@@ -125,17 +125,6 @@ export const ProductionCard = ({
           highlighted && 'border-[var(--positive)]/50 bg-[var(--positive)]/5',
         )}
       >
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 shrink-0"
-          onClick={onToggleCompact}
-          title="Déplier"
-        >
-          <ChevronRight className="h-3.5 w-3.5" />
-          <span className="sr-only">Déplier</span>
-        </Button>
-
         <Link
           to={`/production/${production.id}`}
           className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
@@ -185,6 +174,20 @@ export const ProductionCard = ({
         </Badge>
 
         {timerButton}
+
+        {/* Le chevron est au même endroit dans les deux vues — dernier à droite.
+            Le déplacer d'un bord à l'autre en repliant obligerait à le rechercher
+            à chaque fois, sur le seul bouton qu'on utilise en rafale. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          onClick={onToggleCompact}
+          title="Déplier"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+          <span className="sr-only">Déplier</span>
+        </Button>
       </Card>
     );
   }

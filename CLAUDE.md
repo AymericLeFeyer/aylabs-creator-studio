@@ -1103,6 +1103,14 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Les lignes futures sont hors des totaux, et le bloc le dit.** `UpcomingSection` liste ce qui est daté de demain à +3 mois (`UPCOMING_MONTHS`), sous le tableau de la période et en fond estompé. Les mélanger au tableau ferait gonfler les dépenses du mois en cours d'un trimestre d'URSSAF qui n'est pas encore tombé ; les ignorer ferait tomber ce même trimestre sans prévenir. La fenêtre démarre à **demain** : une dépense datée du jour est déjà comptée dans la période, la faire apparaître aussi ici la ferait lire deux fois.
 - **« Dont X d'impôts » s'appuie sur l'identifiant fixe `impots`** (`TAX_CATEGORY_ID`), celui du seed et de la migration 2 — pas sur le libellé, qui casserait au premier renommage. Une autre catégorie fiscale (URSSAF, TVA) compte dans le total mais pas dans cette baseline ; le panneau déplié de la carte donne le détail par catégorie.
 - **Les « vues du catalogue » sont une estimation, et l'écran le dit.** C'est `totals.views` moins les vues cumulées des vidéos sorties **pendant** la période. YouTube ne fournit les compteurs par vidéo qu'en **cumul depuis la sortie**, jamais jour par jour : la soustraction ne tombe juste que sur une période qui va jusqu'à aujourd'hui, d'où le plancher à zéro. Le tableau `catalogPerformance`, lui, est exact — ce sont des cumuls assumés comme tels.
+- **Le trait d'aujourd'hui du Gantt est au MILIEU de sa cellule** (`todayOffset =
+todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exactement sur
+  la frontière entre hier et aujourd'hui : on ne sait plus lequel des deux jours il
+  désigne. Le centrage à l'ouverture s'appuie sur le même offset, sinon la vue s'ouvrirait
+  décalée d'une demi-colonne.
+- **Le chevron de repli d'une carte de file est au même endroit dans les deux vues** —
+  dernier à droite. Le déplacer d'un bord à l'autre en repliant obligerait à le rechercher
+  à chaque fois, sur le seul bouton qu'on utilise en rafale.
 - **Le planning s'ouvre centré sur aujourd'hui.** `ProductionGantt` pose `scrollLeft` au montage et à chaque changement de zoom, en retranchant la largeur de la colonne des titres (`TITLE_WIDTH`). Sans ça il s'ouvrait collé à sa borne gauche, sur des jours passés. Les fenêtres couvrent donc volontairement du passé (`before` : 14, 30 ou 60 jours) pour qu'on puisse reculer. La colonne des titres est `sticky left-0` : en défilant vers le futur, on doit continuer de savoir de quelle vidéo est la barre qu'on regarde.
 - **La file d'attente a une vue compacte** (`preferences.compactQueue`) : une ligne par vidéo. Au-delà de cinq ou six vidéos en cours, la version détaillée oblige à faire défiler pour voir sa propre file. Le chevron d'une carte l'ouvre **à contre-courant du réglage global** (`exceptions`, un `Set` d'identifiants) : on veut souvent une file compacte _sauf_ la vidéo sur laquelle on travaille. Changer le réglage global vide les exceptions.
 - **Les confettis sont maison** (`Confetti`, canvas, ~50 lignes, aucune dépendance) et ne se déclenchent qu'à la **publication** : c'est le seul moment de l'outil qui mérite d'être fêté, tout le reste est de la comptabilité et de la planification. Le canvas est `pointer-events-none` en position fixe — il recouvre l'écran sans jamais intercepter un clic — et se démonte tout seul.
@@ -1132,6 +1140,13 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   largeur (situer l'heure sur les sept colonnes) et la pastille marque la seule colonne où
   « maintenant » a un sens. Il est rafraîchi toutes les 30 s : à la seconde, ce serait un
   rendu par seconde pour un pixel toutes les minutes.
+- **L'heure visée est annoncée pendant tout le glissement**, à trois endroits : sur le
+  bloc (elle prend la place du titre — sur un bloc d'un quart d'heure il n'y a qu'une
+  ligne, et c'est l'heure qu'on veut y lire), dans la gouttière des heures, et par un trait
+  en pointillés à la hauteur du début. Sans ça on déplace à l'aveugle : la grille n'a de
+  repère qu'à l'heure pleine, et rien ne dit sur quel quart d'heure le bloc va retomber.
+  Le déplacement est **borné à la grille visible** et non à la journée entière — sortir du
+  cadre par un geste imprécis poserait un créneau à 3 h du matin.
 - **Le bloc en cours de glissement n'est jamais démonté.** Il reste dans sa colonne
   d'origine et se décale par un `translateX` d'un nombre entier de colonnes. Le rendre
   dans la colonne survolée le retirerait du DOM le temps d'un rendu, et `setPointerCapture`

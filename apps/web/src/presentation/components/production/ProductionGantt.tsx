@@ -160,6 +160,14 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
   const hidden = planned.length - rows.length;
 
   const todayColumn = columnOf(toIsoDate(new Date()));
+  /**
+   * Le trait se pose au **milieu** de la cellule du jour, pas à son bord gauche.
+   *
+   * Au bord, il tombe exactement sur la frontière entre hier et aujourd'hui : on ne sait
+   * plus lequel des deux jours il désigne, et la lecture hésite en permanence. Au centre,
+   * il appartient sans ambiguïté à sa colonne.
+   */
+  const todayOffset = todayColumn * cell + cell / 2;
   const gridStyle = { gridTemplateColumns: `repeat(${days.length}, ${cell}px)` };
 
   /**
@@ -173,8 +181,8 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
     const container = scrollRef.current;
     if (!container) return;
     const visibleWidth = container.clientWidth - TITLE_WIDTH;
-    container.scrollLeft = Math.max(0, todayColumn * cell - visibleWidth / 2);
-  }, [zoom, todayColumn, cell]);
+    container.scrollLeft = Math.max(0, todayOffset - visibleWidth / 2);
+  }, [zoom, todayOffset]);
 
   return (
     <Card>
@@ -277,7 +285,7 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
                           <span
                             aria-hidden
                             className="pointer-events-none absolute inset-y-0 z-0 w-px bg-[var(--negative)]/60"
-                            style={{ left: todayColumn * cell }}
+                            style={{ left: todayOffset }}
                           />
 
                           {/* La barre entière est cliquable : c'est la cible la plus large

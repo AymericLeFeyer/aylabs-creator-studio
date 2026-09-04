@@ -67,6 +67,11 @@ const currentMinutes = (): number => {
  * l'on franchit la frontière entre deux jours — c'est-à-dire dès qu'on essaie de
  * déplacer un créneau d'un jour à l'autre.
  *
+ * **L'heure visée est annoncée pendant tout le geste**, à trois endroits : sur le bloc,
+ * dans la gouttière des heures, et par un trait en pointillés à la hauteur du début. Sans
+ * elle on déplace à l'aveugle — la grille n'a un repère qu'à l'heure pleine, et rien ne
+ * dit sur quel quart d'heure le bloc va retomber.
+ *
  * Les événements de l'agenda sont dessinés **en fond, en lecture seule** : ils occupent
  * la place, on ne les déplace pas depuis ici. Un créneau **approuvé** ne se déplace pas
  * non plus — il raconte du temps déjà passé, le bouger réécrirait le passé.
@@ -145,7 +150,13 @@ export const PlanningGrid = ({
 
     const rawStart = minutesOf(event.clientY - container.top - drag.grabOffset);
     const snapped = Math.round(rawStart / DRAG_STEP) * DRAG_STEP;
-    const startMinutes = Math.max(0, Math.min(24 * 60 - drag.durationMinutes, snapped));
+    // Borné à la grille visible et non à la journée entière : sortir du cadre par un
+    // geste imprécis poserait un créneau à 3 h du matin, et l'étiquette d'heure
+    // s'afficherait hors du tableau.
+    const startMinutes = Math.max(
+      bounds.start,
+      Math.min(bounds.end - drag.durationMinutes, snapped),
+    );
 
     if (targetIndex === drag.targetIndex && startMinutes === drag.startMinutes) return;
     setDrag({ ...drag, targetIndex, startMinutes });
@@ -254,6 +265,17 @@ export const PlanningGrid = ({
                 {toTime(nowMinutes)}
               </span>
             )}
+
+            {/* L'heure visée pendant le déplacement, à la même place et dans la couleur
+                du jour : c'est le seul endroit où l'œil va déjà chercher une heure. */}
+            {drag !== null && (
+              <span
+                className="absolute right-1 z-10 -translate-y-1/2 rounded bg-[var(--today)] px-1 text-[11px] font-medium text-white shadow"
+                style={{ top: yOf(drag.startMinutes) }}
+              >
+                {toTime(drag.startMinutes)}
+              </span>
+            )}
           </div>
 
           <div ref={columnsRef} className="relative flex flex-1" style={{ height }}>
@@ -353,13 +375,19 @@ export const PlanningGrid = ({
                           }}
                           title={`${slot.productionTitle}\n${slot.label || slot.stepName || ''}\n${slot.startTime} – ${slot.endTime}${slot.done ? '\n(approuvé)' : ''}`}
                         >
+                          {/* Pendant le geste, l'heure prend la place du titre : sur un
+                              bloc d'un quart d'heure il n'y a de place que pour une ligne,
+                              et c'est l'heure qu'on veut y lire, pas un nom qu'on connaît
+                              déjà. Le jour suit, parce qu'on déplace aussi de colonne. */}
                           <p className="truncate text-[11px] font-medium leading-tight">
-                            {slot.label || slot.stepName || slot.productionTitle}
+                            {dragging
+                              ? `${toTime(drag.startMinutes)} – ${toTime(drag.startMinutes + duration)}`
+                              : slot.label || slot.stepName || slot.productionTitle}
                           </p>
                           {duration >= 45 && (
                             <p className="truncate text-[10px] leading-tight opacity-80">
                               {dragging
-                                ? `${toTime(drag.startMinutes)} · ${WEEKDAY_SHORT[days[drag.targetIndex]?.weekday ?? 0]}`
+                                ? `${WEEKDAY_SHORT[days[drag.targetIndex]?.weekday ?? 0]} ${days[drag.targetIndex]?.date.slice(8, 10) ?? ''}`
                                 : slot.productionTitle}
                             </p>
                           )}
@@ -409,6 +437,16 @@ export const PlanningGrid = ({
                 </div>
               );
             })}
+
+            {/* Le trait de visée : il traverse la grille à la hauteur du début visé, et
+                c'est lui qui dit sur quelle ligne le bloc va retomber. En pointillés pour
+                ne pas se confondre avec le trait plein de « maintenant ». */}
+            {drag !== null && (
+              <div
+                className="pointer-events-none absolute inset-x-0 z-20 border-t border-dashed border-[var(--today)]"
+                style={{ top: yOf(drag.startMinutes) }}
+              />
+            )}
 
             {/* L'heure qu'il est. Le trait traverse toute la largeur — sur une semaine, il
                 sert à situer l'heure sur les sept colonnes —, et la pastille marque la
