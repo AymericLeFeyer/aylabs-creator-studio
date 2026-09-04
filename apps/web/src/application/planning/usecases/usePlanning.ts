@@ -105,6 +105,12 @@ export const useApproveSlot = () =>
     return planningApi.approve(slotId, rest);
   });
 
+/** Matérialise une session de travail dans le planning, à l'heure où elle a eu lieu. */
+export const useSlotFromTimeEntry = () =>
+  usePlanningMutation((input: { timeEntryId: string; date: string; startTime: string }) =>
+    planningApi.slotFromTimeEntry(input.timeEntryId, input.date, input.startTime),
+  );
+
 export const useUnapproveSlot = () =>
   usePlanningMutation((slotId: string) => planningApi.unapprove(slotId));
 

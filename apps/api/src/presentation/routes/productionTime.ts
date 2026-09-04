@@ -36,7 +36,9 @@ export const productionTimeRouter = (container: Container): Router => {
   /** Démarre un chronomètre. Celui qui tournait, s'il y en avait un, est arrêté. */
   router.post('/start', (req, res) => {
     const body = startTimerSchema.parse(req.body);
-    res.status(201).json(container.trackTime.start(body.productionId, body.stepId ?? null));
+    res
+      .status(201)
+      .json(container.trackTime.start(body.productionId, body.stepId ?? null, body.todoId ?? null));
   });
 
   router.post('/:id/stop', (req, res) => {

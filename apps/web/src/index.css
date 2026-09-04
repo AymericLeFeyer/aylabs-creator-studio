@@ -33,6 +33,12 @@
   --cash: oklch(0.62 0.17 250);
   --in-kind: oklch(0.62 0.19 305);
   --expense: oklch(0.68 0.16 55);
+
+  /* Repères de temps du planning. Deux variables plutôt que de détourner `--cash` et
+     `--negative` : elles portent déjà un sens comptable, et un jour ferié en bleu
+     « cash » se lirait comme une information d'argent. */
+  --today: oklch(0.58 0.16 250);
+  --now: oklch(0.62 0.21 27);
 }
 
 .dark {
@@ -61,6 +67,9 @@
   --cash: oklch(0.68 0.16 250);
   --in-kind: oklch(0.7 0.17 305);
   --expense: oklch(0.75 0.15 60);
+
+  --today: oklch(0.7 0.15 250);
+  --now: oklch(0.68 0.2 25);
 }
 
 @theme inline {
@@ -89,6 +98,8 @@
   --color-cash: var(--cash);
   --color-in-kind: var(--in-kind);
   --color-expense: var(--expense);
+  --color-today: var(--today);
+  --color-now: var(--now);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

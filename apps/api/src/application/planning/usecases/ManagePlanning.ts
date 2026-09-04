@@ -343,9 +343,15 @@ export class ManagePlanning {
 
     // La session de travail porte le temps réellement passé. C'est elle qui alimente
     // le compteur de la vidéo.
+    // La sous-étape vient de la ligne de pile que ce créneau couvre : c'est elle qui
+    // porte la maille fine, et c'est ce qui permet plus tard de comparer l'estimation
+    // (`plannedMinutes`) au temps réellement passé sur cette tâche précise.
+    const covered = slot.itemId ? this.items.findById(slot.itemId) : null;
+
     const entry = this.trackTime.addManual({
       productionId: slot.productionId,
       stepId: slot.stepId,
+      todoId: covered?.todoId ?? null,
       startedAt: `${slot.date}T${slot.startTime}:00`,
       minutes,
       notes: input.notes ?? null,
@@ -362,7 +368,7 @@ export class ManagePlanning {
     const calendarUid = await this.publish(slot.id);
     if (calendarUid) this.slots.update(slot.id, { calendarUid });
 
-    const item = slot.itemId ? this.items.findById(slot.itemId) : null;
+    const item = covered;
 
     if (input.finished) {
       // Cocher la tâche est le geste qui ferme vraiment le travail : la ligne de pile
@@ -394,6 +400,61 @@ export class ManagePlanning {
       .findAll({ range: { from: options.from ?? today(), to: addDays(today(), 60) } })
       .find((candidate) => candidate.itemId === item.id && !candidate.done);
     return next ?? null;
+  }
+
+  /**
+   * Transforme une session de travail en **créneau approuvé**.
+   *
+   * Le geste répond à un cas courant : on a chronométré deux heures de montage sans
+   * qu'aucun créneau ne les attende, et rien n'en garde trace dans le planning. Le
+   * créneau créé est `manual` **et** `done` — il raconte du temps déjà passé, donc rien
+   * ne le déplacera jamais, et il occupe la place aux yeux du moteur.
+   *
+   * **Aucune session n'est créée** : elle existe déjà, et c'est elle qui compte dans les
+   * totaux. Le créneau n'en est que la représentation dans le temps. `time_entry_id` les
+   * relie, et sa présence interdit d'en tirer un second — une même heure de montage ne
+   * doit apparaître qu'une fois dans le planning, et surtout pas deux dans l'agenda, où
+   * rien ne permettrait de retirer le doublon.
+   *
+   * `date` et `startTime` viennent **du navigateur** : `startedAt` est un horodatage UTC,
+   * et en extraire l'heure côté serveur poserait le créneau deux heures trop tôt en été.
+   */
+  async slotFromTimeEntry(
+    timeEntryId: string,
+    input: { date: IsoDate; startTime: string },
+  ): Promise<ProductionSlotView | null> {
+    const entry = this.trackTime.find(timeEntryId);
+    if (!entry) throw notFound('Session de travail');
+    if (entry.endedAt === null || entry.minutes === null) {
+      throw conflict('Cette session tourne encore : arrête le chronomètre d’abord.');
+    }
+    if (entry.slotId) throw conflict('Cette session a déjà son créneau dans le planning.');
+
+    const slot = this.slots.create({
+      productionId: entry.productionId,
+      stepId: entry.stepId,
+      date: input.date,
+      startTime: input.startTime,
+      endTime: toTime(toMinutes(input.startTime) + entry.minutes),
+      label: entry.todoLabel ?? entry.stepName ?? entry.productionTitle,
+      done: true,
+      origin: 'manual',
+      notes: entry.notes,
+    });
+    this.slots.update(slot.id, { timeEntryId: entry.id });
+
+    const calendarUid = await this.publish(slot.id);
+    if (calendarUid) this.slots.update(slot.id, { calendarUid });
+
+    // Le créneau occupe désormais la journée : ce qui était suggéré par-dessus doit
+    // laisser la place, sinon la grille afficherait deux choses au même moment.
+    await this.replan({ from: input.date });
+
+    return (
+      this.slots
+        .findAll({ range: { from: input.date, to: input.date } })
+        .find((candidate) => candidate.id === slot.id) ?? null
+    );
   }
 
   /** Défait une approbation : la session part, le créneau redevient déplaçable. */

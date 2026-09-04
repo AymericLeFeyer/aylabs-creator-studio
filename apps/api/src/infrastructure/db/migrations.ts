@@ -858,6 +858,25 @@ const migrations: Migration[] = [
       CREATE INDEX idx_slots_item ON production_slots(item_id);
     `,
   },
+  {
+    version: 19,
+    name: 'time_entry_todo',
+    // Le temps passe se qualifie desormais a la SOUS-ETAPE, pas seulement a l'etape.
+    //
+    // « Le montage me prend deux fois plus que je ne le crois » se lit deja ; « c'est le
+    // sound design qui mange le montage » ne se lit nulle part. C'est pourtant la seule
+    // maille sur laquelle on peut agir — et c'est aussi celle sur laquelle le planning
+    // reserve du temps, donc la seule qui permette de comparer l'estime au vecu.
+    //
+    // Pas de cle etrangere : `todo_id` designe `step_todos` OU `production_todos`,
+    // exactement comme `production_todo_checks.todo_id` et `planning_items.todo_id`.
+    // Une tache supprimee laisse la session en place avec un identifiant orphelin — le
+    // temps a bien ete passe, et le perdre serait pire que de l'afficher sans libelle.
+    up: `
+      ALTER TABLE production_time_entries ADD COLUMN todo_id TEXT;
+      CREATE INDEX idx_time_entries_todo ON production_time_entries(todo_id);
+    `,
+  },
 ];
 
 /**

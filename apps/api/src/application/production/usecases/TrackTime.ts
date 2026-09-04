@@ -25,13 +25,14 @@ export class TrackTime {
     return this.entries.findRunning();
   }
 
-  start(productionId: string, stepId: string | null): TimeEntryView {
+  start(productionId: string, stepId: string | null, todoId: string | null = null): TimeEntryView {
     const current = this.entries.findRunning();
     if (current) this.stop(current.id);
 
     const entry = this.entries.create({
       productionId,
       stepId,
+      todoId,
       startedAt: new Date().toISOString(),
     });
 
@@ -72,6 +73,7 @@ export class TrackTime {
   addManual(input: {
     productionId: string;
     stepId?: string | null;
+    todoId?: string | null;
     startedAt: string;
     minutes: number;
     notes?: string | null;
@@ -80,6 +82,7 @@ export class TrackTime {
     return this.entries.create({
       productionId: input.productionId,
       stepId: input.stepId ?? null,
+      todoId: input.todoId ?? null,
       startedAt: input.startedAt,
       endedAt,
       minutes: input.minutes,
@@ -98,6 +101,11 @@ export class TrackTime {
     this.entries.delete(id);
   }
 
+  /** Une session précise, enrichie. Le planning en tire le libellé d'un créneau. */
+  find(id: string): TimeEntryView | null {
+    return this.entries.findViewById(id);
+  }
+
   /**
    * Corrige une session existante.
    *
@@ -107,7 +115,13 @@ export class TrackTime {
    */
   update(
     id: string,
-    input: { stepId?: string | null; startedAt?: string; minutes?: number; notes?: string | null },
+    input: {
+      stepId?: string | null;
+      todoId?: string | null;
+      startedAt?: string;
+      minutes?: number;
+      notes?: string | null;
+    },
   ): TimeEntry {
     const existing = this.entries.findById(id);
     if (!existing) throw notFound('Session de travail');
@@ -118,6 +132,7 @@ export class TrackTime {
 
     return this.entries.update(id, {
       ...(input.stepId !== undefined ? { stepId: input.stepId } : {}),
+      ...(input.todoId !== undefined ? { todoId: input.todoId } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
       startedAt,
       minutes,

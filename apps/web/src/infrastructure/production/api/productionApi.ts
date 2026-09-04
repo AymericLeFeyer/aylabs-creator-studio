@@ -166,10 +166,10 @@ export const productionTimeApi = {
   running: () => request<TimeEntry | null>('/api/production-time/running'),
 
   /** Démarre un chronomètre. Celui qui tournait, s'il y en avait un, est arrêté. */
-  start: (productionId: string, stepId: string | null) =>
+  start: (productionId: string, stepId: string | null, todoId: string | null = null) =>
     request<TimeEntry>('/api/production-time/start', {
       method: 'POST',
-      body: { productionId, stepId },
+      body: { productionId, stepId, todoId },
     }),
 
   stop: (id: string) => request<TimeEntry>(`/api/production-time/${id}/stop`, { method: 'POST' }),

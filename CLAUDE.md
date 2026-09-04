@@ -270,8 +270,26 @@ Table `production_step_checks` (PK `(production_id, step_id)`, colonne `checked_
 
 ### `timeEntry` — le temps passé
 
-`TimeEntry { id, productionId, stepId, startedAt, endedAt, minutes, notes }` — table
-`production_time_entries` (migration 12).
+`TimeEntry { id, productionId, stepId, todoId, startedAt, endedAt, minutes, notes }` — table
+`production_time_entries` (migration 12, `todo_id` en migration 19).
+
+**Le temps se qualifie à la sous-étape**, pas seulement à l'étape. « Le montage me prend
+deux fois plus que je ne le crois » se lit déjà à l'étape ; « c'est le sound design qui
+mange le montage » ne se lit nulle part ailleurs — et c'est la seule maille sur laquelle
+on peut agir. C'est aussi celle sur laquelle le planning réserve du temps
+(`planning_items.todo_id`), donc la seule qui permette de comparer l'estimation au vécu.
+`todo_id` reste **facultatif** : mieux vaut un temps mal rangé qu'un temps jamais mesuré.
+
+Comme partout ailleurs, `todo_id` désigne `step_todos` **ou** `production_todos` : aucune
+clé étrangère n'est possible, et `TimeEntryView.todoLabel` vient d'un `COALESCE` sur les
+deux tables. Une tâche supprimée laisse la session en place avec un identifiant orphelin
+et un libellé `null` — le temps a bien été passé, et le perdre serait pire que de
+l'afficher sans nom.
+
+`TimeEntryView.slotId` dit si un **créneau de planning** a déjà été tiré de cette session
+(sous-requête sur `production_slots.time_entry_id`). Sa présence est ce qui interdit d'en
+tirer un second : une même heure de montage ne doit apparaître qu'une fois dans le
+planning, et surtout pas deux dans l'agenda, où rien ne permettrait de retirer le doublon.
 
 `endedAt` à `null` signifie **le chronomètre tourne encore**. L'état vit en base et non
 dans le navigateur : recharger la page, fermer l'onglet ou reprendre sur une autre
@@ -772,6 +790,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/planning/replan`                              | Repositionner. `onlyDate` = une seule colonne, sinon tout l'horizon                                                                                                                                   |
 | `POST`   | `/api/planning/slots/:id/approve`                   | `{ finished }` **obligatoire**. Crée la session, fige et redimensionne le créneau, publie dans l'agenda ; renvoie `{ next }`, le créneau reposé si le travail continue                                |
 | `POST`   | `/api/planning/slots/:id/unapprove`                 | Défaire : la session part, le créneau redevient mobile                                                                                                                                                |
+| `POST`   | `/api/planning/time-entries/:id/slot`               | Transforme une session de travail en créneau approuvé. `{ date, startTime }` **fournis par le client** (le serveur est en UTC). 409 si la session tourne encore ou a déjà son créneau                 |
 
 Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube.
 
@@ -948,6 +967,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `usePreferences`                                                                                                                                                                                  | `presentation/hooks/usePreferences.ts`                | Menu replié, file compacte. Persisté en localStorage                                                |
 | `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useReorderPlanningItems`, `useRemovePlanningItem`                                | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                  |
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                         | idem                                                  | Horaires de travail et connexion à l'agenda                                                         |
+| `useSlotFromTimeEntry`                                                                                                                                                                            | idem                                                  | Transforme une session de travail en créneau approuvé                                               |
 | `nowMinutes`, `localToday`, `shiftDate`, `startOfWeek`                                                                                                                                            | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                            |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
@@ -997,10 +1017,15 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   (`origin`, `item_id`, `calendar_uid`, `time_entry_id`). Elle n'ajoute **pas** de `status`
   aux créneaux : `origin` + `done` disent déjà tout, et un troisième champ finirait par les
   contredire.
+- **Migration 19** ajoute `production_time_entries.todo_id` : le temps se qualifie à la
+  sous-étape. Pas de clé étrangère — `todo_id` désigne l'une **ou** l'autre des deux tables
+  de tâches, comme les coches et la pile du planning.
 - **Le SQL des migrations n'accepte pas de backtick.** Le bloc `up` est un template
   literal : un `` `nom_de_table` `` dans un commentaire SQL le referme et casse tout le
   fichier. Les commentaires des migrations citent donc les identifiants entre guillemets
-  doubles, et sans accents — comme le reste du fichier.
+  doubles, et sans accents — comme le reste du fichier. **Le piège vaut pour tout SQL écrit
+  dans un template literal**, y compris les requêtes des dépôts (`VIEW_SQL` de
+  `SqliteTimeEntryRepository` est tombé dedans).
 - **Contraste calculé, pas choisi** : `shared/contrast.ts` (`readableTextColor`) prend une couleur de fond libre et renvoie le blanc ou l'encre du thème, selon le meilleur **ratio WCAG réel** des deux. Les couleurs de chaîne sont libres — un vert clair et un bleu nuit peuvent cohabiter, et écrire en blanc sur les deux rend le premier illisible.
 
 ## Points d'attention
@@ -1090,6 +1115,29 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **La barre de progression affiche le pourcentage, le détail est au survol.** Le pourcentage se compare d'une carte à l'autre ; le compte exact (« 18 sur 30 ») ne sert qu'à savoir combien il reste, ce qu'on ne demande que sur la vidéo qu'on s'apprête à attaquer.
 - **L'en-tête n'a de hauteur que s'il porte la barre de filtres.** Sur `/production`, `/partenariats`, `/legal` et `/parametres`, il perd son trait et son padding : un bandeau vide repoussait le contenu pour rien. Le bandeau du chronomètre, lui, porte une bordure **haut et bas** (`border-y`) parce qu'il peut se retrouver seul tout en haut — c'est même le cas le plus probable, `/production` étant l'écran sans filtres où un chronomètre tourne.
 - **Les liens utiles s'intercalent entre la fiche société et les alertes**, avant le tableau à cocher : on ouvre le portail, on fait la démarche, on revient cocher la case juste en dessous. La carte **entière** est le lien (cible la plus large) et s'ouvre dans un **nouvel onglet** — une navigation ferait perdre l'année choisie et la position dans le tableau. Le bloc ne s'affiche pas du tout tant qu'aucun lien n'est configuré : un encart vide prendrait la place de ce qu'on vient réellement faire sur cet écran.
+- **Transformer une session en créneau ne crée aucune session.** La session existe déjà et
+  c'est elle qui compte dans les totaux ; le créneau n'en est que la représentation dans le
+  temps. Il naît `manual` **et** `done` — donc immobile, et occupant la place aux yeux du
+  moteur, qui replanifie aussitôt ce qui se trouvait par-dessus. `time_entry_id` les relie,
+  et `TimeEntryView.slotId` grise le bouton une fois le créneau posé.
+- **`date` et `startTime` d'une conversion viennent du navigateur.** `startedAt` est un
+  horodatage UTC et l'API tourne en UTC : en extraire l'heure côté serveur poserait le
+  créneau deux heures trop tôt en été. Même règle que `nowMinutes` et `localToday`.
+- **Approuver un créneau hérite de la sous-étape de la ligne de pile** (`planning_items.todoId`) :
+  la session créée porte la même maille que ce qui avait été estimé, sans quoi on ne
+  pourrait jamais comparer les deux.
+- **La ligne « maintenant » et le jour courant ont leurs propres couleurs** (`--today`,
+  `--now`), et non `--cash` / `--negative` qui portent déjà un sens comptable — un jour en
+  bleu « cash » se lirait comme une information d'argent. Le trait traverse toute la
+  largeur (situer l'heure sur les sept colonnes) et la pastille marque la seule colonne où
+  « maintenant » a un sens. Il est rafraîchi toutes les 30 s : à la seconde, ce serait un
+  rendu par seconde pour un pixel toutes les minutes.
+- **Le bloc en cours de glissement n'est jamais démonté.** Il reste dans sa colonne
+  d'origine et se décale par un `translateX` d'un nombre entier de colonnes. Le rendre
+  dans la colonne survolée le retirerait du DOM le temps d'un rendu, et `setPointerCapture`
+  partirait avec lui : le geste s'interromprait exactement au franchissement d'une
+  frontière entre deux jours — c'est-à-dire dès qu'on essaie de déplacer un créneau d'un
+  jour à l'autre. C'est le bug qu'avait la première version.
 - **Le planning ne déplace jamais un créneau approuvé ni un créneau posé à la main.** La
   règle vit dans un seul `DELETE` (`clearSuggestions` : `origin = 'planner' AND done = 0`)
   et elle est le contrat du module. Toute nouvelle écriture qui touche `production_slots`

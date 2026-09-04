@@ -16,6 +16,14 @@ export interface TimeEntry {
   productionId: string;
   /** Étape travaillée. `null` = temps non qualifié. */
   stepId: string | null;
+  /**
+   * Sous-étape travaillée, dans `step_todos` **ou** `production_todos`. `null` = l'étape
+   * suffit à dire ce qu'on faisait.
+   *
+   * C'est la maille sur laquelle le planning réserve du temps : la renseigner est la
+   * seule façon de comparer ce qu'on avait estimé à ce qu'on a vécu.
+   */
+  todoId: string | null;
   /** Horodatage ISO complet du début. */
   startedAt: string;
   /** `null` tant que la session est en cours. */
@@ -30,6 +38,16 @@ export interface TimeEntry {
 /** Session enrichie de ce qu'il faut pour l'afficher hors de sa fiche. */
 export interface TimeEntryView extends TimeEntry {
   productionTitle: string;
+  /** Libellé de la sous-étape, `null` si elle n'existe plus ou n'a jamais été posée. */
+  todoLabel: string | null;
+  /**
+   * Créneau de planning déjà tiré de cette session, s'il y en a un.
+   *
+   * Sa présence est ce qui empêche d'en créer un second : une même heure de montage ne
+   * doit apparaître qu'une fois dans le planning, et deux fois dans l'agenda serait
+   * pire encore — rien ne permet d'y retirer un événement.
+   */
+  slotId: string | null;
   channelId: string | null;
   channelColor: string | null;
   stepName: string | null;
@@ -41,6 +59,7 @@ export interface TimeEntryView extends TimeEntry {
 export interface CreateTimeEntryInput {
   productionId: string;
   stepId?: string | null;
+  todoId?: string | null;
   startedAt: string;
   endedAt?: string | null;
   minutes?: number | null;

@@ -503,12 +503,15 @@ export const startTimerSchema = z.object({
   productionId: z.string().min(1, 'La vidéo est obligatoire'),
   /** Sur quoi ce temps est passé. Facultatif : on peut chronométrer sans qualifier. */
   stepId: z.string().nullable().optional(),
+  /** La sous-étape, plus fine que l'étape. Facultative pour la même raison. */
+  todoId: z.string().nullable().optional(),
 });
 
 /** Saisie manuelle : on donne un début et une durée, jamais une fin. */
 export const createTimeEntrySchema = z.object({
   productionId: z.string().min(1, 'La vidéo est obligatoire'),
   stepId: z.string().nullable().optional(),
+  todoId: z.string().nullable().optional(),
   startedAt: isoInstant,
   minutes: z
     .number()
@@ -520,6 +523,7 @@ export const createTimeEntrySchema = z.object({
 
 export const updateTimeEntrySchema = z.object({
   stepId: z.string().nullable().optional(),
+  todoId: z.string().nullable().optional(),
   startedAt: isoInstant.optional(),
   minutes: z
     .number()
@@ -693,6 +697,18 @@ export const reorderPlanningItemsSchema = z.object({
  * L'approbation d'un créneau. `finished` est **obligatoire** : c'est la question qu'on
  * pose à l'utilisateur, et une valeur par défaut y répondrait à sa place.
  */
+/**
+ * Transformer une session de travail en créneau.
+ *
+ * Le jour et l'heure sont **obligatoires et fournis par le client** : `startedAt` est un
+ * horodatage UTC, et l'API tourne en UTC dans un conteneur — les recalculer ici poserait
+ * le créneau deux heures trop tôt en été. Même règle que `nowMinutes`.
+ */
+export const slotFromTimeEntrySchema = z.object({
+  date: isoDate,
+  startTime: clockTime,
+});
+
 export const approveSlotSchema = z.object({
   finished: z.boolean(),
   /** Temps réellement passé, si différent de la durée prévue. */

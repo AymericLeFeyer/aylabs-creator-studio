@@ -4,6 +4,13 @@ export interface TimeEntry {
   id: string;
   productionId: string;
   stepId: string | null;
+  /**
+   * Sous-étape travaillée. `null` = l'étape suffit à dire ce qu'on faisait.
+   *
+   * C'est la maille sur laquelle le planning réserve du temps : la renseigner est la
+   * seule façon de comparer ce qu'on avait estimé à ce qu'on a vécu.
+   */
+  todoId: string | null;
   startedAt: string;
   /** `null` = le chronomètre tourne encore. */
   endedAt: string | null;
@@ -18,6 +25,10 @@ export interface TimeEntry {
   channelColor: string | null;
   stepName: string | null;
   stepColor: string | null;
+  /** Libellé de la sous-étape, `null` si elle n'existe plus ou n'a jamais été posée. */
+  todoLabel: string | null;
+  /** Créneau de planning déjà tiré de cette session : sa présence interdit d'en tirer un second. */
+  slotId: string | null;
   /** Jour de rattachement : celui du début. */
   date: string;
 }
@@ -25,6 +36,7 @@ export interface TimeEntry {
 export interface TimeEntryInput {
   productionId: string;
   stepId?: string | null;
+  todoId?: string | null;
   startedAt: string;
   minutes: number;
   notes?: string | null;

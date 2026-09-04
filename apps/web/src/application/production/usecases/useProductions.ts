@@ -263,8 +263,15 @@ export const useRunningTimer = () =>
 
 export const useStartTimer = () =>
   useProductionMutation(
-    ({ productionId, stepId }: { productionId: string; stepId: string | null }) =>
-      productionTimeApi.start(productionId, stepId),
+    ({
+      productionId,
+      stepId,
+      todoId,
+    }: {
+      productionId: string;
+      stepId: string | null;
+      todoId?: string | null;
+    }) => productionTimeApi.start(productionId, stepId, todoId ?? null),
   );
 
 export const useStopTimer = () => useProductionMutation((id: string) => productionTimeApi.stop(id));

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Container } from '../../container.ts';
 import {
   approveSlotSchema,
+  slotFromTimeEntrySchema,
   planningBoardQuerySchema,
   planningSettingsSchema,
   planTargetsSchema,
@@ -111,6 +112,18 @@ export const planningRouter = (container: Container): Router => {
       { from: body.from, nowMinutes: body.nowMinutes },
     );
     res.json({ next });
+  });
+
+  /**
+   * Matérialise une session de travail dans le planning.
+   *
+   * `date` et `startTime` viennent du navigateur : `startedAt` est en UTC, et l'API
+   * tourne dans un conteneur qui l'est aussi — en extraire l'heure ici poserait le
+   * créneau deux heures trop tôt en été.
+   */
+  router.post('/time-entries/:id/slot', async (req, res) => {
+    const body = slotFromTimeEntrySchema.parse(req.body);
+    res.status(201).json(await container.managePlanning.slotFromTimeEntry(param(req, 'id'), body));
   });
 
   /** Défait une approbation : la session de travail part, le créneau redevient mobile. */

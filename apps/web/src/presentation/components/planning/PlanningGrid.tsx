@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Trash2, Undo2, Wand2 } from 'lucide-react';
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
 import {
@@ -36,10 +36,21 @@ interface DragState {
   slotId: string;
   /** Écart entre le haut du bloc et le point saisi, pour ne pas le faire sauter. */
   grabOffset: number;
-  date: string;
+  /** Colonne d'où le bloc est parti : le décalage visuel s'en déduit. */
+  originIndex: number;
+  /** Colonne survolée. Change en cours de geste — c'est le déplacement entre jours. */
+  targetIndex: number;
+  /** Largeur d'une colonne, mesurée au démarrage : elle ne bouge pas pendant le geste. */
+  columnWidth: number;
   startMinutes: number;
   durationMinutes: number;
 }
+
+/** L'heure locale courante, en minutes depuis minuit. */
+const currentMinutes = (): number => {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+};
 
 /**
  * La grille du planning : une colonne par jour, les heures en ordonnée.
@@ -49,9 +60,16 @@ interface DragState {
  * dépendance imposerait son modèle d'événement, son thème et sa gestion du fuseau — le
  * même parti pris que le Gantt et les confettis.
  *
+ * **Le bloc en cours de déplacement n'est jamais démonté.** Il reste dans la colonne
+ * d'où il est parti et se décale par un `translateX` d'un nombre entier de colonnes.
+ * Le rendre dans la colonne survolée le retirerait du DOM le temps d'un rendu, et la
+ * capture du pointeur partirait avec lui : le geste s'interromprait au moment précis où
+ * l'on franchit la frontière entre deux jours — c'est-à-dire dès qu'on essaie de
+ * déplacer un créneau d'un jour à l'autre.
+ *
  * Les événements de l'agenda sont dessinés **en fond, en lecture seule** : ils occupent
- * la place, on ne les déplace pas depuis ici. Un créneau **approuvé** est verrouillé de
- * la même façon — il raconte du temps déjà passé, le déplacer réécrirait le passé.
+ * la place, on ne les déplace pas depuis ici. Un créneau **approuvé** ne se déplace pas
+ * non plus — il raconte du temps déjà passé, le bouger réécrirait le passé.
  */
 export const PlanningGrid = ({
   days,
@@ -69,12 +87,23 @@ export const PlanningGrid = ({
   const columnsRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
 
+  // L'heure courante, rafraîchie à la minute : c'est la maille du trait, l'animer à la
+  // seconde ferait un rendu par seconde pour un déplacement d'un pixel toutes les minutes.
+  const [nowMinutes, setNowMinutes] = useState(currentMinutes);
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMinutes(currentMinutes()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const yOf = (minutes: number) => ((minutes - bounds.start) / 60) * HOUR_HEIGHT;
   const minutesOf = (y: number) => bounds.start + (y / HOUR_HEIGHT) * 60;
 
   /** Les traits horaires, une ligne par heure pleine. */
   const hourMarks: number[] = [];
   for (let m = Math.ceil(bounds.start / 60) * 60; m <= bounds.end; m += 60) hourMarks.push(m);
+
+  const todayIndex = days.findIndex((day) => day.date === today);
+  const showNow = todayIndex >= 0 && nowMinutes >= bounds.start && nowMinutes <= bounds.end;
 
   /**
    * Le déplacement.
@@ -86,13 +115,20 @@ export const PlanningGrid = ({
    */
   const startDrag = (event: React.PointerEvent, slot: ProductionSlot, duration: number) => {
     if (slot.done) return;
+    const container = columnsRef.current?.getBoundingClientRect();
+    if (!container) return;
+
     const block = event.currentTarget as HTMLElement;
     block.setPointerCapture(event.pointerId);
     const rect = block.getBoundingClientRect();
+    const index = days.findIndex((day) => day.date === slot.date);
+
     setDrag({
       slotId: slot.id,
       grabOffset: event.clientY - rect.top,
-      date: slot.date,
+      originIndex: index,
+      targetIndex: index,
+      columnWidth: container.width / Math.max(1, days.length),
       startMinutes: toMinutes(slot.startTime ?? '00:00'),
       durationMinutes: duration,
     });
@@ -101,23 +137,25 @@ export const PlanningGrid = ({
   const moveDrag = (event: React.PointerEvent) => {
     if (!drag || !columnsRef.current) return;
     const container = columnsRef.current.getBoundingClientRect();
-    const columnWidth = container.width / Math.max(1, days.length);
-    const index = Math.min(
+
+    const targetIndex = Math.min(
       days.length - 1,
-      Math.max(0, Math.floor((event.clientX - container.left) / columnWidth)),
+      Math.max(0, Math.floor((event.clientX - container.left) / drag.columnWidth)),
     );
 
     const rawStart = minutesOf(event.clientY - container.top - drag.grabOffset);
     const snapped = Math.round(rawStart / DRAG_STEP) * DRAG_STEP;
-    const clamped = Math.max(0, Math.min(24 * 60 - drag.durationMinutes, snapped));
+    const startMinutes = Math.max(0, Math.min(24 * 60 - drag.durationMinutes, snapped));
 
-    setDrag({ ...drag, date: days[index]?.date ?? drag.date, startMinutes: clamped });
+    if (targetIndex === drag.targetIndex && startMinutes === drag.startMinutes) return;
+    setDrag({ ...drag, targetIndex, startMinutes });
   };
 
   const endDrag = (slot: ProductionSlot) => {
     if (!drag) return;
-    const moved = drag.date !== slot.date || drag.startMinutes !== toMinutes(slot.startTime ?? '');
-    if (moved) onMove(slot, drag.date, drag.startMinutes);
+    const date = days[drag.targetIndex]?.date ?? slot.date;
+    const moved = date !== slot.date || drag.startMinutes !== toMinutes(slot.startTime ?? '');
+    if (moved) onMove(slot, date, drag.startMinutes);
     setDrag(null);
   };
 
@@ -127,14 +165,16 @@ export const PlanningGrid = ({
         {/* En-têtes : le jour, sa charge, et son bouton de réorganisation. */}
         <div className="flex border-b border-border">
           <div className="w-14 shrink-0" />
-          {days.map((day) => {
+          {days.map((day, index) => {
             const isToday = day.date === today;
+            const isTarget = drag !== null && drag.targetIndex === index;
             return (
               <div
                 key={day.date}
                 className={cn(
-                  'flex-1 border-l border-border px-2 py-1.5',
-                  isToday && 'bg-accent/40',
+                  'flex-1 border-l border-border px-2 py-1.5 transition-colors',
+                  isToday && 'bg-[var(--today)]/10',
+                  isTarget && 'bg-[var(--today)]/20',
                 )}
               >
                 <div className="flex items-center justify-between gap-1">
@@ -142,7 +182,7 @@ export const PlanningGrid = ({
                     <p
                       className={cn(
                         'truncate text-xs font-medium',
-                        isToday ? 'text-primary' : 'text-foreground',
+                        isToday ? 'text-[var(--today)]' : 'text-foreground',
                       )}
                     >
                       {WEEKDAY_SHORT[day.weekday]} {day.date.slice(8, 10)}/{day.date.slice(5, 7)}
@@ -203,6 +243,17 @@ export const PlanningGrid = ({
                 {toTime(minutes)}
               </span>
             ))}
+
+            {/* L'heure qu'il est, dans la gouttière. Elle a un fond opaque : sans lui,
+                elle se superposerait au libellé de l'heure pleine la plus proche. */}
+            {showNow && (
+              <span
+                className="absolute right-1 -translate-y-1/2 rounded bg-[var(--now)] px-1 text-[11px] font-medium text-white"
+                style={{ top: yOf(nowMinutes) }}
+              >
+                {toTime(nowMinutes)}
+              </span>
+            )}
           </div>
 
           <div ref={columnsRef} className="relative flex flex-1" style={{ height }}>
@@ -215,130 +266,166 @@ export const PlanningGrid = ({
               />
             ))}
 
-            {days.map((day) => (
-              <div
-                key={day.date}
-                className={cn(
-                  'relative flex-1 border-l border-border',
-                  day.date === today && 'bg-accent/20',
-                )}
-              >
-                {/* Les plages travaillables, en fond clair : hors d'elles, rien n'est posé. */}
-                {day.windows.map((window, index) => (
-                  <div
-                    key={`${day.date}-w${index}`}
-                    className="pointer-events-none absolute inset-x-0 bg-background"
-                    style={{ top: yOf(window.start), height: yOf(window.end) - yOf(window.start) }}
-                  />
-                ))}
+            {days.map((day, dayIndex) => {
+              const isToday = day.date === today;
+              const isTarget = drag !== null && drag.targetIndex === dayIndex;
 
-                {/* L'agenda, en lecture seule. */}
-                {day.events
-                  .filter((event) => !event.allDay && event.start !== null && event.end !== null)
-                  .map((event) => (
+              return (
+                <div
+                  key={day.date}
+                  className={cn(
+                    'relative flex-1 border-l border-border transition-colors',
+                    isToday && 'bg-[var(--today)]/5',
+                    // La colonne survolée s'éclaire : sur sept colonnes, savoir où l'on
+                    // va lâcher vaut mieux que de le découvrir après coup.
+                    isTarget && 'bg-[var(--today)]/15',
+                  )}
+                >
+                  {/* Les plages travaillables, en fond clair : hors d'elles, rien n'est posé. */}
+                  {day.windows.map((window, index) => (
                     <div
-                      key={event.uid}
-                      className="pointer-events-none absolute inset-x-0.5 overflow-hidden rounded border border-dashed border-muted-foreground/40 bg-muted/70 px-1 py-0.5"
+                      key={`${day.date}-w${index}`}
+                      className="pointer-events-none absolute inset-x-0 bg-background"
                       style={{
-                        top: yOf(event.start!),
-                        height: Math.max(14, yOf(event.end!) - yOf(event.start!)),
+                        top: yOf(window.start),
+                        height: yOf(window.end) - yOf(window.start),
                       }}
-                      title={`${event.summary} (agenda)`}
-                    >
-                      <p className="truncate text-[11px] text-muted-foreground">{event.summary}</p>
-                    </div>
+                    />
                   ))}
 
-                {day.slots
-                  .filter((slot) => slot.startTime && slot.endTime)
-                  .map((slot) => {
-                    const duration = toMinutes(slot.endTime!) - toMinutes(slot.startTime!);
-                    const dragging = drag?.slotId === slot.id;
-                    const shown =
-                      dragging && drag.date === day.date
-                        ? drag.startMinutes
-                        : toMinutes(slot.startTime!);
-                    if (dragging && drag.date !== day.date) return null;
-
-                    const color = slot.stepColor ?? slot.channelColor ?? '#64748b';
-                    const text = readableTextColor(color);
-
-                    return (
+                  {/* L'agenda, en lecture seule. */}
+                  {day.events
+                    .filter((event) => !event.allDay && event.start !== null && event.end !== null)
+                    .map((event) => (
                       <div
-                        key={slot.id}
-                        onPointerDown={(event) => startDrag(event, slot, duration)}
-                        onPointerMove={moveDrag}
-                        onPointerUp={() => endDrag(slot)}
-                        onPointerCancel={() => setDrag(null)}
-                        className={cn(
-                          'group absolute inset-x-0.5 overflow-hidden rounded-md px-1.5 py-1 shadow-sm',
-                          slot.done ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
-                          dragging && 'z-20 opacity-90 shadow-lg',
-                          // Une suggestion est en pointillés : elle n'a pas encore été vécue.
-                          !slot.done && 'border-2 border-dashed',
-                        )}
+                        key={event.uid}
+                        className="pointer-events-none absolute inset-x-0.5 overflow-hidden rounded border border-dashed border-muted-foreground/40 bg-muted/70 px-1 py-0.5"
                         style={{
-                          top: yOf(shown),
-                          height: Math.max(20, (duration / 60) * HOUR_HEIGHT),
-                          backgroundColor: slot.done ? color : `${color}33`,
-                          borderColor: color,
-                          color: slot.done ? text : undefined,
+                          top: yOf(event.start!),
+                          height: Math.max(14, yOf(event.end!) - yOf(event.start!)),
                         }}
-                        title={`${slot.productionTitle}\n${slot.label || slot.stepName || ''}\n${slot.startTime} – ${slot.endTime}${slot.done ? '\n(approuvé)' : ''}`}
+                        title={`${event.summary} (agenda)`}
                       >
-                        <p className="truncate text-[11px] font-medium leading-tight">
-                          {slot.label || slot.stepName || slot.productionTitle}
+                        <p className="truncate text-[11px] text-muted-foreground">
+                          {event.summary}
                         </p>
-                        {duration >= 45 && (
-                          <p className="truncate text-[10px] leading-tight opacity-80">
-                            {slot.productionTitle}
-                          </p>
-                        )}
-
-                        {/* Les actions n'apparaissent qu'au survol : sur un bloc de trois
-                            quarts d'heure, deux boutons permanents mangeraient le titre. */}
-                        <div className="absolute right-0.5 top-0.5 hidden gap-0.5 group-hover:flex group-focus-within:flex">
-                          {slot.done ? (
-                            <button
-                              type="button"
-                              className="rounded bg-background/90 p-0.5 hover:bg-background"
-                              title="Annuler l’approbation : la session de travail est retirée"
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={() => onUnapprove(slot)}
-                            >
-                              <Undo2 className="h-3 w-3 text-muted-foreground" />
-                              <span className="sr-only">Annuler l’approbation</span>
-                            </button>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                className="rounded bg-background/90 p-0.5 hover:bg-background"
-                                title="J’ai passé ce temps"
-                                onPointerDown={(event) => event.stopPropagation()}
-                                onClick={() => onApprove(slot)}
-                              >
-                                <Check className="h-3 w-3 text-[var(--positive)]" />
-                                <span className="sr-only">Approuver</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="rounded bg-background/90 p-0.5 hover:bg-background"
-                                title="Retirer ce créneau"
-                                onPointerDown={(event) => event.stopPropagation()}
-                                onClick={() => onDelete(slot)}
-                              >
-                                <Trash2 className="h-3 w-3 text-destructive" />
-                                <span className="sr-only">Supprimer</span>
-                              </button>
-                            </>
-                          )}
-                        </div>
                       </div>
-                    );
-                  })}
+                    ))}
+
+                  {day.slots
+                    .filter((slot) => slot.startTime && slot.endTime)
+                    .map((slot) => {
+                      const duration = toMinutes(slot.endTime!) - toMinutes(slot.startTime!);
+                      const dragging = drag?.slotId === slot.id;
+
+                      // Le bloc reste dans SA colonne et se décale d'un nombre entier de
+                      // colonnes. Le déplacer dans le DOM emporterait la capture du
+                      // pointeur, et le geste s'arrêterait au premier changement de jour.
+                      const shown = dragging ? drag.startMinutes : toMinutes(slot.startTime!);
+                      const offsetX = dragging
+                        ? (drag.targetIndex - drag.originIndex) * drag.columnWidth
+                        : 0;
+
+                      const color = slot.stepColor ?? slot.channelColor ?? '#64748b';
+                      const text = readableTextColor(color);
+
+                      return (
+                        <div
+                          key={slot.id}
+                          onPointerDown={(event) => startDrag(event, slot, duration)}
+                          onPointerMove={moveDrag}
+                          onPointerUp={() => endDrag(slot)}
+                          onPointerCancel={() => setDrag(null)}
+                          className={cn(
+                            'group absolute inset-x-0.5 overflow-hidden rounded-md px-1.5 py-1 shadow-sm',
+                            slot.done ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
+                            dragging && 'z-30 opacity-90 shadow-lg',
+                            // Une suggestion est en pointillés : elle n'a pas encore été vécue.
+                            !slot.done && 'border-2 border-dashed',
+                          )}
+                          style={{
+                            top: yOf(shown),
+                            height: Math.max(20, (duration / 60) * HOUR_HEIGHT),
+                            transform: offsetX === 0 ? undefined : `translateX(${offsetX}px)`,
+                            backgroundColor: slot.done ? color : `${color}33`,
+                            borderColor: color,
+                            color: slot.done ? text : undefined,
+                          }}
+                          title={`${slot.productionTitle}\n${slot.label || slot.stepName || ''}\n${slot.startTime} – ${slot.endTime}${slot.done ? '\n(approuvé)' : ''}`}
+                        >
+                          <p className="truncate text-[11px] font-medium leading-tight">
+                            {slot.label || slot.stepName || slot.productionTitle}
+                          </p>
+                          {duration >= 45 && (
+                            <p className="truncate text-[10px] leading-tight opacity-80">
+                              {dragging
+                                ? `${toTime(drag.startMinutes)} · ${WEEKDAY_SHORT[days[drag.targetIndex]?.weekday ?? 0]}`
+                                : slot.productionTitle}
+                            </p>
+                          )}
+
+                          {/* Les actions n'apparaissent qu'au survol : sur un bloc de trois
+                              quarts d'heure, deux boutons permanents mangeraient le titre. */}
+                          <div className="absolute right-0.5 top-0.5 hidden gap-0.5 group-focus-within:flex group-hover:flex">
+                            {slot.done ? (
+                              <button
+                                type="button"
+                                className="rounded bg-background/90 p-0.5 hover:bg-background"
+                                title="Annuler l’approbation : la session de travail est retirée"
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={() => onUnapprove(slot)}
+                              >
+                                <Undo2 className="h-3 w-3 text-muted-foreground" />
+                                <span className="sr-only">Annuler l’approbation</span>
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  className="rounded bg-background/90 p-0.5 hover:bg-background"
+                                  title="J’ai passé ce temps"
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={() => onApprove(slot)}
+                                >
+                                  <Check className="h-3 w-3 text-[var(--positive)]" />
+                                  <span className="sr-only">Approuver</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded bg-background/90 p-0.5 hover:bg-background"
+                                  title="Retirer ce créneau"
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={() => onDelete(slot)}
+                                >
+                                  <Trash2 className="h-3 w-3 text-destructive" />
+                                  <span className="sr-only">Supprimer</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              );
+            })}
+
+            {/* L'heure qu'il est. Le trait traverse toute la largeur — sur une semaine, il
+                sert à situer l'heure sur les sept colonnes —, et la pastille marque la
+                colonne du jour, seule à porter un « maintenant » qui a un sens.
+                Dessiné en dernier, donc au-dessus des créneaux : c'est un repère, il ne
+                doit pas se faire recouvrir par un bloc de trois heures. */}
+            {showNow && (
+              <div
+                className="pointer-events-none absolute inset-x-0 z-20 border-t-2 border-[var(--now)]"
+                style={{ top: yOf(nowMinutes) }}
+              >
+                <span
+                  className="absolute h-2 w-2 -translate-y-1/2 rounded-full bg-[var(--now)]"
+                  style={{ left: `calc(${(todayIndex * 100) / days.length}% - 1px)` }}
+                />
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>

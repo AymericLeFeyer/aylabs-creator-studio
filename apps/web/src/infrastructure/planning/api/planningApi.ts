@@ -66,6 +66,19 @@ export const planningApi = {
       body: input,
     }),
 
+  /**
+   * Transforme une session de travail en créneau approuvé.
+   *
+   * `date` et `startTime` sont calculés **par le navigateur** : `startedAt` est un
+   * horodatage UTC, et le serveur l'est aussi — les recalculer là-bas poserait le créneau
+   * deux heures trop tôt en été.
+   */
+  slotFromTimeEntry: (timeEntryId: string, date: string, startTime: string) =>
+    request<ProductionSlot>(`/api/planning/time-entries/${timeEntryId}/slot`, {
+      method: 'POST',
+      body: { date, startTime },
+    }),
+
   unapprove: (slotId: string) =>
     request<void>(`/api/planning/slots/${slotId}/unapprove`, { method: 'POST' }),
 };

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pencil, Play, Plus, Timer, Trash2 } from 'lucide-react';
+import { CalendarPlus, CalendarCheck, Pencil, Play, Plus, Timer, Trash2 } from 'lucide-react';
 import {
   useCreateTimeEntry,
   useDeleteTimeEntry,
@@ -10,6 +10,8 @@ import type { Production } from '../../../domain/production/entities/Production.
 import type { ProductionStep } from '../../../domain/production/entities/ProductionStep.ts';
 import type { TimeEntry } from '../../../domain/production/entities/TimeEntry.ts';
 import { entryMinutes, formatDuration } from '../../../domain/production/entities/TimeEntry.ts';
+import { todosOfStep } from '../../../domain/production/entities/StepTodo.ts';
+import { useSlotFromTimeEntry } from '../../../application/planning/usecases/usePlanning.ts';
 import { formatDate } from '../../../shared/format.ts';
 import { Button } from '../ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
@@ -42,6 +44,20 @@ const toLocalInput = (iso: string): string => {
   )}:${pad(date.getMinutes())}`;
 };
 
+/** Le jour local d'un horodatage ISO. Le serveur est en UTC : il ne peut pas le déduire. */
+const toLocalDate = (iso: string): string => {
+  const date = new Date(iso);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+/** L'heure locale `HH:MM` d'un horodatage ISO, pour la même raison. */
+const toLocalTime = (iso: string): string => {
+  const date = new Date(iso);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
 /**
  * Le temps passé sur une vidéo : ce que le chronomètre a enregistré, et ce qu'on ajoute
  * à la main quand on a oublié de le lancer.
@@ -58,12 +74,14 @@ export const TimeEntriesPanel = ({ production, steps, onStartTimer }: TimeEntrie
   const create = useCreateTimeEntry();
   const update = useUpdateTimeEntry();
   const remove = useDeleteTimeEntry();
+  const toSlot = useSlotFromTimeEntry();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<TimeEntry | null>(null);
   const [startedAt, setStartedAt] = useState('');
   const [minutes, setMinutes] = useState('60');
   const [stepId, setStepId] = useState<string>(NONE);
+  const [todoId, setTodoId] = useState<string>(NONE);
   const [notes, setNotes] = useState('');
 
   const totals = useMemo(() => {
@@ -82,6 +100,7 @@ export const TimeEntriesPanel = ({ production, steps, onStartTimer }: TimeEntrie
     setStartedAt(toLocalInput(new Date().toISOString()));
     setMinutes('60');
     setStepId(NONE);
+    setTodoId(NONE);
     setNotes('');
     setDialogOpen(true);
   };
@@ -91,6 +110,7 @@ export const TimeEntriesPanel = ({ production, steps, onStartTimer }: TimeEntrie
     setStartedAt(toLocalInput(entry.startedAt));
     setMinutes(String(entryMinutes(entry)));
     setStepId(toSelectValue(entry.stepId));
+    setTodoId(toSelectValue(entry.todoId));
     setNotes(entry.notes ?? '');
     setDialogOpen(true);
   };
@@ -103,6 +123,7 @@ export const TimeEntriesPanel = ({ production, steps, onStartTimer }: TimeEntrie
       startedAt: new Date(startedAt).toISOString(),
       minutes: Math.round(parsed),
       stepId: fromSelectValue(stepId),
+      todoId: fromSelectValue(todoId),
       notes: notes.trim() || null,
     };
 
@@ -197,7 +218,7 @@ export const TimeEntriesPanel = ({ production, steps, onStartTimer }: TimeEntrie
                   )}
 
                   <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                    {entry.notes}
+                    {[entry.todoLabel, entry.notes].filter(Boolean).join(' · ')}
                   </span>
 
                   <span className="shrink-0 tabular font-medium">
@@ -205,6 +226,37 @@ export const TimeEntriesPanel = ({ production, steps, onStartTimer }: TimeEntrie
                   </span>
 
                   <div className="flex shrink-0 gap-1">
+                    {/* Matérialiser la session dans le planning. Elle n'y figure pas
+                        toute seule : on a chronométré deux heures de montage sans qu'aucun
+                        créneau ne les attende, et rien n'en garde trace dans l'agenda.
+                        Une fois posé, le créneau est approuvé — donc immobile. */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={entry.endedAt === null || entry.slotId !== null || toSlot.isPending}
+                      title={
+                        entry.endedAt === null
+                          ? 'Session en cours : arrête le chronomètre d’abord'
+                          : entry.slotId !== null
+                            ? 'Déjà dans le planning'
+                            : 'En faire un créneau dans le planning'
+                      }
+                      onClick={() =>
+                        toSlot.mutate({
+                          timeEntryId: entry.id,
+                          date: toLocalDate(entry.startedAt),
+                          startTime: toLocalTime(entry.startedAt),
+                        })
+                      }
+                    >
+                      {entry.slotId !== null ? (
+                        <CalendarCheck className="h-3.5 w-3.5 text-[var(--positive)]" />
+                      ) : (
+                        <CalendarPlus className="h-3.5 w-3.5" />
+                      )}
+                      <span className="sr-only">En faire un créneau</span>
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -267,7 +319,14 @@ export const TimeEntriesPanel = ({ production, steps, onStartTimer }: TimeEntrie
 
             <div className="space-y-1.5">
               <Label>Étape</Label>
-              <Select value={stepId} onValueChange={setStepId}>
+              <Select
+                value={stepId}
+                onValueChange={(value) => {
+                  // Une tâche de montage n'a aucun sens sous « écriture ».
+                  setStepId(value);
+                  setTodoId(NONE);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -281,6 +340,28 @@ export const TimeEntriesPanel = ({ production, steps, onStartTimer }: TimeEntrie
                 </SelectContent>
               </Select>
             </div>
+
+            {/* La sous-étape n'apparaît que si l'étape en a : une liste vide ferait
+                croire qu'il manque quelque chose à configurer. */}
+            {fromSelectValue(stepId) !== null &&
+              todosOfStep(production.todos, fromSelectValue(stepId)!).length > 0 && (
+                <div className="space-y-1.5">
+                  <Label>Sous-étape</Label>
+                  <Select value={todoId} onValueChange={setTodoId}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>Toute l’étape</SelectItem>
+                      {todosOfStep(production.todos, fromSelectValue(stepId)!).map((todo) => (
+                        <SelectItem key={todo.id} value={todo.id}>
+                          {todo.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
             <div className="space-y-1.5">
               <Label htmlFor="time-notes">Note</Label>

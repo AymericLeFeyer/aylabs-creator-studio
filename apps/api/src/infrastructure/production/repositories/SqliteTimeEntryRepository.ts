@@ -13,6 +13,7 @@ interface TimeRow {
   id: string;
   production_id: string;
   step_id: string | null;
+  todo_id: string | null;
   started_at: string;
   ended_at: string | null;
   minutes: number | null;
@@ -27,12 +28,15 @@ interface TimeViewRow extends TimeRow {
   channel_color: string | null;
   step_name: string | null;
   step_color: string | null;
+  todo_label: string | null;
+  slot_id: string | null;
 }
 
 const toDomain = (row: TimeRow): TimeEntry => ({
   id: row.id,
   productionId: row.production_id,
   stepId: row.step_id,
+  todoId: row.todo_id,
   startedAt: row.started_at,
   endedAt: row.ended_at,
   minutes: row.minutes,
@@ -48,6 +52,8 @@ const toView = (row: TimeViewRow): TimeEntryView => ({
   channelColor: row.channel_color,
   stepName: row.step_name,
   stepColor: row.step_color,
+  todoLabel: row.todo_label,
+  slotId: row.slot_id,
   // Le jour de rattachement est celui du DÉBUT : une session commencée à 23 h 40 et
   // terminée à 0 h 20 appartient à la soirée où on s'y est mis, pas au lendemain.
   date: row.started_at.slice(0, 10),
@@ -59,7 +65,14 @@ const VIEW_SQL = `
          p.channel_id AS channel_id,
          ch.color   AS channel_color,
          s.name     AS step_name,
-         s.color    AS step_color
+         s.color    AS step_color,
+         -- Le libelle vient de l'une OU l'autre des deux tables de taches : todo_id
+         -- n'a pas de cle etrangere, comme les coches et la pile du planning.
+         COALESCE(
+           (SELECT label FROM step_todos WHERE id = t.todo_id),
+           (SELECT label FROM production_todos WHERE id = t.todo_id)
+         ) AS todo_label,
+         (SELECT id FROM production_slots WHERE time_entry_id = t.id LIMIT 1) AS slot_id
     FROM production_time_entries t
     JOIN productions p ON p.id = t.production_id
     LEFT JOIN channels ch ON ch.id = p.channel_id
@@ -118,6 +131,12 @@ export class SqliteTimeEntryRepository {
     return row ? toDomain(row) : null;
   }
 
+  /** La même session, enrichie : le planning a besoin du titre pour nommer le créneau. */
+  findViewById(id: string): TimeEntryView | null {
+    const row = this.db.prepare(`${VIEW_SQL} WHERE t.id = ?`).get(id) as TimeViewRow | undefined;
+    return row ? toView(row) : null;
+  }
+
   /** La session en cours, s'il y en a une. La plus récemment démarrée fait foi. */
   findRunning(): TimeEntryView | null {
     const row = this.db
@@ -133,14 +152,15 @@ export class SqliteTimeEntryRepository {
     this.db
       .prepare(
         `INSERT INTO production_time_entries
-           (id, production_id, step_id, started_at, ended_at, minutes, notes,
+           (id, production_id, step_id, todo_id, started_at, ended_at, minutes, notes,
             created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.productionId,
         input.stepId ?? null,
+        input.todoId ?? null,
         input.startedAt,
         input.endedAt ?? null,
         input.minutes ?? null,
@@ -164,6 +184,7 @@ export class SqliteTimeEntryRepository {
     };
 
     if (input.stepId !== undefined) set('step_id', input.stepId);
+    if (input.todoId !== undefined) set('todo_id', input.todoId);
     if (input.startedAt !== undefined) set('started_at', input.startedAt);
     if (input.endedAt !== undefined) set('ended_at', input.endedAt);
     if (input.minutes !== undefined) set('minutes', input.minutes);
