@@ -11,6 +11,7 @@ import type {
   WorkHoursInput,
 } from '../../../domain/planning/entities/Planning.ts';
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
+import type { TimeEntry } from '../../../domain/production/entities/TimeEntry.ts';
 
 export interface ReplanInput {
   from?: string;
@@ -65,6 +66,13 @@ export const planningApi = {
       method: 'POST',
       body: input,
     }),
+
+  /**
+   * Démarre le chronomètre sur un créneau. À l'arrêt, le créneau sera recalé sur les
+   * horaires réellement passés.
+   */
+  startTimerOnSlot: (slotId: string) =>
+    request<TimeEntry>(`/api/planning/slots/${slotId}/start-timer`, { method: 'POST' }),
 
   /**
    * Transforme une session de travail en créneau approuvé.

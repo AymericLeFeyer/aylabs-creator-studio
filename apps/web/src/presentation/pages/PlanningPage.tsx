@@ -16,10 +16,12 @@ import {
   startOfWeek,
   usePlanningBoard,
   useReplan,
+  useStartSlotTimer,
   useUnapproveSlot,
 } from '../../application/planning/usecases/usePlanning.ts';
 import {
   useDeleteSlot,
+  useRunningTimer,
   useUpdateSlot,
 } from '../../application/production/usecases/useProductions.ts';
 import type { ProductionSlot } from '../../domain/production/entities/ProductionSlot.ts';
@@ -60,6 +62,8 @@ export const PlanningPage = () => {
   const updateSlot = useUpdateSlot();
   const deleteSlot = useDeleteSlot();
   const unapprove = useUnapproveSlot();
+  const startTimer = useStartSlotTimer();
+  const { data: running } = useRunningTimer();
 
   const [addOpen, setAddOpen] = useState(false);
   const [approving, setApproving] = useState<ProductionSlot | null>(null);
@@ -99,7 +103,11 @@ export const PlanningPage = () => {
   );
 
   const busy =
-    replan.isPending || updateSlot.isPending || deleteSlot.isPending || unapprove.isPending;
+    replan.isPending ||
+    updateSlot.isPending ||
+    deleteSlot.isPending ||
+    unapprove.isPending ||
+    startTimer.isPending;
 
   return (
     <div className="space-y-4">
@@ -217,6 +225,8 @@ export const PlanningPage = () => {
               today={today}
               busy={busy}
               onMove={move}
+              runningEntryId={running?.id ?? null}
+              onStartTimer={(slot) => startTimer.mutate(slot.id)}
               onApprove={setApproving}
               onUnapprove={(slot) => {
                 // L'horaire ne revient pas à sa durée d'origine : l'approbation l'a

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Trash2, Undo2, Wand2 } from 'lucide-react';
+import { Check, Play, Timer, Trash2, Undo2, Wand2 } from 'lucide-react';
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
 import {
   dayBounds,
@@ -27,7 +27,11 @@ export interface PlanningGridProps {
   /** Défaire une approbation : la session de travail part, le créneau redevient mobile. */
   onUnapprove: (slot: ProductionSlot) => void;
   onDelete: (slot: ProductionSlot) => void;
+  /** Démarrer le chronomètre sur ce créneau : il sera recalé sur le temps réel à l'arrêt. */
+  onStartTimer: (slot: ProductionSlot) => void;
   onReorganizeDay: (date: string) => void;
+  /** Session en cours, s'il y en a une : le créneau d'où elle part se signale. */
+  runningEntryId?: string | null;
   /** `true` pendant qu'une écriture tourne : la grille se grise sans se démonter. */
   busy?: boolean;
 }
@@ -83,7 +87,9 @@ export const PlanningGrid = ({
   onApprove,
   onUnapprove,
   onDelete,
+  onStartTimer,
   onReorganizeDay,
+  runningEntryId = null,
   busy = false,
 }: PlanningGridProps) => {
   const bounds = dayBounds(days);
@@ -350,6 +356,10 @@ export const PlanningGrid = ({
 
                       const color = slot.stepColor ?? slot.channelColor ?? '#64748b';
                       const text = readableTextColor(color);
+                      // Le chronomètre tourne sur ce créneau : l'anneau dit où le temps
+                      // est en train de s'accumuler.
+                      const ticking =
+                        runningEntryId !== null && slot.timeEntryId === runningEntryId;
 
                       return (
                         <div
@@ -362,6 +372,7 @@ export const PlanningGrid = ({
                             'group absolute inset-x-0.5 overflow-hidden rounded-md px-1.5 py-1 shadow-sm',
                             slot.done ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
                             dragging && 'z-30 opacity-90 shadow-lg',
+                            ticking && 'ring-2 ring-[var(--positive)]',
                             // Une suggestion est en pointillés : elle n'a pas encore été vécue.
                             !slot.done && 'border-2 border-dashed',
                           )}
@@ -408,6 +419,28 @@ export const PlanningGrid = ({
                               </button>
                             ) : (
                               <>
+                                {/* Le chronomètre plutôt que l'approbation quand on s'y
+                                    met maintenant : à l'arrêt, le créneau prendra les
+                                    horaires réellement passés au lieu des prévus. */}
+                                <button
+                                  type="button"
+                                  className="rounded bg-background/90 p-0.5 hover:bg-background"
+                                  title={
+                                    ticking
+                                      ? 'Le chronomètre tourne sur ce créneau'
+                                      : 'Démarrer le chronomètre sur cette tâche'
+                                  }
+                                  disabled={ticking}
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={() => onStartTimer(slot)}
+                                >
+                                  {ticking ? (
+                                    <Timer className="h-3 w-3 text-[var(--positive)]" />
+                                  ) : (
+                                    <Play className="h-3 w-3" />
+                                  )}
+                                  <span className="sr-only">Démarrer le chronomètre</span>
+                                </button>
                                 <button
                                   type="button"
                                   className="rounded bg-background/90 p-0.5 hover:bg-background"

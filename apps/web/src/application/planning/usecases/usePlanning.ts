@@ -105,6 +105,16 @@ export const useApproveSlot = () =>
     return planningApi.approve(slotId, rest);
   });
 
+/**
+ * Démarre le chronomètre sur un créneau proposé.
+ *
+ * À l'arrêt, ce créneau cessera d'être une suggestion : ses horaires seront recalés sur ce
+ * qui s'est réellement passé. C'est l'autre chemin vers le même résultat qu'une
+ * approbation — mesurer pendant, plutôt qu'estimer après.
+ */
+export const useStartSlotTimer = () =>
+  usePlanningMutation((slotId: string) => planningApi.startTimerOnSlot(slotId));
+
 /** Matérialise une session de travail dans le planning, à l'heure où elle a eu lieu. */
 export const useSlotFromTimeEntry = () =>
   usePlanningMutation((input: { timeEntryId: string; date: string; startTime: string }) =>

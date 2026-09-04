@@ -126,6 +126,16 @@ export const planningRouter = (container: Container): Router => {
     res.status(201).json(await container.managePlanning.slotFromTimeEntry(param(req, 'id'), body));
   });
 
+  /**
+   * Démarre le chronomètre sur un créneau.
+   *
+   * À l'arrêt, `POST /api/production-time/:id/stop` recalera ce créneau sur les horaires
+   * réellement passés — c'est le lien `time_entry_id` qui le permet.
+   */
+  router.post('/slots/:id/start-timer', (req, res) => {
+    res.status(201).json(container.managePlanning.startTimerOnSlot(param(req, 'id')));
+  });
+
   /** Défait une approbation : la session de travail part, le créneau redevient mobile. */
   router.post('/slots/:id/unapprove', (req, res) => {
     container.managePlanning.unapprove(param(req, 'id'));

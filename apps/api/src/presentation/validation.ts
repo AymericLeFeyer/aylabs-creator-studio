@@ -518,6 +518,23 @@ export const startTimerSchema = z.object({
   todoId: z.string().nullable().optional(),
 });
 
+/**
+ * L'arrêt du chronomètre.
+ *
+ * `from` et `nowMinutes` servent au replan qui suit quand la session venait d'un créneau :
+ * ils viennent du navigateur, l'API tournant en UTC. Le corps entier est facultatif — un
+ * arrêt depuis une fiche de production n'a rien à replanifier.
+ */
+export const stopTimerSchema = z.object({
+  from: isoDate.optional(),
+  nowMinutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 60)
+    .optional(),
+});
+
 /** Saisie manuelle : on donne un début et une durée, jamais une fin. */
 export const createTimeEntrySchema = z.object({
   productionId: z.string().min(1, 'La vidéo est obligatoire'),

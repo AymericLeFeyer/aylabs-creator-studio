@@ -24,6 +24,7 @@ import {
   type Interval,
   type PlanTask,
 } from '../../../domain/planning/services/scheduler.ts';
+import type { TimeEntry, TimeEntryView } from '../../../domain/production/entities/TimeEntry.ts';
 import type { ProductionSlotView } from '../../../domain/production/entities/ProductionSlot.ts';
 import { slotMinutes } from '../../../domain/production/entities/ProductionSlot.ts';
 import type {
@@ -400,6 +401,79 @@ export class ManagePlanning {
       .findAll({ range: { from: options.from ?? today(), to: addDays(today(), 60) } })
       .find((candidate) => candidate.itemId === item.id && !candidate.done);
     return next ?? null;
+  }
+
+  /**
+   * Démarre le chronomètre **sur un créneau**.
+   *
+   * C'est l'autre chemin vers le même résultat qu'`approve` : au lieu de confirmer après
+   * coup un temps qu'on estime, on mesure pendant qu'on travaille. Le créneau retient
+   * l'identifiant de la session (`time_entry_id`), et c'est ce lien qui permettra à
+   * l'arrêt de le compléter avec les **vrais** horaires.
+   *
+   * La sous-étape vient de la ligne de pile que le créneau couvre : le temps se retrouve
+   * ainsi rangé à la même maille que ce qui avait été estimé, sans rien demander de plus.
+   */
+  startTimerOnSlot(slotId: string): TimeEntryView {
+    const slot = this.slots.findById(slotId);
+    if (!slot) throw notFound('Créneau');
+    if (slot.done) throw conflict('Ce créneau est déjà terminé.');
+
+    // Une session qui courait sur un AUTRE créneau doit d'abord le compléter : la laisser
+    // arrêter par `TrackTime.start` figerait sa durée sans jamais recaler son créneau, qui
+    // resterait une suggestion alors que le travail a eu lieu.
+    const running = this.trackTime.running();
+    if (running && running.id !== slot.timeEntryId) this.stopTimer(running.id);
+
+    const item = slot.itemId ? this.items.findById(slot.itemId) : null;
+    const entry = this.trackTime.start(slot.productionId, slot.stepId, item?.todoId ?? null);
+
+    this.slots.update(slot.id, { timeEntryId: entry.id });
+    return entry;
+  }
+
+  /**
+   * Arrête le chronomètre, et **complète le créneau d'où il avait été lancé**.
+   *
+   * Le créneau cesse d'être une suggestion : ses horaires sont recalés sur ce qui s'est
+   * réellement passé — début réel, durée réelle — et il passe en approuvé, donc immobile.
+   * C'est ce qui fait qu'une journée finit par ressembler à ce qu'elle a été plutôt qu'à ce
+   * qu'on avait prévu.
+   *
+   * `plannedMinutes` n'est **pas** gonflé, contrairement à `approve(finished: false)` : le
+   * temps mesuré se déduit de l'estimation, et ce qui reste — s'il reste quelque chose —
+   * retrouvera une place au replan. Un chronomètre mesure, il ne renégocie pas la charge.
+   *
+   * Un chronomètre lancé depuis une fiche de production n'a aucun créneau lié : la méthode
+   * se contente alors d'arrêter la session, et rien d'autre ne bouge.
+   */
+  async stopTimer(entryId: string, options: ReplanOptions = {}): Promise<TimeEntry> {
+    const entry = this.trackTime.stop(entryId);
+
+    const slot = this.slots
+      .findAll({ range: { from: addDays(entry.startedAt.slice(0, 10), -1), to: today() } })
+      .find((candidate) => candidate.timeEntryId === entryId && !candidate.done);
+    if (!slot) return entry;
+
+    const minutes = Math.max(1, entry.minutes ?? 1);
+    // Le début réel plutôt que celui qui avait été proposé : on a commencé quand on a
+    // commencé, et la grille doit le raconter.
+    const date = entry.startedAt.slice(0, 10);
+    const startMinutes = toMinutes(entry.startedAt.slice(11, 16));
+
+    this.slots.update(slot.id, {
+      date,
+      startTime: toTime(startMinutes),
+      endTime: toTime(startMinutes + minutes),
+      done: true,
+      origin: 'manual',
+    });
+
+    const calendarUid = await this.publish(slot.id);
+    if (calendarUid) this.slots.update(slot.id, { calendarUid });
+
+    await this.replan(options);
+    return entry;
   }
 
   /**

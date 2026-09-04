@@ -3,6 +3,7 @@ import type { Container } from '../../container.ts';
 import {
   createTimeEntrySchema,
   startTimerSchema,
+  stopTimerSchema,
   timeEntryQuerySchema,
   updateTimeEntrySchema,
 } from '../validation.ts';
@@ -41,8 +42,17 @@ export const productionTimeRouter = (container: Container): Router => {
       .json(container.trackTime.start(body.productionId, body.stepId ?? null, body.todoId ?? null));
   });
 
-  router.post('/:id/stop', (req, res) => {
-    res.json(container.trackTime.stop(param(req, 'id')));
+  /**
+   * Arrête le chronomètre.
+   *
+   * Passe par `ManagePlanning` et non par `TrackTime` : si la session avait été lancée
+   * depuis un créneau du planning, l'arrêt doit **aussi** recaler ce créneau sur les
+   * horaires réellement passés et replanifier ce qui suit. Une session lancée depuis une
+   * fiche n'a aucun créneau lié, et rien d'autre ne bouge alors.
+   */
+  router.post('/:id/stop', async (req, res) => {
+    const body = stopTimerSchema.parse(req.body ?? {});
+    res.json(await container.managePlanning.stopTimer(param(req, 'id'), body));
   });
 
   /** Saisie manuelle : un début et une durée, jamais une fin. */

@@ -185,7 +185,14 @@ export const productionTimeApi = {
       body: { productionId, stepId, todoId },
     }),
 
-  stop: (id: string) => request<TimeEntry>(`/api/production-time/${id}/stop`, { method: 'POST' }),
+  /**
+   * Arrête le chronomètre.
+   *
+   * `from` et `nowMinutes` servent au replan déclenché quand la session venait d'un
+   * créneau du planning : ils viennent du navigateur, le serveur étant en UTC.
+   */
+  stop: (id: string, options: { from?: string; nowMinutes?: number } = {}) =>
+    request<TimeEntry>(`/api/production-time/${id}/stop`, { method: 'POST', body: options }),
 
   /** Saisie manuelle : un début et une durée, jamais une fin. */
   create: (input: TimeEntryInput) =>
