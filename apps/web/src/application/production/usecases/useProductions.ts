@@ -83,6 +83,16 @@ export const useDeleteProduction = () =>
 export const useReorderProductions = () =>
   useProductionMutation((ids: string[]) => productionApi.reorder(ids));
 
+/**
+ * Va chercher la fiche de mise en ligne de la sortie précédente, **sur demande**.
+ *
+ * Une mutation et non une requête : l'appel part vers l'API de YouTube et coûte du
+ * quota, personne ne le demande en ouvrant un onglet. Rien n'est invalidé — il ne change
+ * rien en base, il rapporte juste un texte à recopier.
+ */
+export const usePreviousPublication = () =>
+  useMutation({ mutationFn: (id: string) => productionApi.previousPublication(id) });
+
 export const usePublishProduction = () =>
   useProductionMutation(
     ({ id, videoId }: { id: string; videoId: string }) => productionApi.publish(id, videoId),

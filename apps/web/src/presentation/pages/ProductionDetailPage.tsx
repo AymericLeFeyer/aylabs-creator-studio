@@ -45,6 +45,7 @@ import { StartTimerDialog } from '../components/production/StartTimerDialog.tsx'
 import { TimeEntriesPanel } from '../components/production/TimeEntriesPanel.tsx';
 import { Confetti } from '../components/Confetti.tsx';
 import { ScriptEditor } from '../components/production/ScriptEditor.tsx';
+import { PublicationPanel } from '../components/production/PublicationPanel.tsx';
 import { SlotSummary } from '../components/production/SlotSummary.tsx';
 import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
 import { ProductDialog } from '../components/forms/ProductDialog.tsx';
@@ -222,10 +223,13 @@ export const ProductionDetailPage = () => {
       <Tabs defaultValue="script">
         <TabsList>
           <TabsTrigger value="script">Script</TabsTrigger>
-          <TabsTrigger value="slots">Créneaux ({slots.length})</TabsTrigger>
+          <TabsTrigger value="publication">Publication</TabsTrigger>
+          {/* Créneaux et temps passé ne sont que les deux moitiés d'une même question :
+              quand je m'y mets, et combien ça m'a réellement pris. Deux onglets
+              obligeaient à faire l'aller-retour pour comparer le prévu au vécu. */}
           <TabsTrigger value="time">
-            Temps
-            {production.trackedMinutes > 0 && ` (${formatDuration(production.trackedMinutes)})`}
+            Créneaux &amp; temps passé ({slots.length})
+            {production.trackedMinutes > 0 && ` · ${formatDuration(production.trackedMinutes)}`}
           </TabsTrigger>
           <TabsTrigger value="money">
             Produits &amp; sponsos ({products.length + sponsorships.length})
@@ -241,7 +245,7 @@ export const ProductionDetailPage = () => {
           />
         </TabsContent>
 
-        <TabsContent value="slots">
+        <TabsContent value="time" className="space-y-4">
           <Card>
             <CardHeader className="flex-row items-center justify-between pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
@@ -319,14 +323,16 @@ export const ProductionDetailPage = () => {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
 
-        <TabsContent value="time">
           <TimeEntriesPanel
             production={production}
             steps={steps}
             onStartTimer={() => setTimerOpen(true)}
           />
+        </TabsContent>
+
+        <TabsContent value="publication">
+          <PublicationPanel production={production} />
         </TabsContent>
 
         <TabsContent value="money">

@@ -258,6 +258,26 @@ C'est **la vidéo avant sa publication**. Le jour de la sortie, elle se rattache
 
 `ProductionView` embarque tout ce qu'une carte de file affiche (chaîne, vidéo, étapes cochées, prochain créneau, produits et sponsos rattachés) en **une** requête. Elle porte les **listes** et non des compteurs : « 2 produits » ne dit pas lesquels, et c'est précisément ce qu'on veut savoir au survol. Compteurs et montants en attente se dérivent côté front (`partnerCounts`) — une seule source, rien à resynchroniser. Produits et sponsos sont chargés par deux requêtes pour tout le lot (`loadPartners`), comme les étapes cochées : les joindre à la ligne de production produirait un produit cartésien, trois produits face à deux sponsos donnant six lignes à dédupliquer.
 
+**Le formulaire de mise en ligne vit sur la production**, pas sur la ligne `videos` :
+c'est du brouillon, écrit avant que la vidéo existe. `publishTitle`,
+`publishDescription`, `publishHashtags`, `publishTags` (migration 22) sont toujours des
+chaînes, jamais `null` — même règle que `script` : un champ de formulaire n'a pas à
+distinguer « vide » de « pas encore renseigné ».
+
+`publishTitle` est le titre **public** et non le titre de travail. L'écran le
+préremplit avec `title` — il faut bien partir de quelque chose — mais l'enregistrer ne
+renomme pas la production : l'accroche qui fait cliquer se trouve rarement le jour où
+l'on ouvre le projet, et confondre les deux ferait perdre le titre de travail.
+
+`paidPromotion` est le seul **nullable**, et c'est un troisième état qui compte :
+`null` = « pas encore tranché », auquel cas la case se déduit de la présence d'une
+sponso non annulée (`resolvePaidPromotion`, côté front). Un défaut à `false` aurait
+écrasé cette déduction dès la première ouverture de l'onglet, et une vidéo sponsorisée
+serait partie sans sa mention. Enregistrer le formulaire **fige** la case : un choix
+explicite ne doit plus bouger tout seul parce qu'on a rattaché une sponso après coup.
+Même parti pris que `default_minutes`, où « je ne sais pas » et « zéro » sont deux
+réponses distinctes.
+
 `ManageProductions` possède les écritures : changer `channelId` ou `videoId` **re-synchronise** les revenus de tous les produits et sponsos rattachés (voir contrainte 6). `publish(id, videoId)` rattache la sortie, coche l'étape `publication` (si elle existe encore) et passe en `done`.
 
 ### `productionStep` et `productionSlot`
@@ -477,6 +497,16 @@ ensuite, à l'intérieur de chacune :
 
 L'échéance seule faisait remonter une sponso encaissée il y a six mois au-dessus d'une
 négo en cours : une fois payée, sa date de livraison ne demande plus rien à personne.
+
+**Chaque statut a sa couleur de badge** (`SPONSORSHIP_STATUS_BADGES`, à côté des
+libellés pour la même raison qu'eux : trois écrans affichent le même statut, et trois
+teintes choisies à la main finiraient par se contredire). La palette suit ce que le
+statut **demande** : `discussion` en ambre (rien n'est signé), `todo` en gris (signé,
+rien à faire tant qu'on n'y est pas), `in_progress` en bleu (le travail est en cours),
+`awaiting_payment` en rouge — le seul statut qui coûte de l'argent si on l'oublie, et
+celui pour qui tout l'ordre de la liste a été refait —, `paid` en vert, `cancelled` en
+simple contour. Les variantes `cash` et `expense` du `Badge` ont été ajoutées pour ça,
+sur la formule des trois existantes.
 
 ### `affiliatePlatform`
 
@@ -774,9 +804,16 @@ Deux différences volontaires avec `approve` :
 - **`plannedMinutes` n'est pas gonflé.** Le temps mesuré se déduit de l'estimation : après
   40 minutes chronométrées sur une tâche estimée à 45, il reste 5 minutes que le replan
   ira caler. Un chronomètre mesure, il ne renégocie pas la charge.
-- **Aucune question « as-tu terminé ? »** — on la pose à l'approbation parce qu'on y
-  confirme un temps prévu ; ici on constate un temps vécu, et la tâche se coche
-  normalement quand elle l'est.
+- **La question « as-tu terminé ? » est posée APRÈS coup, pas avant.** L'arrêt rend
+  `{ entry, completable }` : `completable` décrit la ligne de pile que ce chronomètre
+  couvrait, `null` s'il n'y en avait pas (chronomètre lancé depuis une fiche de vidéo — il
+  n'y a alors rien à clore). L'écran s'en sert pour ouvrir `FinishWorkDialog`.
+
+  On ne peut pas répondre à la place de l'utilisateur : arrêter un chronomètre est souvent
+  une pause, et cocher d'office ferait disparaître de la pile un travail à moitié fait. Ne
+  **rien** proposer, en revanche — ce que faisait la version d'avant — laissait la ligne
+  traîner jusqu'à ce qu'on aille l'y retirer à la main alors même que le travail venait
+  d'être fait.
 
 Démarrer sur un créneau alors qu'un chronomètre courait **sur un autre créneau** complète
 d'abord celui-là : le laisser arrêter par `TrackTime.start` figerait sa durée sans jamais
@@ -796,10 +833,19 @@ un clic — d'où le use case propriétaire, les routes ne touchant jamais la pi
    qui a eu lieu, et ça évite de stocker la durée une seconde fois ;
 3. il est publié dans l'agenda, **si** la connexion existe. L'échec est **avalé** : le
    temps passé est déjà enregistré, l'événement est du confort ;
-4. `finished` décide de la suite. **Oui** : la ligne quitte la pile et la tâche est cochée.
+4. `finished` décide de la suite. **Oui** : `complete()` ferme la ligne — voir plus bas.
    **Non** : `plannedMinutes` est recalé sur `approvedMinutes + durée prévue du créneau`,
    et le replan repose un créneau de cette durée. Répondre à la place de l'utilisateur
    ferait disparaître de la pile un travail à moitié fait, ou l'y laisserait pour toujours.
+
+**Fermer une ligne de pile passe TOUJOURS par `ManageTodos`** (`ManagePlanning.complete`,
+appelé par `approve(finished: true)` comme par la réponse « Terminé » de l'arrêt de
+chronomètre). Le geste qui compte n'est pas de fermer la ligne mais de **cocher la
+tâche** : c'est elle qui fait monter l'avancement de la vidéo, coche l'étape quand c'était
+la dernière tâche, et retire la ligne de la pile au passage. `approve` appelait
+`todos.check` directement : la tâche était bien cochée, mais l'étape restait ouverte et la
+barre de progression ne bougeait pas d'un pixel. Une ligne qui couvre une **étape entière**
+(aucune tâche à viser) coche l'étape, par `toggleStep`.
 
 `unapprove` retire la session et rend le créneau mobile. La durée d'origine, elle, ne
 revient pas : l'approbation l'a recalée sur le temps vécu, et l'estimation d'avant n'est
@@ -975,6 +1021,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/productions/reorder`                          | `{ ids }` → l'ordre manuel de la file, le rang est l'index                                                                                                                                            |
 | `PATCH`  | `/api/productions/:id`                              | Modifier (dont `script`)                                                                                                                                                                              |
 | `DELETE` | `/api/productions/:id`                              | Supprimer ; produits et sponsos sont **détachés**, pas supprimés                                                                                                                                      |
+| `GET`    | `/api/productions/:id/previous-publication`         | Titre, description et tags de la **sortie précédente** de la même chaîne, lus en direct sur YouTube. `null` si la chaîne n'en a pas d'autre ; 400 sans chaîne renseignée |
 | `POST`   | `/api/productions/:id/publish`                      | `{ videoId }` → rattache la sortie, coche la publication, passe en `done`                                                                                                                             |
 | `PUT`    | `/api/productions/:id/steps/:stepId`                | Cocher une étape (idempotent)                                                                                                                                                                         |
 | `DELETE` | `/api/productions/:id/steps/:stepId`                | Décocher                                                                                                                                                                                              |
@@ -1048,7 +1095,7 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 | `/instagram`        | `InstagramPage`        | 6 cartes, graphique à 3 onglets, puis calendrier des stories / tableau des publications                                                               |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail à droite, bouton « Ajouter une vidéo »                                                                   |
 | `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                |
-| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / Créneaux / Produits & sponsos / Notes                                                        |
+| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / Créneaux & temps passé / Produits & sponsos / Notes                        |
 | `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis trois onglets Produits, Sponsors et **Plateformes** (`?onglet=`). Bouton **Script** par sponso        |
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                 |
 | `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                      |
@@ -1299,6 +1346,10 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   (`origin`, `item_id`, `calendar_uid`, `time_entry_id`). Elle n'ajoute **pas** de `status`
   aux créneaux : `origin` + `done` disent déjà tout, et un troisième champ finirait par les
   contredire.
+- **Migration 22** ajoute à `productions` les cinq champs du formulaire de mise en
+  ligne : `publish_title`, `publish_description`, `publish_hashtags`, `publish_tags` et
+  `paid_promotion`. Les quatre textes sont `NOT NULL DEFAULT ''` comme `script` ; seul
+  `paid_promotion` est nullable, parce que `NULL` y veut dire « pas encore tranché ».
 - **Migration 21** ajoute le statut `awaiting_payment` aux sponsos, et c'est la **première
   reconstruction de table du projet**. Élargir un `CHECK` impose de recréer la table, donc
   de la `DROP` — et un `DROP` avec `PRAGMA foreign_keys = ON` déclenche les
@@ -1357,6 +1408,12 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Supprimer une production ne supprime pas ses produits ni ses sponsos** (`ON DELETE SET NULL`), mais `ManageProductions.remove` les re-synchronise après coup : leurs revenus doivent perdre le rattachement à la vidéo qui vient de disparaître. Les identifiants sont collectés **avant** la suppression, sinon plus rien ne les relierait.
 - **Les vidéos n'arrivent qu'avec une collecte** — donc « Marquer publiée » n'a rien à proposer sur une base qui n'a jamais collecté. Même piège que la case « Marquer les sorties de vidéo ».
 - **`PublishDialog` trie les sorties par proximité avec la date visée**, pas par date : celle qu'on cherche est presque toujours sortie près du jour prévu, et elle doit être en tête sans faire défiler des mois d'historique.
+- **Créneaux et temps passé sont un seul onglet.** Ce sont les deux moitiés d'une même question — quand je m'y mets, et combien ça m'a réellement pris —, et deux onglets obligeaient à faire l'aller-retour pour comparer le prévu au vécu. L'onglet annonce les deux d'un coup : « Créneaux & temps passé (3) · 2 h 30 ».
+- **L'onglet Publication n'enregistre pas tout seul**, exactement comme l'éditeur de script et pour la même raison : une description se travaille en plusieurs passages, et une sauvegarde continue écraserait un brouillon en cours de réflexion. L'indicateur « Non enregistré » rend l'oubli visible. Les compteurs de caractères passent en rouge aux limites **de YouTube** (100 pour un titre, 5000 pour une description) : les dépasser fait rejeter la mise en ligne, et s'en apercevoir devant le formulaire de YouTube est trop tard.
+- **« Charger depuis la précédente vidéo » lit YouTube en direct, et ne stocke rien.** Une description de chaîne est un gabarit — liens d'affiliation, réseaux, chapitres, mentions — qu'on réécrit à 90 % identique à chaque sortie ; la retaper de mémoire est le meilleur moyen d'oublier un lien. Le texte pourrait être collecté avec les vidéos, mais il n'existerait alors que pour les sorties parues **après** la migration : la fenêtre de collecte ne remonte qu'à la dernière vidéo connue moins sept jours, et le bouton aurait paru cassé pendant des mois sur un catalogue pourtant complet. Un appel coûte 1 unité de quota, et il part **sur le geste**, jamais au montage de l'écran (d'où une `useMutation` et non une `useQuery`).
+- **La description chargée REMPLACE, les tags seulement s'ils sont vides.** On charge pour repartir d'un gabarit, pas pour concaténer deux descriptions — d'où la confirmation quand quelque chose serait perdu. Les tags, eux, ne s'écrasent que s'ils n'ont pas déjà été saisis : personne ne les retape volontairement, mais personne ne veut non plus les voir défaits.
+- **`GetPreviousPublication` appelle `findAllWithChannel`, jamais `findAll`.** Le premier trie de la plus récente à la plus ancienne, le second de la plus **ancienne** à la plus récente — il alimente les repères chronologiques des graphiques. Se tromper de méthode rapporte la toute première vidéo de la chaîne, soit une description vieille de deux ans. Le piège vaut pour tout code qui cherche « la dernière sortie ».
+- **Le jeton de la chaîne passe avant la clé API** pour lire une fiche de vidéo : l'OAuth est le seul chemin qui voie une vidéo **non listée**, or c'est exactement ce qu'est une sortie programmée dont on veut reprendre la description.
 - **L'éditeur de script n'enregistre pas tout seul.** Perdre une version d'un script coûte plus cher qu'un clic, et une sauvegarde continue écraserait un brouillon en cours de réflexion. L'indicateur « Non enregistré » rend l'oubli visible. Le compteur affiche la **durée de lecture** (150 mots/min) plutôt que des caractères : c'est la seule mesure qui compte quand on écrit pour être dit à l'oral.
 - **Le rendu markdown est stylé à la main** (`.prose-script` dans `index.css`), sans `@tailwindcss/typography` : un script n'a besoin que de titres, listes, gras et tableaux, et la palette doit rester celle du thème plutôt qu'un gris importé qui jurerait en mode sombre. `react-markdown` est isolé dans son propre chunk (`manualChunks.markdown`) : il n'est téléchargé que par ceux qui ouvrent une fiche de production.
 - **Le Gantt est une grille CSS maison**, sans bibliothèque : une barre par production, une colonne par jour, rien d'autre que des jours à compter. Sans `startDate`, la barre occupe le seul jour visé — une vidéo qu'on n'a pas commencé à planifier ne doit pas paraître étalée sur trois semaines.
@@ -1367,6 +1424,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **`StepsPage` édite en champs non contrôlés, validés à la sortie** (`defaultValue` + `onBlur`) : un `onChange` branché sur la mutation enverrait une requête par lettre tapée.
 - **« La vidéo concernée » est un seul champ pour deux mondes.** `VideoTargetSelect` liste les vidéos **en préparation** (`productions`) puis les sorties **déjà publiées** (`/api/videos`), en deux groupes, les plus récentes d'abord. Les séparer en deux sélecteurs obligerait à savoir d'avance dans quel monde chercher, alors qu'on cherche simplement la vidéo — parfois faite, parfois pas. L'encodage (`prod:` / `video:`) vit dans `videoTarget.ts` : sans préfixe, un `Select` ne saurait pas laquelle des deux tables a été désignée. Une sortie déjà revendiquée par une production **n'apparaît pas** dans le second groupe, sinon il faudrait choisir entre deux entrées identiques dont une seule porte le script et les créneaux.
 - **Le bouton + des revenus en nature manuels crée la fiche produit manquante.** Il n'est proposé que sur `origin === 'manual'` et `nature === 'in_kind'` : ce sont les produits reçus saisis à la main, dont la marque, l'échéance et la sponso associée n'existent nulle part. Le formulaire s'ouvre pré-rempli (nom, valeur, date, chaîne, vidéo), et **l'entrée manuelle est supprimée après la création** — la fiche en régénère une équivalente en `origin: 'product'`, sinon le même euro compterait deux fois. Créer d'abord, supprimer ensuite : l'inverse perdrait la saisie si la création échouait.
+- **Publier à 80 % est légitime, et l'alerte le dit sans le reprocher** (`production_incomplete`). Une vidéo quitte la file d'attente le jour de sa sortie, et son reste à faire — épingler le commentaire, refaire la miniature, ranger les fichiers — disparaît de l'écran avec elle. L'alerte le remet sous les yeux, en listant les **sous-étapes** non cochées (quatre au plus, puis « et N autres »), avec un lien vers la fiche. `warning` et jamais `danger` : rien n'est en retard, c'est du travail qui traîne.
+- **Cette alerte s'efface d'elle-même au bout de trois semaines** (`PUBLISHED_REVIEW_DAYS`), comptées sur la date de sortie **réelle** (`videoDate`, ou `plannedDate` quand la vidéo a été marquée publiée sans rattachement). Sans borne, chaque vieille sortie inachevée resterait au tableau pour toujours et noierait les échéances qui, elles, sont urgentes. C'est aussi ce qui rend l'alerte supportable quand on publie volontairement incomplet : elle rappelle, puis elle lâche.
 - **« Publiée » se lit toujours de la même façon : `videoId ?? production.videoId`.** L'alerte « sponso payée, vidéo pas encore publiée » (`GetProductionOverview.isDelivered`) suit exactement la règle de la synchronisation des revenus. Ne regarder que la production faisait crier au retard sur une sponso rattachée en direct à une sortie importée depuis YouTube — qui est pourtant en ligne. Toute nouvelle règle qui parle de « la vidéo » d'un produit ou d'une sponso doit reprendre ce même `??`.
 - **Un créneau s'affiche toujours pareil** (`SlotSummary`) : l'étape en titre — c'est elle qui dit ce qu'on va faire —, l'intitulé libre en dessous, puis date, horaire et vidéo. Les deux écrans qui en listent (les prochains créneaux de `/production` et l'onglet Créneaux d'une fiche) passent par ce composant : dupliqué, le rendu divergeait dès la première retouche.
 - **Les deux tables de `/partenariats` se trient par STATUT avant toute date**, et pas pareil : les **produits** par urgence de réception (`PRODUCT_SORT_RANK` — expédié, confirmé, en discussion, puis reçu), les **sponsos** par ce qu'elles réclament (`SPONSORSHIP_SORT_RANK` — à relancer, à travailler, encaissé, clos). La date ne départage qu'à l'intérieur d'une famille : échéance croissante pour ce qui est attendu, réception décroissante pour ce qui est arrivé, les lignes sans date fermant leur famille. Trier à la date seule mélangeait ce qui demande une action avec ce qui est terminé depuis six mois. Le tri vit dans les dépôts (`ORDER BY`), donc il vaut aussi pour les sélecteurs de rattachement ; les deux tables de rang sont **dupliquées côté domaine** pour le rendre lisible.

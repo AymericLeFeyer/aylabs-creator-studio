@@ -3,6 +3,7 @@ import { upstream } from '../../../shared/errors.ts';
 import type { IsoDate } from '../../../shared/dates.ts';
 import { fetchUploads, type UploadItem } from './uploads.ts';
 import { fetchPublicVideoStats, type VideoStatRow } from './videoStats.ts';
+import { fetchVideoSnippet, type VideoSnippet } from './videoDetails.ts';
 
 export interface PublicChannelStats {
   channelId: string;
@@ -145,6 +146,16 @@ export class YouTubeDataClient {
     } catch (error) {
       if (error instanceof Error && error.name === 'AppError') throw error;
       throw upstream(`YouTube Data API (stats vidéo) : ${(error as Error).message}`);
+    }
+  }
+
+  /** Titre, description et tags d'une vidéo, pour reprendre une publication passée. */
+  async fetchVideoSnippet(externalId: string): Promise<VideoSnippet | null> {
+    try {
+      return await fetchVideoSnippet(this.client, externalId);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AppError') throw error;
+      throw upstream(`YouTube Data API (fiche vidéo) : ${(error as Error).message}`);
     }
   }
 

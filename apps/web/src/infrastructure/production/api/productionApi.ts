@@ -1,5 +1,6 @@
 import { request } from '../../http/httpClient.ts';
 import type {
+  PreviousPublication,
   Production,
   ProductionInput,
   ProductionStatus,
@@ -18,7 +19,11 @@ import type {
   StepTodoInput,
   TodoItem,
 } from '../../../domain/production/entities/StepTodo.ts';
-import type { TimeEntry, TimeEntryInput } from '../../../domain/production/entities/TimeEntry.ts';
+import type {
+  StopTimerResult,
+  TimeEntry,
+  TimeEntryInput,
+} from '../../../domain/production/entities/TimeEntry.ts';
 
 export interface ProductionListParams {
   statuses?: ProductionStatus[];
@@ -65,6 +70,16 @@ export const productionApi = {
   /** L'ordre complet de la file : le rang est la position dans le tableau envoyé. */
   reorder: (ids: string[]) =>
     request<void>('/api/productions/reorder', { method: 'POST', body: { ids } }),
+
+  /**
+   * La fiche de mise en ligne de la sortie précédente de la même chaîne.
+   *
+   * `null` quand la chaîne n'a pas d'autre sortie connue. Lu en direct sur YouTube : à
+   * appeler **sur un geste**, jamais au montage d'un écran — c'est un appel à l'API de
+   * Google, et personne ne le demande en ouvrant un onglet.
+   */
+  previousPublication: (id: string) =>
+    request<PreviousPublication | null>(`/api/productions/${id}/previous-publication`),
 
   publish: (id: string, videoId: string) =>
     request<Production>(`/api/productions/${id}/publish`, { method: 'POST', body: { videoId } }),
@@ -192,7 +207,10 @@ export const productionTimeApi = {
    * créneau du planning : ils viennent du navigateur, le serveur étant en UTC.
    */
   stop: (id: string, options: { from?: string; nowDate?: string; nowMinutes?: number } = {}) =>
-    request<TimeEntry>(`/api/production-time/${id}/stop`, { method: 'POST', body: options }),
+    request<StopTimerResult>(`/api/production-time/${id}/stop`, {
+      method: 'POST',
+      body: options,
+    }),
 
   /** Saisie manuelle : un début et une durée, jamais une fin. */
   create: (input: TimeEntryInput) =>

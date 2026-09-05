@@ -72,6 +72,23 @@ export interface Production {
   startDate: string | null;
   plannedDate: string | null;
   script: string;
+  /**
+   * Le formulaire de mise en ligne, préparé avant que la vidéo existe.
+   *
+   * `publishTitle` est le titre **public** et non le titre de travail : l'accroche qui
+   * fera cliquer se trouve rarement le jour où l'on ouvre le projet, et confondre les
+   * deux ferait perdre l'un des deux.
+   */
+  publishTitle: string;
+  publishDescription: string;
+  publishHashtags: string;
+  publishTags: string;
+  /**
+   * Case « contient une communication commerciale ». **`null` = pas encore tranché** :
+   * la case se déduit alors de la présence d'une sponso rattachée
+   * (`resolvePaidPromotion`). C'est un troisième état, pas un `false` déguisé.
+   */
+  paidPromotion: boolean | null;
   notes: string | null;
   sortOrder: number;
   createdAt: string;
@@ -80,6 +97,8 @@ export interface Production {
   channelName: string | null;
   channelColor: string | null;
   videoTitle: string | null;
+  /** Jour de la sortie réelle. `null` tant qu'aucune vidéo n'est rattachée. */
+  videoDate: string | null;
   videoExternalId: string | null;
   videoThumbnailUrl: string | null;
   /** Étapes cochées. Un identifiant absent vaut « pas fait ». */
@@ -103,8 +122,46 @@ export interface ProductionInput {
   startDate?: string | null;
   plannedDate?: string | null;
   script?: string;
+  publishTitle?: string;
+  publishDescription?: string;
+  publishHashtags?: string;
+  publishTags?: string;
+  paidPromotion?: boolean | null;
   notes?: string | null;
 }
+
+/**
+ * La fiche de mise en ligne d'une sortie déjà publiée, lue sur YouTube.
+ *
+ * Sert au bouton « charger depuis la précédente » : une description de chaîne est un
+ * gabarit — liens d'affiliation, réseaux, chapitres, mentions — qu'on réécrit à 90 %
+ * identique à chaque sortie, et le retaper de mémoire est le meilleur moyen d'oublier un
+ * lien.
+ */
+export interface PreviousPublication {
+  videoId: string;
+  externalId: string;
+  title: string;
+  publishedAt: string;
+  date: string;
+  description: string;
+  tags: string[];
+}
+
+/**
+ * La case « collaboration commerciale », résolue.
+ *
+ * Tant que personne n'y a touché (`null`), elle **suit les sponsos rattachées** : une
+ * vidéo sponsorisée doit porter la mention, et attendre qu'on y pense est exactement la
+ * façon de l'oublier. Dès qu'on coche ou décoche, le choix explicite l'emporte pour
+ * toujours — on peut avoir une bonne raison de ne pas déclarer un produit offert de
+ * faible valeur, ou de déclarer une vidéo qui n'a pas de sponso dans l'outil.
+ *
+ * Les sponsos `cancelled` ne comptent pas : une négo morte n'oblige à rien.
+ */
+export const resolvePaidPromotion = (production: Production): boolean =>
+  production.paidPromotion ??
+  production.sponsorships.some((sponsorship) => sponsorship.status !== 'cancelled');
 
 /**
  * Avancement d'une vidéo, entre 0 et 1.

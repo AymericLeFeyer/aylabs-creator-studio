@@ -41,6 +41,27 @@ export interface Production {
   plannedDate: IsoDate | null;
   /** Le script, en markdown. Toujours une chaîne, jamais `null` : simplifie l'éditeur. */
   script: string;
+  /**
+   * Le formulaire de mise en ligne, préparé avant que la vidéo existe.
+   *
+   * `publishTitle` est le titre **public**, distinct de `title` qui est le titre de
+   * travail : on renomme rarement son projet quand on trouve enfin l'accroche qui fera
+   * cliquer, et confondre les deux ferait perdre l'un des deux.
+   *
+   * Les quatre sont toujours des chaînes, jamais `null` — même règle que `script` : un
+   * champ de formulaire n'a pas à distinguer « vide » de « pas encore renseigné ».
+   */
+  publishTitle: string;
+  publishDescription: string;
+  publishHashtags: string;
+  publishTags: string;
+  /**
+   * Case « contient une communication commerciale ». **`null` = pas encore tranché**, et
+   * c'est un troisième état qui compte : la case se déduit alors de la présence d'une
+   * sponso rattachée. Un défaut à `false` aurait écrasé cette déduction dès la première
+   * ouverture de l'onglet, et une vidéo sponsorisée serait partie sans sa mention.
+   */
+  paidPromotion: boolean | null;
   notes: string | null;
   /** Rang dans la file d'attente. Ordre entièrement manuel. */
   sortOrder: number;
@@ -84,6 +105,8 @@ export interface ProductionView extends Production {
   channelColor: string | null;
   /** Titre de la vidéo publiée, quand elle est rattachée. */
   videoTitle: string | null;
+  /** Jour de la sortie réelle. `null` tant qu'aucune vidéo n'est rattachée. */
+  videoDate: IsoDate | null;
   videoExternalId: string | null;
   videoThumbnailUrl: string | null;
   /** Étapes cochées. L'absence d'un identifiant vaut « pas fait ». */
@@ -114,6 +137,11 @@ export interface CreateProductionInput {
   startDate?: IsoDate | null;
   plannedDate?: IsoDate | null;
   script?: string;
+  publishTitle?: string;
+  publishDescription?: string;
+  publishHashtags?: string;
+  publishTags?: string;
+  paidPromotion?: boolean | null;
   notes?: string | null;
 }
 

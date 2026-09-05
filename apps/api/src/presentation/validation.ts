@@ -250,6 +250,22 @@ export const createProductionSchema = z.object({
   startDate: optionalIsoDate,
   plannedDate: optionalIsoDate,
   script: z.string().optional(),
+  /**
+   * Le formulaire de mise en ligne. `publishTitle` est le titre **public**, distinct du
+   * titre de travail : l'accroche qui fait cliquer se trouve rarement le jour où l'on
+   * ouvre le projet.
+   */
+  publishTitle: z.string().max(200).optional(),
+  publishDescription: z.string().max(10_000).optional(),
+  publishHashtags: z.string().max(1000).optional(),
+  publishTags: z.string().max(1000).optional(),
+  /**
+   * `null` est une valeur et pas une absence : il rend la case « collaboration
+   * commerciale » à sa déduction (y a-t-il une sponso ?). `.nullable()` sans
+   * `.optional()` l'imposerait ; les deux ensemble laissent le champ facultatif tout en
+   * autorisant l'effacement explicite.
+   */
+  paidPromotion: z.boolean().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 

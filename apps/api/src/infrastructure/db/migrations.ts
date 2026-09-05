@@ -1073,6 +1073,29 @@ const migrations: Migration[] = [
       CREATE INDEX idx_sponsorships_video ON sponsorships(video_id);
     `,
   },
+  {
+    version: 22,
+    name: 'production_publication',
+    // Ce qu'on tape dans le formulaire de mise en ligne : titre, description, hashtags,
+    // tags, et la case « collaboration commerciale ». Ca vit sur la production et non sur
+    // la ligne "videos" : c'est du brouillon, ecrit AVANT que la video existe.
+    //
+    // Les quatre textes sont NOT NULL DEFAULT '' comme "productions.script" : l'editeur
+    // n'a alors jamais a distinguer « vide » de « pas encore renseigne ».
+    //
+    // "paid_promotion" est le seul NULLABLE, et c'est delibere : NULL veut dire « pas
+    // encore tranche », auquel cas la case se deduit de la presence d'une sponso. Un
+    // defaut a 0 aurait ecrase cette deduction des la premiere ouverture de l'onglet, et
+    // une video sponsorisee serait partie sans sa mention. Meme parti pris que
+    // "default_minutes", ou « je ne sais pas » et « zero » sont deux reponses distinctes.
+    up: `
+      ALTER TABLE productions ADD COLUMN publish_title TEXT NOT NULL DEFAULT '';
+      ALTER TABLE productions ADD COLUMN publish_description TEXT NOT NULL DEFAULT '';
+      ALTER TABLE productions ADD COLUMN publish_hashtags TEXT NOT NULL DEFAULT '';
+      ALTER TABLE productions ADD COLUMN publish_tags TEXT NOT NULL DEFAULT '';
+      ALTER TABLE productions ADD COLUMN paid_promotion INTEGER;
+    `,
+  },
 ];
 
 /**

@@ -50,6 +50,14 @@ export const productionTimeRouter = (container: Container): Router => {
    * horaires réellement passés et replanifier ce qui suit. Une session lancée depuis une
    * fiche n'a aucun créneau lié, et rien d'autre ne bouge alors.
    */
+  /**
+   * La réponse porte `{ entry, completable }` et non la seule session.
+   *
+   * `completable` décrit la ligne de pile que ce chronomètre couvrait, quand il y en a
+   * une : c'est ce qui permet à l'écran de proposer « tu as terminé ? » au moment où la
+   * question se pose. Sans elle, la ligne restait dans la pile jusqu'à ce qu'on aille
+   * l'y retirer à la main, alors même que le travail venait d'être fait.
+   */
   router.post('/:id/stop', async (req, res) => {
     const body = stopTimerSchema.parse(req.body ?? {});
     res.json(await container.managePlanning.stopTimer(param(req, 'id'), body));

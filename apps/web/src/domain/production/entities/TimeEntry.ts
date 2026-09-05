@@ -1,5 +1,28 @@
 /** Contrat de `/api/production-time`. */
 
+/**
+ * Du travail que l'on vient de mesurer et **qui peut être déclaré terminé**.
+ *
+ * Rendu par l'arrêt du chronomètre, `null` quand la session ne couvrait aucune ligne de
+ * la pile du planning — un chronomètre lancé depuis une fiche de vidéo, par exemple : il
+ * n'y a alors rien à fermer, et poser la question n'aurait aucun objet.
+ */
+export interface CompletableWork {
+  itemId: string;
+  productionId: string;
+  /** La tâche à cocher. `null` quand la ligne couvre l'étape entière. */
+  todoId: string | null;
+  /** L'étape à cocher, quand il n'y a pas de tâche plus fine à viser. */
+  stepId: string | null;
+  label: string;
+}
+
+/** Ce que rend l'arrêt d'un chronomètre : la session, et de quoi proposer de la clore. */
+export interface StopTimerResult {
+  entry: TimeEntry;
+  completable: CompletableWork | null;
+}
+
 export interface TimeEntry {
   id: string;
   productionId: string;

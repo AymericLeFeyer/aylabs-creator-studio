@@ -67,6 +67,18 @@ export const productionsRouter = (container: Container): Router => {
     res.status(204).end();
   });
 
+  /**
+   * La fiche de mise en ligne de la sortie **précédente** de la même chaîne.
+   *
+   * Lue en direct sur YouTube, à la demande : c'est un geste ponctuel, et la stocker à la
+   * collecte ne couvrirait que les vidéos parues après la migration. `null` quand la
+   * chaîne n'a pas d'autre sortie connue — l'écran le dit plutôt que de préremplir du
+   * vide.
+   */
+  router.get('/:id/previous-publication', async (req, res) => {
+    res.json(await container.getPreviousPublication.execute(param(req, 'id')));
+  });
+
   /** Rattache la sortie réelle, coche la publication et sort la vidéo de la file. */
   router.post('/:id/publish', (req, res) => {
     const { videoId } = publishProductionSchema.parse(req.body);

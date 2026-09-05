@@ -43,6 +43,7 @@ import { TrackTime } from './application/production/usecases/TrackTime.ts';
 import { SyncRecurringExpenses } from './application/expense/usecases/SyncRecurringExpenses.ts';
 import { GetLegalOverview } from './application/legal/usecases/GetLegalOverview.ts';
 import { CollectMetrics } from './application/metrics/usecases/CollectMetrics.ts';
+import { GetPreviousPublication } from './application/production/usecases/GetPreviousPublication.ts';
 import { GetAnalytics } from './application/analytics/usecases/GetAnalytics.ts';
 import { YouTubeDataClient } from './infrastructure/youtube/api/YouTubeDataClient.ts';
 
@@ -85,6 +86,7 @@ export interface Container {
   /** La pile de ce qui est en cours et attend des créneaux. */
   planningItems: SqlitePlanningItemRepository;
   collectMetrics: CollectMetrics;
+  getPreviousPublication: GetPreviousPublication;
   getAnalytics: GetAnalytics;
   /**
    * Écritures du module de production. Les routes passent par elles et jamais par les
@@ -158,6 +160,9 @@ export const buildContainer = (config: Config): Container => {
   // Partagé : le planning enregistre une session de travail à chaque approbation, et
   // ce doit être exactement le même chemin que le chronomètre de la fiche.
   const trackTime = new TrackTime(timeEntries);
+  // Construit en amont : `ManagePlanning` s'en sert pour fermer une ligne de pile, et la
+  // règle « une étape est cochée quand toutes ses tâches le sont » ne doit exister qu'ici.
+  const manageTodos = new ManageTodos(todos, productions, planningItems);
 
   const manageProducts = new ManageProducts(products, productions, brands, revenues);
   const manageSponsorships = new ManageSponsorships(sponsorships, productions, brands, revenues);
@@ -213,7 +218,7 @@ export const buildContainer = (config: Config): Container => {
       productionSteps,
       timeEntries,
     ),
-    manageTodos: new ManageTodos(todos, productions, planningItems),
+    manageTodos,
     trackTime,
     managePlanning: new ManagePlanning(
       planningItems,
@@ -223,6 +228,7 @@ export const buildContainer = (config: Config): Container => {
       productions,
       productionSteps,
       todos,
+      manageTodos,
       trackTime,
       (baseUrl, token) => new HomeAssistantClient(baseUrl, token),
     ),
@@ -239,6 +245,11 @@ export const buildContainer = (config: Config): Container => {
       appSecret: config.metaAppSecret,
     }),
     getInstagramOverview: new GetInstagramOverview(instagramAccounts, instagramData),
+    getPreviousPublication: new GetPreviousPublication(productions, videos, channels, {
+      youtubeApiKey: config.youtubeApiKey,
+      gcpClientId: config.gcpClientId,
+      gcpClientSecret: config.gcpClientSecret,
+    }),
     getAnalytics: new GetAnalytics(channels, metrics, revenues, categories, expenses, videos),
     youtubeData: config.youtubeApiKey ? new YouTubeDataClient(config.youtubeApiKey) : null,
   };

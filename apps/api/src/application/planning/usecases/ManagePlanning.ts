@@ -35,9 +35,28 @@ import type {
 import type { SqliteTodoRepository } from '../../../infrastructure/production/repositories/SqliteTodoRepository.ts';
 import type { HomeAssistantClient } from '../../../infrastructure/planning/api/HomeAssistantClient.ts';
 import type { TrackTime } from '../../production/usecases/TrackTime.ts';
+import type { ManageTodos } from '../../production/usecases/ManageTodos.ts';
 
 /** Durée retenue quand ni la tâche ni son étape n'en donnent une. */
 const FALLBACK_MINUTES = 60;
+
+/**
+ * Du travail que l'on vient de mesurer et qui **peut être déclaré terminé**.
+ *
+ * Rendu par `stopTimer` pour que l'écran sache s'il a une question à poser. `null` quand
+ * la session ne couvrait aucune ligne de pile — un chronomètre lancé depuis une fiche de
+ * vidéo, par exemple : il n'y a alors rien à fermer, et demander « as-tu terminé ? »
+ * n'aurait aucun objet.
+ */
+export interface CompletableWork {
+  itemId: string;
+  productionId: string;
+  /** La tâche à cocher. `null` quand la ligne couvre l'étape entière. */
+  todoId: string | null;
+  /** L'étape à cocher, quand il n'y a pas de tâche plus fine à viser. */
+  stepId: string | null;
+  label: string;
+}
 
 /** Ce que la sélection de l'écran « ajouter une vidéo » envoie. */
 export interface PlanTargetInput {
@@ -112,6 +131,7 @@ export class ManagePlanning {
   private readonly productions: ProductionRepository;
   private readonly steps: ProductionStepRepository;
   private readonly todos: SqliteTodoRepository;
+  private readonly manageTodos: ManageTodos;
   private readonly trackTime: TrackTime;
   private readonly makeClient: (baseUrl: string, token: string) => HomeAssistantClient;
 
@@ -123,6 +143,7 @@ export class ManagePlanning {
     productions: ProductionRepository,
     steps: ProductionStepRepository,
     todos: SqliteTodoRepository,
+    manageTodos: ManageTodos,
     trackTime: TrackTime,
     makeClient: (baseUrl: string, token: string) => HomeAssistantClient,
   ) {
@@ -133,6 +154,7 @@ export class ManagePlanning {
     this.productions = productions;
     this.steps = steps;
     this.todos = todos;
+    this.manageTodos = manageTodos;
     this.trackTime = trackTime;
     this.makeClient = makeClient;
   }
@@ -429,16 +451,7 @@ export class ManagePlanning {
     const item = covered;
 
     if (input.finished) {
-      // Cocher la tâche est le geste qui ferme vraiment le travail : la ligne de pile
-      // suit, et l'étape se recalcule comme partout ailleurs.
-      if (item) {
-        this.items.update(item.id, { status: 'done' });
-        if (item.todoId) this.todos.check(item.productionId, item.todoId);
-        // Les créneaux restants de la tâche n'ont plus d'objet : elle est terminée.
-        for (const slot of this.slots.findAll({})) {
-          if (slot.itemId === item.id && !slot.done) this.slots.delete(slot.id);
-        }
-      }
+      if (item) this.complete(item);
       return null;
     }
 
@@ -523,11 +536,14 @@ export class ManagePlanning {
    * Un chronomètre lancé depuis une fiche de production n'a aucun créneau lié : la méthode
    * se contente alors d'arrêter la session, et rien d'autre ne bouge.
    */
-  async stopTimer(entryId: string, options: ReplanOptions = {}): Promise<TimeEntry> {
+  async stopTimer(
+    entryId: string,
+    options: ReplanOptions = {},
+  ): Promise<{ entry: TimeEntry; completable: CompletableWork | null }> {
     const entry = this.trackTime.stop(entryId);
 
     const slot = this.slots.findByTimeEntry(entryId);
-    if (!slot) return entry;
+    if (!slot) return { entry, completable: null };
 
     // **Seule la durée est reprise de la session** — elle ne dépend d'aucun fuseau. Le
     // début, lui, a été posé à l'heure locale au démarrage : le relire dans `startedAt`,
@@ -547,7 +563,56 @@ export class ManagePlanning {
     // Incrémental : ce qui reste de la tâche trouve une place, le reste de la journée
     // garde la sienne.
     await this.replan({ ...options, mode: 'incremental' });
-    return entry;
+
+    // **La question « as-tu terminé ? » n'est pas posée ici, elle est rendue possible.**
+    // On ne peut pas y répondre à la place de l'utilisateur — arrêter un chronomètre est
+    // souvent une pause —, mais ne rien proposer laissait la ligne dans la pile jusqu'à
+    // ce qu'on aille l'y retirer à la main, alors même que le travail était fait. L'écran
+    // pose la question au bon moment ; ce champ lui dit qu'il y a lieu de la poser.
+    const covered = slot.itemId ? this.items.findById(slot.itemId) : null;
+    return {
+      entry,
+      completable:
+        covered && covered.status === 'pending'
+          ? {
+              itemId: covered.id,
+              productionId: covered.productionId,
+              todoId: covered.todoId,
+              stepId: covered.stepId,
+              label: covered.label,
+            }
+          : null,
+    };
+  }
+
+  /**
+   * Ferme une ligne de pile parce que son travail est terminé.
+   *
+   * **Le geste qui compte est de cocher la tâche, pas de fermer la ligne** : c'est lui
+   * qui fait remonter l'avancement de la vidéo, coche l'étape quand c'était la dernière
+   * tâche, et retire la ligne de la pile au passage. D'où le passage par `ManageTodos`
+   * plutôt que par `todos.check` : la règle « une étape est cochée exactement quand
+   * toutes ses tâches le sont » vit là-bas et nulle part ailleurs. L'appeler directement
+   * cochait bien la tâche, mais laissait l'étape ouverte — et la barre de progression ne
+   * bougeait pas d'un pixel.
+   *
+   * Une ligne qui couvre une **étape entière** (aucune tâche à viser) coche l'étape.
+   */
+  private complete(item: {
+    id: string;
+    productionId: string;
+    todoId: string | null;
+    stepId: string | null;
+  }): void {
+    this.items.update(item.id, { status: 'done' });
+
+    if (item.todoId) this.manageTodos.toggle(item.productionId, item.todoId, true);
+    else if (item.stepId) this.manageTodos.toggleStep(item.productionId, item.stepId, true);
+
+    // Les créneaux restants de la ligne n'ont plus d'objet : le travail est fait.
+    for (const slot of this.slots.findAll({})) {
+      if (slot.itemId === item.id && !slot.done) this.slots.delete(slot.id);
+    }
   }
 
   /**

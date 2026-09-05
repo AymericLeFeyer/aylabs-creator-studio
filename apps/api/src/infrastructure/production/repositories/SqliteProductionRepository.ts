@@ -16,6 +16,7 @@ import type {
   ProductionRepository,
 } from '../../../domain/production/repositories/ProductionRepository.ts';
 import { SqliteTodoRepository } from './SqliteTodoRepository.ts';
+import { toSqlBool } from '../../db/database.ts';
 import { placeholders } from '../../db/filters.ts';
 import { newId } from '../../../shared/id.ts';
 import { notFound } from '../../../shared/errors.ts';
@@ -31,6 +32,11 @@ interface ProductionRow {
   start_date: string | null;
   planned_date: string | null;
   script: string;
+  publish_title: string;
+  publish_description: string;
+  publish_hashtags: string;
+  publish_tags: string;
+  paid_promotion: number | null;
   notes: string | null;
   sort_order: number;
   created_at: string;
@@ -41,6 +47,7 @@ interface ProductionViewRow extends ProductionRow {
   channel_name: string | null;
   channel_color: string | null;
   video_title: string | null;
+  video_date: string | null;
   video_external_id: string | null;
   video_thumbnail_url: string | null;
   slots_count: number;
@@ -58,6 +65,14 @@ const toDomain = (row: ProductionRow): Production => ({
   startDate: row.start_date,
   plannedDate: row.planned_date,
   script: row.script,
+  publishTitle: row.publish_title,
+  publishDescription: row.publish_description,
+  publishHashtags: row.publish_hashtags,
+  publishTags: row.publish_tags,
+  // `null` traverse tel quel : c'est le « pas encore tranché » dont la case se sert
+  // pour se déduire de la présence d'une sponso. `fromSqlBool` écraserait ce troisième
+  // état en `false`.
+  paidPromotion: row.paid_promotion === null ? null : row.paid_promotion === 1,
   notes: row.notes,
   sortOrder: row.sort_order,
   createdAt: row.created_at,
@@ -77,6 +92,7 @@ const VIEW_COLUMNS = `
   ch.name  AS channel_name,
   ch.color AS channel_color,
   v.title  AS video_title,
+  v.date   AS video_date,
   v.external_id   AS video_external_id,
   v.thumbnail_url AS video_thumbnail_url,
   (SELECT COUNT(*) FROM production_slots s WHERE s.production_id = p.id) AS slots_count,
@@ -267,6 +283,7 @@ export class SqliteProductionRepository implements ProductionRepository {
       channelName: row.channel_name,
       channelColor: row.channel_color,
       videoTitle: row.video_title,
+      videoDate: row.video_date,
       videoExternalId: row.video_external_id,
       videoThumbnailUrl: row.video_thumbnail_url,
       steps: checks,
@@ -345,8 +362,10 @@ export class SqliteProductionRepository implements ProductionRepository {
       .prepare(
         `INSERT INTO productions
            (id, channel_id, video_id, title, status, paused_reason, paused_at,
-            start_date, planned_date, script, notes, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            start_date, planned_date, script, publish_title, publish_description,
+            publish_hashtags, publish_tags, paid_promotion, notes, sort_order,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -359,6 +378,13 @@ export class SqliteProductionRepository implements ProductionRepository {
         input.startDate ?? null,
         input.plannedDate ?? null,
         input.script ?? '',
+        input.publishTitle ?? '',
+        input.publishDescription ?? '',
+        input.publishHashtags ?? '',
+        input.publishTags ?? '',
+        input.paidPromotion === undefined || input.paidPromotion === null
+          ? null
+          : toSqlBool(input.paidPromotion),
         input.notes ?? null,
         nextOrder,
         now,
@@ -386,6 +412,16 @@ export class SqliteProductionRepository implements ProductionRepository {
     if (input.startDate !== undefined) set('start_date', input.startDate);
     if (input.plannedDate !== undefined) set('planned_date', input.plannedDate);
     if (input.script !== undefined) set('script', input.script);
+    if (input.publishTitle !== undefined) set('publish_title', input.publishTitle);
+    if (input.publishDescription !== undefined) {
+      set('publish_description', input.publishDescription);
+    }
+    if (input.publishHashtags !== undefined) set('publish_hashtags', input.publishHashtags);
+    if (input.publishTags !== undefined) set('publish_tags', input.publishTags);
+    // `null` est une valeur, pas une absence : il rend la case à sa déduction.
+    if (input.paidPromotion !== undefined) {
+      set('paid_promotion', input.paidPromotion === null ? null : toSqlBool(input.paidPromotion));
+    }
     if (input.notes !== undefined) set('notes', input.notes);
     if (input.sortOrder !== undefined) set('sort_order', input.sortOrder);
 

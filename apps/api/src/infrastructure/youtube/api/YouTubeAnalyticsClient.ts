@@ -4,6 +4,7 @@ import { toCents } from '../../../shared/money.ts';
 import type { DailyMetric } from '../../../domain/metrics/entities/DailyMetric.ts';
 import { upstream } from '../../../shared/errors.ts';
 import { fetchUploads, type UploadItem } from './uploads.ts';
+import { fetchVideoSnippet, type VideoSnippet } from './videoDetails.ts';
 import type { VideoStatRow } from './videoStats.ts';
 
 /** Métriques demandées quand la chaîne est monétisée (scope monetary accordé). */
@@ -132,6 +133,23 @@ export class YouTubeAnalyticsClient {
     } catch (error) {
       if (error instanceof Error && error.name === 'AppError') throw error;
       throw upstream(`YouTube Data API (vidéos) : ${this.describe(error)}`);
+    }
+  }
+
+  /**
+   * Titre, description et tags d'une vidéo, pour reprendre une publication passée.
+   *
+   * Passe par le jeton de la chaîne plutôt que par la clé API : c'est le seul chemin qui
+   * fonctionne sur une vidéo **non listée**, or c'est justement ce qu'est une sortie
+   * programmée dont on veut reprendre la description.
+   */
+  async fetchVideoSnippet(externalId: string): Promise<VideoSnippet | null> {
+    try {
+      const youtube = google.youtube({ version: 'v3', auth: this.buildAuth() });
+      return await fetchVideoSnippet(youtube, externalId);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AppError') throw error;
+      throw upstream(`YouTube Data API (fiche vidéo) : ${this.describe(error)}`);
     }
   }
 
