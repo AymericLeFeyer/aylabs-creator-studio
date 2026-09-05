@@ -151,16 +151,32 @@ export class CollectMetrics {
     const from = this.resolveStartDate(channel.id);
     const to = snapshotDate;
     const collected: DailyMetric[] = [];
+    let revenueAvailable = true;
 
     for (const window of this.splitRange(from, to)) {
       const result = await client.fetchDailyMetrics(channel.id, window.from, window.to);
       collected.push(...result.metrics);
+      if (!result.includesRevenue) revenueAvailable = false;
     }
 
     // Une saisie manuelle fait autorité : la collecte ne l'écrase jamais.
-    const fresh = collected.filter(
-      (metric) => this.metrics.findDailyMetric(channel.id, metric.date)?.source !== 'manual',
-    );
+    const fresh = collected
+      .filter(
+        (metric) => this.metrics.findDailyMetric(channel.id, metric.date)?.source !== 'manual',
+      )
+      // Le repli sans montants renvoie `0` partout : l'écrire effacerait, à chaque
+      // collecte, l'AdSense déjà connu de toute la fenêtre de révision — et le graphique
+      // se viderait par la fin sans qu'aucune erreur ne soit rapportée. « Pas mesuré » et
+      // « zéro euro » sont deux choses différentes : on conserve ce qu'on savait déjà.
+      .map((metric) =>
+        revenueAvailable
+          ? metric
+          : {
+              ...metric,
+              estimatedRevenueCents:
+                this.metrics.findDailyMetric(channel.id, metric.date)?.estimatedRevenueCents ?? 0,
+            },
+      );
     const daysUpserted = this.metrics.upsertDailyMetrics(fresh);
 
     const videosUpserted = await this.collectVideos(channel.id, (since) =>
@@ -170,7 +186,22 @@ export class CollectMetrics {
       client.fetchVideoStats(ids, since, to),
     );
 
-    return { ...base, status: 'ok', daysUpserted, snapshotDate, videosUpserted, videoStatsUpdated };
+    return {
+      ...base,
+      status: 'ok',
+      daysUpserted,
+      snapshotDate,
+      videosUpserted,
+      videoStatsUpdated,
+      revenueAvailable,
+      // L'échec du volet monétaire ne fait pas échouer la collecte — les vues et les
+      // abonnés, eux, sont bien arrivés —, mais il ne doit plus être silencieux : c'est
+      // exactement le symptôme « je n'ai plus d'AdSense depuis trois jours ».
+      message: revenueAvailable
+        ? undefined
+        : 'Revenus AdSense indisponibles (scope monetary manquant, jeton régénéré sans lui, ' +
+          'ou chaîne non monétisée) : les montants déjà connus ont été conservés.',
+    };
   }
 
   /**

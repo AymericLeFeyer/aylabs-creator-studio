@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-04
+> Dernière mise à jour : 2026-09-05
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -409,6 +409,25 @@ module légal.
 
 `status` ∈ `discussion | confirmed | shipped | received | returned | cancelled`. Seul `received` compte en argent : c'est lui qui déclenche le revenu **en nature**. `returned` et `cancelled` existent pour que le pipeline se vide — une négo morte laissée en « en discussion » pollue la vue pour toujours.
 
+**Le tri de la table suit l'urgence, et elle est l'inverse de l'ordre chronologique du
+pipeline** (`PRODUCT_SORT_RANK`, dupliqué de part et d'autre, appliqué dans le `ORDER BY`
+du dépôt) : `shipped` (0) → `confirmed` (1) → `discussion` (2) → `received` (3) →
+`returned` (4) → `cancelled` (5). Un colis **expédié** arrive demain sans que sa vidéo
+soit prête ; un **confirmé** part bientôt ; une **discussion** n'engage à rien ; un
+**reçu** n'attend plus que d'être filmé. La table se lisait avant comme un journal de
+réceptions : bon pour retrouver quand un colis est arrivé, inutile pour savoir quoi faire
+aujourd'hui.
+
+Deux clés secondaires **exclusives l'une de l'autre**, chacune neutralisée par un `CASE`
+hors de sa famille : ce qui est attendu se classe à l'**échéance** la plus proche, ce qui
+est arrivé à la **réception** la plus récente. Une seule clé commune trierait la moitié de
+la table sur une colonne qui ne la concerne pas.
+
+`ProductView.productionStatus` porte l'état de la vidéo destinataire (`null` s'il n'y a
+pas de fiche de production). C'est ce qui permet à la table de répondre d'un coup d'œil à
+« lesquels de ces produits n'ont pas encore de vidéo ? » — le titre seul ne le disait pas,
+une fiche à l'état d'idée et une sortie déjà en ligne s'y lisant exactement pareil.
+
 Le revenu généré reprend la **chaîne et la vidéo de la production** : c'est ce qui fait remonter le produit dans la ligne de la bonne vidéo du tableau de performance, sans saisie de plus.
 
 `videoId` (migration 8, sur `products` **et** `sponsorships`) rattache directement une sortie **déjà publiée**, quand elle n'a pas de fiche de production dans l'outil — tout l'historique collecté sur YouTube est dans ce cas. Les deux colonnes sont exclusives à l'usage (le champ n'en pose qu'une), et la synchronisation prend **`videoId` en priorité**, puis celui de la production : `videoId: product.videoId ?? production?.videoId ?? null`.
@@ -429,7 +448,28 @@ bouton** dans la table des sponsors (`SponsorshipScriptDialog`), jamais depuis l
 d'édition : on corrige un montant en dix secondes, on écrit un script en plusieurs
 passages, et un formulaire refermé par mégarde emporterait le texte.
 
-`status` ∈ `discussion | todo | in_progress | paid | cancelled` (les quatre demandés + l'abandon, sans quoi une négo morte fausse le montant « à encaisser » à vie). Seul `paid` crée le revenu **cash**. Tant qu'elle n'est pas payée, la sponso vit dans le « à encaisser » du dashboard et **jamais dans le CA**.
+`status` ∈ `discussion | todo | in_progress | awaiting_payment | paid | cancelled`. Seul
+`paid` crée le revenu **cash** ; tant qu'elle n'est pas payée, la sponso vit dans le
+« à encaisser » du dashboard et **jamais dans le CA**. `cancelled` est là pour que le
+pipeline se vide — une négo morte fausserait le montant « à encaisser » à vie.
+
+`awaiting_payment` (« En attente de paiement », migration 21) : **la vidéo est livrée,
+l'argent est dû**. C'était jusqu'ici indistinguable d'`in_progress`, alors que les deux
+appellent des gestes opposés — l'un demande de monter, l'autre de relancer.
+
+**Le tri de la table ne suit pas l'échéance seule** (`SPONSORSHIP_SORT_RANK`, dupliqué de
+part et d'autre, appliqué dans le `ORDER BY` du dépôt). Trois familles d'abord, l'échéance
+ensuite, à l'intérieur de chacune :
+
+| Rang | Statuts                             | Ce qu'on y fait      |
+| ---- | ----------------------------------- | -------------------- |
+| 0    | `awaiting_payment`                  | **relancer**         |
+| 1    | `discussion`, `todo`, `in_progress` | **travailler**       |
+| 2    | `paid`                              | rien, c'est encaissé |
+| 3    | `cancelled`                         | rien, c'est clos     |
+
+L'échéance seule faisait remonter une sponso encaissée il y a six mois au-dessus d'une
+négo en cours : une fois payée, sa date de livraison ne demande plus rien à personne.
 
 ### `affiliatePlatform`
 
@@ -637,9 +677,28 @@ Les **occupations** réunissent les événements de l'agenda et les créneaux im
 plusieurs séances** ; le reliquat final est posé même sous `minBlockMinutes`, sinon les
 dernières minutes ne trouveraient jamais leur place et la ligne resterait ouverte à vie.
 
-`notBeforeMinutes` vient **du navigateur**, jamais de l'horloge du serveur : l'API tourne
-en UTC dans un conteneur, et s'y fier proposerait un créneau à 9 h alors qu'il est midi.
-Même raison pour `from`, envoyé par le front (`localToday()`).
+`notBefore` — **un jour et une heure**, `{ date, minutes }` — vient du navigateur, jamais
+de l'horloge du serveur : l'API tourne en UTC dans un conteneur, et s'y fier proposerait
+un créneau à 9 h alors qu'il est midi. Même raison pour `from`, envoyé par le front
+(`localToday()`).
+
+**Le jour fait partie de l'information, et ce n'est pas un détail.** Le plancher portait
+autrefois sur le *premier jour de l'horizon* (`offset === 0`), ce qui revient au même tant
+que le placement repart d'aujourd'hui — et diverge silencieusement dès qu'il repart d'une
+date passée (matérialiser une session d'hier, arrêter un chronomètre lancé la veille). Le
+moteur ferme désormais **entièrement** tout jour antérieur à `notBefore.date` et ne
+tronque que celui qui est réellement aujourd'hui : aucune suggestion ne peut tomber avant
+l'instant présent, quel que soit le chemin d'appel.
+
+`ManagePlanning.replan()` en tire deux garde-fous de plus : `from` est **ramené** à
+`notBefore.date` s'il lui est antérieur, et un `onlyDate` déjà écoulé ne fait **rien** —
+réorganiser une colonne passée n'a pas d'objet, et la ramener à aujourd'hui réécrirait un
+autre jour que celui qu'on a désigné.
+
+Le couple voyage sous les noms `nowDate` / `nowMinutes` dans **tous** les corps de requête
+qui replanifient (`/replan`, `/items`, `/slots/:id/approve`, `/time-entries/:id/slot`,
+`/production-time/:id/stop`). Côté front, `planningNow()` les pose une fois pour toutes et
+se spread dans chaque mutation : un seul appel qui les oublierait rouvrirait la faille.
 
 #### Deux modes de placement, et un seul réécrit la journée
 
@@ -1061,7 +1120,14 @@ arrêt fait depuis un autre onglet sans marteler l'API pour animer un compteur.
 
 La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait
 partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/parametres`,
-`/production`, `/partenariats`, `/legal`). Elle tient désormais sur **une seule ligne** —
+`/production`, `/partenariats`, `/legal`).
+
+**`/partenariats` monte le `PeriodPicker` seul, dans son en-tête.** L'écran n'a pas la
+barre entière — chaînes, pas d'agrégation et interrupteur CA/bénéfice n'y pilotent rien et
+resteraient décoratifs — mais deux de ses chiffres suivent bel et bien la période : la
+carte « Total affiliations » et les gains par plateforme. Sans sélecteur, ils affichaient
+une période qu'on ne pouvait ni lire ni changer. La période reste celle de tout l'outil :
+la régler là la règle partout. Elle tient désormais sur **une seule ligne** —
 elle en occupait deux — grâce à deux déclencheurs compacts :
 
 - **`PeriodPicker`** : deux boutons au lieu de sept. Une famille **glissante** (30 jours
@@ -1149,7 +1215,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                         | idem                                                  | Horaires de travail et connexion à l'agenda                                                         |
 | `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`          | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                               |
 | `useSlotFromTimeEntry`                                                                                                                                                                            | idem                                                  | Transforme une session de travail en créneau approuvé                                               |
-| `nowMinutes`, `localToday`, `shiftDate`, `startOfWeek`                                                                                                                                            | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                            |
+| `planningNow`, `nowMinutes`, `localToday`, `shiftDate`, `startOfWeek`                                                                                                                                            | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                            |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
 
@@ -1198,6 +1264,15 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   (`origin`, `item_id`, `calendar_uid`, `time_entry_id`). Elle n'ajoute **pas** de `status`
   aux créneaux : `origin` + `done` disent déjà tout, et un troisième champ finirait par les
   contredire.
+- **Migration 21** ajoute le statut `awaiting_payment` aux sponsos, et c'est la **première
+  reconstruction de table du projet**. Élargir un `CHECK` impose de recréer la table, donc
+  de la `DROP` — et un `DROP` avec `PRAGMA foreign_keys = ON` déclenche les
+  `ON DELETE SET NULL` des tables qui la référencent : tous les produits rattachés et tous
+  les revenus générés seraient détachés. D'où le drapeau `rebuildsTable` sur une migration.
+  `runMigrations` coupe alors les clés étrangères **autour** de la transaction et jamais
+  dedans (SQLite y ignore le pragma sans le moindre message), suit la procédure documentée
+  — créer, copier, supprimer, renommer, recréer les index, que le `DROP` a emportés — et
+  les rétablit dans un `finally`, même en cas d'échec.
 - **Migration 20** ajoute `ig_accounts`, `ig_account_snapshots`, `ig_daily_metrics`,
   `ig_stories` et `ig_media` — un domaine séparé, pas une extension de `channels`.
 - **Migration 19** ajoute `production_time_entries.todo_id` : le temps se qualifie à la
@@ -1220,7 +1295,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **`unauthorized_client` = le refresh token n'a pas été émis par ce `GCP_CLIENT_ID`.** Google renvoie cette erreur au moment d'échanger le refresh token contre un access token, donc avant tout appel API. Cause quasi systématique : sur OAuth Playground, la case ⚙ « Use your own OAuth credentials » n'était pas cochée — le token appartient alors au client de Google. Autres causes : client OAuth de type Desktop/TV au lieu d'application Web, ou secret régénéré depuis. À distinguer d'`invalid_grant` (token révoqué, expiré après 7 j en mode « Test », ou mot de passe Google changé), qui se corrige en régénérant le token avec les mêmes identifiants.
 - **Une collecte ratée laisse des lignes qui bloquent le backfill.** `resolveStartDate()` repart de `findLastMetricDate() - 4 jours`. Si des lignes vides ont été écrites, le rattrapage sur `BACKFILL_DAYS` ne se redéclenche jamais : il faut supprimer les `daily_metrics` de la chaîne pour forcer un nouveau backfill complet.
 - **YouTube révise ses chiffres ~72 h.** `CollectMetrics.REVISION_WINDOW_DAYS = 4` : on re-collecte toujours les derniers jours connus au lieu de repartir du lendemain.
-- **Revenus AdSense optionnels.** Si le scope `yt-analytics-monetary.readonly` manque ou que la chaîne n'est pas monétisée, `YouTubeAnalyticsClient.fetchDailyMetrics` retombe sur les métriques sans revenu au lieu de tout perdre. Un `console.warn` le signale.
+- **Revenus AdSense optionnels — et le repli ne doit JAMAIS écrire de zéro.** Si le scope `yt-analytics-monetary.readonly` manque ou que la chaîne n'est pas monétisée, `YouTubeAnalyticsClient.fetchDailyMetrics` retombe sur les métriques sans revenu au lieu de tout perdre (`includesRevenue: false`). Ce repli renvoie `0` partout : l'écrire tel quel **effaçait, à chaque collecte, l'AdSense déjà connu de toute la fenêtre de révision**, et la courbe se vidait par la fin sans qu'aucune erreur ne soit rapportée — le symptôme « je n'ai plus d'AdSense depuis trois jours ». `CollectMetrics.collectViaOAuth` réinjecte donc la valeur déjà en base sur ces jours-là : « pas mesuré » et « zéro euro » sont deux choses différentes, même règle que le `COALESCE(excluded.x, x)` d'Instagram. `CollectResult.revenueAvailable` remonte l'information jusqu'à la barre de filtres, qui passe son compte-rendu en rouge — un volet de collecte qui échoue en silence est pire qu'un volet qui échoue.
+- **Les deux ou trois derniers jours n'ont normalement pas encore d'AdSense.** YouTube consolide les revenus environ 72 h après coup, plus tard que les vues. Une fin de courbe à zéro sur ces jours-là est le fonctionnement attendu, pas une panne : c'est au-delà qu'il faut lire le compte-rendu de la collecte.
 - **Backfill initial** : à la première collecte d'une chaîne OAuth, `BACKFILL_DAYS` (730 par défaut) sont rattrapés, découpés en fenêtres de 365 jours. Ça peut prendre du temps — d'où `proxy_read_timeout 300s` dans nginx.
 - **Suppression d'une chaîne** : `daily_metrics` et `channel_snapshots` partent en cascade, mais les revenus et dépenses sont **détachés** (`channel_id → NULL`), jamais supprimés.
 - **Le refresh token est stocké en clair** dans SQLite. Le fichier vit dans un volume Docker sur ton VPS ; ne pas exposer l'API publiquement sans authentification devant.
@@ -1258,7 +1334,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Le bouton + des revenus en nature manuels crée la fiche produit manquante.** Il n'est proposé que sur `origin === 'manual'` et `nature === 'in_kind'` : ce sont les produits reçus saisis à la main, dont la marque, l'échéance et la sponso associée n'existent nulle part. Le formulaire s'ouvre pré-rempli (nom, valeur, date, chaîne, vidéo), et **l'entrée manuelle est supprimée après la création** — la fiche en régénère une équivalente en `origin: 'product'`, sinon le même euro compterait deux fois. Créer d'abord, supprimer ensuite : l'inverse perdrait la saisie si la création échouait.
 - **« Publiée » se lit toujours de la même façon : `videoId ?? production.videoId`.** L'alerte « sponso payée, vidéo pas encore publiée » (`GetProductionOverview.isDelivered`) suit exactement la règle de la synchronisation des revenus. Ne regarder que la production faisait crier au retard sur une sponso rattachée en direct à une sortie importée depuis YouTube — qui est pourtant en ligne. Toute nouvelle règle qui parle de « la vidéo » d'un produit ou d'une sponso doit reprendre ce même `??`.
 - **Un créneau s'affiche toujours pareil** (`SlotSummary`) : l'étape en titre — c'est elle qui dit ce qu'on va faire —, l'intitulé libre en dessous, puis date, horaire et vidéo. Les deux écrans qui en listent (les prochains créneaux de `/production` et l'onglet Créneaux d'une fiche) passent par ce composant : dupliqué, le rendu divergeait dès la première retouche.
-- **Les deux tables de `/partenariats` ne se trient pas pareil**, et c'est voulu : les **produits** par date de réception décroissante — la table se lit comme un journal de ce qui est arrivé —, les **sponsos** par échéance croissante — ce qui compte est ce qu'on doit encore livrer. Dans les deux cas les lignes sans date ferment la liste : sans date de réception le produit n'est pas arrivé, sans échéance la sponso n'a pas d'urgence connue. Le tri vit dans les dépôts (`ORDER BY`), donc il vaut aussi pour les sélecteurs de rattachement.
+- **Les deux tables de `/partenariats` se trient par STATUT avant toute date**, et pas pareil : les **produits** par urgence de réception (`PRODUCT_SORT_RANK` — expédié, confirmé, en discussion, puis reçu), les **sponsos** par ce qu'elles réclament (`SPONSORSHIP_SORT_RANK` — à relancer, à travailler, encaissé, clos). La date ne départage qu'à l'intérieur d'une famille : échéance croissante pour ce qui est attendu, réception décroissante pour ce qui est arrivé, les lignes sans date fermant leur famille. Trier à la date seule mélangeait ce qui demande une action avec ce qui est terminé depuis six mois. Le tri vit dans les dépôts (`ORDER BY`), donc il vaut aussi pour les sélecteurs de rattachement ; les deux tables de rang sont **dupliquées côté domaine** pour le rendre lisible.
+- **La colonne « Vidéo » dit l'état, pas seulement le titre** (`LinkedVideoCell`). Trois cas, et un seul appelle une action : une production rattachée (son statut, dans sa couleur), une sortie déjà **publiée**, ou **« Aucune vidéo »** — en accent, parce que c'est précisément ce qu'on balaie du regard devant une pile de produits reçus. Le titre seul ne distinguait pas une fiche à l'état d'idée d'une vidéo en ligne depuis six mois.
 - **Un compteur dit combien, jamais lesquels.** Les cartes de la file déplient la liste des produits et des sponsos au survol (`PartnerHoverList` : noms, montants, statuts, les en-attente en accent) — même mécanique CSS que le panneau des `StatCard`, ouvert aussi au clavier, sans bibliothèque de tooltip. Dans le **planning**, les icônes `$` et carton portent une infobulle **native** et non ce panneau : la vue défile horizontalement dans un conteneur qui rogne, un panneau en position absolue y serait coupé dès qu'on approche du bord.
 - **Un créneau du jour dit « Aujourd'hui »**, dans la couleur qui marque déjà le présent sur le planning, et sa ligne se détache dans « Prochains créneaux » (filet à gauche + fond accentué). Lire « 02 sept. » demande de comparer mentalement à la date du jour — exactement le travail qu'une liste de prochains créneaux doit éviter, et c'est le seul créneau sur lequel on peut encore agir maintenant.
 - **Le champ marque se tape, et crée à la volée** (`BrandCombobox`). Un `Select` obligerait à faire défiler une liste qui grandit à chaque partenariat, et surtout à quitter le formulaire pour créer une marque inexistante — en perdant la saisie en cours. La création ne demande **que le nom** ; la couleur vient de la rotation côté API, le reste se complète dans Paramètres → Marques. « Créer » n'apparaît pas si le nom existe déjà **à la casse près** : deux « Logitech » fausseraient les classements. Écrit à la main plutôt qu'avec `cmdk` + Popover — deux dépendances pour un seul champ. Deux détails non négociables : `onMouseDown` neutralisé sur les options (sinon le champ perd le focus avant que le clic n'arrive et la liste se referme sur du vide), et le `onBlur` porté par le conteneur (refermer n'a de sens que si le focus sort de l'ensemble champ + liste).
@@ -1367,6 +1444,8 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
 - **« Vues (période) » et « Vues (total) » ne mesurent pas la même chose.** La première vient de la différence de deux relevés datés (`video_stat_snapshots`), la seconde est le cumul depuis la sortie. Sur un catalogue, c'est l'écart entre les deux qui est l'information : une vidéo à 40 000 vues dont 30 sur le mois ne travaille plus, une à 4 000 dont 800 travaille encore. Le catalogue est d'ailleurs **trié sur la période** quand elle est connue, pas sur le cumul — sinon le classement ne bougerait jamais.
 - **Les dépenses et revenus à venir sont dans le tableau, pas sous le tableau.** En tête, grisés, avec une icône de calendrier et une case pour les masquer. Ils **n'entrent jamais dans le total** affiché au-dessus, qui reste celui de la période — le sous-titre de la carte le répète, parce que c'est le genre de détail qui fait mal comprendre un chiffre.
 - **Une vidéo à 0 % est repliée d'office** dans la file d'attente. Une carte détaillée sert à décider quoi faire ensuite : à 0 %, elle n'a ni étape cochée, ni créneau, ni argent à montrer. C'est un **défaut**, pas une règle : le chevron rouvre la carte, et le réglage global l'emporte dès qu'on y touche.
+- **La carte de file affiche une FENÊTRE de travail, pas une échéance** (`DateRange`) : `startDate → plannedDate`, la flèche entre les deux. Les deux dates ensemble disent ce qu'aucune ne dit seule — la sortie donne l'échéance, le début dit s'il reste du temps devant ou si on est déjà dedans ; deux dates côte à côte sans flèche se liraient comme deux échéances. Le relatif (« dans 3 jours ») est **au survol** de chaque date et non dans le texte : il doublait la longueur de la ligne alors qu'on ne le lit que sur la vidéo qu'on s'apprête à attaquer — même parti pris que le détail de la barre de progression. La ligne disparaît entièrement quand aucune des deux dates n'est posée, enveloppe comprise, sinon le `gap` de la carte s'écarterait pour rien.
+- **`days()` compare des jours de calendrier LOCAUX, jamais des heures écoulées.** Les deux bornes sont ramenées à minuit avant d'être soustraites. Soustraire l'instant présent d'une date à minuit UTC faisait basculer « aujourd'hui » en « hier » à partir de 22 h à Paris, l'écart réel dépassant alors la demi-journée que `Math.round` arbitre. Ce qu'on veut savoir est de combien de **nuits** la date est séparée d'aujourd'hui.
 - **La barre de progression affiche le pourcentage, le détail est au survol.** Le pourcentage se compare d'une carte à l'autre ; le compte exact (« 18 sur 30 ») ne sert qu'à savoir combien il reste, ce qu'on ne demande que sur la vidéo qu'on s'apprête à attaquer.
 - **L'en-tête n'a de hauteur que s'il porte la barre de filtres.** Sur `/production`, `/partenariats`, `/legal` et `/parametres`, il perd son trait et son padding : un bandeau vide repoussait le contenu pour rien. Le bandeau du chronomètre, lui, porte une bordure **haut et bas** (`border-y`) parce qu'il peut se retrouver seul tout en haut — c'est même le cas le plus probable, `/production` étant l'écran sans filtres où un chronomètre tourne.
 - **Les liens utiles s'intercalent entre la fiche société et les alertes**, avant le tableau à cocher : on ouvre le portail, on fait la démarche, on revient cocher la case juste en dessous. La carte **entière** est le lien (cible la plus large) et s'ouvre dans un **nouvel onglet** — une navigation ferait perdre l'année choisie et la position dans le tableau. Le bloc ne s'affiche pas du tout tant qu'aucun lien n'est configuré : un encart vide prendrait la place de ce qu'on vient réellement faire sur cet écran.
@@ -1407,6 +1486,8 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   repère qu'à l'heure pleine, et rien ne dit sur quel quart d'heure le bloc va retomber.
   Le déplacement est **borné à la grille visible** et non à la journée entière — sortir du
   cadre par un geste imprécis poserait un créneau à 3 h du matin.
+- **Un créneau approuvé se corrige au clavier, jamais au doigt** (`SlotTimeDialog`). Il ne se glisse plus — il raconte du temps déjà passé, et le déplacer d'un geste réécrirait le passé par accident — mais on se trompe d'heure en confirmant (approuver à 18 h un montage fait le matin), et rien ne permettait de le rattraper. La modale ne change que **le jour et l'heure de début** : la durée est conservée, comme au glisser-déposer. Sur un créneau approuvé c'est d'ailleurs celle de la session de travail enregistrée, et la changer là les ferait diverger sans que le compteur de la vidéo bouge — le temps réellement passé se corrige sur la session, dans la fiche de la vidéo. Le créneau repart en `manual`, comme après un glissement : on vient de le poser à la main.
+- **Chaque créneau porte un lien vers la fiche de sa vidéo**, approuvé ou non. C'est depuis un créneau qu'on veut le plus souvent y aller — relire le script avant de s'y mettre. Son `onPointerDown` est neutralisé comme celui des autres boutons du bloc : sans ça, le clic démarrerait un glissement au lieu de naviguer.
 - **Le bloc en cours de glissement n'est jamais démonté.** Il reste dans sa colonne
   d'origine et se décale par un `translateX` d'un nombre entier de colonnes. Le rendre
   dans la colonne survolée le retirerait du DOM le temps d'un rendu, et `setPointerCapture`

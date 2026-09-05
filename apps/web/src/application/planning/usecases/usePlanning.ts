@@ -86,7 +86,9 @@ export const useReplaceWorkHours = () =>
 
 /** Met une vidéo au planning : les étapes et tâches cochées entrent dans la pile. */
 export const useAddPlanTargets = () =>
-  usePlanningMutation((input: PlanTargetsInput) => planningApi.addTargets(input));
+  usePlanningMutation((input: PlanTargetsInput) =>
+    planningApi.addTargets({ ...planningNow(), ...input }),
+  );
 
 export const useRemovePlanningItem = () =>
   usePlanningMutation((id: string) => planningApi.removeItem(id));
@@ -99,12 +101,12 @@ export const useRemovePlanningItem = () =>
  * bord.
  */
 export const useReplan = () =>
-  usePlanningMutation((input: ReplanInput) => planningApi.replan(input));
+  usePlanningMutation((input: ReplanInput) => planningApi.replan({ ...planningNow(), ...input }));
 
 export const useApproveSlot = () =>
   usePlanningMutation((input: { slotId: string } & ApproveSlotInput) => {
     const { slotId, ...rest } = input;
-    return planningApi.approve(slotId, rest);
+    return planningApi.approve(slotId, { ...planningNow(), ...rest });
   });
 
 /**
@@ -124,11 +126,30 @@ export const useStartSlotTimer = () =>
 /** Matérialise une session de travail dans le planning, à l'heure où elle a eu lieu. */
 export const useSlotFromTimeEntry = () =>
   usePlanningMutation((input: { timeEntryId: string; date: string; startTime: string }) =>
-    planningApi.slotFromTimeEntry(input.timeEntryId, input.date, input.startTime),
+    // `date`/`startTime` disent quand la session a eu lieu — parfois hier. « Maintenant »
+    // est une autre information, et c'est elle qui empêche le replan qui suit de reposer
+    // des créneaux sur des heures déjà écoulées.
+    planningApi.slotFromTimeEntry(input.timeEntryId, input.date, input.startTime, planningNow()),
   );
 
 export const useUnapproveSlot = () =>
   usePlanningMutation((slotId: string) => planningApi.unapprove(slotId));
+
+/**
+ * « Maintenant », tel que le navigateur le voit : le jour **et** l'heure.
+ *
+ * Les deux voyagent ensemble parce qu'une heure sans son jour ne dit rien — un placement
+ * peut repartir d'une date passée (matérialiser une session d'hier) sans pour autant
+ * autoriser à poser du travail hier. C'est ce couple qui garantit qu'aucun créneau
+ * proposé ne tombe avant l'instant présent.
+ *
+ * Il se spread dans **toute** mutation qui replanifie : l'API tourne en UTC dans un
+ * conteneur, et s'y fier proposerait un créneau à 9 h alors qu'il est midi.
+ */
+export const planningNow = (): { nowDate: string; nowMinutes: number } => ({
+  nowDate: localToday(),
+  nowMinutes: nowMinutes(),
+});
 
 /**
  * L'heure locale du navigateur, en minutes depuis minuit.

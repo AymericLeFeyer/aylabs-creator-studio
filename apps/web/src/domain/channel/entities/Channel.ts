@@ -63,6 +63,12 @@ export interface CollectResult {
   /** Sorties de vidéo enregistrées au passage, pour les repères des graphiques. */
   videosUpserted?: number;
   snapshotDate?: string;
+  /**
+   * `false` quand YouTube a refusé le volet monétaire : la collecte a réussi, mais
+   * l'AdSense de la fenêtre n'a pas été mesuré. La barre de filtres le signale — des
+   * revenus qui cessent d'arriver ressemblent sinon à des revenus tombés à zéro.
+   */
+  revenueAvailable?: boolean;
 }
 
 /** Libellés des modes, utilisés dans les formulaires et les badges. */

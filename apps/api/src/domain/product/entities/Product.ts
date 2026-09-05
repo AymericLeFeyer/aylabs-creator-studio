@@ -1,5 +1,6 @@
 import type { IsoDate } from '../../../shared/dates.ts';
 import type { Cents } from '../../../shared/money.ts';
+import type { ProductionStatus } from '../../production/entities/Production.ts';
 
 /**
  * Cycle de vie d'un produit envoyé par une marque.
@@ -22,6 +23,30 @@ export const PRODUCT_STATUSES: ProductStatus[] = [
 
 /** Statuts où le produit est attendu mais pas encore arrivé : ceux qui ont une deadline utile. */
 export const PENDING_PRODUCT_STATUSES: ProductStatus[] = ['discussion', 'confirmed', 'shipped'];
+
+/**
+ * Le rang de tri d'un produit dans la liste, **avant** toute date.
+ *
+ * L'ordre suit l'urgence réelle, et elle est l'inverse de l'ordre chronologique du
+ * pipeline : un colis **expédié** arrive demain et sa vidéo n'est pas prête ; un produit
+ * **confirmé** part bientôt ; une **discussion** n'engage à rien ; un produit **reçu**
+ * n'attend plus que d'être filmé, ce que la colonne « Vidéo » dit ligne par ligne.
+ * Renvoyé et annulé ferment la liste : ils ne demandent plus rien.
+ *
+ * La table se lisait auparavant comme un journal de réceptions — utile pour retrouver
+ * quand un colis est arrivé, inutile pour savoir quoi faire aujourd'hui.
+ *
+ * Dupliqué à l'identique côté front, comme `SPONSORSHIP_SORT_RANK` : le tri vit dans le
+ * `ORDER BY` du dépôt, cette table le rend lisible.
+ */
+export const PRODUCT_SORT_RANK: Record<ProductStatus, number> = {
+  shipped: 0,
+  confirmed: 1,
+  discussion: 2,
+  received: 3,
+  returned: 4,
+  cancelled: 5,
+};
 
 /**
  * Un produit reçu (ou attendu) d'une marque, valorisé en euros.
@@ -70,6 +95,16 @@ export interface ProductView extends Product {
   brandName: string | null;
   brandColor: string | null;
   productionTitle: string | null;
+  /**
+   * Où en est la vidéo à laquelle le produit est destiné.
+   *
+   * C'est la question qu'on se pose devant un carton reçu : « lequel de ces produits
+   * n'a pas encore de vidéo ? ». Le titre seul ne le disait pas — une fiche « idée »
+   * et une vidéo publiée s'y lisaient pareil. `null` quand aucune production n'est
+   * rattachée : le produit vise alors une sortie déjà publiée (`videoTitle`), ou rien
+   * du tout — et c'est ce « rien du tout » qui est le signal.
+   */
+  productionStatus: ProductionStatus | null;
   videoTitle: string | null;
   channelName: string | null;
   sponsorshipLabel: string | null;

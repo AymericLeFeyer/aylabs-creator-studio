@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import {
   localToday,
-  nowMinutes,
   shiftDate,
   startOfWeek,
   usePlanningBoard,
@@ -30,6 +29,7 @@ import { PlanningGrid } from '../components/planning/PlanningGrid.tsx';
 import { PlanningQueue } from '../components/planning/PlanningQueue.tsx';
 import { AddToPlanDialog } from '../components/planning/AddToPlanDialog.tsx';
 import { ApproveSlotDialog } from '../components/planning/ApproveSlotDialog.tsx';
+import { SlotTimeDialog } from '../components/planning/SlotTimeDialog.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
 import { cn } from '../../shared/cn.ts';
@@ -67,6 +67,14 @@ export const PlanningPage = () => {
 
   const [addOpen, setAddOpen] = useState(false);
   const [approving, setApproving] = useState<ProductionSlot | null>(null);
+  /**
+   * Créneau dont on corrige l'horaire à la main.
+   *
+   * C'est le seul geste possible sur un créneau **approuvé** : il ne se glisse plus (il
+   * raconte du temps passé, et le glisser réécrirait le passé sans qu'on l'ait décidé),
+   * mais on se trompe d'heure en le confirmant, et il faut bien pouvoir le corriger.
+   */
+  const [editingTime, setEditingTime] = useState<ProductionSlot | null>(null);
 
   /**
    * Déplacer un créneau à la main.
@@ -173,7 +181,7 @@ export const PlanningPage = () => {
             variant="outline"
             size="sm"
             disabled={busy}
-            onClick={() => replan.mutate({ from: today, nowMinutes: nowMinutes() })}
+            onClick={() => replan.mutate({ from: today })}
             title="Recaler toutes les suggestions au mieux, sans toucher aux créneaux approuvés"
           >
             <RotateCw className="h-4 w-4" />
@@ -245,9 +253,10 @@ export const PlanningPage = () => {
                 // « pas maintenant », pas « jamais ».
                 deleteSlot.mutate(slot.id);
               }}
-              onReorganizeDay={(date) =>
-                replan.mutate({ onlyDate: date, nowMinutes: date === today ? nowMinutes() : 0 })
-              }
+              // `planningNow` part avec chaque replan : le plancher se pose sur le jour
+              // qui est réellement aujourd'hui, pas sur le premier jour de l'horizon.
+              onReorganizeDay={(date) => replan.mutate({ onlyDate: date })}
+              onEditTime={setEditingTime}
             />
           )}
         </Card>
@@ -272,6 +281,7 @@ export const PlanningPage = () => {
 
       <AddToPlanDialog open={addOpen} onOpenChange={setAddOpen} />
       <ApproveSlotDialog slot={approving} onOpenChange={() => setApproving(null)} />
+      <SlotTimeDialog slot={editingTime} onOpenChange={() => setEditingTime(null)} />
     </div>
   );
 };

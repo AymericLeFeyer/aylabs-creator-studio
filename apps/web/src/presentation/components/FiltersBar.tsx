@@ -112,7 +112,22 @@ export const FiltersBar = () => {
       </div>
 
       {collectAll.data && (
-        <p className="truncate text-xs text-muted-foreground">
+        <p
+          className={cn(
+            'truncate text-xs',
+            // Un message n'est jamais une bonne nouvelle ici : c'est soit une erreur, soit
+            // un volet de la collecte qui n'a pas abouti. Le gris le faisait passer pour
+            // un compte-rendu de routine qu'on cesse de lire.
+            collectAll.data.results.some(
+              (result) => result.status === 'error' || result.revenueAvailable === false,
+            )
+              ? 'text-[var(--negative)]'
+              : 'text-muted-foreground',
+          )}
+          title={collectAll.data.results
+            .map((result) => `${result.channelName} : ${result.message ?? 'ok'}`)
+            .join('\n')}
+        >
           {collectAll.data.results
             .map(
               (result) =>

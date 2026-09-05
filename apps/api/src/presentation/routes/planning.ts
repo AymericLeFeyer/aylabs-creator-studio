@@ -72,7 +72,7 @@ export const planningRouter = (container: Container): Router => {
       .json(
         await container.managePlanning.addTargets(
           { productionId: body.productionId, stepIds: body.stepIds, todoIds: body.todoIds },
-          { from: body.from, nowMinutes: body.nowMinutes },
+          { from: body.from, nowDate: body.nowDate, nowMinutes: body.nowMinutes },
         ),
       );
   });
@@ -113,7 +113,7 @@ export const planningRouter = (container: Container): Router => {
     const next = await container.managePlanning.approve(
       param(req, 'id'),
       { finished: body.finished, minutes: body.minutes, notes: body.notes },
-      { from: body.from, nowMinutes: body.nowMinutes },
+      { from: body.from, nowDate: body.nowDate, nowMinutes: body.nowMinutes },
     );
     res.json({ next });
   });

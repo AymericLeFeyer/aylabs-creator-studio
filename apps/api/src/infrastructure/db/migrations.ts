@@ -4,6 +4,18 @@ interface Migration {
   version: number;
   name: string;
   up: string;
+  /**
+   * Reconstruction de table : `PRAGMA foreign_keys` doit être coupé **autour** de la
+   * transaction, pas dedans — SQLite y ignore silencieusement le pragma.
+   *
+   * C'est le seul moyen de changer une contrainte `CHECK` : il faut recréer la table,
+   * donc la `DROP`, et un `DROP` avec les clés étrangères actives déclenche les
+   * `ON DELETE SET NULL` des tables qui la référencent. Sur `sponsorships`, ça
+   * détacherait tous les produits rattachés et tous les revenus générés — un historique
+   * cassé pour une contrainte élargie. La procédure suivie est celle documentée par
+   * SQLite : couper les clés, créer, copier, supprimer, renommer, recouper.
+   */
+  rebuildsTable?: boolean;
 }
 
 const migrations: Migration[] = [
@@ -1010,6 +1022,57 @@ const migrations: Migration[] = [
       CREATE INDEX idx_ig_media_date ON ig_media(account_id, date);
     `,
   },
+  {
+    version: 21,
+    name: 'sponsorship_awaiting_payment',
+    // « En attente de paiement » : la video est livree, la marque doit l'argent. C'etait
+    // jusqu'ici indistinguable de « en cours », alors que ce sont deux gestes differents
+    // — l'un demande de monter, l'autre de relancer. C'est ce statut qui passe en tete de
+    // la liste des sponsos : c'est le seul sur lequel on peut agir aujourd'hui.
+    //
+    // Elargir un CHECK impose de recreer la table : d'ou `rebuildsTable`, et la procedure
+    // documentee par SQLite. Les colonnes sont reprises dans l'ordre exact de la table
+    // actuelle (migration 5, puis "video_id" en 8 et "script" en 10) ; les index sont
+    // recrees, le DROP les ayant emportes.
+    rebuildsTable: true,
+    up: `
+      CREATE TABLE sponsorships_new (
+        id               TEXT PRIMARY KEY,
+        brand_id         TEXT REFERENCES brands(id) ON DELETE SET NULL,
+        production_id    TEXT REFERENCES productions(id) ON DELETE SET NULL,
+        channel_id       TEXT REFERENCES channels(id) ON DELETE SET NULL,
+        revenue_entry_id TEXT REFERENCES revenue_entries(id) ON DELETE SET NULL,
+        label            TEXT NOT NULL,
+        amount_cents     INTEGER NOT NULL DEFAULT 0,
+        status           TEXT NOT NULL DEFAULT 'discussion'
+                         CHECK (status IN ('discussion','todo','in_progress',
+                                           'awaiting_payment','paid','cancelled')),
+        deadline         TEXT,
+        paid_at          TEXT,
+        notes            TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL,
+        video_id         TEXT REFERENCES videos(id) ON DELETE SET NULL,
+        script           TEXT NOT NULL DEFAULT ''
+      );
+
+      INSERT INTO sponsorships_new
+        (id, brand_id, production_id, channel_id, revenue_entry_id, label, amount_cents,
+         status, deadline, paid_at, notes, created_at, updated_at, video_id, script)
+      SELECT id, brand_id, production_id, channel_id, revenue_entry_id, label, amount_cents,
+             status, deadline, paid_at, notes, created_at, updated_at, video_id, script
+        FROM sponsorships;
+
+      DROP TABLE sponsorships;
+      ALTER TABLE sponsorships_new RENAME TO sponsorships;
+
+      CREATE INDEX idx_sponsorships_status ON sponsorships(status);
+      CREATE INDEX idx_sponsorships_brand ON sponsorships(brand_id);
+      CREATE INDEX idx_sponsorships_production ON sponsorships(production_id);
+      CREATE INDEX idx_sponsorships_deadline ON sponsorships(deadline);
+      CREATE INDEX idx_sponsorships_video ON sponsorships(video_id);
+    `,
+  },
 ];
 
 /**
@@ -1032,6 +1095,8 @@ export const runMigrations = (db: DatabaseSync): boolean => {
   if (pending.length === 0) return fresh;
 
   for (const migration of pending) {
+    // Hors transaction, sinon le pragma est ignoré sans le moindre message.
+    if (migration.rebuildsTable) db.exec('PRAGMA foreign_keys = OFF');
     db.exec('BEGIN');
     try {
       db.exec(migration.up);
@@ -1041,6 +1106,8 @@ export const runMigrations = (db: DatabaseSync): boolean => {
     } catch (error) {
       db.exec('ROLLBACK');
       throw error;
+    } finally {
+      if (migration.rebuildsTable) db.exec('PRAGMA foreign_keys = ON');
     }
   }
 

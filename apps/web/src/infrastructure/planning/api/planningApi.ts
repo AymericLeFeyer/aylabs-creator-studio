@@ -17,6 +17,8 @@ export interface ReplanInput {
   from?: string;
   /** Ne réorganiser qu'un jour : le bouton d'une colonne. */
   onlyDate?: string;
+  /** Le jour qu'il est ici. Sans lui, le serveur — en UTC — planifierait dans le passé. */
+  nowDate?: string;
   nowMinutes?: number;
 }
 
@@ -78,10 +80,15 @@ export const planningApi = {
    * horodatage UTC, et le serveur l'est aussi — les recalculer là-bas poserait le créneau
    * deux heures trop tôt en été.
    */
-  slotFromTimeEntry: (timeEntryId: string, date: string, startTime: string) =>
+  slotFromTimeEntry: (
+    timeEntryId: string,
+    date: string,
+    startTime: string,
+    now: { nowDate: string; nowMinutes: number },
+  ) =>
     request<ProductionSlot>(`/api/planning/time-entries/${timeEntryId}/slot`, {
       method: 'POST',
-      body: { date, startTime },
+      body: { date, startTime, ...now },
     }),
 
   unapprove: (slotId: string) =>

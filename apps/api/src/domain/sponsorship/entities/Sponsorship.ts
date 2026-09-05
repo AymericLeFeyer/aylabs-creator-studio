@@ -5,16 +5,23 @@ import type { Cents } from '../../../shared/money.ts';
  * Cycle de vie d'une sponso.
  *
  * `discussion` → on négocie ; `todo` → c'est signé, rien n'est produit ; `in_progress`
- * → l'intégration est en cours ; `paid` → l'argent est arrivé. `cancelled` complète les
- * quatre demandés : sans lui, une négo qui n'aboutit pas reste dans le pipeline à vie
- * et fausse le montant « à encaisser ».
+ * → l'intégration est en cours ; `awaiting_payment` → **livré, l'argent est dû** ;
+ * `paid` → l'argent est arrivé. `cancelled` complète l'ensemble : sans lui, une négo qui
+ * n'aboutit pas reste dans le pipeline à vie et fausse le montant « à encaisser ».
+ *
+ * `awaiting_payment` était jusqu'ici indistinguable d'`in_progress`, alors que les deux
+ * appellent des gestes opposés : l'un demande de monter, l'autre de relancer. C'est le
+ * seul statut sur lequel on peut agir tout de suite, et c'est pour ça qu'il passe en tête
+ * de la liste des sponsos (`SPONSORSHIP_SORT_RANK`).
  */
-export type SponsorshipStatus = 'discussion' | 'todo' | 'in_progress' | 'paid' | 'cancelled';
+export type SponsorshipStatus =
+  'discussion' | 'todo' | 'in_progress' | 'awaiting_payment' | 'paid' | 'cancelled';
 
 export const SPONSORSHIP_STATUSES: SponsorshipStatus[] = [
   'discussion',
   'todo',
   'in_progress',
+  'awaiting_payment',
   'paid',
   'cancelled',
 ];
@@ -24,7 +31,28 @@ export const PENDING_SPONSORSHIP_STATUSES: SponsorshipStatus[] = [
   'discussion',
   'todo',
   'in_progress',
+  'awaiting_payment',
 ];
+
+/**
+ * Le rang de tri d'une sponso dans la liste, **avant** l'échéance.
+ *
+ * L'échéance seule ferait remonter une sponso encaissée il y a six mois au-dessus d'une
+ * négo en cours : une fois payée, sa date de livraison ne demande plus rien à personne.
+ * Trois familles, donc, et l'échéance ne départage qu'à l'intérieur de chacune :
+ * ce qu'on doit **relancer**, ce sur quoi on doit **travailler**, puis ce qui est **clos**.
+ *
+ * Dupliqué à l'identique côté front : le tri vit dans le `ORDER BY` du dépôt (donc il
+ * vaut aussi pour les sélecteurs de rattachement), et cette table le rend lisible.
+ */
+export const SPONSORSHIP_SORT_RANK: Record<SponsorshipStatus, number> = {
+  awaiting_payment: 0,
+  discussion: 1,
+  todo: 1,
+  in_progress: 1,
+  paid: 2,
+  cancelled: 3,
+};
 
 /**
  * Un partenariat rémunéré.

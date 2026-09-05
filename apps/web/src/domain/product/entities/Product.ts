@@ -1,5 +1,7 @@
 /** Contrat de `/api/products`. */
 
+import type { ProductionStatus } from '../../production/entities/Production.ts';
+
 export type ProductStatus =
   'discussion' | 'confirmed' | 'shipped' | 'received' | 'returned' | 'cancelled';
 
@@ -32,6 +34,24 @@ export const PRODUCT_STATUS_HINTS: Record<ProductStatus, string> = {
 
 /** Statuts où le produit est attendu : ceux dont la deadline sert à quelque chose. */
 export const PENDING_PRODUCT_STATUSES: ProductStatus[] = ['discussion', 'confirmed', 'shipped'];
+
+/**
+ * Le rang de tri dans la liste, **avant** toute date. Dupliqué à l'identique côté API,
+ * où il vit dans le `ORDER BY` du dépôt (voir `PRODUCT_SORT_RANK`).
+ *
+ * L'ordre suit l'urgence, et elle est l'inverse de l'ordre chronologique du pipeline :
+ * un colis **expédié** arrive demain sans que sa vidéo soit prête, un **confirmé** part
+ * bientôt, une **discussion** n'engage à rien, un **reçu** n'attend plus que d'être
+ * filmé. Renvoyé et annulé ferment la liste : ils ne demandent plus rien.
+ */
+export const PRODUCT_SORT_RANK: Record<ProductStatus, number> = {
+  shipped: 0,
+  confirmed: 1,
+  discussion: 2,
+  received: 3,
+  returned: 4,
+  cancelled: 5,
+};
 
 export interface Product {
   id: string;
@@ -66,6 +86,13 @@ export interface Product {
   brandName: string | null;
   brandColor: string | null;
   productionTitle: string | null;
+  /**
+   * Où en est la vidéo à laquelle le produit est destiné. `null` quand aucune fiche de
+   * production n'est rattachée : le produit vise alors une sortie déjà publiée
+   * (`videoTitle`), ou rien du tout — et c'est ce « rien du tout » qu'on cherche des
+   * yeux devant un carton reçu.
+   */
+  productionStatus: ProductionStatus | null;
   videoTitle: string | null;
   channelName: string | null;
   sponsorshipLabel: string | null;

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
+  ArrowRight,
   CalendarClock,
   ChevronDown,
   ChevronRight,
@@ -57,8 +58,19 @@ interface ProductionCardProps {
   onToggleCompact?: () => void;
 }
 
-const days = (from: string): number =>
-  Math.round((Date.parse(`${from}T00:00:00Z`) - Date.now()) / 86_400_000);
+/**
+ * Écart en **jours de calendrier locaux**, jamais en heures écoulées.
+ *
+ * Les deux bornes sont ramenées à minuit avant d'être soustraites : comparer une date à
+ * minuit UTC avec l'instant présent faisait basculer « aujourd'hui » en « hier » à partir
+ * de 22 h à Paris, l'écart réel dépassant alors une demi-journée. Ce qu'on veut savoir
+ * est de combien de nuits la date est séparée d'aujourd'hui, pas de combien d'heures.
+ */
+const days = (from: string): number => {
+  const now = new Date();
+  const startOfToday = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((Date.parse(`${from}T00:00:00Z`) - startOfToday) / 86_400_000);
+};
 
 /** « dans 3 jours », « aujourd'hui », « il y a 2 jours » — plus lisible qu'une date seule. */
 const relativeDay = (date: string): string => {
@@ -67,6 +79,46 @@ const relativeDay = (date: string): string => {
   if (delta === 1) return 'demain';
   if (delta === -1) return 'hier';
   return delta > 0 ? `dans ${delta} jours` : `il y a ${-delta} jours`;
+};
+
+/**
+ * La fenêtre de travail d'une vidéo : **début → sortie**.
+ *
+ * Les deux dates ensemble disent ce qu'aucune ne dit seule — la sortie donne l'échéance,
+ * le début dit s'il reste du temps devant ou si on est déjà dedans. La flèche se lit
+ * comme une durée, là où deux dates côte à côte se liraient comme deux échéances.
+ *
+ * Le relatif (« dans 3 jours ») est **au survol** et non dans le texte : il double la
+ * longueur de la ligne alors qu'on ne le lit que sur la vidéo qu'on s'apprête à
+ * attaquer — même parti pris que le détail de la barre de progression.
+ */
+const DateRange = ({
+  startDate,
+  plannedDate,
+  late,
+}: {
+  startDate: string | null;
+  plannedDate: string | null;
+  late: boolean;
+}) => {
+  if (!startDate && !plannedDate) return null;
+
+  return (
+    <span className={cn('flex items-center gap-1', late && 'text-[var(--negative)]')}>
+      <CalendarClock className="h-3 w-3" aria-hidden />
+      {startDate && (
+        <span className="tabular" title={`Début du travail ${relativeDay(startDate)}`}>
+          {formatDate(startDate)}
+        </span>
+      )}
+      {startDate && plannedDate && <ArrowRight className="h-3 w-3 opacity-60" aria-hidden />}
+      {plannedDate && (
+        <span className="tabular" title={`Sortie prévue ${relativeDay(plannedDate)}`}>
+          {formatDate(plannedDate)}
+        </span>
+      )}
+    </span>
+  );
 };
 
 /**
@@ -151,14 +203,15 @@ export const ProductionCard = ({
           {production.channelName ?? 'Chaîne à décider'}
         </span>
 
-        {production.plannedDate && (
-          <span
-            className={cn(
-              'hidden shrink-0 text-xs tabular text-muted-foreground md:inline',
-              late && 'text-[var(--negative)]',
-            )}
-          >
-            {formatDate(production.plannedDate)}
+        {/* L'enveloppe est conditionnée comme son contenu : une vidéo sans aucune date
+            laisserait sinon un `gap` de la carte pour un élément vide. */}
+        {(production.startDate || production.plannedDate) && (
+          <span className="hidden shrink-0 text-xs text-muted-foreground md:flex">
+            <DateRange
+              startDate={production.startDate}
+              plannedDate={production.plannedDate}
+              late={late}
+            />
           </span>
         )}
 
@@ -250,12 +303,11 @@ export const ProductionCard = ({
                 <Radio className="h-3 w-3" aria-hidden />
                 {production.channelName ?? 'Chaîne à décider'}
               </span>
-              {production.plannedDate && (
-                <span className={cn('flex items-center gap-1', late && 'text-[var(--negative)]')}>
-                  <CalendarClock className="h-3 w-3" aria-hidden />
-                  {formatDate(production.plannedDate)} · {relativeDay(production.plannedDate)}
-                </span>
-              )}
+              <DateRange
+                startDate={production.startDate}
+                plannedDate={production.plannedDate}
+                late={late}
+              />
               {production.nextSlotDate && (
                 <span className="flex items-center gap-1">
                   Créneau {relativeDay(production.nextSlotDate)}

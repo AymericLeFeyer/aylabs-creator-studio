@@ -1,11 +1,13 @@
 /** Contrat de `/api/sponsorships`. */
 
-export type SponsorshipStatus = 'discussion' | 'todo' | 'in_progress' | 'paid' | 'cancelled';
+export type SponsorshipStatus =
+  'discussion' | 'todo' | 'in_progress' | 'awaiting_payment' | 'paid' | 'cancelled';
 
 export const SPONSORSHIP_STATUSES: SponsorshipStatus[] = [
   'discussion',
   'todo',
   'in_progress',
+  'awaiting_payment',
   'paid',
   'cancelled',
 ];
@@ -14,6 +16,7 @@ export const SPONSORSHIP_STATUS_LABELS: Record<SponsorshipStatus, string> = {
   discussion: 'En discussion',
   todo: 'À faire',
   in_progress: 'En cours',
+  awaiting_payment: 'En attente de paiement',
   paid: 'Payée',
   cancelled: 'Annulée',
 };
@@ -22,6 +25,7 @@ export const SPONSORSHIP_STATUS_HINTS: Record<SponsorshipStatus, string> = {
   discussion: 'Négociation en cours, rien de signé.',
   todo: "C'est signé, l'intégration n'est pas commencée.",
   in_progress: 'Intégration en cours de production.',
+  awaiting_payment: "La vidéo est livrée, l'argent est dû. C'est celle-là qu'on relance.",
   paid: "L'argent est arrivé — c'est ce statut qui crée le revenu cash.",
   cancelled: "N'aboutira pas. Sort du montant à encaisser.",
 };
@@ -31,7 +35,26 @@ export const PENDING_SPONSORSHIP_STATUSES: SponsorshipStatus[] = [
   'discussion',
   'todo',
   'in_progress',
+  'awaiting_payment',
 ];
+
+/**
+ * Le rang de tri dans la liste, **avant** l'échéance. Dupliqué à l'identique côté API,
+ * où il vit dans le `ORDER BY` du dépôt (voir `SPONSORSHIP_SORT_RANK`).
+ *
+ * Trois familles : ce qu'on doit **relancer**, ce sur quoi on doit **travailler**, puis
+ * ce qui est **clos**. Trier à l'échéance seule faisait remonter une sponso encaissée il
+ * y a six mois au-dessus d'une négo en cours — une fois payée, sa date de livraison ne
+ * demande plus rien à personne.
+ */
+export const SPONSORSHIP_SORT_RANK: Record<SponsorshipStatus, number> = {
+  awaiting_payment: 0,
+  discussion: 1,
+  todo: 1,
+  in_progress: 1,
+  paid: 2,
+  cancelled: 3,
+};
 
 /**
  * Un plan à filmer exigé par la marque : « produit en main », « macro du logo »,

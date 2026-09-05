@@ -135,10 +135,22 @@ export class SqliteSponsorshipRepository implements SponsorshipRepository {
            LEFT JOIN videos v       ON v.id  = s.video_id
            LEFT JOIN channels ch    ON ch.id = s.channel_id
            ${clause}
-          -- L'echeance la plus courte d'abord : contrairement aux produits, ce qui
-          -- compte sur une sponso est ce qu'on doit encore livrer. Sans echeance, la
-          -- sponso n'a pas d'urgence connue et ferme la liste.
-          ORDER BY s.deadline IS NULL, s.deadline ASC, s.created_at DESC`,
+          -- Trois familles avant toute date, parce qu'une echeance ne dit rien d'une
+          -- sponso deja payee : ce qu'on doit RELANCER (livre, l'argent est du), puis ce
+          -- sur quoi on doit TRAVAILLER, puis ce qui est CLOS. Trier a l'echeance seule
+          -- faisait remonter une sponso encaissee il y a six mois au-dessus d'une nego
+          -- en cours. Voir SPONSORSHIP_SORT_RANK, qui porte la meme table cote domaine.
+          --
+          -- L'echeance ne departage qu'a l'interieur d'une famille : la plus courte
+          -- d'abord, ce qui compte sur une sponso etant ce qu'on doit encore livrer.
+          -- Sans echeance, elle n'a pas d'urgence connue et ferme sa famille.
+          ORDER BY CASE s.status
+                     WHEN 'awaiting_payment' THEN 0
+                     WHEN 'paid' THEN 2
+                     WHEN 'cancelled' THEN 3
+                     ELSE 1
+                   END,
+                   s.deadline IS NULL, s.deadline ASC, s.created_at DESC`,
       )
       .all(...(params as never[])) as unknown as SponsorshipViewRow[];
 

@@ -6,7 +6,7 @@ import {
   useStopTimer,
 } from '../../../application/production/usecases/useProductions.ts';
 import { formatStopwatch } from '../../../domain/production/entities/TimeEntry.ts';
-import { localToday, nowMinutes } from '../../../application/planning/usecases/usePlanning.ts';
+import { localToday } from '../../../application/planning/usecases/usePlanning.ts';
 import { Button } from '../ui/button.tsx';
 import { cn } from '../../../shared/cn.ts';
 
@@ -69,10 +69,10 @@ export const RunningTimerBar = () => {
           className="ml-auto"
           // Le jour et l'heure locaux accompagnent l'arrêt : si la session venait d'un
           // créneau du planning, l'API le recale puis replanifie la suite — et elle ne
-          // peut pas déduire l'heure qu'il est, le serveur tournant en UTC.
-          onClick={() =>
-            stop.mutate({ id: running.id, from: localToday(), nowMinutes: nowMinutes() })
-          }
+          // peut pas déduire l'heure qu'il est, le serveur tournant en UTC. « Maintenant »
+          // est désormais posé par `useStopTimer` pour tous les appelants ; `from` reste
+          // ici parce que c'est le premier jour ouvert au moteur, pas l'heure qu'il est.
+          onClick={() => stop.mutate({ id: running.id, from: localToday() })}
           disabled={stop.isPending}
         >
           <Square className="h-3.5 w-3.5" />

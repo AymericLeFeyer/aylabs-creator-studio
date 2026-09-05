@@ -360,7 +360,9 @@ export const createSponsorshipSchema = z.object({
   channelId: z.string().nullable().optional(),
   /** Montant en euros, converti en centimes. Devient le revenu cash une fois payé. */
   amount: optionalAmount,
-  status: z.enum(['discussion', 'todo', 'in_progress', 'paid', 'cancelled']).optional(),
+  status: z
+    .enum(['discussion', 'todo', 'in_progress', 'awaiting_payment', 'paid', 'cancelled'])
+    .optional(),
   deadline: optionalIsoDate,
   paidAt: optionalIsoDate,
   /** Script de l'intégration, en markdown. Édité depuis son propre écran, pas la modale. */
@@ -525,14 +527,32 @@ export const startTimerSchema = z.object({
  * ils viennent du navigateur, l'API tournant en UTC. Le corps entier est facultatif — un
  * arrêt depuis une fiche de production n'a rien à replanifier.
  */
+/**
+ * L'heure locale du navigateur, en minutes depuis minuit.
+ *
+ * Elle vient du client et non de l'horloge du serveur : l'API tourne en UTC dans un
+ * conteneur, et s'y fier proposerait un créneau à 9 h alors qu'il est midi.
+ */
+const nowMinutes = z
+  .number()
+  .int()
+  .min(0)
+  .max(24 * 60)
+  .optional();
+
+/**
+ * Le jour qu'il est **pour le navigateur**, compagnon obligé de `nowMinutes`.
+ *
+ * Une heure sans son jour ne dit rien : le placement peut repartir d'une date passée, et
+ * c'est ce couple — et non le premier jour de l'horizon — qui décide de ce qui est déjà
+ * écoulé. Même raison que `nowMinutes` : l'API tourne en UTC dans un conteneur.
+ */
+const nowDate = isoDate.optional();
+
 export const stopTimerSchema = z.object({
   from: isoDate.optional(),
-  nowMinutes: z
-    .number()
-    .int()
-    .min(0)
-    .max(24 * 60)
-    .optional(),
+  nowDate,
+  nowMinutes,
 });
 
 /** Saisie manuelle : on donne un début et une durée, jamais une fin. */
@@ -720,24 +740,12 @@ export const planningBoardQuerySchema = z.object({
   to: isoDate,
 });
 
-/**
- * L'heure locale du navigateur, en minutes depuis minuit.
- *
- * Elle vient du client et non de l'horloge du serveur : l'API tourne en UTC dans un
- * conteneur, et s'y fier proposerait un créneau à 9 h alors qu'il est midi.
- */
-const nowMinutes = z
-  .number()
-  .int()
-  .min(0)
-  .max(24 * 60)
-  .optional();
-
 export const planTargetsSchema = z.object({
   productionId: z.string().min(1, 'La vidéo est obligatoire'),
   stepIds: z.array(z.string().min(1)).default([]),
   todoIds: z.array(z.string().min(1)).default([]),
   from: isoDate.optional(),
+  nowDate,
   nowMinutes,
 });
 
@@ -745,6 +753,7 @@ export const replanSchema = z.object({
   from: isoDate.optional(),
   /** Ne réorganiser qu'un jour : le bouton d'une colonne du planning. */
   onlyDate: isoDate.optional(),
+  nowDate,
   nowMinutes,
 });
 
@@ -762,6 +771,9 @@ export const replanSchema = z.object({
 export const slotFromTimeEntrySchema = z.object({
   date: isoDate,
   startTime: clockTime,
+  /** « Maintenant » du navigateur : le replan qui suit ne posera rien avant. */
+  nowDate,
+  nowMinutes,
 });
 
 /**
@@ -787,5 +799,6 @@ export const approveSlotSchema = z.object({
     .optional(),
   notes: z.string().trim().max(500).nullable().optional(),
   from: isoDate.optional(),
+  nowDate,
   nowMinutes,
 });

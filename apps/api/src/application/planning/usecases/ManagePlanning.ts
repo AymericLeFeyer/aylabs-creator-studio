@@ -73,6 +73,12 @@ export interface ReplanOptions {
    * Les créneaux des autres jours ne bougent alors pas d'un pouce.
    */
   onlyDate?: IsoDate;
+  /**
+   * Le jour qu'il est **pour le navigateur**. Il ne se déduit pas de `from` : un
+   * placement peut repartir d'une date passée — matérialiser une session d'hier, arrêter
+   * un chronomètre lancé la veille — sans pour autant autoriser à poser du travail hier.
+   */
+  nowDate?: IsoDate;
   /** Heure locale du navigateur, en minutes depuis minuit. */
   nowMinutes?: number;
 }
@@ -274,7 +280,25 @@ export class ManagePlanning {
   async replan(options: ReplanOptions = {}): Promise<{ placed: number; unplacedMinutes: number }> {
     const config = this.settings.get();
     const mode = options.mode ?? 'incremental';
-    const from = options.onlyDate ?? options.from ?? today();
+
+    // « Maintenant », vu du navigateur. **Rien ne se pose avant cet instant**, quel que
+    // soit le jour d'où le placement repart : c'est la seule garantie qui tienne pour les
+    // appels qui remontent une date passée. Le plancher portait auparavant sur le premier
+    // jour de l'horizon — les deux coïncidaient dans le cas courant, et divergeaient
+    // silencieusement dans tous les autres.
+    const notBefore = {
+      date: options.nowDate ?? options.from ?? today(),
+      minutes: options.nowMinutes ?? 0,
+    };
+
+    // Réorganiser une colonne déjà écoulée n'a pas d'objet, et la ramener à aujourd'hui
+    // réécrirait un autre jour que celui qu'on a désigné : on ne fait rien.
+    if (options.onlyDate && options.onlyDate < notBefore.date) {
+      return { placed: 0, unplacedMinutes: 0 };
+    }
+
+    const requested = options.onlyDate ?? options.from ?? today();
+    const from = requested < notBefore.date ? notBefore.date : requested;
     const horizon = options.onlyDate ? 1 : config.horizonDays;
     const to = addDays(from, horizon - 1);
 
@@ -312,7 +336,7 @@ export class ManagePlanning {
       minBlockMinutes: config.minBlockMinutes,
       maxBlockMinutes: config.maxBlockMinutes,
       breakMinutes: config.breakMinutes,
-      notBeforeMinutes: options.nowMinutes,
+      notBefore,
     });
 
     const itemById = new Map(pending.map((item) => [item.id, item]));
@@ -542,7 +566,7 @@ export class ManagePlanning {
    */
   async slotFromTimeEntry(
     timeEntryId: string,
-    input: { date: IsoDate; startTime: string },
+    input: { date: IsoDate; startTime: string; nowDate?: IsoDate; nowMinutes?: number },
   ): Promise<ProductionSlotView | null> {
     const entry = this.trackTime.find(timeEntryId);
     if (!entry) throw notFound('Session de travail');
@@ -570,7 +594,12 @@ export class ManagePlanning {
     // Le créneau occupe désormais la journée. En incrémental, il devient une occupation
     // parmi d'autres et rien n'est déplacé : c'est au bouton « Repositionner » de décider
     // si la journée doit être réécrite.
-    await this.replan({ from: input.date, mode: 'incremental' });
+    await this.replan({
+      from: input.date,
+      nowDate: input.nowDate,
+      nowMinutes: input.nowMinutes,
+      mode: 'incremental',
+    });
 
     return (
       this.slots

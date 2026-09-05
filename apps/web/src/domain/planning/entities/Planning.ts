@@ -141,6 +141,8 @@ export interface PlanTargetsInput {
   stepIds: string[];
   todoIds: string[];
   from?: string;
+  /** Voir `planningNow` : le jour et l'heure d'ici, sans lesquels l'API planifie en UTC. */
+  nowDate?: string;
   nowMinutes?: number;
 }
 
@@ -149,6 +151,7 @@ export interface ApproveSlotInput {
   minutes?: number;
   notes?: string | null;
   from?: string;
+  nowDate?: string;
   nowMinutes?: number;
 }
 

@@ -191,7 +191,7 @@ export const productionTimeApi = {
    * `from` et `nowMinutes` servent au replan déclenché quand la session venait d'un
    * créneau du planning : ils viennent du navigateur, le serveur étant en UTC.
    */
-  stop: (id: string, options: { from?: string; nowMinutes?: number } = {}) =>
+  stop: (id: string, options: { from?: string; nowDate?: string; nowMinutes?: number } = {}) =>
     request<TimeEntry>(`/api/production-time/${id}/stop`, { method: 'POST', body: options }),
 
   /** Saisie manuelle : un début et une durée, jamais une fin. */

@@ -52,12 +52,17 @@ export interface ScheduleInput {
   maxBlockMinutes: number;
   breakMinutes: number;
   /**
-   * Heure avant laquelle on ne planifie rien **le premier jour** : il est 15 h, on ne
-   * propose pas un créneau de 9 h. Elle vient du navigateur et non de l'horloge du
-   * serveur — l'API tourne en UTC dans un conteneur, et se fier à elle décalerait la
-   * journée de deux heures en été.
+   * L'instant avant lequel rien ne se pose : il est 15 h, on ne propose pas un créneau
+   * de 9 h. Il vient **du navigateur** et non de l'horloge du serveur — l'API tourne en
+   * UTC dans un conteneur, et s'y fier décalerait la journée de deux heures en été.
+   *
+   * Il porte une **date** et pas seulement une heure : le plancher doit s'appliquer au
+   * jour qui est réellement aujourd'hui, et non au premier jour de l'horizon. Les deux
+   * coïncidaient dans le cas courant, mais pas quand le placement repart d'une date
+   * passée (une session de travail matérialisée après coup) — et le moteur posait alors
+   * des créneaux à des heures déjà écoulées.
    */
-  notBeforeMinutes?: number;
+  notBefore?: { date: IsoDate; minutes: number };
 }
 
 export interface ScheduleResult {
@@ -98,7 +103,7 @@ export const subtractBusy = (windows: Interval[], busy: Interval[]): Interval[] 
 
 /** Les espaces libres de chaque jour de l'horizon, dans l'ordre chronologique. */
 export const freeWindows = (
-  input: Pick<ScheduleInput, 'from' | 'horizonDays' | 'workHours' | 'busy' | 'notBeforeMinutes'>,
+  input: Pick<ScheduleInput, 'from' | 'horizonDays' | 'workHours' | 'busy' | 'notBefore'>,
 ): Array<{ date: IsoDate; windows: Interval[] }> => {
   const busyByDate = new Map<IsoDate, Interval[]>();
   for (const block of input.busy) {
@@ -116,11 +121,21 @@ export const freeWindows = (
       continue;
     }
 
-    // Le premier jour est tronqué à l'heure qu'il est : le reste de la journée seulement.
-    const floor = offset === 0 ? (input.notBeforeMinutes ?? 0) : 0;
-    const bounded = base
-      .map((w) => ({ start: Math.max(w.start, floor), end: w.end }))
-      .filter((w) => w.end > w.start);
+    // Le jour courant est tronqué à l'heure qu'il est : le reste de la journée seulement.
+    // Un jour antérieur est **entièrement fermé** — on ne planifie pas dans le passé,
+    // même si l'appelant a demandé de repartir d'une date déjà écoulée.
+    const bounded =
+      input.notBefore && date < input.notBefore.date
+        ? []
+        : base
+            .map((w) => ({
+              start: Math.max(
+                w.start,
+                input.notBefore && date === input.notBefore.date ? input.notBefore.minutes : 0,
+              ),
+              end: w.end,
+            }))
+            .filter((w) => w.end > w.start);
 
     days.push({ date, windows: subtractBusy(bounded, busyByDate.get(date) ?? []) });
   }

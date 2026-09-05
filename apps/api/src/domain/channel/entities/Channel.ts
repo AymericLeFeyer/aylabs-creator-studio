@@ -69,4 +69,11 @@ export interface CollectResult {
   videosUpserted?: number;
   /** Vidéos dont les compteurs (vues, abonnés, AdSense) ont été rafraîchis. */
   videoStatsUpdated?: number;
+  /**
+   * `false` quand YouTube a refusé le volet monétaire et qu'on a dû retomber sur les
+   * métriques sans montants. La collecte a réussi — vues et abonnés sont à jour —, mais
+   * l'AdSense de la fenêtre n'a pas été mesuré, et l'écran doit le dire : sans ça, des
+   * revenus qui cessent d'arriver ressemblent à des revenus tombés à zéro.
+   */
+  revenueAvailable?: boolean;
 }

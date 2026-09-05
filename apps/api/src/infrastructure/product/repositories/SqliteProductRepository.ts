@@ -38,6 +38,7 @@ interface ProductViewRow extends ProductRow {
   brand_name: string | null;
   brand_color: string | null;
   production_title: string | null;
+  production_status: string | null;
   video_title: string | null;
   channel_name: string | null;
   sponsorship_label: string | null;
@@ -98,7 +99,8 @@ export class SqliteProductRepository implements ProductRepository {
         `SELECT p.*,
                 b.name   AS brand_name,
                 b.color  AS brand_color,
-                pr.title AS production_title,
+                pr.title  AS production_title,
+                pr.status AS production_status,
                 v.title  AS video_title,
                 ch.name  AS channel_name,
                 sp.label AS sponsorship_label
@@ -109,11 +111,32 @@ export class SqliteProductRepository implements ProductRepository {
            LEFT JOIN channels ch     ON ch.id = p.channel_id
            LEFT JOIN sponsorships sp ON sp.id = p.sponsorship_id
            ${clause}
-          -- Les receptions les plus recentes d'abord : la table des produits se lit comme
-          -- un journal de ce qui est arrive. Ceux qui n'ont pas de date de reception ne
-          -- sont pas encore arrives, ils ne peuvent pas participer a ce classement et
-          -- ferment donc la liste, du plus recemment saisi au plus ancien.
-          ORDER BY p.received_at IS NULL, p.received_at DESC, p.created_at DESC`,
+          -- Le statut avant toute date. L'ordre suit l'urgence, et elle est l'inverse de
+          -- l'ordre chronologique du pipeline : un colis EXPEDIE arrive demain sans que
+          -- sa video soit prete, un CONFIRME part bientot, une DISCUSSION n'engage a
+          -- rien, un RECU n'attend plus que d'etre filme. Renvoye et annule ferment la
+          -- liste. Voir PRODUCT_SORT_RANK, qui porte la meme table cote domaine.
+          --
+          -- La table se lisait avant comme un journal de receptions : bon pour retrouver
+          -- quand un colis est arrive, inutile pour savoir quoi faire aujourd'hui.
+          --
+          -- Deux cles secondaires exclusives l'une de l'autre, chacune neutralisee par un
+          -- CASE hors de sa famille : ce qui est ATTENDU se classe a l'echeance la plus
+          -- proche, ce qui est ARRIVE a la reception la plus recente. Une seule cle
+          -- commune trierait la moitie de la table sur une colonne qui ne la concerne pas.
+          ORDER BY CASE p.status
+                     WHEN 'shipped'   THEN 0
+                     WHEN 'confirmed' THEN 1
+                     WHEN 'discussion' THEN 2
+                     WHEN 'received'  THEN 3
+                     WHEN 'returned'  THEN 4
+                     ELSE 5
+                   END,
+                   CASE WHEN p.status IN ('discussion','confirmed','shipped')
+                        THEN COALESCE(p.deadline, '9999-12-31') END ASC,
+                   CASE WHEN p.status NOT IN ('discussion','confirmed','shipped')
+                        THEN COALESCE(p.received_at, '0000-01-01') END DESC,
+                   p.created_at DESC`,
       )
       .all(...(params as never[])) as unknown as ProductViewRow[];
 
@@ -122,6 +145,7 @@ export class SqliteProductRepository implements ProductRepository {
       brandName: row.brand_name,
       brandColor: row.brand_color,
       productionTitle: row.production_title,
+      productionStatus: (row.production_status as ProductView['productionStatus']) ?? null,
       videoTitle: row.video_title,
       channelName: row.channel_name,
       sponsorshipLabel: row.sponsorship_label,

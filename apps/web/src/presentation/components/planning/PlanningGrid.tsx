@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Play, Timer, Trash2, Undo2, Wand2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Check, Clock, ExternalLink, Play, Timer, Trash2, Undo2, Wand2 } from 'lucide-react';
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
 import {
   dayBounds,
@@ -29,6 +30,11 @@ export interface PlanningGridProps {
   onDelete: (slot: ProductionSlot) => void;
   /** Démarrer le chronomètre sur ce créneau : il sera recalé sur le temps réel à l'arrêt. */
   onStartTimer: (slot: ProductionSlot) => void;
+  /**
+   * Corriger l'horaire au clavier. C'est le seul geste d'horaire qui reste sur un créneau
+   * **approuvé** : il ne se glisse plus, et on se trompe pourtant d'heure en confirmant.
+   */
+  onEditTime: (slot: ProductionSlot) => void;
   onReorganizeDay: (date: string) => void;
   /** Session en cours, s'il y en a une : le créneau d'où elle part se signale. */
   runningEntryId?: string | null;
@@ -88,6 +94,7 @@ export const PlanningGrid = ({
   onUnapprove,
   onDelete,
   onStartTimer,
+  onEditTime,
   onReorganizeDay,
   runningEntryId = null,
   busy = false,
@@ -406,17 +413,47 @@ export const PlanningGrid = ({
                           {/* Les actions n'apparaissent qu'au survol : sur un bloc de trois
                               quarts d'heure, deux boutons permanents mangeraient le titre. */}
                           <div className="absolute right-0.5 top-0.5 hidden gap-0.5 group-focus-within:flex group-hover:flex">
+                            {/* La fiche de la vidéo est à un clic de partout ailleurs dans
+                                l'outil, et c'est depuis un créneau qu'on veut le plus
+                                souvent y aller : relire le script avant de s'y mettre.
+                                `onPointerDown` neutralisé, sinon le lien démarrerait un
+                                glissement au lieu de naviguer. */}
+                            <Link
+                              to={`/production/${slot.productionId}`}
+                              className="rounded bg-background/90 p-0.5 hover:bg-background"
+                              title={`Ouvrir « ${slot.productionTitle} »`}
+                              onPointerDown={(event) => event.stopPropagation()}
+                            >
+                              <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                              <span className="sr-only">Ouvrir la fiche de la vidéo</span>
+                            </Link>
                             {slot.done ? (
-                              <button
-                                type="button"
-                                className="rounded bg-background/90 p-0.5 hover:bg-background"
-                                title="Annuler l’approbation : la session de travail est retirée"
-                                onPointerDown={(event) => event.stopPropagation()}
-                                onClick={() => onUnapprove(slot)}
-                              >
-                                <Undo2 className="h-3 w-3 text-muted-foreground" />
-                                <span className="sr-only">Annuler l’approbation</span>
-                              </button>
+                              <>
+                                {/* Un créneau approuvé ne se glisse plus : le déplacer au
+                                    doigt réécrirait du temps déjà vécu par accident. Il
+                                    reste corrigeable au clavier, parce qu'on se trompe
+                                    d'heure en confirmant. */}
+                                <button
+                                  type="button"
+                                  className="rounded bg-background/90 p-0.5 hover:bg-background"
+                                  title="Corriger l’horaire de ce créneau"
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={() => onEditTime(slot)}
+                                >
+                                  <Clock className="h-3 w-3 text-muted-foreground" />
+                                  <span className="sr-only">Changer l’heure</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded bg-background/90 p-0.5 hover:bg-background"
+                                  title="Annuler l’approbation : la session de travail est retirée"
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={() => onUnapprove(slot)}
+                                >
+                                  <Undo2 className="h-3 w-3 text-muted-foreground" />
+                                  <span className="sr-only">Annuler l’approbation</span>
+                                </button>
+                              </>
                             ) : (
                               <>
                                 {/* Le chronomètre plutôt que l'approbation quand on s'y

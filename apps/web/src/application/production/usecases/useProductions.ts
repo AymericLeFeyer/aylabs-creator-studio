@@ -15,6 +15,7 @@ import type { TimeEntryInput } from '../../../domain/production/entities/TimeEnt
 import type { ProductionInput } from '../../../domain/production/entities/Production.ts';
 import type { ProductionSlotInput } from '../../../domain/production/entities/ProductionSlot.ts';
 import type { ProductionStepInput } from '../../../domain/production/entities/ProductionStep.ts';
+import { planningNow } from '../../planning/usecases/usePlanning.ts';
 import { PARTNER_ROOTS, PRODUCTION_ROOTS, queryKeys } from '../../queryKeys.ts';
 
 /**
@@ -297,11 +298,18 @@ export const useStartTimer = () =>
  * venait d'un créneau du planning — sans eux, il repartirait de l'horloge du serveur, qui
  * est en UTC.
  */
+/**
+ * Arrête le chronomètre.
+ *
+ * « Maintenant » part systématiquement avec (`planningNow`) : si la session venait d'un
+ * créneau du planning, l'arrêt replanifie ce qui suit — et sans le jour ni l'heure d'ici,
+ * l'API (en UTC) reposerait des créneaux sur des heures déjà écoulées.
+ */
 export const useStopTimer = () =>
-  useProductionMutation((input: string | { id: string; from?: string; nowMinutes?: number }) =>
+  useProductionMutation((input: string | { id: string; from?: string }) =>
     typeof input === 'string'
-      ? productionTimeApi.stop(input)
-      : productionTimeApi.stop(input.id, { from: input.from, nowMinutes: input.nowMinutes }),
+      ? productionTimeApi.stop(input, planningNow())
+      : productionTimeApi.stop(input.id, { from: input.from, ...planningNow() }),
   );
 
 export const useCreateTimeEntry = () =>

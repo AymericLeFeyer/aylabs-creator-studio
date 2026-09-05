@@ -17,6 +17,11 @@ import {
   SPONSORSHIP_STATUS_LABELS,
 } from '../../domain/sponsorship/entities/Sponsorship.ts';
 import { partnerPipeline } from '../../domain/partner/services/pipeline.ts';
+import type { ProductionStatus } from '../../domain/production/entities/Production.ts';
+import {
+  STATUS_COLORS as PRODUCTION_STATUS_COLORS,
+  STATUS_LABELS as PRODUCTION_STATUS_LABELS,
+} from '../../domain/production/entities/Production.ts';
 import { formatDate, formatMoney, toIsoDate } from '../../shared/format.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -34,6 +39,7 @@ import { PlatformsPanel } from '../components/partners/PlatformsPanel.tsx';
 import { usePlatforms } from '../../application/affiliate/usecases/usePlatforms.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
 import { PartnerStatCards } from '../components/partners/PartnerStatCards.tsx';
+import { PeriodPicker } from '../components/filters/PeriodPicker.tsx';
 import { SponsorshipScriptDialog } from '../components/partners/SponsorshipScriptDialog.tsx';
 import { ProductDialog } from '../components/forms/ProductDialog.tsx';
 import { SponsorshipDialog } from '../components/forms/SponsorshipDialog.tsx';
@@ -56,6 +62,59 @@ const DeadlineCell = ({ date, pending }: { date: string | null; pending: boolean
       {formatDate(date)}
     </span>
   );
+};
+
+/**
+ * L'état de la vidéo à laquelle un produit ou une sponso est rattaché.
+ *
+ * C'est la question qu'on se pose devant la table des produits : **lesquels n'ont pas
+ * encore de vidéo ?** Le titre seul ne le disait pas — une fiche à l'état d'idée et une
+ * sortie déjà en ligne s'y lisaient exactement pareil.
+ *
+ * Trois cas, et le troisième est le seul qui appelle une action : une production en
+ * cours (statut affiché dans sa couleur), une sortie **publiée** (elle est en ligne, il
+ * n'y a plus rien à faire), ou **rien** — et c'est celui-là qu'on met en accent.
+ */
+const LinkedVideoCell = ({
+  productionId,
+  productionTitle,
+  productionStatus,
+  videoTitle,
+}: {
+  productionId: string | null;
+  productionTitle: string | null;
+  productionStatus: ProductionStatus | null;
+  videoTitle: string | null;
+}) => {
+  if (productionId) {
+    return (
+      <div className="min-w-0">
+        <Link to={`/production/${productionId}`} className="line-clamp-1 hover:underline">
+          {productionTitle}
+        </Link>
+        {productionStatus && (
+          <span className="text-xs" style={{ color: PRODUCTION_STATUS_COLORS[productionStatus] }}>
+            {PRODUCTION_STATUS_LABELS[productionStatus]}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  if (videoTitle) {
+    return (
+      <div className="min-w-0">
+        <span className="line-clamp-1" title={videoTitle}>
+          {videoTitle}
+        </span>
+        <span className="text-xs" style={{ color: PRODUCTION_STATUS_COLORS.done }}>
+          Publiée
+        </span>
+      </div>
+    );
+  }
+
+  return <span className="text-xs font-medium text-[var(--expense)]">Aucune vidéo</span>;
 };
 
 export const PartnersPage = () => {
@@ -100,12 +159,22 @@ export const PartnersPage = () => {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-lg font-semibold">Partenariats</h1>
-        <p className="text-sm text-muted-foreground">
-          Les produits reçus et les sponsos payées alimentent tes revenus automatiquement — pas de
-          double saisie, et pas de double comptage.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold">Partenariats</h1>
+          <p className="text-sm text-muted-foreground">
+            Les produits reçus et les sponsos payées alimentent tes revenus automatiquement — pas de
+            double saisie, et pas de double comptage.
+          </p>
+        </div>
+
+        {/* L'écran n'a pas la barre de filtres (`ROUTES_WITHOUT_FILTERS`), mais deux de
+            ses chiffres suivent bel et bien la période : « Total affiliations » et les
+            gains par plateforme. Sans sélecteur, ils affichaient une période qu'on ne
+            pouvait ni lire ni changer. La période est celle de tout l'outil — la régler
+            ici la règle partout. Le reste de la barre (chaînes, pas, CA/bénéfice) ne
+            pilote rien ici et resterait décoratif. */}
+        <PeriodPicker />
       </div>
 
       <PartnerStatCards pipeline={pipeline} />
@@ -212,23 +281,16 @@ export const PartnersPage = () => {
                     <TableCell className="tabular text-muted-foreground">
                       {product.receivedAt ? formatDate(product.receivedAt) : '—'}
                     </TableCell>
-                    {/* Une vidéo en préparation mène à sa fiche ; une sortie déjà
-                        publiée n'en a pas, elle se lit telle quelle. */}
+                    {/* Une vidéo en préparation mène à sa fiche et affiche son état ;
+                        une sortie déjà publiée se lit telle quelle. « Aucune vidéo » est
+                        le seul cas qui demande quelque chose, et il est en accent. */}
                     <TableCell className="max-w-[12rem] text-muted-foreground">
-                      {product.productionId ? (
-                        <Link
-                          to={`/production/${product.productionId}`}
-                          className="line-clamp-1 hover:underline"
-                        >
-                          {product.productionTitle}
-                        </Link>
-                      ) : product.videoTitle ? (
-                        <span className="line-clamp-1" title={product.videoTitle}>
-                          {product.videoTitle}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
+                      <LinkedVideoCell
+                        productionId={product.productionId}
+                        productionTitle={product.productionTitle}
+                        productionStatus={product.productionStatus}
+                        videoTitle={product.videoTitle}
+                      />
                     </TableCell>
                     <TableCell className="text-right tabular font-medium text-[var(--in-kind)]">
                       {formatMoney(product.valueCents)}
@@ -351,20 +413,15 @@ export const PartnersPage = () => {
                       {sponsorship.paidAt ? formatDate(sponsorship.paidAt) : '—'}
                     </TableCell>
                     <TableCell className="max-w-[12rem] text-muted-foreground">
-                      {sponsorship.productionId ? (
-                        <Link
-                          to={`/production/${sponsorship.productionId}`}
-                          className="line-clamp-1 hover:underline"
-                        >
-                          {sponsorship.productionTitle}
-                        </Link>
-                      ) : sponsorship.videoTitle ? (
-                        <span className="line-clamp-1" title={sponsorship.videoTitle}>
-                          {sponsorship.videoTitle}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
+                      {/* `productionStatus` à `null` : la sponso ne porte pas l'état de sa
+                          production, et le lien vers la fiche suffit — ce sont les produits
+                          qu'on balaie du regard pour trouver ce qui n'a pas de vidéo. */}
+                      <LinkedVideoCell
+                        productionId={sponsorship.productionId}
+                        productionTitle={sponsorship.productionTitle}
+                        productionStatus={null}
+                        videoTitle={sponsorship.videoTitle}
+                      />
                     </TableCell>
                     <TableCell
                       className={cn(
