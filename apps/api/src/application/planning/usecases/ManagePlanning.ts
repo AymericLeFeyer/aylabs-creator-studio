@@ -313,7 +313,10 @@ export class ManagePlanning {
     //
     // En mode incrémental il n'y a rien à effacer : tout ce qui est posé reste posé, et
     // c'est précisément ce qui garantit qu'un ajout ne déplace pas ce qui était déjà calé.
-    if (mode === 'full') this.slots.clearSuggestions(options.onlyDate ? from : null, to);
+    if (mode === 'full') {
+      this.slots.clearSuggestions(options.onlyDate ? from : null, to);
+      this.clearElapsed(notBefore, options.onlyDate ?? null);
+    }
 
     const pending = this.items.findAll({ statuses: ['pending'] });
     const tasks: PlanTask[] = pending
@@ -724,6 +727,58 @@ export class ManagePlanning {
     }
     for (const list of map.values()) list.sort((a, b) => a.start - b.start);
     return map;
+  }
+
+  /**
+   * Ce qui n'a pas eu lieu, et ne peut plus avoir lieu : **entièrement écoulé et non
+   * approuvé**.
+   *
+   * C'est la seule exception à « le moteur ne déplace jamais un créneau posé à la main »,
+   * et elle est délibérée. Cette règle protège une **intention** — j'ai voulu ce créneau
+   * là, ne le défais pas —, or une intention passée qui n'a pas été tenue n'est plus une
+   * intention : c'est du travail qui reste à faire, coincé à une date révolue. Le
+   * « Repositionner » ne nettoyait que les suggestions du moteur, et laissait donc
+   * indéfiniment dans le passé tout créneau déplacé au doigt ou né d'un chronomètre
+   * abandonné — précisément ceux qu'on voulait voir revenir devant soi.
+   *
+   * Quatre bornes, chacune pour une raison :
+   *
+   * - **`done` est intouchable**, comme partout : un créneau approuvé raconte du temps
+   *   vécu, pas une prévision.
+   * - **Il faut une ligne de pile** (`item_id`). C'est ce qui garantit que le travail
+   *   effacé sera reposé juste après : sans elle, le moteur n'a rien à replanifier et la
+   *   suppression serait une perte sèche. Un créneau ajouté à la main depuis une fiche de
+   *   vidéo — « tournage samedi » — n'appartient pas au planning et ne bouge donc pas,
+   *   même passé.
+   * - **Un créneau lié à une session de travail est épargné** : le chronomètre tourne
+   *   peut-être encore, et `stopTimer` le retrouve par `time_entry_id`. L'effacer
+   *   laisserait la session sans créneau à recaler.
+   * - **Écoulé veut dire ENTIÈREMENT écoulé** : un bloc commencé à 14 h et fini à 16 h
+   *   n'est pas passé à 15 h, on est dedans. Un créneau sans horaire (« samedi ») n'est
+   *   écoulé que le jour d'après — rien ne dit à quelle heure il tombait.
+   *
+   * Réservé au mode `full`, donc au bouton : réécrire l'agenda reste une décision.
+   */
+  private clearElapsed(
+    notBefore: { date: IsoDate; minutes: number },
+    onlyDate: IsoDate | null,
+  ): number {
+    let removed = 0;
+    for (const slot of this.slots.findAll({})) {
+      if (slot.done || slot.itemId === null || slot.timeEntryId !== null) continue;
+      if (onlyDate !== null && slot.date !== onlyDate) continue;
+
+      const elapsed =
+        slot.date < notBefore.date ||
+        (slot.date === notBefore.date &&
+          slot.endTime !== null &&
+          toMinutes(slot.endTime) <= notBefore.minutes);
+      if (!elapsed) continue;
+
+      this.slots.delete(slot.id);
+      removed += 1;
+    }
+    return removed;
   }
 
   /**

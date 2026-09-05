@@ -411,8 +411,8 @@ module légal.
 
 **Le tri de la table suit l'urgence, et elle est l'inverse de l'ordre chronologique du
 pipeline** (`PRODUCT_SORT_RANK`, dupliqué de part et d'autre, appliqué dans le `ORDER BY`
-du dépôt) : `shipped` (0) → `confirmed` (1) → `discussion` (2) → `received` (3) →
-`returned` (4) → `cancelled` (5). Un colis **expédié** arrive demain sans que sa vidéo
+du dépôt) : `shipped` (0) → `confirmed` (1) → `discussion` (2) → `received` **sans
+vidéo** (3) → `received` **avec vidéo** (4) → `returned` (5) → `cancelled` (6). Un colis **expédié** arrive demain sans que sa vidéo
 soit prête ; un **confirmé** part bientôt ; une **discussion** n'engage à rien ; un
 **reçu** n'attend plus que d'être filmé. La table se lisait avant comme un journal de
 réceptions : bon pour retrouver quand un colis est arrivé, inutile pour savoir quoi faire
@@ -422,6 +422,13 @@ Deux clés secondaires **exclusives l'une de l'autre**, chacune neutralisée par
 hors de sa famille : ce qui est attendu se classe à l'**échéance** la plus proche, ce qui
 est arrivé à la **réception** la plus récente. Une seule clé commune trierait la moitié de
 la table sur une colonne qui ne la concerne pas.
+
+**`received` se scinde en deux**, et c'est `productSortRank` qui pose le cran
+supplémentaire : un colis reçu **sans vidéo** est du travail qui attend, le même colis une
+fois la vidéo faite ne demande plus rien. Les laisser dans un seul bloc obligeait à lire
+la colonne « Vidéo » ligne par ligne pour retrouver ce qui restait à tourner — or c'est
+exactement la question que cette table doit trancher d'un coup d'œil. « Avoir une vidéo »
+s'y lit comme partout ailleurs : `videoId ?? productionId`.
 
 `ProductView.productionStatus` porte l'état de la vidéo destinataire (`null` s'il n'y a
 pas de fiche de production). C'est ce qui permet à la table de répondre d'un coup d'œil à
@@ -1124,10 +1131,38 @@ partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/param
 
 **`/partenariats` monte le `PeriodPicker` seul, dans son en-tête.** L'écran n'a pas la
 barre entière — chaînes, pas d'agrégation et interrupteur CA/bénéfice n'y pilotent rien et
-resteraient décoratifs — mais deux de ses chiffres suivent bel et bien la période : la
-carte « Total affiliations » et les gains par plateforme. Sans sélecteur, ils affichaient
-une période qu'on ne pouvait ni lire ni changer. La période reste celle de tout l'outil :
-la régler là la règle partout. Elle tient désormais sur **une seule ligne** —
+resteraient décoratifs. La période, elle, y pilote beaucoup : les deux tables, les cinq
+cartes et les gains par plateforme. Sans sélecteur, l'écran affichait une période qu'on ne
+pouvait ni lire ni changer. Elle reste celle de tout l'outil : la régler là la règle
+partout.
+
+**Deux natures cohabitent sur cet écran, et chaque libellé dit laquelle.** La règle tient
+en une phrase, portée par `inPartnerPeriod` : _ce qui est clos appartient à la période de
+sa date de clôture ; ce qui est encore en cours n'appartient à aucune et reste visible
+partout._
+
+| Nature   | Lignes                                    | Date de rattachement   | Période |
+| -------- | ----------------------------------------- | ---------------------- | ------- |
+| **Flux** | produits `received`, sponsos `paid`        | `receivedAt`, `paidAt` | bornée  |
+| **État** | produits attendus, sponsos non encaissées  | aucune                 | ignorée |
+
+C'est ce qui permet de borner l'écran sans faire disparaître le pipeline : un colis
+attendu depuis mars est toujours attendu en juin, et le masquer parce qu'on regarde août
+ferait perdre de vue précisément ce sur quoi il reste à agir. Une ligne close **sans
+date** reste visible partout — elle ne peut être rangée dans aucune période, et la faire
+disparaître de toutes serait la perdre de vue ; c'est un trou de saisie, pas une ligne à
+masquer. Même convention de dates que `brandStats` côté API.
+
+**Le filtrage est côté écran, jamais dans l'API.** `/api/products` et `/api/sponsorships`
+alimentent aussi les sélecteurs de rattachement (`AttachExistingSelect`,
+`ProductLinkField`, la modale d'une fiche de production) : les borner là-bas masquerait
+silencieusement les fiches qu'on y cherche justement. La requête reste entière, partagée
+et mise en cache. Les tables et `partnerPipeline` partagent **le même** prédicat
+(`productInPeriod` / `sponsorshipInPeriod`), si bien que le total annoncé au-dessus d'une
+table retombe toujours sur les lignes affichées en dessous.
+
+Le dashboard, lui, appelle `partnerPipeline` **sans** `range` : il ne lui prend que les
+deux états (« Sponsos à encaisser », « Produits attendus ») et tire ses flux d'`analytics`. Elle tient désormais sur **une seule ligne** —
 elle en occupait deux — grâce à deux déclencheurs compacts :
 
 - **`PeriodPicker`** : deux boutons au lieu de sept. Une famille **glissante** (30 jours
@@ -1517,10 +1552,22 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   qu'**après** l'effacement : il ne compte alors que les créneaux qui ont survécu (les
   manuels, et ceux des autres jours quand on ne réorganise qu'une colonne). Compter avant
   ferait poser une seconde fois des heures déjà planifiées.
-- **Un replan complet balaie aussi le passé non approuvé.** Une suggestion d'hier qu'on n'a
-  jamais approuvée n'a rien raconté : la laisser ferait croire que ce travail est casé, et
-  le moteur ne le reposerait jamais. `clearSuggestions(null, to)` s'en charge ; la version
-  bornée ne sert qu'au bouton « réorganiser ce jour ».
+- **Un replan complet balaie tout le passé non approuvé, y compris les créneaux MANUELS.**
+  C'est la seule exception à « le moteur ne déplace jamais un créneau posé à la main », et
+  elle est délibérée : cette règle protège une **intention**, or une intention passée qui
+  n'a pas été tenue n'en est plus une — c'est du travail qui reste à faire, coincé à une
+  date révolue. Le bouton ne nettoyait que les suggestions du moteur (`clearSuggestions`,
+  `origin = 'planner'`) et laissait donc indéfiniment dans le passé tout créneau déplacé au
+  doigt ou né d'un chronomètre abandonné — précisément ceux qu'on voulait voir revenir
+  devant soi. `ManagePlanning.clearElapsed` s'en charge, avec quatre bornes : `done` est
+  intouchable (c'est du temps vécu) ; il faut une **ligne de pile** (`item_id`), sans quoi
+  le moteur n'aurait rien à reposer et la suppression serait une perte sèche — un
+  « tournage samedi » ajouté depuis une fiche de vidéo ne bouge donc jamais ; un créneau
+  lié à une **session de travail** est épargné (le chronomètre tourne peut-être, et
+  `stopTimer` le retrouve par `time_entry_id`) ; et **écoulé veut dire entièrement
+  écoulé** — un bloc de 14 h à 16 h n'est pas passé à 15 h, on est dedans, et un créneau
+  sans horaire (« samedi ») ne l'est qu'au jour suivant. Réservé au mode `full` : réécrire
+  l'agenda reste une décision.
 - **Approuver n'est pas terminer, et l'API ne répond pas à la place de l'utilisateur.**
   `finished` est **obligatoire** dans le schéma zod. Un défaut ferait disparaître de la
   pile un travail à moitié fait, ou l'y laisserait pour toujours.

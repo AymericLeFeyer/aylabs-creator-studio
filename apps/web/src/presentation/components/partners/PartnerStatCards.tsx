@@ -13,14 +13,17 @@ import { StatCard } from '../StatCard.tsx';
 /**
  * Les chiffres du pipeline de partenariats, dans la même carte que le dashboard.
  *
- * Les quatre premiers ne suivent **pas** la période : ce sont des états, pas des flux, et
- * le sous-titre le dit pour qu'on ne les lise pas comme un cumul. Les réutiliser ici
- * plutôt que d'inventer un autre résumé garantit que les deux écrans annoncent le même
- * montant à encaisser.
+ * **Deux natures cohabitent dans la même rangée, et chaque sous-titre dit laquelle.**
  *
- * Le cinquième, lui, **suit la période** : « total affiliations » est un flux, comme le
- * chiffre d'affaires. Son sous-titre le dit, pour qu'on ne le compare pas aux quatre
- * autres sans y penser.
+ * « Produits attendus » et « Sponsos à encaisser » sont des **états** : ils ignorent la
+ * période, parce qu'un colis attendu depuis mars est toujours attendu en juin. Les réunir
+ * ici plutôt que d'inventer un autre résumé garantit que le dashboard et cet écran
+ * annoncent le même montant à encaisser.
+ *
+ * « Produits reçus », « Sponsos encaissées » et « Total affiliations » sont des **flux**,
+ * exactement comme le chiffre d'affaires : ils suivent la période, et ils retombent sur ce
+ * que les tables affichent en dessous — même prédicat, `partnerPipeline` et les listes
+ * partageant `productInPeriod` / `sponsorshipInPeriod`.
  */
 export const PartnerStatCards = ({ pipeline }: { pipeline: PartnerPipeline }) => {
   const filters = useFilters();
@@ -53,27 +56,31 @@ export const PartnerStatCards = ({ pipeline }: { pipeline: PartnerPipeline }) =>
       <StatCard
         label="Produits attendus"
         value={formatNumber(pipeline.productsPending)}
-        hint={pipeline.productsLate > 0 ? `${pipeline.productsLate} en retard` : 'aucun retard'}
+        hint={
+          pipeline.productsLate > 0
+            ? `${pipeline.productsLate} en retard · toutes périodes`
+            : 'aucun retard · toutes périodes'
+        }
         icon={<PackageOpen className="h-4 w-4" />}
         accent={pipeline.productsLate > 0 ? 'var(--negative)' : undefined}
       />
       <StatCard
         label={NATURE_LABELS.in_kind}
         value={formatMoney(pipeline.productsReceivedCents)}
-        hint={`${pipeline.productsReceived} produit(s) reçu(s)`}
+        hint={`${pipeline.productsReceived} produit(s) reçu(s) sur la période`}
         icon={<Gift className="h-4 w-4" />}
         accent={pipeline.productsReceivedCents > 0 ? 'var(--in-kind)' : undefined}
       />
       <StatCard
-        label="Sponsos en cours"
+        label="Sponsos à encaisser"
         value={formatMoney(pipeline.sponsorshipsPendingCents)}
-        hint={`${pipeline.sponsorshipsPending} en attente de paiement`}
+        hint={`${pipeline.sponsorshipsPending} sponso(s) non encaissée(s) · toutes périodes`}
         icon={<Handshake className="h-4 w-4" />}
       />
       <StatCard
         label="Sponsos encaissées"
         value={formatMoney(pipeline.sponsorshipsPaidCents)}
-        hint={`${pipeline.sponsorshipsPaid} sponso(s) payée(s)`}
+        hint={`${pipeline.sponsorshipsPaid} sponso(s) payée(s) sur la période`}
         icon={<Wallet className="h-4 w-4" />}
         accent={pipeline.sponsorshipsPaidCents > 0 ? 'var(--positive)' : undefined}
       />

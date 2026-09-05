@@ -203,9 +203,9 @@ export const DashboardPage = () => {
               icon={<Clapperboard className="h-4 w-4" />}
             />
             <StatCard
-              label="Sponsos en cours"
+              label="Sponsos à encaisser"
               value={formatMoney(pipeline.sponsorshipsPendingCents)}
-              hint={`${pipeline.sponsorshipsPending} en attente de paiement`}
+              hint={`${pipeline.sponsorshipsPending} sponso(s) non encaissée(s)`}
               icon={<Handshake className="h-4 w-4" />}
               accent={pipeline.sponsorshipsPendingCents > 0 ? 'var(--color-positive)' : undefined}
             />

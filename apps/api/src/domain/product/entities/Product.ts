@@ -44,9 +44,31 @@ export const PRODUCT_SORT_RANK: Record<ProductStatus, number> = {
   confirmed: 1,
   discussion: 2,
   received: 3,
-  returned: 4,
-  cancelled: 5,
+  // Le cran 4 est laissé libre : un produit reçu qui a déjà sa vidéo prend `received + 1`.
+  returned: 5,
+  cancelled: 6,
 };
+
+/**
+ * Le rang effectif d'un produit : son statut, **plus un cran s'il est reçu et déjà
+ * rattaché à une vidéo**.
+ *
+ * Un colis reçu sans vidéo est du travail qui attend ; le même colis, une fois la vidéo
+ * faite, ne demande plus rien. Les mélanger dans un seul bloc « Reçu » obligeait à lire la
+ * colonne « Vidéo » ligne par ligne pour retrouver ce qui restait à tourner — or c'est
+ * exactement la question que cette table doit répondre d'un coup d'œil.
+ *
+ * « Avoir une vidéo » se lit ici comme partout ailleurs dans le module :
+ * `videoId ?? productionId`, une sortie déjà publiée valant autant qu'une fiche de
+ * production.
+ */
+export const productSortRank = (
+  product: Pick<Product, 'status' | 'productionId' | 'videoId'>,
+): number =>
+  PRODUCT_SORT_RANK[product.status] +
+  (product.status === 'received' && (product.videoId !== null || product.productionId !== null)
+    ? 1
+    : 0);
 
 /**
  * Un produit reçu (ou attendu) d'une marque, valorisé en euros.

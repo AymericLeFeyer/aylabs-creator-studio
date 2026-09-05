@@ -16,7 +16,11 @@ import {
   PENDING_SPONSORSHIP_STATUSES,
   SPONSORSHIP_STATUS_LABELS,
 } from '../../domain/sponsorship/entities/Sponsorship.ts';
-import { partnerPipeline } from '../../domain/partner/services/pipeline.ts';
+import {
+  partnerPipeline,
+  productInPeriod,
+  sponsorshipInPeriod,
+} from '../../domain/partner/services/pipeline.ts';
 import type { ProductionStatus } from '../../domain/production/entities/Production.ts';
 import {
   STATUS_COLORS as PRODUCTION_STATUS_COLORS,
@@ -137,6 +141,29 @@ export const PartnersPage = () => {
   const removeProduct = useDeleteProduct();
   const removeSponsorship = useDeleteSponsorship();
 
+  const range = useMemo(() => ({ from: filters.from, to: filters.to }), [filters.from, filters.to]);
+
+  /**
+   * Les deux listes, bornées par la période — mais **filtrées ici, pas dans l'API**.
+   *
+   * `/api/products` et `/api/sponsorships` alimentent aussi les sélecteurs de rattachement
+   * (`AttachExistingSelect`, `ProductLinkField`, la modale d'une fiche de production) : les
+   * borner là-bas masquerait silencieusement les fiches qu'on y cherche justement. La
+   * requête reste donc entière, partagée et mise en cache, et c'est l'écran qui choisit ce
+   * qu'il montre.
+   *
+   * Le prédicat est celui du pipeline et non un second : le total annoncé au-dessus de
+   * chaque table retombe ainsi toujours sur les lignes affichées en dessous.
+   */
+  const visibleProducts = useMemo(
+    () => products.filter((product) => productInPeriod(product, range)),
+    [products, range],
+  );
+  const visibleSponsorships = useMemo(
+    () => sponsorships.filter((sponsorship) => sponsorshipInPeriod(sponsorship, range)),
+    [sponsorships, range],
+  );
+
   const [productOpen, setProductOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [sponsorshipOpen, setSponsorshipOpen] = useState(false);
@@ -153,8 +180,8 @@ export const PartnersPage = () => {
   // Les mêmes chiffres que le dashboard, calculés au même endroit : deux comptages
   // parallèles finiraient par annoncer deux montants à encaisser différents.
   const pipeline = useMemo(
-    () => partnerPipeline(products, sponsorships, toIsoDate(new Date())),
-    [products, sponsorships],
+    () => partnerPipeline(products, sponsorships, toIsoDate(new Date()), range),
+    [products, sponsorships, range],
   );
 
   return (
@@ -184,8 +211,8 @@ export const PartnersPage = () => {
         onValueChange={(value) => setSearchParams({ onglet: value }, { replace: true })}
       >
         <TabsList>
-          <TabsTrigger value="produits">Produits ({products.length})</TabsTrigger>
-          <TabsTrigger value="sponsors">Sponsors ({sponsorships.length})</TabsTrigger>
+          <TabsTrigger value="produits">Produits ({visibleProducts.length})</TabsTrigger>
+          <TabsTrigger value="sponsors">Sponsors ({visibleSponsorships.length})</TabsTrigger>
           {/* Les plateformes ne sont pas un partenariat de plus : c'est l'endroit où se
               gère l'affiliation, et ce qu'elle rapporte. D'où un onglet à part. */}
           <TabsTrigger value="plateformes">Plateformes ({activePlatforms})</TabsTrigger>
@@ -193,8 +220,12 @@ export const PartnersPage = () => {
 
         <TabsContent value="produits">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            {/* Un flux : ce qui est arrivé PENDANT la période, comme le CA. Les
+                produits encore attendus, eux, restent listés quelle que soit la
+                période — ce sont des états, et les masquer ferait perdre de vue ce
+                sur quoi il reste à agir. */}
             <p className="text-sm">
-              <span className="text-muted-foreground">Valeur reçue : </span>
+              <span className="text-muted-foreground">Valeur reçue sur la période : </span>
               <span className="tabular font-semibold text-[var(--in-kind)]">
                 {formatMoney(pipeline.productsReceivedCents)}
               </span>
@@ -213,7 +244,7 @@ export const PartnersPage = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>{products.length} produit(s)</CardTitle>
+              <CardTitle>{visibleProducts.length} produit(s)</CardTitle>
             </CardHeader>
             <Table>
               <TableHeader>
@@ -229,7 +260,7 @@ export const PartnersPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {products.map((product) => (
+                {visibleProducts.map((product) => (
                   <TableRow key={product.id}>
                     {/* Le partenariat est un détail de la ligne, pas une dimension à
                         balayer : une sous-ligne plutôt qu'une neuvième colonne. */}
@@ -331,12 +362,15 @@ export const PartnersPage = () => {
 
         <TabsContent value="sponsors">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            {/* Les deux montants ne se lisent pas dans le même temps : l'encaissé
+                est un flux borné par la période, le reste à encaisser un état qui
+                l'ignore. Le dire évite d'y chercher une soustraction. */}
             <p className="text-sm">
-              <span className="text-muted-foreground">Encaissé : </span>
+              <span className="text-muted-foreground">Encaissé sur la période : </span>
               <span className="tabular font-semibold text-[var(--positive)]">
                 {formatMoney(pipeline.sponsorshipsPaidCents)}
               </span>
-              <span className="ml-3 text-muted-foreground">À encaisser : </span>
+              <span className="ml-3 text-muted-foreground">À encaisser (toutes périodes) : </span>
               <span className="tabular font-semibold">
                 {formatMoney(pipeline.sponsorshipsPendingCents)}
               </span>
@@ -355,7 +389,7 @@ export const PartnersPage = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>{sponsorships.length} sponso(s)</CardTitle>
+              <CardTitle>{visibleSponsorships.length} sponso(s)</CardTitle>
             </CardHeader>
             <Table>
               <TableHeader>
@@ -371,7 +405,7 @@ export const PartnersPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sponsorships.map((sponsorship) => (
+                {visibleSponsorships.map((sponsorship) => (
                   <TableRow key={sponsorship.id}>
                     <TableCell className="font-medium">
                       {sponsorship.label}

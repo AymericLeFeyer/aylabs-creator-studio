@@ -124,13 +124,19 @@ export class SqliteProductRepository implements ProductRepository {
           -- CASE hors de sa famille : ce qui est ATTENDU se classe a l'echeance la plus
           -- proche, ce qui est ARRIVE a la reception la plus recente. Une seule cle
           -- commune trierait la moitie de la table sur une colonne qui ne la concerne pas.
+          --
+          -- Un produit RECU se scinde en deux : sans video d'abord (du travail qui
+          -- attend), avec video ensuite (il ne demande plus rien). Les laisser dans un
+          -- seul bloc obligeait a lire la colonne Video ligne par ligne pour retrouver ce
+          -- qui restait a tourner. Voir productSortRank, qui porte la meme regle.
           ORDER BY CASE p.status
-                     WHEN 'shipped'   THEN 0
-                     WHEN 'confirmed' THEN 1
+                     WHEN 'shipped'    THEN 0
+                     WHEN 'confirmed'  THEN 1
                      WHEN 'discussion' THEN 2
-                     WHEN 'received'  THEN 3
-                     WHEN 'returned'  THEN 4
-                     ELSE 5
+                     WHEN 'received'   THEN
+                       CASE WHEN p.video_id IS NULL AND p.production_id IS NULL THEN 3 ELSE 4 END
+                     WHEN 'returned'   THEN 5
+                     ELSE 6
                    END,
                    CASE WHEN p.status IN ('discussion','confirmed','shipped')
                         THEN COALESCE(p.deadline, '9999-12-31') END ASC,
