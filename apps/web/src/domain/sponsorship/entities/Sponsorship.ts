@@ -21,6 +21,34 @@ export const SPONSORSHIP_STATUS_LABELS: Record<SponsorshipStatus, string> = {
   cancelled: 'Annulée',
 };
 
+/**
+ * La couleur du badge d'un statut, en variante du design system.
+ *
+ * Elle vit ici, avec les libellés, pour la même raison qu'eux : trois écrans affichent le
+ * même statut, et trois teintes choisies à la main finiraient par se contredire.
+ *
+ * La palette suit ce que chaque statut **demande** :
+ *
+ * - `discussion` en ambre — rien n'est signé, c'est du conditionnel ;
+ * - `todo` en gris — signé, mais rien à faire tant qu'on n'y est pas ;
+ * - `in_progress` en bleu — le travail est en cours ;
+ * - `awaiting_payment` en rouge — le seul statut qui **coûte de l'argent si on l'oublie**,
+ *   et celui pour qui tout l'ordre de la liste a été refait ; il doit sauter aux yeux ;
+ * - `paid` en vert, comme partout où l'argent est arrivé ;
+ * - `cancelled` en simple contour — la ligne est morte, elle ne réclame plus rien.
+ */
+export const SPONSORSHIP_STATUS_BADGES: Record<
+  SponsorshipStatus,
+  'secondary' | 'outline' | 'positive' | 'negative' | 'cash' | 'expense'
+> = {
+  discussion: 'expense',
+  todo: 'secondary',
+  in_progress: 'cash',
+  awaiting_payment: 'negative',
+  paid: 'positive',
+  cancelled: 'outline',
+};
+
 export const SPONSORSHIP_STATUS_HINTS: Record<SponsorshipStatus, string> = {
   discussion: 'Négociation en cours, rien de signé.',
   todo: "C'est signé, l'intégration n'est pas commencée.",

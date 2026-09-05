@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Clock, Gift, Handshake, Pause } from 'lucide-react';
+import { AlertTriangle, Clock, Gift, Handshake, ListChecks, Pause } from 'lucide-react';
 import type {
   ProductionAlert,
   ProductionAlertKind,
@@ -13,6 +13,7 @@ const ICONS: Record<ProductionAlertKind, typeof AlertTriangle> = {
   sponsorship_due: Handshake,
   sponsorship_undelivered: Clock,
   production_stalled: Pause,
+  production_incomplete: ListChecks,
 };
 
 /** Où mène le clic sur une alerte : là où on peut la traiter. */

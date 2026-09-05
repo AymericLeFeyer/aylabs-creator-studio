@@ -13,6 +13,8 @@ const badgeVariants = cva(
         positive: 'border-transparent bg-[var(--positive)]/15 text-[var(--positive)]',
         negative: 'border-transparent bg-[var(--negative)]/15 text-[var(--negative)]',
         inKind: 'border-transparent bg-[var(--in-kind)]/15 text-[var(--in-kind)]',
+        cash: 'border-transparent bg-[var(--cash)]/15 text-[var(--cash)]',
+        expense: 'border-transparent bg-[var(--expense)]/15 text-[var(--expense)]',
       },
     },
     defaultVariants: { variant: 'default' },

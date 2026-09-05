@@ -8,7 +8,12 @@ import type { TimeEntryView } from './TimeEntry.ts';
  * choisit l'icône et le lien de destination sans avoir à relire le texte.
  */
 export type ProductionAlertKind =
-  'product_late' | 'sponsorship_due' | 'sponsorship_undelivered' | 'production_stalled';
+  | 'product_late'
+  | 'sponsorship_due'
+  | 'sponsorship_undelivered'
+  | 'production_stalled'
+  /** Publiée alors qu'il restait des tâches non cochées. */
+  | 'production_incomplete';
 
 export interface ProductionAlert {
   kind: ProductionAlertKind;

@@ -14,6 +14,7 @@ import {
 import type { Sponsorship } from '../../domain/sponsorship/entities/Sponsorship.ts';
 import {
   PENDING_SPONSORSHIP_STATUSES,
+  SPONSORSHIP_STATUS_BADGES,
   SPONSORSHIP_STATUS_LABELS,
 } from '../../domain/sponsorship/entities/Sponsorship.ts';
 import {
@@ -433,7 +434,9 @@ export const PartnersPage = () => {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={sponsorship.status === 'paid' ? 'positive' : 'secondary'}>
+                      {/* Une couleur par statut : la table se balaie du regard, et
+                          « en attente de paiement » doit se repérer sans être lu. */}
+                      <Badge variant={SPONSORSHIP_STATUS_BADGES[sponsorship.status]}>
                         {SPONSORSHIP_STATUS_LABELS[sponsorship.status]}
                       </Badge>
                     </TableCell>

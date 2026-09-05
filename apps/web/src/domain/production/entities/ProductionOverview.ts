@@ -19,7 +19,12 @@ export interface ProductionStats {
 }
 
 export type ProductionAlertKind =
-  'product_late' | 'sponsorship_due' | 'sponsorship_undelivered' | 'production_stalled';
+  | 'product_late'
+  | 'sponsorship_due'
+  | 'sponsorship_undelivered'
+  | 'production_stalled'
+  /** Publiée alors qu'il restait des tâches non cochées. */
+  | 'production_incomplete';
 
 export interface ProductionAlert {
   kind: ProductionAlertKind;

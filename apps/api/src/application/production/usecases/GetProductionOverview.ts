@@ -24,6 +24,22 @@ const DEADLINE_WARNING_DAYS = 7;
 /** Au-delà, une vidéo en pause n'est plus « en attente » mais oubliée. */
 const STALLED_DAYS = 14;
 
+/**
+ * Combien de temps on rappelle qu'une vidéo est sortie avec des tâches non cochées.
+ *
+ * Publier à 80 % est une décision légitime — on sort, et on finit après : épingler le
+ * commentaire, refaire la miniature, ranger les fichiers. Ce qui se perd, c'est le
+ * **reste à faire**, invisible dès que la vidéo quitte la file d'attente.
+ *
+ * Trois semaines : assez pour revenir dessus, assez court pour que l'alerte s'efface
+ * d'elle-même. Sans borne, chaque vieille sortie inachevée resterait au tableau pour
+ * toujours et noierait les échéances qui, elles, sont urgentes.
+ */
+const PUBLISHED_REVIEW_DAYS = 21;
+
+/** Au-delà, la liste des tâches restantes ne se lit plus : on annonce le reste. */
+const MAX_LISTED_TODOS = 4;
+
 const daysBetween = (a: IsoDate, b: IsoDate): number =>
   Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
@@ -63,6 +79,9 @@ export class GetProductionOverview {
   execute(): ProductionOverview {
     const now = today();
     const queue = this.productions.findAll({ statuses: ['idea', 'in_progress', 'paused'] });
+    // Une seule lecture complète, partagée par les alertes : elles ont besoin des
+    // publiées (celles qui ont une sortie rattachée) autant que de la file.
+    const all = this.productions.findAll();
 
     // La prochaine à travailler est la première qui n'attend pas quelqu'un d'autre.
     // Si tout est en pause, on retombe sur la tête de file plutôt que sur rien.
@@ -81,7 +100,7 @@ export class GetProductionOverview {
     return {
       queue,
       nextId: next?.id ?? null,
-      alerts: this.buildAlerts(now, queue),
+      alerts: this.buildAlerts(now, queue, all),
       upcomingSlots,
       weekLoadMinutes,
       stats: this.buildStats(now, queue),
@@ -137,7 +156,11 @@ export class GetProductionOverview {
     };
   }
 
-  private buildAlerts(now: IsoDate, queue: ProductionView[]): ProductionAlert[] {
+  private buildAlerts(
+    now: IsoDate,
+    queue: ProductionView[],
+    all: ProductionView[],
+  ): ProductionAlert[] {
     const alerts: ProductionAlert[] = [];
     const soon = addDays(now, DEADLINE_WARNING_DAYS);
 
@@ -179,12 +202,7 @@ export class GetProductionOverview {
     // vient du rattachement DIRECT (`videoId`, une vidéo déjà publiée importée depuis
     // YouTube) ou, à défaut, de celui de la production. Ne regarder que la production
     // faisait crier au retard sur une sponso rattachée à une vidéo pourtant en ligne.
-    const publishedProductionIds = new Set(
-      this.productions
-        .findAll()
-        .filter((p) => p.videoId)
-        .map((p) => p.id),
-    );
+    const publishedProductionIds = new Set(all.filter((p) => p.videoId).map((p) => p.id));
     const isDelivered = (sponsorship: { videoId: string | null; productionId: string | null }) =>
       sponsorship.videoId !== null ||
       (sponsorship.productionId !== null && publishedProductionIds.has(sponsorship.productionId));
@@ -213,6 +231,57 @@ export class GetProductionOverview {
         title: `En pause depuis ${plural(days, 'jour')} : ${production.title}`,
         detail: production.pausedReason ?? 'Aucune raison notée',
         date: production.pausedAt.slice(0, 10),
+        productionId: production.id,
+        productId: null,
+        sponsorshipId: null,
+      });
+    }
+
+    // Publiée alors qu'il restait du travail coché nulle part.
+    //
+    // C'est un cas **volontaire** — on sort à 80 % et on finit après —, et c'est
+    // précisément pour ça qu'il mérite une alerte : la vidéo quitte la file d'attente le
+    // jour de sa sortie, et son reste à faire disparaît de l'écran avec elle. Sans ce
+    // rappel, la miniature à refaire et le commentaire à épingler ne se retrouvent qu'en
+    // rouvrant une fiche qu'on n'a plus aucune raison d'ouvrir.
+    //
+    // `warning` et jamais `danger` : rien n'est en retard, c'est du travail qui traîne.
+    const stepNames = new Map(this.steps.findAll(true).map((step) => [step.id, step.name]));
+
+    for (const production of all) {
+      // La date de sortie **réelle** borne le rappel ; `plannedDate` la remplace quand la
+      // vidéo a été marquée publiée sans rattachement à une sortie collectée.
+      const published = production.videoDate ?? production.plannedDate;
+      if (production.status !== 'done' || !published) continue;
+      if (daysBetween(published, now) > PUBLISHED_REVIEW_DAYS) continue;
+
+      // Les tâches d'abord : ce sont elles, les « sous-étapes » qu'on cherche. Une étape
+      // sans aucune tâche n'a rien de plus fin à montrer, elle compte pour elle-même.
+      const checkedSteps = new Set(production.steps.map((step) => step.stepId));
+      const pending = production.todos
+        .filter((todo) => !todo.checked)
+        .map((todo) =>
+          todo.stepId && stepNames.has(todo.stepId)
+            ? `${stepNames.get(todo.stepId)} · ${todo.label}`
+            : todo.label,
+        );
+
+      for (const [stepId, name] of stepNames) {
+        if (checkedSteps.has(stepId)) continue;
+        if (production.todos.some((todo) => todo.stepId === stepId)) continue;
+        pending.push(name);
+      }
+
+      if (pending.length === 0) continue;
+
+      const listed = pending.slice(0, MAX_LISTED_TODOS);
+      const rest = pending.length - listed.length;
+      alerts.push({
+        kind: 'production_incomplete',
+        severity: 'warning',
+        title: `Publiée avec ${plural(pending.length, 'tâche')} non cochée${pending.length > 1 ? 's' : ''} : ${production.title}`,
+        detail: rest > 0 ? `${listed.join(', ')} — et ${rest} autre(s)` : listed.join(', '),
+        date: published,
         productionId: production.id,
         productId: null,
         sponsorshipId: null,

@@ -7,6 +7,8 @@ import {
 } from '../../../application/production/usecases/useProductions.ts';
 import { formatStopwatch } from '../../../domain/production/entities/TimeEntry.ts';
 import { localToday } from '../../../application/planning/usecases/usePlanning.ts';
+import type { CompletableWork } from '../../../domain/production/entities/TimeEntry.ts';
+import { FinishWorkDialog } from './FinishWorkDialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { cn } from '../../../shared/cn.ts';
 
@@ -27,6 +29,15 @@ export const RunningTimerBar = () => {
   const { data: running } = useRunningTimer();
   const stop = useStopTimer();
   const [now, setNow] = useState(() => Date.now());
+  /**
+   * Ce que l'arrêt vient de rendre « clôturable ».
+   *
+   * La question « as-tu terminé ? » se pose **après** l'arrêt et pas avant : c'est en
+   * regardant le temps mesuré qu'on sait si le travail est fini. Elle vit ici, dans la
+   * coquille de l'application, parce qu'on arrête souvent son chronomètre depuis un autre
+   * écran que celui où on l'a lancé.
+   */
+  const [finishing, setFinishing] = useState<CompletableWork | null>(null);
 
   useEffect(() => {
     if (!running) return;
@@ -34,9 +45,14 @@ export const RunningTimerBar = () => {
     return () => window.clearInterval(id);
   }, [running]);
 
-  if (!running) return null;
+  const elapsed = running ? now - Date.parse(running.startedAt) : 0;
 
-  const elapsed = now - Date.parse(running.startedAt);
+  // La modale survit à la disparition du bandeau : le chronomètre s'arrête, la barre
+  // s'efface, et la question reste posée. La rendre sous le `return null` la démonterait
+  // au moment précis où elle doit s'ouvrir.
+  if (!running) {
+    return <FinishWorkDialog work={finishing} onOpenChange={() => setFinishing(null)} />;
+  }
 
   return (
     <div className="border-y border-[var(--positive)]/30 bg-[var(--positive)]/10">
@@ -72,13 +88,20 @@ export const RunningTimerBar = () => {
           // peut pas déduire l'heure qu'il est, le serveur tournant en UTC. « Maintenant »
           // est désormais posé par `useStopTimer` pour tous les appelants ; `from` reste
           // ici parce que c'est le premier jour ouvert au moteur, pas l'heure qu'il est.
-          onClick={() => stop.mutate({ id: running.id, from: localToday() })}
+          onClick={async () => {
+            const result = await stop.mutateAsync({ id: running.id, from: localToday() });
+            // `null` quand la session ne couvrait aucune ligne de pile : rien à clore,
+            // donc aucune question à poser.
+            setFinishing(result.completable);
+          }}
           disabled={stop.isPending}
         >
           <Square className="h-3.5 w-3.5" />
           Arrêter
         </Button>
       </div>
+
+      <FinishWorkDialog work={finishing} onOpenChange={() => setFinishing(null)} />
     </div>
   );
 };
