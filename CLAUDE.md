@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-05
+> Dernière mise à jour : 2026-09-06
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -666,6 +666,13 @@ exactement comme `production_todo_checks`. Index unique sur
 `(production_id, COALESCE(step_id,''), COALESCE(todo_id,''))` : remettre la même tâche
 dans la pile **la rouvre** au lieu d'échouer, parce que c'est le geste normal.
 
+**La pile se vide d'un coup** (`useClearPlanningItems`, `DELETE /api/planning/items`) :
+c'est le geste de reprise en main sur un planning laissé de côté, et le proposer ligne à
+ligne obligerait à cliquer trente fois. Comme pour un retrait unitaire, les créneaux
+**approuvés** restent — ils racontent du temps réellement passé —, aucune tâche n'est
+décochée (retirer de la pile n'a jamais voulu dire « ce n'est plus à faire », seulement
+« pas dans ce planning »), et **rien n'est replanifié**.
+
 **L'ordre de travail se déduit, il ne se règle pas dans la pile** :
 `productions.sort_order` (la file d'attente) d'abord, puis `production_steps.sort_order`,
 puis `sequence` — posé dans l'ordre des tâches au moment de l'ajout. On finit une vidéo
@@ -720,7 +727,7 @@ un créneau à 9 h alors qu'il est midi. Même raison pour `from`, envoyé par l
 (`localToday()`).
 
 **Le jour fait partie de l'information, et ce n'est pas un détail.** Le plancher portait
-autrefois sur le *premier jour de l'horizon* (`offset === 0`), ce qui revient au même tant
+autrefois sur le _premier jour de l'horizon_ (`offset === 0`), ce qui revient au même tant
 que le placement repart d'aujourd'hui — et diverge silencieusement dès qu'il repart d'une
 date passée (matérialiser une session d'hier, arrêter un chronomètre lancé la veille). Le
 moteur ferme désormais **entièrement** tout jour antérieur à `notBefore.date` et ne
@@ -736,6 +743,23 @@ Le couple voyage sous les noms `nowDate` / `nowMinutes` dans **tous** les corps 
 qui replanifient (`/replan`, `/items`, `/slots/:id/approve`, `/time-entries/:id/slot`,
 `/production-time/:id/stop`). Côté front, `planningNow()` les pose une fois pour toutes et
 se spread dans chaque mutation : un seul appel qui les oublierait rouvrirait la faille.
+
+#### La swimlane des vidéos
+
+`PlanningBoard.productions` porte une `PlanningProductionSpan` par vidéo dont la fenêtre
+`startDate → plannedDate` recoupe la période. Elle se dessine **au-dessus des heures**,
+avant la grille : « sur quoi suis-je censé travailler ces jours-ci » se lit avant « à
+quelle heure ». Une vidéo sans aucune des deux dates n'a pas de fenêtre et n'apparaît pas
+— la poser sur le jour courant inventerait une échéance.
+
+Le recoupement est calculé **dans `ManagePlanning.spans()` et non en SQL** : le `range` du
+dépôt de productions filtre sur la seule `plannedDate`, ce qui laisserait de côté une
+vidéo commencée la semaine dernière et attendue la semaine prochaine — précisément celle
+sur laquelle on travaille aujourd'hui. La file d'attente se compte en dizaines de lignes.
+
+Les bornes renvoyées sont **celles de la production**, jamais celles de la période : c'est
+ce qui permet à la grille de savoir quel côté déborde du cadre et de laisser ce bord-là
+carré. Une barre arrondie qui s'arrête net au bord se lirait comme une échéance.
 
 #### Deux modes de placement, et un seul réécrit la journée
 
@@ -1021,7 +1045,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/productions/reorder`                          | `{ ids }` → l'ordre manuel de la file, le rang est l'index                                                                                                                                            |
 | `PATCH`  | `/api/productions/:id`                              | Modifier (dont `script`)                                                                                                                                                                              |
 | `DELETE` | `/api/productions/:id`                              | Supprimer ; produits et sponsos sont **détachés**, pas supprimés                                                                                                                                      |
-| `GET`    | `/api/productions/:id/previous-publication`         | Titre, description et tags de la **sortie précédente** de la même chaîne, lus en direct sur YouTube. `null` si la chaîne n'en a pas d'autre ; 400 sans chaîne renseignée |
+| `GET`    | `/api/productions/:id/previous-publication`         | Titre, description et tags de la **sortie précédente** de la même chaîne, lus en direct sur YouTube. `null` si la chaîne n'en a pas d'autre ; 400 sans chaîne renseignée                              |
 | `POST`   | `/api/productions/:id/publish`                      | `{ videoId }` → rattache la sortie, coche la publication, passe en `done`                                                                                                                             |
 | `PUT`    | `/api/productions/:id/steps/:stepId`                | Cocher une étape (idempotent)                                                                                                                                                                         |
 | `DELETE` | `/api/productions/:id/steps/:stepId`                | Décocher                                                                                                                                                                                              |
@@ -1070,6 +1094,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/planning/items`                               | La pile de ce qui est en cours                                                                                                                                                                        |
 | `POST`   | `/api/planning/items`                               | Ajouter une vidéo : `{ productionId, stepIds, todoIds, from?, nowMinutes? }`. Replanifie dans la foulée                                                                                               |
 | `POST`   | `/api/planning/items/reorder`                       | `{ ids }` → l'ordre de placement, le rang est l'index                                                                                                                                                 |
+| `DELETE` | `/api/planning/items`                               | **Vider la pile** : tout ce qui est encore à faire, et ses créneaux non approuvés. Rend `{ removed }`. Aucune tâche n'est décochée, rien n'est replanifié                                             |
 | `DELETE` | `/api/planning/items/:id`                           | Retirer de la pile. Les créneaux déjà posés **restent**                                                                                                                                               |
 | `POST`   | `/api/planning/replan`                              | Repositionner. `onlyDate` = une seule colonne, sinon tout l'horizon                                                                                                                                   |
 | `POST`   | `/api/planning/slots/:id/approve`                   | `{ finished }` **obligatoire**. Crée la session, fige et redimensionne le créneau, publie dans l'agenda ; renvoie `{ next }`, le créneau reposé si le travail continue                                |
@@ -1114,10 +1139,24 @@ après l'autre. Les tables vivent désormais dans `components/money/RevenuesPane
 
 `/horaires` **redirige** vers `/parametres?onglet=planning`.
 
-`PlanningPage` porte **deux vues seulement, jour et semaine, et pas de vue mois** : un
+`PlanningPage` porte **deux vues seulement, un jour ou sept, et pas de vue mois** : un
 créneau de montage se décide à l'heure près, et une grille mensuelle ne montre plus les
 heures. Ce qui se regarde au mois, c'est la sortie des vidéos — et le Gantt de
 `/production` le dit déjà.
+
+**La fenêtre est glissante et on avance d'un jour à la fois.** La vue large montrait
+autrefois la semaine ISO (`startOfWeek`, supprimé) et les flèches sautaient de sept
+jours : mercredi, on ne pouvait pas regarder les sept jours qui venaient sans perdre de
+vue lundi et mardi. Sept jours **à partir du jour choisi** répondent à la question qu'on
+pose réellement, et le pas d'un jour permet d'y arriver depuis n'importe où. Le sous-titre
+annonce la fenêtre affichée (`formatRange`) : sans elle écrite noir sur blanc, deux clics
+de flèche perdraient le lecteur.
+
+La swimlane des vidéos est empilée en **bandes** et non en une ligne par vidéo
+(`lanes`, placement glouton : première bande dont la fenêtre précédente s'est terminée
+avant celle-ci). À six vidéos en cours, une bande chacune repousserait la grille horaire
+sous le pli alors que la plupart des fenêtres ne se chevauchent pas. Le glouton n'est
+correct que parce que **l'API trie par date de début**.
 
 `PlanningGrid` est **écrite à la main**, sans bibliothèque de calendrier ni de
 glisser-déposer : le besoin tient en une conversion « pixels ↔ minutes » et trois
@@ -1190,8 +1229,8 @@ partout._
 
 | Nature   | Lignes                                    | Date de rattachement   | Période |
 | -------- | ----------------------------------------- | ---------------------- | ------- |
-| **Flux** | produits `received`, sponsos `paid`        | `receivedAt`, `paidAt` | bornée  |
-| **État** | produits attendus, sponsos non encaissées  | aucune                 | ignorée |
+| **Flux** | produits `received`, sponsos `paid`       | `receivedAt`, `paidAt` | bornée  |
+| **État** | produits attendus, sponsos non encaissées | aucune                 | ignorée |
 
 C'est ce qui permet de borner l'écran sans faire disparaître le pipeline : un colis
 attendu depuis mars est toujours attendu en juin, et le masquer parce qu'on regarde août
@@ -1199,6 +1238,31 @@ ferait perdre de vue précisément ce sur quoi il reste à agir. Une ligne close
 date** reste visible partout — elle ne peut être rangée dans aucune période, et la faire
 disparaître de toutes serait la perdre de vue ; c'est un trou de saisie, pas une ligne à
 masquer. Même convention de dates que `brandStats` côté API.
+
+**La case « Reste à faire uniquement »** ne garde que ce sur quoi il reste à agir, dans
+les **deux** tables d'un coup — la question se pose sur le pipeline entier, et deux cases
+par onglet se contrediraient. La règle vit dans le domaine
+(`productIsOutstanding` / `sponsorshipIsOutstanding`, `domain/partner/services/pipeline.ts`) :
+
+- un **produit** reste à faire tant que sa vidéo n'est pas publiée — la question n'est pas
+  « est-il arrivé » mais « la sortie est-elle en ligne ». Un colis reçu sans vidéo est du
+  travail qui attend, exactement comme un colis en route. « Avoir une vidéo terminée » se
+  lit comme partout ailleurs : une production `done`, ou une sortie déjà publiée rattachée
+  en direct. `returned` et `cancelled` sont clos ;
+- une **sponso** reste à faire tant qu'elle n'est pas `paid` — c'est exactement
+  `PENDING_SPONSORSHIP_STATUSES`.
+
+**Le total au-dessus de chaque table change de nature avec la case**, sans quoi il ne
+retomberait plus sur les lignes affichées : « Valeur reçue sur la période » devient
+« Valeur restant à intégrer » (somme des lignes visibles), et l'encaissé disparaît de
+l'onglet Sponsors — plus une seule ligne affichée n'y contribue, et le laisser inviterait
+à soustraire deux chiffres qui ne parlent pas des mêmes sponsos. Les quatre cartes du haut,
+elles, ne bougent pas : elles annoncent le pipeline et l'encaissé côte à côte, et les
+filtrer masquerait la moitié de la réponse.
+
+C'est un **filtre** et non une préférence (état local, non persisté) : on l'active pour
+trancher « qu'est-ce qui me reste à faire », puis on le retire pour retrouver
+l'historique — plusieurs fois dans la même séance.
 
 **Le filtrage est côté écran, jamais dans l'API.** `/api/products` et `/api/sponsorships`
 alimentent aussi les sélecteurs de rattachement (`AttachExistingSelect`,
@@ -1293,11 +1357,11 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useRecurringExpenses`, `useCreateRecurringExpense`, `useUpdateRecurringExpense`, `useDeleteRecurringExpense`                                                                                     | `application/expense/usecases/useExpenses.ts`         | Règles de dépense récurrente                                                                        |
 | `useUpcomingExpenses`, `useUpcomingRevenues`, `useUpcomingRange`                                                                                                                                  | `application/expense/usecases/useUpcoming.ts`         | Ce qui est daté en avant (demain → +3 mois)                                                         |
 | `usePreferences`                                                                                                                                                                                  | `presentation/hooks/usePreferences.ts`                | Menu replié, file compacte. Persisté en localStorage                                                |
-| `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useReorderPlanningItems`, `useRemovePlanningItem`                                | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                  |
+| `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useRemovePlanningItem`, `useClearPlanningItems`                                  | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                  |
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                         | idem                                                  | Horaires de travail et connexion à l'agenda                                                         |
 | `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`          | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                               |
 | `useSlotFromTimeEntry`                                                                                                                                                                            | idem                                                  | Transforme une session de travail en créneau approuvé                                               |
-| `planningNow`, `nowMinutes`, `localToday`, `shiftDate`, `startOfWeek`                                                                                                                                            | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                            |
+| `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                            | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                            |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
 
@@ -1674,6 +1738,23 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   horaires de travail sans connaître les rendez-vous, et l'écran le dit. Sans **horaires**,
   en revanche, il n'a nulle part où poser : c'est le seul blocage réel, et le bandeau
   renvoie directement vers le réglage.
+- **La swimlane des vidéos ne se déduit pas des créneaux.** Une vidéo peut avoir une
+  période annoncée sans qu'aucune heure ne soit encore posée, et c'est précisément le cas
+  qu'on veut voir en ouvrant l'écran. Elle est purement indicative : la fenêtre d'une vidéo
+  se règle sur sa fiche, jamais en la glissant depuis le planning.
+- **Le pas de navigation du planning est le JOUR, dans les deux vues.** La fenêtre part du
+  jour choisi et non du lundi : un pas de sept jours sur une semaine ISO rendait impossible
+  de voir « les sept jours qui viennent » un mercredi. Ne pas y réintroduire d'alignement
+  hebdomadaire sans réintroduire aussi un pas d'un jour, sinon les flèches redeviennent
+  inopérantes six fois sur sept.
+- **Vider la pile ne décoche rien et ne replanifie rien.** Les créneaux approuvés restent
+  (du temps vécu), les suggestions partent avec leur ligne, et les tâches restent à faire
+  sur leur vidéo. Réécrire l'agenda demeure la décision du seul bouton « Repositionner ».
+- **« Reste à faire » sur un produit parle de sa VIDÉO, pas de sa réception.** Un colis
+  reçu dont la sortie n'est pas publiée est du travail qui attend ; c'est la même règle que
+  le cran supplémentaire de `productSortRank` entre un `received` avec et sans vidéo.
+  Filtrer sur « pas encore reçu » ferait disparaître précisément les produits qu'il reste à
+  tourner.
 - **`/api/productions/:id/todos` est monté AVANT `/api/productions`** dans `server.ts` : un router de préfixe plus long doit passer en premier, sinon le plus court capte la requête et répond 404. Même vigilance que `/overview` déclaré avant `/:id`.
 
 ## PWA

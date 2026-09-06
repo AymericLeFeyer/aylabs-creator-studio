@@ -1,7 +1,10 @@
-import { ListOrdered, X } from 'lucide-react';
+import { Eraser, ListOrdered, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatMinutes, type PlanningItem } from '../../../domain/planning/entities/Planning.ts';
-import { useRemovePlanningItem } from '../../../application/planning/usecases/usePlanning.ts';
+import {
+  useClearPlanningItems,
+  useRemovePlanningItem,
+} from '../../../application/planning/usecases/usePlanning.ts';
 import { Button } from '../ui/button.tsx';
 import { Card } from '../ui/card.tsx';
 
@@ -25,6 +28,7 @@ export interface PlanningQueueProps {
  */
 export const PlanningQueue = ({ items }: PlanningQueueProps) => {
   const remove = useRemovePlanningItem();
+  const clear = useClearPlanningItems();
 
   if (items.length === 0) {
     return (
@@ -60,7 +64,33 @@ export const PlanningQueue = ({ items }: PlanningQueueProps) => {
   return (
     <Card className="divide-y divide-border">
       <div className="px-4 py-2.5">
-        <p className="text-sm font-medium">En cours ({items.length})</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium">En cours ({items.length})</p>
+          {/* Vider est un geste de reprise en main : on revient sur un planning laissé
+              de côté, et la pile décrit un travail qu'on ne compte plus faire dans cet
+              ordre-là. Le proposer ligne à ligne obligerait à cliquer trente fois. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-destructive"
+            disabled={clear.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Vider la pile (${items.length} tâche${items.length > 1 ? 's' : ''}) ? ` +
+                    'Les créneaux déjà approuvés restent, les suggestions partent. ' +
+                    'Aucune tâche n’est décochée : elles restent à faire sur leur vidéo.',
+                )
+              ) {
+                clear.mutate(undefined);
+              }
+            }}
+            title="Retirer toutes les tâches encore à faire de la pile"
+          >
+            <Eraser className="h-3.5 w-3.5" />
+            Tout vider
+          </Button>
+        </div>
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <ListOrdered className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
           <span>

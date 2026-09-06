@@ -20,7 +20,9 @@ import {
 import {
   partnerPipeline,
   productInPeriod,
+  productIsOutstanding,
   sponsorshipInPeriod,
+  sponsorshipIsOutstanding,
 } from '../../domain/partner/services/pipeline.ts';
 import type { ProductionStatus } from '../../domain/production/entities/Production.ts';
 import {
@@ -31,6 +33,8 @@ import { formatDate, formatMoney, toIsoDate } from '../../shared/format.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardHeader, CardTitle } from '../components/ui/card.tsx';
+import { Checkbox } from '../components/ui/checkbox.tsx';
+import { Label } from '../components/ui/label.tsx';
 import {
   Table,
   TableBody,
@@ -156,13 +160,36 @@ export const PartnersPage = () => {
    * Le prédicat est celui du pipeline et non un second : le total annoncé au-dessus de
    * chaque table retombe ainsi toujours sur les lignes affichées en dessous.
    */
+  /**
+   * Ne montrer que ce sur quoi il reste à agir.
+   *
+   * Un filtre et non une préférence : on l'active pour trancher « qu'est-ce qui me reste
+   * à faire », puis on le retire pour retrouver l'historique — plusieurs fois dans la
+   * même séance. Il pilote les **deux** tables d'un coup : la question se pose sur le
+   * pipeline entier, et deux cases à cocher, une par onglet, se contrediraient.
+   *
+   * Il ne touche pas aux quatre cartes du haut : elles annoncent déjà le pipeline et
+   * l'encaissé côte à côte, et les faire bouger avec la case reviendrait à masquer la
+   * moitié de la réponse au moment où on la cherche.
+   */
+  const [outstandingOnly, setOutstandingOnly] = useState(false);
+
   const visibleProducts = useMemo(
-    () => products.filter((product) => productInPeriod(product, range)),
-    [products, range],
+    () =>
+      products.filter(
+        (product) =>
+          productInPeriod(product, range) && (!outstandingOnly || productIsOutstanding(product)),
+      ),
+    [products, range, outstandingOnly],
   );
   const visibleSponsorships = useMemo(
-    () => sponsorships.filter((sponsorship) => sponsorshipInPeriod(sponsorship, range)),
-    [sponsorships, range],
+    () =>
+      sponsorships.filter(
+        (sponsorship) =>
+          sponsorshipInPeriod(sponsorship, range) &&
+          (!outstandingOnly || sponsorshipIsOutstanding(sponsorship)),
+      ),
+    [sponsorships, range, outstandingOnly],
   );
 
   const [productOpen, setProductOpen] = useState(false);
@@ -202,7 +229,27 @@ export const PartnersPage = () => {
             pouvait ni lire ni changer. La période est celle de tout l'outil — la régler
             ici la règle partout. Le reste de la barre (chaînes, pas, CA/bénéfice) ne
             pilote rien ici et resterait décoratif. */}
-        <PeriodPicker />
+        <div className="flex flex-wrap items-center gap-3">
+          {/* À côté de la période, parce que c'est le même geste : restreindre ce qu'on
+              regarde. Il ne s'applique qu'aux deux tables de partenariats — l'onglet
+              Plateformes n'a ni produit ni sponso à filtrer. */}
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="partners-outstanding-only"
+              checked={outstandingOnly}
+              onCheckedChange={(checked) => setOutstandingOnly(checked === true)}
+            />
+            <Label
+              htmlFor="partners-outstanding-only"
+              className="text-xs font-normal text-muted-foreground"
+              title="Les produits dont la vidéo n’est pas publiée, et les sponsos pas encore encaissées"
+            >
+              Reste à faire uniquement
+            </Label>
+          </div>
+
+          <PeriodPicker />
+        </div>
       </div>
 
       <PartnerStatCards pipeline={pipeline} />
@@ -224,13 +271,29 @@ export const PartnersPage = () => {
             {/* Un flux : ce qui est arrivé PENDANT la période, comme le CA. Les
                 produits encore attendus, eux, restent listés quelle que soit la
                 période — ce sont des états, et les masquer ferait perdre de vue ce
-                sur quoi il reste à agir. */}
-            <p className="text-sm">
-              <span className="text-muted-foreground">Valeur reçue sur la période : </span>
-              <span className="tabular font-semibold text-[var(--in-kind)]">
-                {formatMoney(pipeline.productsReceivedCents)}
-              </span>
-            </p>
+                sur quoi il reste à agir.
+
+                Filtré sur le reste à faire, ce total n'aurait plus rien à voir avec
+                les lignes affichées : la table ne montre alors que ce qui n'est pas
+                intégré, dont la plus grande part n'est même pas encore arrivée. Le
+                total change donc de nature en même temps que la table. */}
+            {outstandingOnly ? (
+              <p className="text-sm">
+                <span className="text-muted-foreground">Valeur restant à intégrer : </span>
+                <span className="tabular font-semibold text-[var(--in-kind)]">
+                  {formatMoney(
+                    visibleProducts.reduce((total, product) => total + product.valueCents, 0),
+                  )}
+                </span>
+              </p>
+            ) : (
+              <p className="text-sm">
+                <span className="text-muted-foreground">Valeur reçue sur la période : </span>
+                <span className="tabular font-semibold text-[var(--in-kind)]">
+                  {formatMoney(pipeline.productsReceivedCents)}
+                </span>
+              </p>
+            )}
             <Button
               size="sm"
               onClick={() => {
@@ -365,13 +428,23 @@ export const PartnersPage = () => {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             {/* Les deux montants ne se lisent pas dans le même temps : l'encaissé
                 est un flux borné par la période, le reste à encaisser un état qui
-                l'ignore. Le dire évite d'y chercher une soustraction. */}
+                l'ignore. Le dire évite d'y chercher une soustraction.
+
+                Filtré sur le reste à faire, l'encaissé disparaît : plus une seule des
+                lignes affichées n'y contribue, et le laisser inviterait à soustraire
+                deux chiffres qui ne parlent pas des mêmes sponsos. */}
             <p className="text-sm">
-              <span className="text-muted-foreground">Encaissé sur la période : </span>
-              <span className="tabular font-semibold text-[var(--positive)]">
-                {formatMoney(pipeline.sponsorshipsPaidCents)}
+              {!outstandingOnly && (
+                <>
+                  <span className="text-muted-foreground">Encaissé sur la période : </span>
+                  <span className="tabular font-semibold text-[var(--positive)]">
+                    {formatMoney(pipeline.sponsorshipsPaidCents)}
+                  </span>
+                </>
+              )}
+              <span className={cn('text-muted-foreground', !outstandingOnly && 'ml-3')}>
+                À encaisser (toutes périodes) :{' '}
               </span>
-              <span className="ml-3 text-muted-foreground">À encaisser (toutes périodes) : </span>
               <span className="tabular font-semibold">
                 {formatMoney(pipeline.sponsorshipsPendingCents)}
               </span>

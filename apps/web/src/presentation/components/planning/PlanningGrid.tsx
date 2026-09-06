@@ -9,7 +9,9 @@ import {
   toTime,
   WEEKDAY_SHORT,
   type PlanningDay,
+  type PlanningProductionSpan,
 } from '../../../domain/planning/entities/Planning.ts';
+import { STATUS_LABELS } from '../../../domain/production/entities/Production.ts';
 import { Button } from '../ui/button.tsx';
 import { cn } from '../../../shared/cn.ts';
 import { readableTextColor } from '../../../shared/contrast.ts';
@@ -20,8 +22,18 @@ const HOUR_HEIGHT = 56;
 /** Pas de déplacement au drag : on ne cale pas un créneau à la minute près. */
 const DRAG_STEP = 15;
 
+/** Hauteur d'une bande de la swimlane des vidéos, en pixels. */
+const LANE_HEIGHT = 22;
+
 export interface PlanningGridProps {
   days: PlanningDay[];
+  /**
+   * Les fenêtres de travail des vidéos, dessinées en swimlane au-dessus des heures.
+   * Elles disent sur quoi on est censé travailler ces jours-ci, ce qu'une colonne de
+   * créneaux ne dit pas : une vidéo peut avoir une période sans qu'aucune heure ne soit
+   * encore posée.
+   */
+  productions?: PlanningProductionSpan[];
   today: string;
   onMove: (slot: ProductionSlot, date: string, startMinutes: number) => void;
   onApprove: (slot: ProductionSlot) => void;
@@ -88,6 +100,7 @@ const currentMinutes = (): number => {
  */
 export const PlanningGrid = ({
   days,
+  productions = [],
   today,
   onMove,
   onApprove,
@@ -122,6 +135,46 @@ export const PlanningGrid = ({
 
   const todayIndex = days.findIndex((day) => day.date === today);
   const showNow = todayIndex >= 0 && nowMinutes >= bounds.start && nowMinutes <= bounds.end;
+
+  /**
+   * Les fenêtres de vidéo, empilées en bandes.
+   *
+   * Une bande par vidéo serait la solution évidente, et la mauvaise : à six vidéos en
+   * cours, la swimlane repousserait la grille horaire sous le pli alors que la plupart
+   * des fenêtres ne se chevauchent pas. Le placement glouton — première bande dont la
+   * dernière fenêtre s'est terminée avant celle-ci — les regroupe donc sur le moins de
+   * lignes possible. Il n'est correct que parce que l'API trie par date de début.
+   *
+   * Les bornes sont **écrêtées à la période affichée**, et ce qui dépasse se signale par
+   * un bord droit : une barre qui s'arrête net au bord du cadre se lirait comme une
+   * échéance, alors que la vidéo continue la semaine suivante.
+   */
+  const firstDate = days[0]?.date ?? '';
+  const lastDate = days[days.length - 1]?.date ?? '';
+  const laneEnds: number[] = [];
+  const lanes = productions.map((span) => {
+    const foundStart = days.findIndex((day) => day.date === span.from);
+    const foundEnd = days.findIndex((day) => day.date === span.to);
+    const startIndex = foundStart === -1 ? 0 : foundStart;
+    const endIndex = foundEnd === -1 ? days.length - 1 : foundEnd;
+
+    let lane = laneEnds.findIndex((end) => end < startIndex);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(endIndex);
+    } else {
+      laneEnds[lane] = endIndex;
+    }
+
+    return {
+      span,
+      lane,
+      startIndex,
+      endIndex,
+      clippedStart: span.from < firstDate,
+      clippedEnd: span.to > lastDate,
+    };
+  });
 
   /**
    * Le déplacement.
@@ -232,6 +285,83 @@ export const PlanningGrid = ({
             );
           })}
         </div>
+
+        {/* La swimlane des vidéos : de quand à quand chacune occupe le calendrier.
+            Elle est **au-dessus des heures** parce qu'elle se lit en premier — « sur quoi
+            suis-je censé travailler ces jours-ci » vient avant « à quelle heure ». Elle ne
+            se déduit pas des créneaux : une vidéo peut avoir une période annoncée sans
+            qu'aucune heure n'ait encore été posée, et c'est précisément le cas qu'on veut
+            voir. Purement indicative, elle ne se déplace pas depuis ici : la fenêtre d'une
+            vidéo se règle sur sa fiche. */}
+        {lanes.length > 0 && (
+          <div className="flex border-b border-border bg-muted/20">
+            <div className="w-14 shrink-0 px-1 py-1 text-[10px] text-muted-foreground">vidéos</div>
+            <div className="relative flex-1" style={{ height: laneEnds.length * LANE_HEIGHT + 4 }}>
+              {/* Les séparateurs de colonne, pour que l'œil retombe sur le bon jour. */}
+              {days.map((day, index) => (
+                <div
+                  key={day.date}
+                  className={cn(
+                    'pointer-events-none absolute inset-y-0 border-l border-border',
+                    day.date === today && 'bg-[var(--today)]/10',
+                  )}
+                  style={{
+                    left: `${(index * 100) / days.length}%`,
+                    width: `${100 / days.length}%`,
+                  }}
+                />
+              ))}
+
+              {lanes.map(({ span, lane, startIndex, endIndex, clippedStart, clippedEnd }) => {
+                const color = span.channelColor ?? '#64748b';
+                const text = readableTextColor(color);
+                const window =
+                  span.from === span.to
+                    ? span.from.slice(8, 10) + '/' + span.from.slice(5, 7)
+                    : `${span.from.slice(8, 10)}/${span.from.slice(5, 7)} → ${span.to.slice(8, 10)}/${span.to.slice(5, 7)}`;
+
+                return (
+                  <Link
+                    key={span.id}
+                    to={`/production/${span.id}`}
+                    className={cn(
+                      'absolute flex items-center gap-1 overflow-hidden px-1.5 text-[11px] font-medium leading-none transition-opacity hover:opacity-90',
+                      // Le côté qui déborde du cadre reste carré : un bord arrondi se
+                      // lirait comme une échéance, alors que la vidéo continue au-delà.
+                      !clippedStart && 'rounded-l-full',
+                      !clippedEnd && 'rounded-r-full',
+                    )}
+                    style={{
+                      top: lane * LANE_HEIGHT + 2,
+                      height: LANE_HEIGHT - 4,
+                      left: `calc(${(startIndex * 100) / days.length}% + 2px)`,
+                      width: `calc(${((endIndex - startIndex + 1) * 100) / days.length}% - 4px)`,
+                      backgroundColor: color,
+                      color: text,
+                      // Une vidéo publiée n'attend plus rien : elle reste comme repère,
+                      // en retrait de celles sur lesquelles il y a encore à faire.
+                      opacity: span.status === 'done' ? 0.55 : 1,
+                    }}
+                    title={`${span.title}
+${STATUS_LABELS[span.status]}${span.channelName ? ` · ${span.channelName}` : ''}
+${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${span.plannedDate.slice(5, 7)}` : ''}`}
+                  >
+                    <span className="truncate">{span.title}</span>
+                    {/* Le point marque la sortie, et il n'apparaît que si elle tombe
+                        dans le cadre : sur une fenêtre tronquée à droite, le bord de la
+                        barre n'est pas le jour de la sortie. */}
+                    {span.plannedDate !== null && !clippedEnd && (
+                      <span
+                        className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-80"
+                        aria-hidden
+                      />
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Les événements « journée entière » : ils étiquettent le jour sans l'occuper. */}
         {days.some((day) => day.events.some((event) => event.allDay)) && (

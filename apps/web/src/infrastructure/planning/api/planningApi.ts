@@ -47,6 +47,12 @@ export const planningApi = {
 
   removeItem: (id: string) => request<void>(`/api/planning/items/${id}`, { method: 'DELETE' }),
 
+  /**
+   * Vide la pile : tout ce qui est encore à faire s'en va, avec ses créneaux non vécus.
+   * Les créneaux **approuvés** restent — ils racontent du temps réellement passé.
+   */
+  clearItems: () => request<{ removed: number }>('/api/planning/items', { method: 'DELETE' }),
+
   replan: (input: ReplanInput = {}) =>
     request<{ placed: number; unplacedMinutes: number }>('/api/planning/replan', {
       method: 'POST',

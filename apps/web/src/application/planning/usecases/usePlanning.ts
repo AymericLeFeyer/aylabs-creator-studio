@@ -94,6 +94,16 @@ export const useRemovePlanningItem = () =>
   usePlanningMutation((id: string) => planningApi.removeItem(id));
 
 /**
+ * Vide la pile d'un coup.
+ *
+ * Une pile qu'on a laissée grossir ne se retire pas ligne à ligne, et c'est le geste
+ * qu'on fait en reprenant un planning laissé de côté. Comme pour un retrait unitaire,
+ * **rien n'est replanifié** et les créneaux approuvés restent : le travail déjà fait
+ * n'est pas du travail à faire.
+ */
+export const useClearPlanningItems = () => usePlanningMutation(() => planningApi.clearItems());
+
+/**
  * Repositionne les créneaux suggérés — **le seul geste qui réécrit la journée**.
  *
  * Ajouter une vidéo, approuver un créneau ou arrêter un chronomètre se contentent de poser
@@ -173,11 +183,4 @@ export const shiftDate = (date: string, days: number): string => {
   const parsed = new Date(`${date}T12:00:00`);
   parsed.setDate(parsed.getDate() + days);
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
-};
-
-/** Le lundi de la semaine d'une date : la grille commence toujours un lundi. */
-export const startOfWeek = (date: string): string => {
-  const parsed = new Date(`${date}T12:00:00`);
-  const weekday = (parsed.getDay() + 6) % 7;
-  return shiftDate(date, -weekday);
 };

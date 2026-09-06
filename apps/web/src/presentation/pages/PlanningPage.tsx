@@ -12,7 +12,6 @@ import {
 import {
   localToday,
   shiftDate,
-  startOfWeek,
   usePlanningBoard,
   useReplan,
   useStartSlotTimer,
@@ -36,14 +35,36 @@ import { cn } from '../../shared/cn.ts';
 
 type Span = 'day' | 'week';
 
+/** « 6 sept. » ou « 6 → 12 sept. » : la fenêtre affichée, en une ligne. */
+const formatRange = (from: string, to: string): string => {
+  const format = (date: string, withMonth: boolean) =>
+    new Date(`${date}T12:00:00`).toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      ...(withMonth ? { month: 'short' } : {}),
+    });
+
+  if (from === to) return format(from, true);
+  // Le mois n'est répété que s'il change : « 30 sept. → 6 oct. » a besoin des deux,
+  // « 6 → 12 sept. » se lirait mal avec.
+  return `${format(from, from.slice(0, 7) !== to.slice(0, 7))} → ${format(to, true)}`;
+};
+
 /**
  * Le planning : ce qu'il y a à faire aujourd'hui et cette semaine, posé dans le temps
  * qui reste entre les rendez-vous.
  *
- * Deux vues seulement, jour et semaine, et pas de vue mois : un créneau de montage se
+ * Deux vues seulement, un jour ou sept, et pas de vue mois : un créneau de montage se
  * décide à l'heure près, et une grille mensuelle ne montre plus les heures. Ce qui se
  * regarde au mois, c'est la sortie des vidéos — et c'est le planning de l'écran
  * Production qui le dit déjà.
+ *
+ * **La fenêtre est glissante, et on avance d'un jour à la fois.** La vue large montrait
+ * auparavant la semaine ISO, et les flèches sautaient de sept jours : mercredi, on ne
+ * pouvait pas regarder les sept jours qui venaient sans perdre de vue lundi et mardi.
+ * Sept jours à partir du jour choisi répondent à la question qu'on pose réellement —
+ * « qu'est-ce qui m'attend à partir de maintenant » —, le pas d'un jour permet d'y
+ * arriver depuis n'importe où, et le sous-titre dit toujours quelle fenêtre est à
+ * l'écran.
  *
  * Trois gestes, et c'est tout : **approuver** un créneau (le temps passé rejoint le
  * compteur de la vidéo), le **déplacer** au doigt, ou le **supprimer** — auquel cas la
@@ -54,8 +75,8 @@ export const PlanningPage = () => {
   const [span, setSpan] = useState<Span>('week');
   const [anchor, setAnchor] = useState<string>(today);
 
-  const from = span === 'day' ? anchor : startOfWeek(anchor);
-  const to = span === 'day' ? anchor : shiftDate(from, 6);
+  const from = anchor;
+  const to = span === 'day' ? anchor : shiftDate(anchor, 6);
 
   const { data: board, isLoading } = usePlanningBoard(from, to);
   const replan = useReplan();
@@ -122,9 +143,11 @@ export const PlanningPage = () => {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Planning</h1>
+          {/* La fenêtre est glissante : sans elle écrite noir sur blanc, « Semaine » ne
+              dirait plus laquelle, et deux clics de flèche perdraient le lecteur. */}
           <p className="text-sm text-muted-foreground">
-            {formatMinutes(totals.suggested)} encore à faire, {formatMinutes(totals.approved)} déjà
-            passées sur la période affichée.
+            {formatRange(from, to)} · {formatMinutes(totals.suggested)} encore à faire,{' '}
+            {formatMinutes(totals.approved)} déjà passées.
           </p>
         </div>
 
@@ -134,11 +157,11 @@ export const PlanningPage = () => {
               variant="ghost"
               size="icon"
               className="h-8 w-8 rounded-r-none"
-              onClick={() => setAnchor(shiftDate(anchor, span === 'day' ? -1 : -7))}
-              title="Période précédente"
+              onClick={() => setAnchor(shiftDate(anchor, -1))}
+              title="Reculer d’un jour"
             >
               <ChevronLeft className="h-4 w-4" />
-              <span className="sr-only">Précédent</span>
+              <span className="sr-only">Jour précédent</span>
             </Button>
             <button
               type="button"
@@ -151,11 +174,11 @@ export const PlanningPage = () => {
               variant="ghost"
               size="icon"
               className="h-8 w-8 rounded-l-none"
-              onClick={() => setAnchor(shiftDate(anchor, span === 'day' ? 1 : 7))}
-              title="Période suivante"
+              onClick={() => setAnchor(shiftDate(anchor, 1))}
+              title="Avancer d’un jour"
             >
               <ChevronRight className="h-4 w-4" />
-              <span className="sr-only">Suivant</span>
+              <span className="sr-only">Jour suivant</span>
             </Button>
           </div>
 
@@ -172,7 +195,7 @@ export const PlanningPage = () => {
                     : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                {value === 'day' ? 'Jour' : 'Semaine'}
+                {value === 'day' ? 'Jour' : '7 jours'}
               </button>
             ))}
           </div>
@@ -230,6 +253,7 @@ export const PlanningPage = () => {
           {board && (
             <PlanningGrid
               days={board.days}
+              productions={board.productions}
               today={today}
               busy={busy}
               onMove={move}

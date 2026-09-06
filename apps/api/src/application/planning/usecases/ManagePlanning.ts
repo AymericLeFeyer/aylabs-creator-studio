@@ -8,6 +8,7 @@ import type {
 import type {
   PlanningBoard,
   PlanningDay,
+  PlanningProductionSpan,
 } from '../../../domain/planning/entities/PlanningBoard.ts';
 import type { PlanningItemView } from '../../../domain/planning/entities/PlanningItem.ts';
 import type { PlanningSettingsView } from '../../../domain/planning/entities/PlanningSettings.ts';
@@ -280,6 +281,33 @@ export class ManagePlanning {
       if (slot.itemId === id && !slot.done) this.slots.delete(slot.id);
     }
     this.items.delete(id);
+  }
+
+  /**
+   * Vide la pile : toutes les lignes encore en cours partent, et leurs créneaux non
+   * approuvés avec elles.
+   *
+   * C'est `removeItem` appliqué à tout, et pour la même raison — une pile qu'on a laissée
+   * grossir pendant trois semaines ne se retire pas ligne à ligne. **Rien n'est
+   * replanifié** : réécrire l'agenda reste la décision du bouton « Repositionner ».
+   *
+   * Ce qui a été **approuvé** ne bouge pas, ici comme ailleurs : ces créneaux racontent du
+   * temps réellement passé, et vider une pile de travail à faire n'a pas à effacer du
+   * travail déjà fait. Les tâches, elles, ne sont pas décochées : retirer de la pile n'a
+   * jamais voulu dire « ce n'est plus à faire », seulement « pas dans ce planning ».
+   */
+  clearItems(): number {
+    const items = this.items.findAll({ statuses: ['pending'] });
+    const ids = new Set(items.map((item) => item.id));
+    if (ids.size === 0) return 0;
+
+    // Une seule lecture des créneaux pour toute la pile : un `findAll` par ligne ferait
+    // autant de balayages que de tâches retirées.
+    for (const slot of this.slots.findAll({})) {
+      if (slot.itemId && ids.has(slot.itemId) && !slot.done) this.slots.delete(slot.id);
+    }
+    for (const id of ids) this.items.delete(id);
+    return ids.size;
   }
 
   // --- Le placement ---------------------------------------------------------
@@ -775,10 +803,52 @@ export class ManagePlanning {
       to,
       days,
       items: this.items.findAll({ statuses: ['pending'] }),
+      productions: this.spans(from, to),
       calendarConnected: external.connected,
       calendarError: external.error,
       hasWorkHours: workHours.size > 0,
     };
+  }
+
+  /**
+   * Les fenêtres de travail des vidéos qui recoupent la période.
+   *
+   * Le recoupement est calculé **ici et non en SQL** : le `range` du dépôt de productions
+   * filtre sur la seule `plannedDate`, ce qui laisserait de côté une vidéo commencée la
+   * semaine dernière et attendue la semaine prochaine — précisément celle sur laquelle on
+   * travaille aujourd'hui. La file d'attente se compte en dizaines de lignes, la
+   * différence de coût est nulle.
+   *
+   * Une production sans aucune des deux dates n'a pas de fenêtre et n'apparaît pas : elle
+   * n'occuperait aucune colonne, et la poser sur le jour courant inventerait une échéance.
+   */
+  private spans(from: IsoDate, to: IsoDate): PlanningProductionSpan[] {
+    const spans: PlanningProductionSpan[] = [];
+
+    for (const production of this.productions.findAll()) {
+      const start = production.startDate ?? production.plannedDate;
+      const end = production.plannedDate ?? production.startDate;
+      if (!start || !end) continue;
+
+      // Les bornes sont remises dans l'ordre : une sortie antérieure au début saisi est
+      // une faute de frappe, et une barre de largeur négative ne se dessine pas.
+      const spanFrom = start <= end ? start : end;
+      const spanTo = start <= end ? end : start;
+      if (spanTo < from || spanFrom > to) continue;
+
+      spans.push({
+        id: production.id,
+        title: production.title,
+        status: production.status,
+        channelName: production.channelName,
+        channelColor: production.channelColor,
+        from: spanFrom,
+        to: spanTo,
+        plannedDate: production.plannedDate,
+      });
+    }
+
+    return spans.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
   }
 
   // --- Helpers --------------------------------------------------------------

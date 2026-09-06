@@ -1,3 +1,4 @@
+import type { ProductionStatus } from '../../production/entities/Production.ts';
 import type { ProductionSlot } from '../../production/entities/ProductionSlot.ts';
 
 /**
@@ -126,11 +127,34 @@ export interface PlanningDay {
   approvedMinutes: number;
 }
 
+/**
+ * La fenêtre de travail d'une vidéo, projetée sur la grille : de quand à quand cette
+ * vidéo occupe le calendrier.
+ *
+ * Elle ne se déduit pas des créneaux : une vidéo peut avoir une période annoncée sans
+ * qu'aucune heure n'ait encore été posée, et c'est justement ce qu'on veut voir. Les
+ * bornes sont **celles de la production** et non celles de la période affichée : la
+ * grille sait ainsi quel côté déborde du cadre, et le dit.
+ */
+export interface PlanningProductionSpan {
+  id: string;
+  title: string;
+  status: ProductionStatus;
+  channelName: string | null;
+  channelColor: string | null;
+  from: string;
+  to: string;
+  /** Le jour de sortie visé, s'il est posé : c'est lui qui porte l'échéance. */
+  plannedDate: string | null;
+}
+
 export interface PlanningBoard {
   from: string;
   to: string;
   days: PlanningDay[];
   items: PlanningItem[];
+  /** Les fenêtres de travail des vidéos qui recoupent la période, la plus tôt d'abord. */
+  productions: PlanningProductionSpan[];
   calendarConnected: boolean;
   calendarError: string | null;
   hasWorkHours: boolean;

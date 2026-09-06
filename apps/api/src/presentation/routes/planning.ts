@@ -78,6 +78,16 @@ export const planningRouter = (container: Container): Router => {
   });
 
   /**
+   * Vide la pile d'un coup : tout ce qui est encore à faire, et ses créneaux non vécus.
+   *
+   * Déclaré **avant** `/items/:id` par simple lisibilité — Express distingue déjà les deux
+   * chemins —, et pour la même raison qu'ailleurs : le plus général en premier.
+   */
+  router.delete('/items', (_req, res) => {
+    res.json({ removed: container.managePlanning.clearItems() });
+  });
+
+  /**
    * Retire une ligne de la pile, et ses créneaux non vécus avec elle.
    *
    * **Rien n'est replanifié** : retirer une tâche ne doit pas réécrire la journée. C'est
