@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Container } from '../../container.ts';
 import {
   approveSlotSchema,
+  placeSlotSchema,
   slotFromTimeEntrySchema,
   startSlotTimerSchema,
   planningBoardQuerySchema,
@@ -112,6 +113,24 @@ export const planningRouter = (container: Container): Router => {
   router.post('/replan', async (req, res) => {
     const body = replanSchema.parse(req.body);
     res.json(await container.managePlanning.replan({ ...body, mode: 'full' }));
+  });
+
+  /**
+   * Pose un créneau à la main sur une ligne de la pile : le glisser-déposer depuis la
+   * colonne « En cours ».
+   *
+   * Le créneau naît `manual`, donc immobile, et **rien n'est replanifié**. Déclaré avant
+   * `/slots/:id/...` par lisibilité, comme `/items` avant `/items/:id`.
+   */
+  router.post('/slots', (req, res) => {
+    const body = placeSlotSchema.parse(req.body);
+    res.status(201).json(
+      container.managePlanning.placeItem(body.itemId, {
+        date: body.date,
+        startTime: body.startTime,
+        minutes: body.minutes,
+      }),
+    );
   });
 
   /**

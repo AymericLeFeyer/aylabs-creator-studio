@@ -179,6 +179,30 @@ export interface ApproveSlotInput {
   nowMinutes?: number;
 }
 
+/**
+ * Combien de temps réserver quand on pose soi-même un créneau sur une ligne de la pile.
+ *
+ * **Dupliquée à l'identique côté API** (`defaultSlotMinutes`), comme `slotMinutes` : le
+ * bloc fantôme qui suit le curseur pendant le glisser-déposer doit faire exactement la
+ * taille du créneau qui sera posé, sinon il saute de hauteur au relâchement.
+ *
+ * Le reste à couvrir d'abord, plafonné par `maxBlockMinutes`. Quand il ne reste rien —
+ * la ligne est déjà couverte, ou on repose un deuxième bloc parce que le montage ne se
+ * fera pas d'une traite — la durée retombe sur `minBlockMinutes` : **poser un bloc de
+ * plus doit rester possible**.
+ */
+export const defaultSlotMinutes = (
+  item: Pick<PlanningItem, 'plannedMinutes' | 'scheduledMinutes' | 'approvedMinutes'>,
+  sizing: Pick<PlanningSettings, 'minBlockMinutes' | 'maxBlockMinutes' | 'slotGranularityMinutes'>,
+): number => {
+  const uncovered = item.plannedMinutes - item.approvedMinutes - item.scheduledMinutes;
+  const base = uncovered > 0 ? uncovered : sizing.minBlockMinutes;
+  return Math.max(
+    sizing.slotGranularityMinutes,
+    Math.min(sizing.maxBlockMinutes, Math.round(base)),
+  );
+};
+
 /** `540` → `09:00`. Le seul format d'heure du planning. */
 export const toTime = (minutes: number): string => {
   const clamped = Math.max(0, Math.min(24 * 60, Math.round(minutes)));

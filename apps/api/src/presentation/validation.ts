@@ -804,6 +804,26 @@ export const startSlotTimerSchema = z.object({
   startTime: clockTime,
 });
 
+/**
+ * Poser soi-même un créneau sur une ligne de la pile — le glisser-déposer depuis
+ * « En cours » vers la grille.
+ *
+ * `minutes` est **facultatif** : sans lui, l'API réserve le temps qui manque encore à la
+ * ligne (`defaultSlotMinutes`). Le front l'envoie tout de même, parce que le bloc fantôme
+ * qui suit le curseur doit faire exactement la taille du créneau qui sera posé.
+ */
+export const placeSlotSchema = z.object({
+  itemId: z.string().min(1, 'La ligne de planning est obligatoire'),
+  date: isoDate,
+  startTime: clockTime,
+  minutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60)
+    .optional(),
+});
+
 export const approveSlotSchema = z.object({
   finished: z.boolean(),
   /** Temps réellement passé, si différent de la durée prévue. */

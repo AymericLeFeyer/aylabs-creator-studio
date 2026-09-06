@@ -1,4 +1,4 @@
-import { Eraser, ListOrdered, X } from 'lucide-react';
+import { Eraser, GripVertical, ListOrdered, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatMinutes, type PlanningItem } from '../../../domain/planning/entities/Planning.ts';
 import {
@@ -7,9 +7,19 @@ import {
 } from '../../../application/planning/usecases/usePlanning.ts';
 import { Button } from '../ui/button.tsx';
 import { Card } from '../ui/card.tsx';
+import { cn } from '../../../shared/cn.ts';
 
 export interface PlanningQueueProps {
   items: PlanningItem[];
+  /**
+   * Une tâche vient d'être attrapée pour être glissée sur la grille.
+   *
+   * La pile ne fait que dire **ce qu'on tient** : c'est la grille qui suit le pointeur et
+   * résout le jour et l'heure, parce qu'elle est la seule à connaître sa géométrie.
+   */
+  onPickUp?: (item: PlanningItem) => void;
+  /** La ligne en cours de glissement : elle s'efface pendant que le fantôme la remplace. */
+  pendingId?: string | null;
 }
 
 /**
@@ -26,7 +36,7 @@ export interface PlanningQueueProps {
  * les deux qui indique s'il reste des créneaux à trouver, et un simple total ne le
  * dirait pas.
  */
-export const PlanningQueue = ({ items }: PlanningQueueProps) => {
+export const PlanningQueue = ({ items, onPickUp, pendingId = null }: PlanningQueueProps) => {
   const remove = useRemovePlanningItem();
   const clear = useClearPlanningItems();
 
@@ -98,7 +108,8 @@ export const PlanningQueue = ({ items }: PlanningQueueProps) => {
             <Link to="/production" className="underline hover:text-foreground">
               file de production
             </Link>{' '}
-            puis celui des étapes. Une tâche cochée quitte la pile toute seule.
+            puis celui des étapes. Une tâche cochée quitte la pile toute seule — et se glisse sur la
+            grille pour lui donner une heure à la main.
           </span>
         </p>
       </div>
@@ -126,7 +137,25 @@ export const PlanningQueue = ({ items }: PlanningQueueProps) => {
             const uncovered = Math.max(0, remaining - item.scheduledMinutes);
 
             return (
-              <div key={item.id} className="group flex items-start gap-2 px-3 py-1.5 pl-7">
+              <div
+                key={item.id}
+                // Toute la ligne est la poignée : on attrape la tâche où l'on veut, comme
+                // on attrape un bloc dans la grille. Le bouton de retrait neutralise son
+                // propre `pointerdown`, sinon le clic partirait en glissement.
+                onPointerDown={() => onPickUp?.(item)}
+                className={cn(
+                  'group flex cursor-grab items-start gap-2 px-3 py-1.5 pl-7 active:cursor-grabbing',
+                  // La ligne s'efface pendant le geste : le bloc fantôme de la grille la
+                  // représente déjà, et la voir aux deux endroits ferait douter de ce
+                  // qu'on tient.
+                  item.id === pendingId && 'opacity-40',
+                )}
+                title="Glisser sur la grille pour poser un créneau"
+              >
+                <GripVertical
+                  className="mt-1 h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-60"
+                  aria-hidden
+                />
                 <span
                   className="mt-0.5 h-7 w-1 shrink-0 rounded-full"
                   style={{ backgroundColor: item.stepColor ?? group.color }}
@@ -151,6 +180,7 @@ export const PlanningQueue = ({ items }: PlanningQueueProps) => {
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+                  onPointerDown={(event) => event.stopPropagation()}
                   onClick={() => {
                     // Les créneaux **approuvés** restent : ils racontent du temps passé.
                     // Ceux qui n'ont pas encore eu lieu partent avec la ligne — les

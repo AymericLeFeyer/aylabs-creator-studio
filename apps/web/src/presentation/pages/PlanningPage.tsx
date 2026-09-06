@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -12,7 +12,9 @@ import {
 import {
   localToday,
   shiftDate,
+  usePlaceItem,
   usePlanningBoard,
+  usePlanningSettings,
   useReplan,
   useStartSlotTimer,
   useUnapproveSlot,
@@ -23,7 +25,12 @@ import {
   useUpdateSlot,
 } from '../../application/production/usecases/useProductions.ts';
 import type { ProductionSlot } from '../../domain/production/entities/ProductionSlot.ts';
-import { formatMinutes, toTime } from '../../domain/planning/entities/Planning.ts';
+import {
+  defaultSlotMinutes,
+  formatMinutes,
+  toTime,
+  type PlanningItem,
+} from '../../domain/planning/entities/Planning.ts';
 import { PlanningGrid } from '../components/planning/PlanningGrid.tsx';
 import { PlanningQueue } from '../components/planning/PlanningQueue.tsx';
 import { AddToPlanDialog } from '../components/planning/AddToPlanDialog.tsx';
@@ -79,7 +86,11 @@ export const PlanningPage = () => {
   const to = span === 'day' ? anchor : shiftDate(anchor, 6);
 
   const { data: board, isLoading } = usePlanningBoard(from, to);
+  // Les bornes de forme d'un créneau : c'est d'elles que se déduit la durée d'un bloc
+  // posé à la main. Requête partagée avec l'écran de réglages (cache 5 min).
+  const { data: settings } = usePlanningSettings();
   const replan = useReplan();
+  const placeItem = usePlaceItem();
   const updateSlot = useUpdateSlot();
   const deleteSlot = useDeleteSlot();
   const unapprove = useUnapproveSlot();
@@ -123,6 +134,47 @@ export const PlanningPage = () => {
     });
   };
 
+  /**
+   * La tâche attrapée dans la pile « En cours », le temps du glissement.
+   *
+   * Elle vit **ici** et non dans l'un des deux composants : la pile sait ce qu'on a
+   * attrapé, la grille sait où on le lâche, et aucune des deux ne peut répondre seule.
+   */
+  const [pending, setPending] = useState<PlanningItem | null>(null);
+
+  /**
+   * La durée du créneau qui sera posé, calculée **avant** le lâcher.
+   *
+   * Le fantôme qui suit le curseur doit faire exactement la taille du bloc qui va naître,
+   * sinon il saute de hauteur au relâchement. La règle est dupliquée côté API, qui
+   * l'applique quand `minutes` n'est pas fourni.
+   */
+  const pendingMinutes =
+    pending && settings ? defaultSlotMinutes(pending, settings) : (settings?.minBlockMinutes ?? 60);
+
+  // Mémorisés : la grille les prend en dépendance de l'écouteur global qu'elle installe
+  // pendant le glissement, et deux fonctions neuves à chaque rendu le feraient
+  // réattacher à chaque mouvement de souris.
+  const place = placeItem.mutate;
+  const dropPending = useCallback(
+    (date: string, startMinutes: number) => {
+      if (!pending) return;
+      place({
+        itemId: pending.id,
+        date,
+        startTime: toTime(startMinutes),
+        // La durée voyage avec la demande : l'API la recalculerait à l'identique, mais
+        // entre le début du geste et le lâcher, un autre créneau a pu changer le reste à
+        // couvrir — et le bloc posé ne ferait alors plus la taille du fantôme.
+        minutes: pendingMinutes,
+      });
+      setPending(null);
+    },
+    [pending, pendingMinutes, place],
+  );
+
+  const cancelPending = useCallback(() => setPending(null), []);
+
   const totals = (board?.days ?? []).reduce(
     (sum, day) => ({
       suggested: sum.suggested + day.suggestedMinutes,
@@ -136,7 +188,8 @@ export const PlanningPage = () => {
     updateSlot.isPending ||
     deleteSlot.isPending ||
     unapprove.isPending ||
-    startTimer.isPending;
+    startTimer.isPending ||
+    placeItem.isPending;
 
   return (
     <div className="space-y-4">
@@ -281,12 +334,28 @@ export const PlanningPage = () => {
               // qui est réellement aujourd'hui, pas sur le premier jour de l'horizon.
               onReorganizeDay={(date) => replan.mutate({ onlyDate: date })}
               onEditTime={setEditingTime}
+              // Seule la fin bouge, et le créneau passe en `manual` : on vient de
+              // décider de la durée, le prochain replacement n'a pas à la défaire.
+              onResize={(slot, endMinutes) =>
+                updateSlot.mutate({
+                  id: slot.id,
+                  input: { endTime: toTime(endMinutes), origin: 'manual' },
+                })
+              }
+              pendingItem={pending}
+              pendingMinutes={pendingMinutes}
+              onExternalDrop={dropPending}
+              onExternalCancel={cancelPending}
             />
           )}
         </Card>
 
         <div className="space-y-4">
-          <PlanningQueue items={board?.items ?? []} />
+          <PlanningQueue
+            items={board?.items ?? []}
+            onPickUp={setPending}
+            pendingId={pending?.id ?? null}
+          />
 
           {board && !board.calendarConnected && (
             <Card className="p-4">

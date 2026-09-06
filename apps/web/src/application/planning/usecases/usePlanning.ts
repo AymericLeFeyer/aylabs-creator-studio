@@ -40,6 +40,16 @@ export const usePlanningBoard = (from: string, to: string) =>
     // Le planning se lit à côté d'un agenda ouvert ailleurs : une donnée d'une minute
     // est déjà trop vieille pour décider quoi faire maintenant.
     staleTime: 30_000,
+    /**
+     * La grille précédente reste affichée pendant que la suivante arrive.
+     *
+     * Sans ça, chaque clic de flèche change la clé de cache, la requête repart de zéro et
+     * l'écran se **démonte** : la grille disparaît, le message de chargement prend sa
+     * place, puis tout se remonte. Sur une navigation qu'on enchaîne jour après jour,
+     * c'est un clignotement à chaque pas. Même parti pris que `useAnalytics`, pour la
+     * même raison.
+     */
+    placeholderData: (previous) => previous,
   });
 
 export const usePlanningItems = () =>
@@ -92,6 +102,19 @@ export const useAddPlanTargets = () =>
 
 export const useRemovePlanningItem = () =>
   usePlanningMutation((id: string) => planningApi.removeItem(id));
+
+/**
+ * Pose un créneau à la main sur une ligne de la pile.
+ *
+ * Le créneau naît `manual` : on vient de choisir le moment, et le prochain
+ * « Repositionner » n'a pas à défaire ce choix. On peut en poser **plusieurs sur la même
+ * ligne** — un montage de trois heures se fait souvent en trois soirées.
+ */
+export const usePlaceItem = () =>
+  usePlanningMutation(
+    (input: { itemId: string; date: string; startTime: string; minutes?: number }) =>
+      planningApi.placeItem(input),
+  );
 
 /**
  * Vide la pile d'un coup.

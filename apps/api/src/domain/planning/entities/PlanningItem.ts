@@ -62,3 +62,39 @@ export interface CreatePlanningItemInput {
   plannedMinutes: number;
   sequence?: number;
 }
+
+/** Les bornes de forme d'un créneau, prises dans les réglages du planning. */
+export interface SlotSizing {
+  minBlockMinutes: number;
+  maxBlockMinutes: number;
+  slotGranularityMinutes: number;
+}
+
+/**
+ * Combien de temps réserver quand on pose soi-même un créneau sur une ligne de la pile.
+ *
+ * **Le reste à couvrir d'abord**, plafonné par `maxBlockMinutes` : on glisse une tâche
+ * sur la grille pour lui donner le temps qui lui manque, pas pour redire une durée qu'on
+ * a déjà estimée ailleurs.
+ *
+ * Quand il ne reste rien — la ligne est déjà entièrement couverte, ou on repose un
+ * deuxième bloc sur la même tâche parce qu'elle ne se fera pas d'une traite — la durée
+ * retombe sur `minBlockMinutes`. **Poser un bloc de plus doit rester possible** : c'est
+ * le geste normal quand on étale un montage sur trois soirées, et refuser au motif que
+ * le compte est bon obligerait à gonfler l'estimation pour contourner l'outil.
+ *
+ * Dupliquée à l'identique côté front (`defaultSlotMinutes`), comme `slotMinutes` : le
+ * bloc fantôme qui suit le curseur doit faire exactement la taille du créneau qui sera
+ * posé, sinon il saute de hauteur au relâchement.
+ */
+export const defaultSlotMinutes = (
+  item: Pick<PlanningItemView, 'plannedMinutes' | 'scheduledMinutes' | 'approvedMinutes'>,
+  sizing: SlotSizing,
+): number => {
+  const uncovered = item.plannedMinutes - item.approvedMinutes - item.scheduledMinutes;
+  const base = uncovered > 0 ? uncovered : sizing.minBlockMinutes;
+  return Math.max(
+    sizing.slotGranularityMinutes,
+    Math.min(sizing.maxBlockMinutes, Math.round(base)),
+  );
+};

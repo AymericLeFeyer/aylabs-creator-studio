@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, Clock, ExternalLink, Play, Timer, Trash2, Undo2, Wand2 } from 'lucide-react';
+import { Check, Clock, ExternalLink, Play, Timer, Trash2, Undo2, Video, Wand2 } from 'lucide-react';
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
 import {
   dayBounds,
@@ -9,6 +9,7 @@ import {
   toTime,
   WEEKDAY_SHORT,
   type PlanningDay,
+  type PlanningItem,
   type PlanningProductionSpan,
 } from '../../../domain/planning/entities/Planning.ts';
 import { STATUS_LABELS } from '../../../domain/production/entities/Production.ts';
@@ -48,6 +49,25 @@ export interface PlanningGridProps {
    */
   onEditTime: (slot: ProductionSlot) => void;
   onReorganizeDay: (date: string) => void;
+  /**
+   * Redimensionner un créneau en tirant son bord bas. Seule la **fin** bouge : on
+   * rallonge une séance, on ne la déplace pas — c'est le glissement du bloc qui fait ça.
+   */
+  onResize: (slot: ProductionSlot, endMinutes: number) => void;
+  /**
+   * La tâche que l'on est en train de faire glisser depuis la pile « En cours ».
+   *
+   * La grille est la seule à connaître sa propre géométrie : c'est donc elle qui suit le
+   * pointeur, dessine le bloc fantôme et résout le jour et l'heure visés. La pile, elle,
+   * ne fait que dire ce qu'on a attrapé.
+   */
+  pendingItem?: PlanningItem | null;
+  /** Durée du créneau qui sera posé — celle du fantôme, pour qu'il ne saute pas. */
+  pendingMinutes?: number;
+  /** Le pointeur a été relâché sur la grille : on pose le créneau. */
+  onExternalDrop?: (date: string, startMinutes: number) => void;
+  /** Relâché en dehors : rien n'est posé, le geste s'arrête là. */
+  onExternalCancel?: () => void;
   /** Session en cours, s'il y en a une : le créneau d'où elle part se signale. */
   runningEntryId?: string | null;
   /** `true` pendant qu'une écriture tourne : la grille se grise sans se démonter. */
@@ -66,6 +86,22 @@ interface DragState {
   columnWidth: number;
   startMinutes: number;
   durationMinutes: number;
+}
+
+/**
+ * Le redimensionnement en cours. Le début ne bouge pas : c'est la fin qui suit le
+ * pointeur, exactement comme on rallonge une séance de montage qui déborde.
+ */
+interface ResizeState {
+  slotId: string;
+  startMinutes: number;
+  endMinutes: number;
+}
+
+/** La cible visée par une tâche glissée depuis la pile. */
+interface GhostState {
+  dayIndex: number;
+  startMinutes: number;
 }
 
 /** L'heure locale courante, en minutes depuis minuit. */
@@ -109,6 +145,11 @@ export const PlanningGrid = ({
   onStartTimer,
   onEditTime,
   onReorganizeDay,
+  onResize,
+  pendingItem = null,
+  pendingMinutes = 60,
+  onExternalDrop,
+  onExternalCancel,
   runningEntryId = null,
   busy = false,
 }: PlanningGridProps) => {
@@ -117,6 +158,16 @@ export const PlanningGrid = ({
   const height = (totalMinutes / 60) * HOUR_HEIGHT;
   const columnsRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [resize, setResize] = useState<ResizeState | null>(null);
+  const [ghost, setGhost] = useState<GhostState | null>(null);
+  /**
+   * La même cible, lisible depuis le gestionnaire de relâchement.
+   *
+   * Les écouteurs sont posés sur `window` — le pointeur est parti d'un autre composant,
+   * il n'y a rien à capturer ici —, et leur closure figerait l'état au moment de
+   * l'attache. La ref est la seule valeur qui soit à jour au moment du lâcher.
+   */
+  const ghostRef = useRef<GhostState | null>(null);
 
   // L'heure courante, rafraîchie à la minute : c'est la maille du trait, l'animer à la
   // seconde ferait un rendu par seconde pour un déplacement d'un pixel toutes les minutes.
@@ -236,189 +287,362 @@ export const PlanningGrid = ({
     setDrag(null);
   };
 
-  return (
-    <div className={cn('overflow-x-auto', busy && 'pointer-events-none opacity-60')}>
-      <div className="min-w-[720px]">
-        {/* En-têtes : le jour, sa charge, et son bouton de réorganisation. */}
-        <div className="flex border-b border-border">
-          <div className="w-14 shrink-0" />
-          {days.map((day, index) => {
-            const isToday = day.date === today;
-            const isTarget = drag !== null && drag.targetIndex === index;
-            return (
-              <div
-                key={day.date}
-                className={cn(
-                  'flex-1 border-l border-border px-2 py-1.5 transition-colors',
-                  isToday && 'bg-[var(--today)]/10',
-                  isTarget && 'bg-[var(--today)]/20',
-                )}
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="min-w-0">
-                    <p
-                      className={cn(
-                        'truncate text-xs font-medium',
-                        isToday ? 'text-[var(--today)]' : 'text-foreground',
-                      )}
-                    >
-                      {WEEKDAY_SHORT[day.weekday]} {day.date.slice(8, 10)}/{day.date.slice(5, 7)}
-                    </p>
-                    <p className="truncate text-[11px] text-muted-foreground">
-                      {day.suggestedMinutes + day.approvedMinutes === 0
-                        ? '—'
-                        : formatMinutes(day.suggestedMinutes + day.approvedMinutes)}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 shrink-0"
-                    title="Réorganiser cette journée"
-                    onClick={() => onReorganizeDay(day.date)}
-                  >
-                    <Wand2 className="h-3 w-3" />
-                    <span className="sr-only">Réorganiser le {day.date}</span>
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+  /**
+   * Le redimensionnement, par le bord bas du bloc.
+   *
+   * `stopPropagation` est **indispensable** : sans lui, le même geste démarrerait aussi
+   * le déplacement du bloc, et on tirerait le créneau vers le bas au lieu de l'allonger.
+   * Le pointeur est capturé sur la poignée, qui ne fait que quelques pixels de haut — le
+   * geste doit survivre à la sortie de cette bande.
+   */
+  const startResize = (event: React.PointerEvent, slot: ProductionSlot) => {
+    if (slot.done || !slot.startTime || !slot.endTime) return;
+    event.stopPropagation();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    setResize({
+      slotId: slot.id,
+      startMinutes: toMinutes(slot.startTime),
+      endMinutes: toMinutes(slot.endTime),
+    });
+  };
 
-        {/* La swimlane des vidéos : de quand à quand chacune occupe le calendrier.
+  const moveResize = (event: React.PointerEvent) => {
+    if (!resize || !columnsRef.current) return;
+    const container = columnsRef.current.getBoundingClientRect();
+    const raw = minutesOf(event.clientY - container.top);
+    const snapped = Math.round(raw / DRAG_STEP) * DRAG_STEP;
+    // Un créneau ne peut pas être plus court qu'un pas ni déborder de la grille : à zéro
+    // minute il ne se dessinerait plus, et on ne pourrait plus le rattraper au doigt.
+    const endMinutes = Math.min(bounds.end, Math.max(resize.startMinutes + DRAG_STEP, snapped));
+    if (endMinutes === resize.endMinutes) return;
+    setResize({ ...resize, endMinutes });
+  };
+
+  const endResize = (slot: ProductionSlot) => {
+    if (!resize) return;
+    if (resize.endMinutes !== toMinutes(slot.endTime ?? '')) onResize(slot, resize.endMinutes);
+    setResize(null);
+  };
+
+  /**
+   * Le dépôt d'une tâche venue de la pile.
+   *
+   * Les écouteurs sont sur `window` et non sur la grille : le geste a commencé dans un
+   * autre composant, il n'y a donc aucun pointeur à capturer ici, et suivre le curseur
+   * seulement au-dessus de la grille ferait perdre le fil dès qu'on la survole de biais.
+   *
+   * Hors du cadre, la cible passe à `null` et le fantôme disparaît : lâcher à côté ne doit
+   * rien poser, et c'est plus clair que de rabattre le bloc sur le bord le plus proche.
+   */
+  useEffect(() => {
+    if (!pendingItem) return;
+
+    const resolve = (clientX: number, clientY: number): GhostState | null => {
+      const container = columnsRef.current?.getBoundingClientRect();
+      if (!container) return null;
+      if (
+        clientX < container.left ||
+        clientX > container.right ||
+        clientY < container.top ||
+        clientY > container.bottom
+      ) {
+        return null;
+      }
+
+      const columnWidth = container.width / Math.max(1, days.length);
+      const dayIndex = Math.min(
+        days.length - 1,
+        Math.max(0, Math.floor((clientX - container.left) / columnWidth)),
+      );
+      const raw = bounds.start + ((clientY - container.top) / HOUR_HEIGHT) * 60;
+      const snapped = Math.round(raw / DRAG_STEP) * DRAG_STEP;
+      return {
+        dayIndex,
+        startMinutes: Math.max(bounds.start, Math.min(bounds.end - pendingMinutes, snapped)),
+      };
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      const next = resolve(event.clientX, event.clientY);
+      ghostRef.current = next;
+      setGhost(next);
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      const target = resolve(event.clientX, event.clientY) ?? ghostRef.current;
+      const date = target ? days[target.dayIndex]?.date : undefined;
+      if (target && date) onExternalDrop?.(date, target.startMinutes);
+      else onExternalCancel?.();
+      ghostRef.current = null;
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [
+    pendingItem,
+    days,
+    bounds.start,
+    bounds.end,
+    pendingMinutes,
+    onExternalDrop,
+    onExternalCancel,
+  ]);
+
+  /**
+   * Le fantôme n'est lu que tant qu'une tâche est en main.
+   *
+   * L'état n'est pas remis à `null` à la fin du geste — le faire depuis l'effet
+   * reviendrait à écrire un état pendant un effet, ce que la règle `set-state-in-effect`
+   * du projet refuse. Le lire à travers `pendingItem` revient au même et ne coûte rien.
+   */
+  const activeGhost = pendingItem ? ghost : null;
+
+  return (
+    /**
+     * La grille défile **dans sa carte** et non avec la page.
+     *
+     * C'est ce qui permet à l'en-tête des jours de rester collé : un `sticky` n'accroche
+     * qu'à un conteneur qui défile réellement, et tant que la grille débordait dans le
+     * flux de la page, la ligne des dates partait vers le haut dès qu'on descendait
+     * chercher une fin d'après-midi — on ne savait alors plus sous quel jour on regardait.
+     * La gouttière des heures est collée à gauche pour la même raison, sur sept colonnes
+     * qui défilent horizontalement.
+     */
+    <div
+      className={cn(
+        'max-h-[calc(100vh-13rem)] min-h-[20rem] overflow-auto',
+        busy && 'pointer-events-none opacity-60',
+      )}
+    >
+      <div className="min-w-[720px]">
+        {/* Tout ce qui étiquette les colonnes tient dans un seul bloc collant : les
+            empiler séparément demanderait un `top` par bande, recalculé à chaque fois
+            qu'une swimlane apparaît ou disparaît. */}
+        <div className="sticky top-0 z-40 bg-card">
+          {/* En-têtes : le jour, sa charge, et son bouton de réorganisation. */}
+          <div className="flex border-b border-border">
+            <div className="sticky left-0 z-10 w-14 shrink-0 bg-card" />
+            {days.map((day, index) => {
+              const isToday = day.date === today;
+              const isTarget = drag !== null && drag.targetIndex === index;
+              return (
+                <div
+                  key={day.date}
+                  className={cn(
+                    'flex-1 border-l border-border px-2 py-1.5 transition-colors',
+                    isToday && 'bg-[var(--today)]/10',
+                    isTarget && 'bg-[var(--today)]/20',
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="min-w-0">
+                      <p
+                        className={cn(
+                          'truncate text-xs font-medium',
+                          isToday ? 'text-[var(--today)]' : 'text-foreground',
+                        )}
+                      >
+                        {WEEKDAY_SHORT[day.weekday]} {day.date.slice(8, 10)}/{day.date.slice(5, 7)}
+                      </p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {day.suggestedMinutes + day.approvedMinutes === 0
+                          ? '—'
+                          : formatMinutes(day.suggestedMinutes + day.approvedMinutes)}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 shrink-0"
+                      title="Réorganiser cette journée"
+                      onClick={() => onReorganizeDay(day.date)}
+                    >
+                      <Wand2 className="h-3 w-3" />
+                      <span className="sr-only">Réorganiser le {day.date}</span>
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* La swimlane des vidéos : de quand à quand chacune occupe le calendrier.
             Elle est **au-dessus des heures** parce qu'elle se lit en premier — « sur quoi
             suis-je censé travailler ces jours-ci » vient avant « à quelle heure ». Elle ne
             se déduit pas des créneaux : une vidéo peut avoir une période annoncée sans
             qu'aucune heure n'ait encore été posée, et c'est précisément le cas qu'on veut
             voir. Purement indicative, elle ne se déplace pas depuis ici : la fenêtre d'une
             vidéo se règle sur sa fiche. */}
-        {lanes.length > 0 && (
-          <div className="flex border-b border-border bg-muted/20">
-            <div className="w-14 shrink-0 px-1 py-1 text-[10px] text-muted-foreground">vidéos</div>
-            <div className="relative flex-1" style={{ height: laneEnds.length * LANE_HEIGHT + 4 }}>
-              {/* Les séparateurs de colonne, pour que l'œil retombe sur le bon jour. */}
-              {days.map((day, index) => (
-                <div
-                  key={day.date}
-                  className={cn(
-                    'pointer-events-none absolute inset-y-0 border-l border-border',
-                    day.date === today && 'bg-[var(--today)]/10',
-                  )}
-                  style={{
-                    left: `${(index * 100) / days.length}%`,
-                    width: `${100 / days.length}%`,
-                  }}
-                />
-              ))}
-
-              {lanes.map(({ span, lane, startIndex, endIndex, clippedStart, clippedEnd }) => {
-                const color = span.channelColor ?? '#64748b';
-                const text = readableTextColor(color);
-                const window =
-                  span.from === span.to
-                    ? span.from.slice(8, 10) + '/' + span.from.slice(5, 7)
-                    : `${span.from.slice(8, 10)}/${span.from.slice(5, 7)} → ${span.to.slice(8, 10)}/${span.to.slice(5, 7)}`;
-
-                return (
-                  <Link
-                    key={span.id}
-                    to={`/production/${span.id}`}
+          {lanes.length > 0 && (
+            <div className="flex border-b border-border bg-muted/20">
+              {/* Une caméra plutôt que le mot « vidéos » : à quatorze pixels de large, le
+                libellé se tronquait et l'icône se lit d'un coup d'œil. Centrée dans les
+                deux sens, elle reste à hauteur des bandes quel qu'en soit le nombre. */}
+              <div
+                className="sticky left-0 z-10 flex w-14 shrink-0 items-center justify-center bg-card text-muted-foreground"
+                title="Fenêtres de travail des vidéos"
+              >
+                <Video className="h-4 w-4" aria-hidden />
+                <span className="sr-only">Vidéos</span>
+              </div>
+              <div
+                className="relative flex-1"
+                style={{ height: laneEnds.length * LANE_HEIGHT + 4 }}
+              >
+                {/* Les séparateurs de colonne, pour que l'œil retombe sur le bon jour. */}
+                {days.map((day, index) => (
+                  <div
+                    key={day.date}
                     className={cn(
-                      'absolute flex items-center gap-1 overflow-hidden px-1.5 text-[11px] font-medium leading-none transition-opacity hover:opacity-90',
-                      // Le côté qui déborde du cadre reste carré : un bord arrondi se
-                      // lirait comme une échéance, alors que la vidéo continue au-delà.
-                      !clippedStart && 'rounded-l-full',
-                      !clippedEnd && 'rounded-r-full',
+                      'pointer-events-none absolute inset-y-0 border-l border-border',
+                      day.date === today && 'bg-[var(--today)]/10',
                     )}
                     style={{
-                      top: lane * LANE_HEIGHT + 2,
-                      height: LANE_HEIGHT - 4,
-                      left: `calc(${(startIndex * 100) / days.length}% + 2px)`,
-                      width: `calc(${((endIndex - startIndex + 1) * 100) / days.length}% - 4px)`,
-                      backgroundColor: color,
-                      color: text,
-                      // Une vidéo publiée n'attend plus rien : elle reste comme repère,
-                      // en retrait de celles sur lesquelles il y a encore à faire.
-                      opacity: span.status === 'done' ? 0.55 : 1,
+                      left: `${(index * 100) / days.length}%`,
+                      width: `${100 / days.length}%`,
                     }}
-                    title={`${span.title}
+                  />
+                ))}
+
+                {lanes.map(({ span, lane, startIndex, endIndex, clippedStart, clippedEnd }) => {
+                  const color = span.channelColor ?? '#64748b';
+                  const text = readableTextColor(color);
+                  const window =
+                    span.from === span.to
+                      ? span.from.slice(8, 10) + '/' + span.from.slice(5, 7)
+                      : `${span.from.slice(8, 10)}/${span.from.slice(5, 7)} → ${span.to.slice(8, 10)}/${span.to.slice(5, 7)}`;
+
+                  return (
+                    <Link
+                      key={span.id}
+                      to={`/production/${span.id}`}
+                      className={cn(
+                        'absolute flex items-center gap-1 overflow-hidden px-1.5 text-[11px] font-medium leading-none transition-opacity hover:opacity-90',
+                        // Le côté qui déborde du cadre reste carré : un bord arrondi se
+                        // lirait comme une échéance, alors que la vidéo continue au-delà.
+                        !clippedStart && 'rounded-l-full',
+                        !clippedEnd && 'rounded-r-full',
+                      )}
+                      style={{
+                        top: lane * LANE_HEIGHT + 2,
+                        height: LANE_HEIGHT - 4,
+                        left: `calc(${(startIndex * 100) / days.length}% + 2px)`,
+                        width: `calc(${((endIndex - startIndex + 1) * 100) / days.length}% - 4px)`,
+                        backgroundColor: color,
+                        color: text,
+                        // Une vidéo publiée n'attend plus rien : elle reste comme repère,
+                        // en retrait de celles sur lesquelles il y a encore à faire.
+                        opacity: span.status === 'done' ? 0.55 : 1,
+                      }}
+                      title={`${span.title}
 ${STATUS_LABELS[span.status]}${span.channelName ? ` · ${span.channelName}` : ''}
 ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${span.plannedDate.slice(5, 7)}` : ''}`}
-                  >
-                    <span className="truncate">{span.title}</span>
-                    {/* Le point marque la sortie, et il n'apparaît que si elle tombe
+                    >
+                      <span className="truncate">{span.title}</span>
+                      {/* Le point marque la sortie, et il n'apparaît que si elle tombe
                         dans le cadre : sur une fenêtre tronquée à droite, le bord de la
                         barre n'est pas le jour de la sortie. */}
-                    {span.plannedDate !== null && !clippedEnd && (
-                      <span
-                        className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-80"
-                        aria-hidden
-                      />
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Les événements « journée entière » : ils étiquettent le jour sans l'occuper. */}
-        {days.some((day) => day.events.some((event) => event.allDay)) && (
-          <div className="flex border-b border-border bg-muted/30">
-            <div className="w-14 shrink-0 px-1 py-1 text-[10px] text-muted-foreground">journée</div>
-            {days.map((day) => (
-              <div key={day.date} className="flex-1 space-y-0.5 border-l border-border px-1 py-1">
-                {day.events
-                  .filter((event) => event.allDay)
-                  .map((event) => (
-                    <p
-                      key={event.uid}
-                      className="truncate rounded bg-muted px-1 text-[11px] text-muted-foreground"
-                      title={event.summary}
-                    >
-                      {event.summary}
-                    </p>
-                  ))}
+                      {span.plannedDate !== null && !clippedEnd && (
+                        <span
+                          className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-80"
+                          aria-hidden
+                        />
+                      )}
+                    </Link>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          )}
+
+          {/* Les événements « journée entière » : ils étiquettent le jour sans l'occuper. */}
+          {days.some((day) => day.events.some((event) => event.allDay)) && (
+            <div className="flex border-b border-border bg-muted/30">
+              <div className="sticky left-0 z-10 w-14 shrink-0 bg-card px-1 py-1 text-[10px] text-muted-foreground">
+                journée
+              </div>
+              {days.map((day) => (
+                <div key={day.date} className="flex-1 space-y-0.5 border-l border-border px-1 py-1">
+                  {day.events
+                    .filter((event) => event.allDay)
+                    .map((event) => (
+                      <p
+                        key={event.uid}
+                        className="truncate rounded bg-muted px-1 text-[11px] text-muted-foreground"
+                        title={event.summary}
+                      >
+                        {event.summary}
+                      </p>
+                    ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="flex">
           {/* La règle des heures. */}
-          <div className="relative w-14 shrink-0" style={{ height }}>
-            {hourMarks.map((minutes) => (
-              <span
-                key={minutes}
-                className="absolute right-1 -translate-y-1/2 text-[11px] text-muted-foreground"
-                style={{ top: yOf(minutes) }}
-              >
-                {toTime(minutes)}
-              </span>
-            ))}
+          <div className="sticky left-0 z-20 w-14 shrink-0 bg-card" style={{ height }}>
+            <div className="relative h-full">
+              {hourMarks.map((minutes) => (
+                <span
+                  key={minutes}
+                  className="absolute right-1 -translate-y-1/2 text-[11px] text-muted-foreground"
+                  style={{ top: yOf(minutes) }}
+                >
+                  {toTime(minutes)}
+                </span>
+              ))}
 
-            {/* L'heure qu'il est, dans la gouttière. Elle a un fond opaque : sans lui,
+              {/* L'heure qu'il est, dans la gouttière. Elle a un fond opaque : sans lui,
                 elle se superposerait au libellé de l'heure pleine la plus proche. */}
-            {showNow && (
-              <span
-                className="absolute right-1 -translate-y-1/2 rounded bg-[var(--now)] px-1 text-[11px] font-medium text-white"
-                style={{ top: yOf(nowMinutes) }}
-              >
-                {toTime(nowMinutes)}
-              </span>
-            )}
+              {showNow && (
+                <span
+                  className="absolute right-1 -translate-y-1/2 rounded bg-[var(--now)] px-1 text-[11px] font-medium text-white"
+                  style={{ top: yOf(nowMinutes) }}
+                >
+                  {toTime(nowMinutes)}
+                </span>
+              )}
 
-            {/* L'heure visée pendant le déplacement, à la même place et dans la couleur
+              {/* L'heure visée pendant le déplacement, à la même place et dans la couleur
                 du jour : c'est le seul endroit où l'œil va déjà chercher une heure. */}
-            {drag !== null && (
-              <span
-                className="absolute right-1 z-10 -translate-y-1/2 rounded bg-[var(--today)] px-1 text-[11px] font-medium text-white shadow"
-                style={{ top: yOf(drag.startMinutes) }}
-              >
-                {toTime(drag.startMinutes)}
-              </span>
-            )}
+              {drag !== null && (
+                <span
+                  className="absolute right-1 z-10 -translate-y-1/2 rounded bg-[var(--today)] px-1 text-[11px] font-medium text-white shadow"
+                  style={{ top: yOf(drag.startMinutes) }}
+                >
+                  {toTime(drag.startMinutes)}
+                </span>
+              )}
+
+              {/* Pendant un redimensionnement, c'est la FIN qu'on vise : le début n'a pas
+                bougé, et c'est l'heure de fin qu'on cherche à caler sur une heure ronde. */}
+              {resize !== null && (
+                <span
+                  className="absolute right-1 z-10 -translate-y-1/2 rounded bg-[var(--today)] px-1 text-[11px] font-medium text-white shadow"
+                  style={{ top: yOf(resize.endMinutes) }}
+                >
+                  {toTime(resize.endMinutes)}
+                </span>
+              )}
+
+              {/* Et pendant un dépôt venu de la pile, l'heure de début du bloc à poser. */}
+              {activeGhost !== null && (
+                <span
+                  className="absolute right-1 z-10 -translate-y-1/2 rounded bg-[var(--today)] px-1 text-[11px] font-medium text-white shadow"
+                  style={{ top: yOf(activeGhost.startMinutes) }}
+                >
+                  {toTime(activeGhost.startMinutes)}
+                </span>
+              )}
+            </div>
           </div>
 
           <div ref={columnsRef} className="relative flex flex-1" style={{ height }}>
@@ -433,7 +657,9 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
 
             {days.map((day, dayIndex) => {
               const isToday = day.date === today;
-              const isTarget = drag !== null && drag.targetIndex === dayIndex;
+              const isTarget =
+                (drag !== null && drag.targetIndex === dayIndex) ||
+                (activeGhost !== null && activeGhost.dayIndex === dayIndex);
 
               return (
                 <div
@@ -480,8 +706,14 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                   {day.slots
                     .filter((slot) => slot.startTime && slot.endTime)
                     .map((slot) => {
-                      const duration = toMinutes(slot.endTime!) - toMinutes(slot.startTime!);
                       const dragging = drag?.slotId === slot.id;
+                      const resizing = resize?.slotId === slot.id;
+                      // Pendant le geste, la hauteur suit le pointeur sans attendre le
+                      // serveur : un bloc qui ne s'allonge qu'au relâchement donne
+                      // l'impression que rien ne se passe.
+                      const duration = resizing
+                        ? resize.endMinutes - resize.startMinutes
+                        : toMinutes(slot.endTime!) - toMinutes(slot.startTime!);
 
                       // Le bloc reste dans SA colonne et se décale d'un nombre entier de
                       // colonnes. Le déplacer dans le DOM emporterait la capture du
@@ -530,7 +762,12 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                           <p className="truncate text-[11px] font-medium leading-tight">
                             {dragging
                               ? `${toTime(drag.startMinutes)} – ${toTime(drag.startMinutes + duration)}`
-                              : slot.label || slot.stepName || slot.productionTitle}
+                              : resizing
+                                ? // On rallonge une séance : c'est la durée obtenue qu'on
+                                  // veut lire, pas l'heure de fin, déjà annoncée dans la
+                                  // gouttière.
+                                  `${toTime(resize.startMinutes)} – ${toTime(resize.endMinutes)} · ${formatMinutes(duration)}`
+                                : slot.label || slot.stepName || slot.productionTitle}
                           </p>
                           {duration >= 45 && (
                             <p className="truncate text-[10px] leading-tight opacity-80">
@@ -631,9 +868,56 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                               </>
                             )}
                           </div>
+
+                          {/* La poignée de redimensionnement : le bord bas du bloc.
+                              Absente sur un créneau approuvé — sa durée est celle de la
+                              session de travail enregistrée, et la tirer ici les ferait
+                              diverger sans que le compteur de la vidéo bouge. On corrige
+                              alors le temps passé sur la fiche.
+
+                              Elle reste **invisible tant qu'on ne survole pas** : deux
+                              pixels de couleur permanents en bas de chaque bloc se
+                              liraient comme une bordure de plus. */}
+                          {!slot.done && (
+                            <div
+                              onPointerDown={(event) => startResize(event, slot)}
+                              onPointerMove={moveResize}
+                              onPointerUp={() => endResize(slot)}
+                              onPointerCancel={() => setResize(null)}
+                              className={cn(
+                                'absolute inset-x-0 bottom-0 h-2 cursor-ns-resize',
+                                'after:absolute after:inset-x-3 after:bottom-0.5 after:h-0.5 after:rounded-full after:bg-current after:opacity-0 group-hover:after:opacity-40',
+                                resizing && 'after:opacity-70',
+                              )}
+                              title="Tirer pour allonger ou raccourcir"
+                            />
+                          )}
                         </div>
                       );
                     })}
+
+                  {/* Le fantôme de la tâche qu'on est en train de déposer. En pointillés
+                      et sans action : ce n'est pas encore un créneau, il n'existera qu'au
+                      relâchement. */}
+                  {activeGhost !== null && activeGhost.dayIndex === dayIndex && pendingItem && (
+                    <div
+                      className="pointer-events-none absolute inset-x-0.5 z-20 overflow-hidden rounded-md border-2 border-dashed px-1.5 py-1 opacity-90 shadow-lg"
+                      style={{
+                        top: yOf(activeGhost.startMinutes),
+                        height: Math.max(20, (pendingMinutes / 60) * HOUR_HEIGHT),
+                        borderColor: pendingItem.stepColor ?? pendingItem.channelColor ?? '#64748b',
+                        backgroundColor: `${pendingItem.stepColor ?? pendingItem.channelColor ?? '#64748b'}33`,
+                      }}
+                    >
+                      <p className="truncate text-[11px] font-medium leading-tight">
+                        {toTime(activeGhost.startMinutes)} –{' '}
+                        {toTime(activeGhost.startMinutes + pendingMinutes)}
+                      </p>
+                      <p className="truncate text-[10px] leading-tight opacity-80">
+                        {pendingItem.label}
+                      </p>
+                    </div>
+                  )}
                 </div>
               );
             })}

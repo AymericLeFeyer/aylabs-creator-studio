@@ -53,6 +53,13 @@ export const planningApi = {
    */
   clearItems: () => request<{ removed: number }>('/api/planning/items', { method: 'DELETE' }),
 
+  /**
+   * Pose un créneau à la main sur une ligne de la pile : le glisser-déposer depuis la
+   * colonne « En cours » vers la grille. Le créneau naît `manual`, donc immobile.
+   */
+  placeItem: (input: { itemId: string; date: string; startTime: string; minutes?: number }) =>
+    request<ProductionSlot>('/api/planning/slots', { method: 'POST', body: input }),
+
   replan: (input: ReplanInput = {}) =>
     request<{ placed: number; unplacedMinutes: number }>('/api/planning/replan', {
       method: 'POST',

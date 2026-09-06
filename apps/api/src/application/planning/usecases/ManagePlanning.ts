@@ -11,6 +11,7 @@ import type {
   PlanningProductionSpan,
 } from '../../../domain/planning/entities/PlanningBoard.ts';
 import type { PlanningItemView } from '../../../domain/planning/entities/PlanningItem.ts';
+import { defaultSlotMinutes } from '../../../domain/planning/entities/PlanningItem.ts';
 import type { PlanningSettingsView } from '../../../domain/planning/entities/PlanningSettings.ts';
 import { toMinutes, toTime } from '../../../domain/planning/entities/WorkHours.ts';
 import type {
@@ -281,6 +282,54 @@ export class ManagePlanning {
       if (slot.itemId === id && !slot.done) this.slots.delete(slot.id);
     }
     this.items.delete(id);
+  }
+
+  /**
+   * Pose un créneau à la main sur une ligne de la pile — le glisser-déposer depuis la
+   * colonne « En cours » vers la grille.
+   *
+   * Le créneau naît **`manual`**, donc immobile : on vient de choisir le moment, et le
+   * prochain « Repositionner » n'a pas à défaire ce choix. Il garde son `itemId`, si bien
+   * que le moteur le compte comme couverture et ne repose pas les mêmes minutes ailleurs.
+   *
+   * **Rien n'est replanifié**, comme partout ailleurs : poser un bloc n'est pas demander
+   * la réécriture de la journée.
+   *
+   * On peut en poser **autant qu'on veut sur la même ligne**, y compris quand elle est
+   * déjà entièrement couverte : un montage de trois heures se fait souvent en trois
+   * soirées, et un refus au motif que le compte est bon obligerait à gonfler
+   * l'estimation pour contourner l'outil. La durée retombe alors sur `minBlockMinutes`
+   * (voir `defaultSlotMinutes`).
+   */
+  placeItem(
+    itemId: string,
+    input: { date: IsoDate; startTime: string; minutes?: number },
+  ): ProductionSlotView {
+    const item = this.items.findAll({ statuses: ['pending'] }).find((row) => row.id === itemId);
+    if (!item) throw notFound('Ligne de planning introuvable');
+
+    const config = this.settings.get();
+    const minutes = input.minutes ?? defaultSlotMinutes(item, config);
+    const start = toMinutes(input.startTime);
+
+    const slot = this.slots.create({
+      productionId: item.productionId,
+      stepId: item.stepId,
+      date: input.date,
+      startTime: input.startTime,
+      // Borné à la journée : un bloc qui déborderait sur le lendemain ne se dessinerait
+      // nulle part, et sa durée réelle ne serait plus celle qu'on croit avoir posée.
+      endTime: toTime(Math.min(24 * 60, start + minutes)),
+      label: item.label,
+      origin: 'manual',
+      itemId: item.id,
+    });
+
+    // La vue et non l'entité : l'écran a besoin du titre de la vidéo et des couleurs pour
+    // dessiner le bloc, et il les aurait sinon relus dans la foulée.
+    return this.slots
+      .findAll({ range: { from: slot.date, to: slot.date } })
+      .find((row) => row.id === slot.id)!;
   }
 
   /**
