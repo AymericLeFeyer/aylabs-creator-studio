@@ -21,14 +21,13 @@ import { RequirementsChecklist } from './RequirementsChecklist.tsx';
  * mégarde emporterait le texte avec lui. Le bouton dédié dans la table ouvre donc un
  * espace large, avec son propre enregistrement.
  *
- * C'est le même `ScriptEditor` que les fiches de production — même markdown, même
- * durée de lecture, même absence d'enregistrement automatique : un script de sponso
- * s'écrit exactement comme un script de vidéo, et deux éditeurs divergeraient dès la
- * première retouche.
+ * C'est le même `ScriptEditor` que les fiches de production — même mise en forme, même
+ * durée de lecture, même enregistrement automatique : un script de sponso s'écrit
+ * exactement comme un script de vidéo, et deux éditeurs divergeraient dès la première
+ * retouche.
  *
  * Au-dessus, les **plans exigés par la marque** : ce sont eux qui dictent ce qu'on
- * écrit. Eux se cochent sans bouton d'enregistrement — un geste unique et sans perte
- * possible, là où un texte en cours de réflexion demande une décision explicite.
+ * écrit. Les ranger ailleurs obligerait à faire l'aller-retour à chaque paragraphe.
  */
 export const SponsorshipScriptDialog = ({
   sponsorship,
@@ -66,7 +65,6 @@ export const SponsorshipScriptDialog = ({
 
               <ScriptEditor
                 value={sponsorship.script}
-                saving={update.isPending}
                 onSave={(script) => update.mutateAsync({ id: sponsorship.id, input: { script } })}
               />
             </div>

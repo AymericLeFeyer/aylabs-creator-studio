@@ -19,9 +19,39 @@ export default defineConfig({
           react: ['react', 'react-dom', 'react-router-dom'],
           charts: ['recharts'],
           query: ['@tanstack/react-query'],
-          // Le rendu markdown ne sert qu'à l'éditeur de script : isolé, il n'est
-          // téléchargé que par ceux qui ouvrent une fiche de production.
-          markdown: ['react-markdown', 'remark-gfm'],
+          // L'éditeur de script (TipTap + ProseMirror) ne sert que sur une fiche de
+          // production ou une sponso : isolé, il n'est téléchargé que par ceux qui en
+          // ouvrent une. `marked` l'accompagne — il ne sert qu'à relire les scripts
+          // écrits en markdown avant la bascule en WYSIWYG.
+          //
+          // `@tiptap/pm` n'est PAS listable ici : ce paquet n'expose que des
+          // sous-chemins (`@tiptap/pm/state`…) et rollup echoue a resoudre sa racine.
+          // Ce sont les paquets `prosemirror-*` eux-memes qu'on nomme.
+          editor: [
+            '@tiptap/react',
+            '@tiptap/core',
+            '@tiptap/starter-kit',
+            '@tiptap/extensions',
+            '@tiptap/extension-text-style',
+            '@tiptap/extension-highlight',
+            '@tiptap/extension-text-align',
+            '@tiptap/extension-list',
+            '@tiptap/extension-table',
+            'prosemirror-changeset',
+            'prosemirror-commands',
+            'prosemirror-dropcursor',
+            'prosemirror-gapcursor',
+            'prosemirror-history',
+            'prosemirror-inputrules',
+            'prosemirror-keymap',
+            'prosemirror-model',
+            'prosemirror-schema-list',
+            'prosemirror-state',
+            'prosemirror-tables',
+            'prosemirror-transform',
+            'prosemirror-view',
+            'marked',
+          ],
         },
       },
     },

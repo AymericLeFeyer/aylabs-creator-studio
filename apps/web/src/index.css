@@ -129,9 +129,12 @@
 
 @layer components {
   /*
-   * Rendu du script markdown. Écrit à la main plutôt qu'avec @tailwindcss/typography :
-   * un script n'a besoin que de titres, listes, gras et tableaux, et la palette doit
-   * rester celle du thème plutôt qu'un gris importé qui jurerait en mode sombre.
+   * Rendu du script. Écrit à la main plutôt qu'avec @tailwindcss/typography : un script
+   * n'a besoin que de titres, listes, gras et tableaux, et la palette doit rester celle
+   * du thème plutôt qu'un gris importé qui jurerait en mode sombre.
+   *
+   * La même feuille habille le rendu ET la zone d'édition WYSIWYG : c'est ce qui fait
+   * qu'on écrit exactement ce qu'on lira, et deux feuilles finiraient par diverger.
    */
   .prose-script > * + * {
     margin-top: 0.75rem;
@@ -226,5 +229,61 @@
 
   .prose-script hr {
     border-top: 1px solid var(--color-border);
+  }
+
+  /* L'alignement posé par la barre d'outils est un attribut, pas une classe. */
+  .prose-script [style*='text-align'] {
+    text-wrap: pretty;
+  }
+
+  /* Le surlignage est transparent : il teinte sans jamais toucher au contraste du texte. */
+  .prose-script mark {
+    background-color: var(--color-muted);
+    border-radius: var(--radius-sm);
+    padding: 0.05rem 0.15rem;
+    color: inherit;
+  }
+
+  /*
+   * Les listes à cocher de TipTap. La case est un vrai `input`, posé hors du flux du
+   * texte pour que les lignes qui reviennent à la ligne s'alignent sous la première.
+   */
+  .prose-script ul[data-type='taskList'] {
+    list-style: none;
+    padding-left: 0;
+  }
+  .prose-script ul[data-type='taskList'] li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .prose-script ul[data-type='taskList'] li > label {
+    margin-top: 0.15rem;
+    user-select: none;
+  }
+  .prose-script ul[data-type='taskList'] li > div {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .prose-script ul[data-type='taskList'] li[data-checked='true'] > div {
+    color: var(--color-muted-foreground);
+    text-decoration: line-through;
+  }
+
+  /*
+   * Le texte d'invite de l'éditeur vide. Il est rendu par un pseudo-élément et non par
+   * un vrai noeud : un placeholder dans le document se retrouverait enregistré.
+   */
+  .prose-script p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    color: var(--color-muted-foreground);
+    float: left;
+    height: 0;
+    pointer-events: none;
+  }
+
+  /* Le curseur de dépôt et le curseur d'espace de ProseMirror, aux couleurs du thème. */
+  .prose-script .ProseMirror-gapcursor:after {
+    border-top-color: var(--color-foreground);
   }
 }

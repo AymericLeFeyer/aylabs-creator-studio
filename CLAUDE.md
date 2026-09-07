@@ -6,18 +6,18 @@ Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagn�
 
 ## Stack
 
-| Élément    | Choix                                                                               |
-| ---------- | ----------------------------------------------------------------------------------- |
-| Monorepo   | npm workspaces (`apps/*`)                                                           |
-| API        | Node 24 + Express 5 + TypeScript **exécuté nativement** (type stripping)            |
-| Base       | SQLite via `node:sqlite` (module natif, aucune dépendance à compiler)               |
-| Front      | React 19 + Vite 6 + TypeScript strict                                               |
-| Design     | **shadcn/ui + Tailwind v4** — seul design system du projet, ne pas en mêler d'autre |
-| Graphiques | Recharts 3                                                                          |
-| Markdown   | `react-markdown` + `remark-gfm` (éditeur de script uniquement, chunk isolé)         |
-| Données    | TanStack Query 5                                                                    |
-| PWA        | Manifeste + service worker **écrits à la main**, aucune dépendance de build         |
-| CI/CD      | GitHub Actions → images GHCR → stack Portainer sur VPS                              |
+| Élément    | Choix                                                                                |
+| ---------- | ------------------------------------------------------------------------------------ |
+| Monorepo   | npm workspaces (`apps/*`)                                                            |
+| API        | Node 24 + Express 5 + TypeScript **exécuté nativement** (type stripping)             |
+| Base       | SQLite via `node:sqlite` (module natif, aucune dépendance à compiler)                |
+| Front      | React 19 + Vite 6 + TypeScript strict                                                |
+| Design     | **shadcn/ui + Tailwind v4** — seul design system du projet, ne pas en mêler d'autre  |
+| Graphiques | Recharts 3                                                                           |
+| Éditeur    | **TipTap 3** (ProseMirror) — scripts en WYSIWYG. Chunk isolé **et** chargé en `lazy` |
+| Données    | TanStack Query 5                                                                     |
+| PWA        | Manifeste + service worker **écrits à la main**, aucune dépendance de build          |
+| CI/CD      | GitHub Actions → images GHCR → stack Portainer sur VPS                               |
 
 ### Commandes
 
@@ -244,6 +244,26 @@ Référentiel **commun aux produits et aux sponsos** : sans identifiant partagé
 `Production { id, channelId, videoId, title, status, pausedReason, pausedAt, startDate, plannedDate, script, notes, sortOrder }` — table `productions`.
 
 C'est **la vidéo avant sa publication**. Le jour de la sortie, elle se rattache à la ligne `videos` collectée sur YouTube (`video_id`, index unique partiel : une sortie n'appartient qu'à une production). Rien n'est supprimé à ce moment-là : elle quitte la file d'attente pour les terminées, script et créneaux intacts.
+
+**`script` contient du HTML, plus du markdown** — même chose pour `sponsorships.script`.
+La bascule est venue d'un besoin que le markdown ne sait pas exprimer : la **couleur**.
+Surligner en rouge la phrase qu'on doit absolument dire n'a aucune syntaxe markdown, et
+l'inventer aurait produit un dialecte qu'aucun autre outil ne relit.
+
+La colonne n'a pas changé (`TEXT NOT NULL DEFAULT ''`) et **aucune migration n'a été
+écrite** : les scripts déjà saisis sont convertis **à l'ouverture**
+(`domain/production/services/script.ts`, `toEditorHtml`, via `marked`) et ne sont
+réenregistrés en HTML qu'au premier enregistrement. Une migration aurait réécrit des
+centaines de lignes en une transaction sans que personne ne puisse relire le résultat ;
+une conversion à l'affichage se voit immédiatement, et un script qu'on n'ouvre jamais
+reste tel qu'il a été écrit. La détection est une simple recherche de balise de bloc
+(`HTML_BLOCK`) — un script markdown ne commence pas par `<p>`.
+
+Deux reprises dans cette conversion, chacune pour ne pas perdre de sens : les **cases à
+cocher** de GFM (`- [ ]`) deviennent une liste `data-type="taskList"`, sans quoi TipTap
+effacerait la case et ne laisserait qu'une puce ; et l'extension **`TableKit` est
+chargée** alors qu'aucun bouton ne pose de tableau, parce qu'un noeud dont l'extension
+manque est **supprimé au parsing**, pas affiché en clair.
 
 | `status`      | Sens                                                                                                                              |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -472,7 +492,8 @@ Le lien est **purement informatif pour l'argent** : le produit vaut en nature ce
 `Sponsorship { id, brandId, productionId, videoId, channelId, revenueEntryId, label, amountCents, status, deadline, paidAt, script, notes }` — table `sponsorships`.
 
 `script` (migration 10, `NOT NULL DEFAULT ''` comme `productions.script`) porte le texte
-de l'intégration en markdown : éléments de langage, mentions obligatoires, code promo.
+de l'intégration, en HTML comme celui des productions : éléments de langage, mentions
+obligatoires, code promo.
 Il vit sur la **sponso** et non sur la production — une même vidéo peut en porter deux,
 et la sponso survit à un changement de rattachement. Il s'édite depuis son **propre
 bouton** dans la table des sponsors (`SponsorshipScriptDialog`), jamais depuis la modale
@@ -1800,13 +1821,58 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   bloc, et le texte d'aide sous le champ annonce le nouveau nom avant le clic. Un titre
   vide est ignoré : l'API refuse un `title` vide, et effacer le champ pour le réécrire ne
   doit pas casser la fiche.
-- **L'onglet Publication n'enregistre pas tout seul**, exactement comme l'éditeur de script et pour la même raison : une description se travaille en plusieurs passages, et une sauvegarde continue écraserait un brouillon en cours de réflexion. L'indicateur « Non enregistré » rend l'oubli visible. Les compteurs de caractères passent en rouge aux limites **de YouTube** (100 pour un titre, 5000 pour une description) : les dépasser fait rejeter la mise en ligne, et s'en apercevoir devant le formulaire de YouTube est trop tard.
+- **L'onglet Publication n'enregistre pas tout seul**, contrairement à l'éditeur de script juste à côté. Ce n'est pas une incohérence oubliée : un script est un brouillon qui n'existe que dans l'outil, alors que ce formulaire est un **presse-papier vers YouTube** — on y charge la description de la sortie précédente pour la retravailler, et une sauvegarde continue figerait le gabarit d'à côté avant qu'on l'ait adapté. L'indicateur « Non enregistré » rend l'oubli visible. Les compteurs de caractères passent en rouge aux limites **de YouTube** (100 pour un titre, 5000 pour une description) : les dépasser fait rejeter la mise en ligne, et s'en apercevoir devant le formulaire de YouTube est trop tard.
 - **« Charger depuis la précédente vidéo » lit YouTube en direct, et ne stocke rien.** Une description de chaîne est un gabarit — liens d'affiliation, réseaux, chapitres, mentions — qu'on réécrit à 90 % identique à chaque sortie ; la retaper de mémoire est le meilleur moyen d'oublier un lien. Le texte pourrait être collecté avec les vidéos, mais il n'existerait alors que pour les sorties parues **après** la migration : la fenêtre de collecte ne remonte qu'à la dernière vidéo connue moins sept jours, et le bouton aurait paru cassé pendant des mois sur un catalogue pourtant complet. Un appel coûte 1 unité de quota, et il part **sur le geste**, jamais au montage de l'écran (d'où une `useMutation` et non une `useQuery`).
 - **La description chargée REMPLACE, les tags seulement s'ils sont vides.** On charge pour repartir d'un gabarit, pas pour concaténer deux descriptions — d'où la confirmation quand quelque chose serait perdu. Les tags, eux, ne s'écrasent que s'ils n'ont pas déjà été saisis : personne ne les retape volontairement, mais personne ne veut non plus les voir défaits.
 - **`GetPreviousPublication` appelle `findAllWithChannel`, jamais `findAll`.** Le premier trie de la plus récente à la plus ancienne, le second de la plus **ancienne** à la plus récente — il alimente les repères chronologiques des graphiques. Se tromper de méthode rapporte la toute première vidéo de la chaîne, soit une description vieille de deux ans. Le piège vaut pour tout code qui cherche « la dernière sortie ».
 - **Le jeton de la chaîne passe avant la clé API** pour lire une fiche de vidéo : l'OAuth est le seul chemin qui voie une vidéo **non listée**, or c'est exactement ce qu'est une sortie programmée dont on veut reprendre la description.
-- **L'éditeur de script n'enregistre pas tout seul.** Perdre une version d'un script coûte plus cher qu'un clic, et une sauvegarde continue écraserait un brouillon en cours de réflexion. L'indicateur « Non enregistré » rend l'oubli visible. Le compteur affiche la **durée de lecture** (150 mots/min) plutôt que des caractères : c'est la seule mesure qui compte quand on écrit pour être dit à l'oral.
-- **Le rendu markdown est stylé à la main** (`.prose-script` dans `index.css`), sans `@tailwindcss/typography` : un script n'a besoin que de titres, listes, gras et tableaux, et la palette doit rester celle du thème plutôt qu'un gris importé qui jurerait en mode sombre. `react-markdown` est isolé dans son propre chunk (`manualChunks.markdown`) : il n'est téléchargé que par ceux qui ouvrent une fiche de production.
+- **L'éditeur de script enregistre tout seul**, 1,2 s après la dernière frappe
+  (`AUTOSAVE_DELAY_MS`). Il ne le faisait pas, et le bouton était justifié par la crainte
+  d'écraser un brouillon — c'est-à-dire par un risque que l'historique de TipTap (Ctrl+Z)
+  couvre déjà, au prix d'un oubli qui, lui, perdait tout. Trois filets, parce qu'un débit
+  à retardement se perd exactement dans les moments où l'on quitte l'écran : le
+  **démontage vide la file** (fermer la modale d'un script de sponso, changer d'onglet de
+  fiche), `beforeunload` prévient si un envoi est encore en vol, et **Ctrl+S** force
+  l'envoi. Un échec de requête **remet le contenu en file** au lieu de le jeter, et
+  l'indicateur devient un bouton « réessayer » — c'est le seul état qui sorte du gris.
+- **Une réponse du serveur n'écrase jamais un brouillon en cours de frappe.** L'éditeur
+  ne rejoue le `value` entrant que si `pendingRef` est vide ; sans cette garde, la
+  réponse de l'enregistrement précédent, arrivée pendant qu'on tape, remettrait le
+  curseur au début et emporterait la phrase en cours. `savedRef` porte le dernier
+  contenu que le serveur connaît : c'est lui, et pas une comparaison avec la prop, qui
+  dit s'il y a quelque chose à envoyer.
+- **L'éditeur de script est en WYSIWYG**, plus en deux panneaux. La barre d'outils porte
+  titres, gras, italique, souligné, barré, code, **couleur de texte**, **surlignage**,
+  listes (à puces, numérotées, à cocher), citation, séparateur, alignement, lien et
+  effacement de mise en forme. `onMouseDown` est **neutralisé sur chaque bouton** : sans
+  ça, le clic retire le focus de l'éditeur avant que la commande ne parte, la sélection
+  se perd, et l'outil paraît n'agir que sur le curseur — même piège que les options du
+  `BrandCombobox`.
+- **Les couleurs sont figées en dur, à mi-clarté** (`scriptPalette.ts`, L ≈ 0,62). Pas de
+  `var(--cash)` : une couleur choisie est écrite **dans le script** et lui survit, alors
+  qu'un token se relirait différemment le jour où la palette bouge. Mi-clarté parce qu'un
+  script s'écrit dans un thème et se relit souvent dans l'autre. Le surlignage, lui, est
+  **transparent** (25 à 35 %) : un fond opaque clair rendrait le texte du thème sombre
+  illisible.
+- **La barre d'outils lit `useEditorState`, jamais `editor.isActive()` en direct.** Depuis
+  TipTap 3, l'éditeur ne provoque plus de rendu à chaque transaction : une barre branchée
+  directement resterait figée sur l'état du premier rendu, et les boutons ne
+  s'allumeraient jamais.
+- **Le compteur affiche la durée de lecture** (150 mots/min) plutôt que des caractères :
+  c'est la seule mesure qui compte quand on écrit pour être dit à l'oral.
+- **`.prose-script` habille le rendu ET la zone d'édition** (`index.css`, écrit à la main
+  sans `@tailwindcss/typography`) : c'est ce qui fait qu'on écrit exactement ce qu'on
+  lira, et deux feuilles finiraient par diverger. La palette reste celle du thème plutôt
+  qu'un gris importé qui jurerait en mode sombre.
+- **Un `manualChunks` isole, il ne rend pas facultatif.** TipTap et ProseMirror pèsent
+  ~155 ko gzip, plus que le reste de l'application ; les mettre dans le chunk `editor` ne
+  suffisait pas, un import statique les faisait télécharger dès le dashboard. C'est le
+  **`lazy`** de `ScriptEditor.tsx` (une enveloppe de vingt lignes autour de
+  `ScriptEditorView.tsx`) qui rend l'isolement réel. Le repli du `Suspense` a la
+  **hauteur de l'éditeur**, sinon le contenu de l'onglet remonterait puis redescendrait.
+- **`@tiptap/pm` n'est pas listable dans `manualChunks`** : ce paquet n'expose que des
+  sous-chemins (`@tiptap/pm/state`…) et rollup échoue à résoudre sa racine avec un
+  `Missing "." specifier`. Ce sont les paquets `prosemirror-*` eux-mêmes qu'on nomme.
 - **Le Gantt est une grille CSS maison**, sans bibliothèque : une barre par production, une colonne par jour, rien d'autre que des jours à compter. Sans `startDate`, la barre occupe le seul jour visé — une vidéo qu'on n'a pas commencé à planifier ne doit pas paraître étalée sur trois semaines.
 - **Dans le Gantt, la couleur dit la chaîne et le contenu dit l'avancement** : une icône `$` s'il y a une sponso, une icône de carton s'il y a un produit, l'état, et le pourcentage d'étapes cochées. Écrire le nom de la chaîne serait redondant avec sa couleur ; ces quatre-là ne se lisent nulle part ailleurs sur cette vue. **L'ordre suit ce qui doit survivre au rognage** : icônes et pourcentage sont `shrink-0`, c'est le libellé d'état qui se tronque en premier — sur une barre d'un jour, savoir qu'il y a une sponso vaut mieux que lire « En cours ». L'infobulle (`barTitle`) reprend tout ce que le rognage a pu manger. La barre entière est un lien vers la fiche : c'est la cible la plus large de la ligne. Le texte prend sa couleur de `readableTextColor(fond)`.
 - **Le planning est affiché en permanence sur `/production`, pas dans un onglet** : « qu'est-ce qui sort quand » est la première question de la page. Il se replie à `COLLAPSED_ROWS` (5) lignes pour ne pas repousser la file d'attente sous le pli, et trie les vidéos encore à faire avant les terminées.
@@ -1885,7 +1951,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Le tableau légal s'applique rétroactivement.** Une obligation ajoutée aujourd'hui apparaît sur **tous** les mois depuis la création de la société, donc immédiatement « en retard » sur les mois passés. C'est le comportement demandé (une ligne par mois depuis la création) ; pour retirer une obligation devenue caduque sans perdre l'historique coché, l'**archiver** plutôt que la supprimer — la supprimer efface les cases de tous les mois.
 - **Sans `company.foundedOn`, le tableau légal retombe sur les 12 derniers mois** (`FALLBACK_MONTHS`). Ce n'est pas un bug : c'est ce qui permet de cocher quelque chose avant d'avoir renseigné la fiche. La date se saisit dans Paramètres → Société.
 - **Le mois d'une case est `AAAA-MM`, jamais une date.** `/api/legal/checks/:id/:month` valide le format en 422 : un `2026-3` passerait silencieusement à côté de toutes les lignes existantes, et la case paraîtrait ne jamais se cocher.
-- **Le script d'une sponso a son propre bouton**, pas une case dans la modale d'édition : `SponsorshipScriptDialog` réutilise le `ScriptEditor` des productions (même markdown, même durée de lecture, même absence d'enregistrement automatique). `PartnersPage` garde l'**identifiant** de la sponso ouverte et non la fiche : après enregistrement la liste est rechargée, et un instantané figé laisserait l'éditeur croire éternellement qu'il reste du non-enregistré.
+- **Le script d'une sponso a son propre bouton**, pas une case dans la modale d'édition : `SponsorshipScriptDialog` réutilise le `ScriptEditor` des productions (même mise en forme, même durée de lecture, même enregistrement automatique). `PartnersPage` garde l'**identifiant** de la sponso ouverte et non la fiche : après enregistrement la liste est rechargée, et un instantané figé laisserait l'éditeur croire éternellement qu'il reste du non-enregistré. Le lien de la barre d'outils passe par une **invite du navigateur** et non par une modale, précisément parce que l'éditeur vit ici **dans** un dialogue : une modale dans une modale se referme de travers à la première touche Échap.
 - **Les plans exigés se cochent sans bouton d'enregistrement**, contrairement au script juste en dessous. Ce n'est pas une incohérence : cocher est un geste unique et sans perte possible, alors qu'un texte en cours de réflexion demande une décision explicite. Leurs mutations n'invalident que `['sponsorships']` et pas `PARTNER_ROOTS` — cocher « macro du logo » ne change ni un revenu, ni une alerte, ni un classement de marque, et repartir sur tout le module ferait clignoter le dashboard pour une case.
 
 - **Le chronomètre vit en base, pas dans le navigateur.** Une session en cours est une ligne sans `ended_at`. Conséquence : il n'y en a **qu'une à la fois** pour tout l'outil, et démarrer un chronomètre arrête celui qui courait au lieu de refuser — un refus obligerait à retrouver soi-même la session oubliée de la veille, qui aurait alors compté douze heures de montage.
