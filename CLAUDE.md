@@ -1989,6 +1989,13 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Les angles ponctuels demandent une production.** Le script d'une sponso rattachée à une
   vidéo en propose (`sponsorship.productionId`) ; celui d'une sponso qui n'en a pas
   retombe sur le référentiel seul — il n'y a alors aucune fiche à laquelle les rattacher.
+- **Un déclencheur `DropdownMenuTrigger asChild` doit relayer ses props ET sa ref.**
+  `asChild` passe par le `Slot` de Radix, qui pose ses gestionnaires (`onPointerDown`,
+  `aria-expanded`, la ref) sur son enfant : un composant qui les ignore reçoit un menu qui
+  **ne s'ouvre jamais**, sans erreur ni log — juste un bouton mort. Un `<button>` nu, lui,
+  est cloné directement, ce qui explique que les palettes de couleurs aient marché pendant
+  que les menus « gabarits » et « angles » ne faisaient rien. Les quatre passent désormais
+  par le même `MenuButton`, en `forwardRef` avec `...props` relayés.
 - **Les deux menus de la barre sont montés conditionnellement, pas masqués.** Ils portent
   chacun leurs requêtes : les laisser tourner dans le formulaire d'un gabarit chargerait la
   liste des gabarits pour l'écran qui la modifie.

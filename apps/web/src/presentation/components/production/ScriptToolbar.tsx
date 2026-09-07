@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ButtonHTMLAttributes, type ReactNode, forwardRef } from 'react';
 import { type Editor, useEditorState } from '@tiptap/react';
 import {
   AlignCenter,
@@ -217,22 +217,27 @@ const readState = (instance: Editor): ToolbarState => ({
 /**
  * Un déclencheur de menu, aux mêmes dimensions qu'un bouton d'outil.
  *
- * `ToolButton` ne convient pas ici : Radix pose ses propres gestionnaires sur le
- * déclencheur via `asChild`, et le `onClick` obligatoire de `ToolButton` les écraserait.
+ * Il **relaie ses props et sa ref**, et c'est tout l'enjeu : `DropdownMenuTrigger asChild`
+ * passe par le `Slot` de Radix, qui pose ses gestionnaires (`onPointerDown`,
+ * `aria-expanded`, la ref) sur son enfant. Un composant qui les ignore reçoit un menu qui
+ * ne s'ouvre jamais — pas d'erreur, pas de log, juste un bouton mort. Les palettes de
+ * couleurs, elles, avaient un `<button>` nu, que `Slot` sait cloner directement.
+ *
+ * `ToolButton` ne convient pas ici pour la raison inverse : son `onClick` est obligatoire
+ * et il écraserait celui que Radix pose.
  */
-const MenuButton = ({
-  label,
-  active,
-  children,
-}: {
-  label: string;
-  active?: boolean;
-  children: ReactNode;
-}) => (
+const MenuButton = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement> & { label: string; active?: boolean }
+>(({ label, active, children, ...props }, ref) => (
   <button
+    ref={ref}
     type="button"
     title={label}
     aria-label={label}
+    {...props}
+    // Posé APRÈS le relais : le clic ne doit pas retirer le focus de l'éditeur avant que
+    // la commande ne parte. Radix ouvre sur `pointerdown`, que ceci ne touche pas.
     onMouseDown={(event) => event.preventDefault()}
     className={cn(
       'flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors',
@@ -242,7 +247,8 @@ const MenuButton = ({
   >
     {children}
   </button>
-);
+));
+MenuButton.displayName = 'MenuButton';
 
 /** Une valeur destinée à un attribut HTML construit à la main. */
 const escapeAttribute = (value: string): string =>
@@ -551,22 +557,12 @@ export const ScriptToolbar = ({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            title="Couleur du texte"
-            aria-label="Couleur du texte"
-            onMouseDown={(event) => event.preventDefault()}
-            className={cn(
-              'flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors',
-              'hover:bg-accent hover:text-foreground',
-              state.color && 'bg-background text-foreground shadow-sm',
-            )}
-          >
+          <MenuButton label="Couleur du texte" active={Boolean(state.color)}>
             <Baseline
               className="h-4 w-4"
               style={state.color ? { color: state.color } : undefined}
             />
-          </button>
+          </MenuButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-0 p-2">
           <SwatchGrid
@@ -581,19 +577,9 @@ export const ScriptToolbar = ({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            title="Surligner"
-            aria-label="Surligner"
-            onMouseDown={(event) => event.preventDefault()}
-            className={cn(
-              'flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors',
-              'hover:bg-accent hover:text-foreground',
-              state.highlight && 'bg-background text-foreground shadow-sm',
-            )}
-          >
+          <MenuButton label="Surligner" active={Boolean(state.highlight)}>
             <Highlighter className="h-4 w-4" />
-          </button>
+          </MenuButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-0 p-2">
           <SwatchGrid
