@@ -13,12 +13,7 @@ import {
   Timer,
 } from 'lucide-react';
 import type { Production } from '../../../domain/production/entities/Production.ts';
-import {
-  partnerCounts,
-  progressCounts,
-  STATUS_COLORS,
-  STATUS_LABELS,
-} from '../../../domain/production/entities/Production.ts';
+import { partnerCounts, progressCounts } from '../../../domain/production/entities/Production.ts';
 import {
   PENDING_PRODUCT_STATUSES,
   PRODUCT_STATUS_LABELS,
@@ -30,10 +25,10 @@ import {
 import type { ProductionStep } from '../../../domain/production/entities/ProductionStep.ts';
 import { formatDuration } from '../../../domain/production/entities/TimeEntry.ts';
 import { formatDate, formatMoney } from '../../../shared/format.ts';
-import { Badge } from '../ui/badge.tsx';
 import { Button } from '../ui/button.tsx';
 import { Card } from '../ui/card.tsx';
 import { StepChips, StepProgress } from './StepChips.tsx';
+import { ProductionStatusMenu } from './ProductionStatusMenu.tsx';
 import { PartnerHoverList } from './PartnerHoverList.tsx';
 import { cn } from '../../../shared/cn.ts';
 
@@ -227,13 +222,7 @@ export const ProductionCard = ({
           {progress.total === 0 ? '—' : `${Math.round((progress.done / progress.total) * 100)} %`}
         </span>
 
-        <Badge
-          variant="outline"
-          style={{ color: STATUS_COLORS[production.status] }}
-          className="hidden shrink-0 lg:inline-flex"
-        >
-          {STATUS_LABELS[production.status]}
-        </Badge>
+        <ProductionStatusMenu production={production} className="hidden lg:inline-flex" />
 
         {timerButton}
 
@@ -323,9 +312,7 @@ export const ProductionCard = ({
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            <Badge variant="outline" style={{ color: STATUS_COLORS[production.status] }}>
-              {STATUS_LABELS[production.status]}
-            </Badge>
+            <ProductionStatusMenu production={production} />
             {timerButton}
             {onToggleCompact && (
               <Button

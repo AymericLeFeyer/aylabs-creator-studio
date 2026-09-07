@@ -1034,12 +1034,12 @@ non plus.
 
 #### Le statut est la seule chose qui nous appartienne
 
-| `status`      | Sens                                                        | Où il s'affiche               |
-| ------------- | ----------------------------------------------------------- | ----------------------------- |
-| `new`         | pas encore regardé — **la file de tri**, pas un quatrième tiroir | onglet Commentaires       |
-| `encouraging` | ça fait plaisir                                             | Wall of Love, **au hasard**   |
-| `idea`        | une demande, une proposition                                | Propositions de la communauté |
-| `ignored`     | vu, écarté. On ne le revoit plus                            | nulle part                    |
+| `status`      | Sens                                                             | Où il s'affiche               |
+| ------------- | ---------------------------------------------------------------- | ----------------------------- |
+| `new`         | pas encore regardé — **la file de tri**, pas un quatrième tiroir | onglet Commentaires           |
+| `encouraging` | ça fait plaisir                                                  | Wall of Love, **au hasard**   |
+| `idea`        | une demande, une proposition                                     | Propositions de la communauté |
+| `ignored`     | vu, écarté. On ne le revoit plus                                 | nulle part                    |
 
 **`SqliteCommentRepository.upsertMany` n'écrit ni `status` ni `curated_at`** — ni à
 l'INSERT, ni dans le `DO UPDATE`. C'est toute la garantie du module : la collecte
@@ -1924,6 +1924,19 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   ligne aurait en revanche battu le `lg:pb-6` qui annule cette réserve sur grand écran —
   c'est pour ça que la réserve passe par une classe et pas par `style`.
 - **Le planning s'ouvre centré sur aujourd'hui.** `ProductionGantt` pose `scrollLeft` au montage et à chaque changement de zoom, en retranchant la largeur de la colonne des titres (`TITLE_WIDTH`). Sans ça il s'ouvrait collé à sa borne gauche, sur des jours passés. Les fenêtres couvrent donc volontairement du passé (`before` : 14, 30 ou 60 jours) pour qu'on puisse reculer. La colonne des titres est `sticky left-0` : en défilant vers le futur, on doit continuer de savoir de quelle vidéo est la barre qu'on regarde.
+- **Le badge de statut d'une carte de file est un menu, pas une étiquette**
+  (`ProductionStatusMenu`). C'était un badge mort : on lisait « Idée » sur une vidéo qu'on
+  venait de commencer, et la corriger demandait d'ouvrir la fiche, d'y trouver le
+  formulaire, de changer un sélecteur et d'enregistrer — quatre gestes pour ce qui bouge le
+  plus souvent sur une carte. « Terminée » y figure comme les autres mais **ne rattache
+  aucune sortie** : c'est `PublishDialog`, depuis la fiche, qui relie la vidéo collectée et
+  coche l'étape de publication. L'entrée le dit ; l'interdire obligerait à passer par la
+  fiche pour une correction de statut qui n'a rien à voir avec une publication.
+- **Retirer une ligne de la pile du planning ne demande aucune confirmation.** Rien n'est
+  détruit : la tâche reste à faire sur sa vidéo, elle n'est pas décochée, et l'y remettre
+  est un geste. Un « es-tu sûr ? » sur une action qu'on répète en vidant une pile de trente
+  lignes ne protège de rien. **Vider la pile entière**, en revanche, garde la sienne : ce
+  n'est pas la même échelle, et c'est la seule qu'on ne peut pas défaire ligne à ligne.
 - **Dans la file d'attente, le fond vert marque le travail EN COURS**
   (`production.status === 'in_progress'`), pas la prochaine vidéo. Celle-ci se repère à un
   anneau (`highlighted`). Le fond répondait avant à `nextId` : une seule carte surlignée ne

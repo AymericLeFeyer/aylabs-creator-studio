@@ -181,14 +181,16 @@ export const PlanningQueue = ({ items, onPickUp, pendingId = null }: PlanningQue
                   size="icon"
                   className="h-6 w-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
                   onPointerDown={(event) => event.stopPropagation()}
-                  onClick={() => {
-                    // Les créneaux **approuvés** restent : ils racontent du temps passé.
-                    // Ceux qui n'ont pas encore eu lieu partent avec la ligne — les
-                    // laisser afficherait du travail à faire pour une tâche retirée.
-                    if (window.confirm(`Retirer « ${item.label} » de la pile ?`)) {
-                      remove.mutate(item.id);
-                    }
-                  }}
+                  onClick={() => remove.mutate(item.id)}
+                  // Sans confirmation, et c'est délibéré : retirer une ligne de la pile
+                  // ne détruit rien. La tâche reste à faire sur sa vidéo, elle n'est pas
+                  // décochée, et la remettre dans la pile est un geste. Demander « es-tu
+                  // sûr ? » sur une action qu'on répète en vidant une pile de trente
+                  // lignes ne protège de rien et coûte un clic à chaque fois.
+                  //
+                  // Les créneaux **approuvés** restent : ils racontent du temps passé.
+                  // Ceux qui n'ont pas encore eu lieu partent avec la ligne — les laisser
+                  // afficherait du travail à faire pour une tâche retirée.
                   title="Retirer de la pile"
                 >
                   <X className="h-3 w-3 text-destructive" />
