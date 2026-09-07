@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { usePublishProduction } from '../../../application/production/usecases/useProductions.ts';
+import { useCollectAll } from '../../../application/analytics/usecases/useAnalytics.ts';
+import { useCollectChannel } from '../../../application/channel/usecases/useChannels.ts';
 import { useVideos } from '../../../application/video/usecases/useVideos.ts';
 import type { Production } from '../../../domain/production/entities/Production.ts';
 import { formatDate } from '../../../shared/format.ts';
@@ -29,6 +32,14 @@ interface PublishDialogProps {
  * Les vidéos sont triées par proximité avec la date visée plutôt que par date : celle
  * qu'on cherche est presque toujours celle qui est sortie près du jour prévu, et elle
  * doit se trouver en tête sans avoir à faire défiler des mois d'historique.
+ *
+ * **Le bouton de collecte est ici parce qu'il n'est nulle part ailleurs.** On vient de
+ * mettre la vidéo en ligne et on marque la production publiée dans la foulée : si aucune
+ * collecte n'a tourné depuis, la sortie n'existe pas encore en base et la liste est vide.
+ * Or `/production/:id` n'a pas de barre de filtres, donc pas de bouton « Collecter » —
+ * il fallait aller sur un autre écran, collecter, puis revenir. La collecte d'une seule
+ * chaîne suffit quand la production en a une, et elle coûte bien moins qu'un passage
+ * complet.
  */
 export const PublishDialog = ({
   open,
@@ -38,6 +49,13 @@ export const PublishDialog = ({
 }: PublishDialogProps) => {
   const { data: videos = [], isLoading } = useVideos();
   const publish = usePublishProduction();
+  // Les deux chemins invalident `videos` (`COLLECT_ROOTS`) : la liste se remplit toute
+  // seule au retour, sans que le formulaire ait à s'en occuper.
+  const collectChannel = useCollectChannel();
+  const collectAll = useCollectAll();
+  const collecting = collectChannel.isPending || collectAll.isPending;
+  const collect = () =>
+    production.channelId ? collectChannel.mutate(production.channelId) : collectAll.mutate();
   const [videoId, setVideoId] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -100,13 +118,29 @@ export const PublishDialog = ({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            {isLoading
-              ? 'Chargement des sorties…'
-              : options.length === 0
-                ? 'Aucune sortie connue pour cette chaîne. Les vidéos arrivent avec la collecte.'
-                : "Triées par proximité avec la date visée. L'étape de publication sera cochée."}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              {isLoading
+                ? 'Chargement des sorties…'
+                : options.length === 0
+                  ? 'Aucune sortie connue pour cette chaîne. Les vidéos arrivent avec la collecte.'
+                  : "Triées par proximité avec la date visée. L'étape de publication sera cochée."}
+            </p>
+            {/* Discret, mais toujours là : la sortie manquante est presque toujours celle
+                qu'on vient de mettre en ligne, et rien d'autre sur cet écran ne permet
+                d'aller la chercher. */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={collecting}
+              onClick={collect}
+              title="Va chercher les dernières sorties sur YouTube"
+            >
+              <RefreshCw className={collecting ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+              {collecting ? 'Collecte…' : 'Chercher les nouvelles sorties'}
+            </Button>
+          </div>
         </div>
 
         {error && <p className="text-sm text-destructive">{error}</p>}

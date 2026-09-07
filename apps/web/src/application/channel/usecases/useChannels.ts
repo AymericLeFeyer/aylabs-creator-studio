@@ -5,7 +5,7 @@ import {
   type ManualSnapshotInput,
 } from '../../../infrastructure/channel/api/channelApi.ts';
 import type { ChannelInput } from '../../../domain/channel/entities/Channel.ts';
-import { queryKeys } from '../../queryKeys.ts';
+import { COLLECT_ROOTS, queryKeys } from '../../queryKeys.ts';
 
 export const useChannels = (includeArchived = false) =>
   useQuery({
@@ -22,8 +22,9 @@ const useChannelMutation = <TVariables, TData>(
   return useMutation({
     mutationFn,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['channels'] });
-      void queryClient.invalidateQueries({ queryKey: ['analytics'] });
+      for (const root of COLLECT_ROOTS) {
+        void queryClient.invalidateQueries({ queryKey: [root] });
+      }
     },
   });
 };

@@ -17,6 +17,7 @@ import { SqliteRecurringExpenseRepository } from './infrastructure/expense/repos
 import { SqliteProductRepository } from './infrastructure/product/repositories/SqliteProductRepository.ts';
 import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/repositories/SqliteSponsorshipRepository.ts';
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
+import { SqliteCommentRepository } from './infrastructure/comment/repositories/SqliteCommentRepository.ts';
 import { SqliteCompanyRepository } from './infrastructure/legal/repositories/SqliteCompanyRepository.ts';
 import { SqliteLegalObligationRepository } from './infrastructure/legal/repositories/SqliteLegalObligationRepository.ts';
 import { SqliteLegalBookmarkRepository } from './infrastructure/legal/repositories/SqliteLegalBookmarkRepository.ts';
@@ -43,6 +44,7 @@ import { TrackTime } from './application/production/usecases/TrackTime.ts';
 import { SyncRecurringExpenses } from './application/expense/usecases/SyncRecurringExpenses.ts';
 import { GetLegalOverview } from './application/legal/usecases/GetLegalOverview.ts';
 import { CollectMetrics } from './application/metrics/usecases/CollectMetrics.ts';
+import { CollectComments } from './application/comment/usecases/CollectComments.ts';
 import { GetPreviousPublication } from './application/production/usecases/GetPreviousPublication.ts';
 import { GetAnalytics } from './application/analytics/usecases/GetAnalytics.ts';
 import { YouTubeDataClient } from './infrastructure/youtube/api/YouTubeDataClient.ts';
@@ -69,6 +71,11 @@ export interface Container {
   products: SqliteProductRepository;
   sponsorships: SqliteSponsorshipRepository;
   ideas: SqliteIdeaRepository;
+  /**
+   * Les commentaires archivés et leur statut. La collecte ne réécrit jamais ce dernier :
+   * c'est ce qui fait qu'un commentaire écarté le reste.
+   */
+  comments: SqliteCommentRepository;
   company: SqliteCompanyRepository;
   legalObligations: SqliteLegalObligationRepository;
   /** Liens utiles de l'écran Légal (Urssaf, impôts, banque…). */
@@ -86,6 +93,11 @@ export interface Container {
   /** La pile de ce qui est en cours et attend des créneaux. */
   planningItems: SqlitePlanningItemRepository;
   collectMetrics: CollectMetrics;
+  /**
+   * La collecte des commentaires. Elle tourne avec celle des métriques, et **après**
+   * elle : les vidéos doivent être connues pour que le rattachement se pose.
+   */
+  collectComments: CollectComments;
   getPreviousPublication: GetPreviousPublication;
   getAnalytics: GetAnalytics;
   /**
@@ -147,6 +159,7 @@ export const buildContainer = (config: Config): Container => {
   const products = new SqliteProductRepository(db);
   const sponsorships = new SqliteSponsorshipRepository(db);
   const ideas = new SqliteIdeaRepository(db);
+  const comments = new SqliteCommentRepository(db);
   const company = new SqliteCompanyRepository(db);
   const legalObligations = new SqliteLegalObligationRepository(db);
   const legalBookmarks = new SqliteLegalBookmarkRepository(db);
@@ -191,6 +204,7 @@ export const buildContainer = (config: Config): Container => {
     products,
     sponsorships,
     ideas,
+    comments,
     company,
     legalObligations,
     legalBookmarks,
@@ -239,6 +253,11 @@ export const buildContainer = (config: Config): Container => {
       gcpClientId: config.gcpClientId,
       gcpClientSecret: config.gcpClientSecret,
       backfillDays: config.backfillDays,
+    }),
+    collectComments: new CollectComments(channels, comments, {
+      youtubeApiKey: config.youtubeApiKey,
+      gcpClientId: config.gcpClientId,
+      gcpClientSecret: config.gcpClientSecret,
     }),
     collectInstagram: new CollectInstagram(instagramAccounts, instagramData, {
       appId: config.metaAppId,

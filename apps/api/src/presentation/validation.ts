@@ -838,3 +838,37 @@ export const approveSlotSchema = z.object({
   nowDate,
   nowMinutes,
 });
+
+// ---------------------------------------------------------------------------
+// Commentaires
+// ---------------------------------------------------------------------------
+
+/**
+ * Filtres de `GET /api/comments`.
+ *
+ * La période est **facultative**, contrairement à l'écran Instagram : on trie sa file de
+ * commentaires en entier, pas mois par mois, et un commentaire de l'an dernier reste
+ * parfaitement valable sur un mur des commentaires.
+ */
+export const commentQuerySchema = z.object({
+  statuses: csvList,
+  channelIds: csvList,
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  search: z.string().trim().optional(),
+  limit: z.coerce.number().int().min(1).max(2000).default(500),
+});
+
+export const commentStatsQuerySchema = z.object({
+  channelIds: csvList,
+});
+
+/**
+ * Le seul geste posé sur un commentaire : lui donner un statut.
+ *
+ * `new` en fait partie — c'est ce qui permet de **remettre dans la file de tri** un
+ * commentaire écarté par erreur. Sans lui, une erreur de clic serait définitive.
+ */
+export const updateCommentSchema = z.object({
+  status: z.enum(['new', 'encouraging', 'idea', 'ignored']),
+});

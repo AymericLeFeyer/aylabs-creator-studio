@@ -3,7 +3,7 @@ import {
   analyticsApi,
   type AnalyticsParams,
 } from '../../../infrastructure/analytics/api/analyticsApi.ts';
-import { queryKeys } from '../../queryKeys.ts';
+import { COLLECT_ROOTS, queryKeys } from '../../queryKeys.ts';
 
 /** Charge les séries du dashboard. C'est la requête principale de l'application. */
 export const useAnalytics = (params: AnalyticsParams) =>
@@ -21,8 +21,9 @@ export const useCollectAll = () => {
   return useMutation({
     mutationFn: () => analyticsApi.collectAll(),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['analytics'] });
-      void queryClient.invalidateQueries({ queryKey: ['channels'] });
+      for (const root of COLLECT_ROOTS) {
+        void queryClient.invalidateQueries({ queryKey: [root] });
+      }
     },
   });
 };

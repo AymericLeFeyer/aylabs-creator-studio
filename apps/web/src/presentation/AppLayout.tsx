@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Menu, Moon, PanelLeftClose, PanelLeftOpen, Settings, Sun, X } from 'lucide-react';
-import { orderedNav, type NavItem } from './navigation.ts';
+import { MOBILE_NAV, NAV_SECTIONS, type NavItem } from './navigation.ts';
 import { useTheme } from './hooks/useTheme.ts';
 import { usePreferences } from './hooks/usePreferences.ts';
 import { Button } from './components/ui/button.tsx';
@@ -20,6 +20,7 @@ const CONTAINER = 'mx-auto w-full max-w-[1800px] px-3 sm:px-5';
  */
 const ROUTES_WITHOUT_FILTERS = [
   '/parametres',
+  '/commentaires',
   '/planning',
   '/production',
   '/partenariats',
@@ -52,9 +53,6 @@ export const AppLayout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const collapsed = preferences.sidebarCollapsed;
-  // L'ordre se règle dans Paramètres → Application : la liste grandit à chaque écran
-  // ajouté, et celui qu'on ouvre chaque matin n'est pas le même pour tout le monde.
-  const nav = orderedNav(preferences.navOrder);
   const showFilters = !ROUTES_WITHOUT_FILTERS.some((route) => location.pathname.startsWith(route));
 
   // Naviguer referme le tiroir : sur mobile, il recouvre le contenu qu'on vient
@@ -95,8 +93,22 @@ export const AppLayout = () => {
         {!compact && <span className="truncate font-semibold">Creator Studio</span>}
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
-        {nav.map((item) => navLink(item, { compact }))}
+      <nav aria-label="Navigation principale" className="flex flex-1 flex-col overflow-y-auto">
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.label ?? 'top'} className="flex flex-col gap-0.5">
+            {/* Repliée, la barre n'a pas la largeur d'un intitulé : le titre de famille
+                devient un simple filet, qui suffit à dire « on change de sujet ». */}
+            {section.label &&
+              (compact ? (
+                <hr className="mx-2 my-1.5 border-border" />
+              ) : (
+                <p className="px-2.5 pt-3 pb-1 text-[0.68rem] font-semibold tracking-wide text-muted-foreground uppercase">
+                  {section.label}
+                </p>
+              ))}
+            {section.items.map((item) => navLink(item, { compact }))}
+          </div>
+        ))}
       </nav>
 
       {/* Le pied : ce qui se règle une fois, hors du fil du travail. */}
@@ -230,10 +242,68 @@ export const AppLayout = () => {
           <RunningTimerBar />
         </header>
 
-        <main className={cn(CONTAINER, 'py-4 sm:py-6')}>
+        {/* `pb-20` réserve la hauteur de la barre du bas : sans elle, le dernier bouton
+            d'un formulaire finirait sous les onglets, hors d'atteinte. */}
+        <main className={cn(CONTAINER, 'py-4 pb-20 sm:py-6 lg:pb-6')}>
           <Outlet />
         </main>
       </div>
+
+      {/* Barre du bas, mobile seulement.
+
+          Cinq écrans, ceux qu'on ouvre debout : où j'en suis, quoi faire aujourd'hui, ce
+          que ça rapporte, ce qu'on m'écrit. Le tiroir garde **tout**, ces cinq-là compris —
+          y chercher un écran ne doit jamais donner un trou.
+
+          Le pouce atteint le bas de l'écran, pas le coin haut-gauche où vit le burger :
+          c'est toute la raison d'être de cette barre, et pourquoi elle ne remplace pas le
+          tiroir mais le double sur ce que l'on ouvre le plus.
+
+          Elle est en `z-30`, sous le voile du tiroir (`z-40`) : à z-index égal, c'est
+          l'ordre du DOM qui tranche, et la barre serait passée par-dessus le voile.
+
+          `env(safe-area-inset-bottom)` ne vaut zéro que parce que le viewport n'est pas
+          en `viewport-fit=cover` — iOS insère alors lui-même la fenêtre au-dessus de la
+          barre gestuelle. On le garde : le jour où le viewport passera en `cover` (pour
+          gagner la zone de l'encoche), la barre du bas ne se retrouvera pas sous le
+          trait du bas sans que personne n'y ait pensé. */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur lg:hidden"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        aria-label="Accès rapide"
+      >
+        <div className="grid grid-cols-5">
+          {MOBILE_NAV.map(({ to, label, short, icon: Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                cn(
+                  'flex flex-col items-center gap-0.5 px-1 py-2 text-[0.65rem] font-medium transition-colors',
+                  isActive ? 'text-foreground' : 'text-muted-foreground',
+                )
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  {/* La pastille derrière l'icône marque l'écran actif : sur cinq
+                      libellés de dix pixels, la seule couleur du texte ne suffit pas. */}
+                  <span
+                    className={cn(
+                      'flex h-7 w-12 items-center justify-center rounded-full transition-colors',
+                      isActive && 'bg-secondary',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="w-full truncate text-center">{short ?? label}</span>
+                </>
+              )}
+            </NavLink>
+          ))}
+        </div>
+      </nav>
     </div>
   );
 };

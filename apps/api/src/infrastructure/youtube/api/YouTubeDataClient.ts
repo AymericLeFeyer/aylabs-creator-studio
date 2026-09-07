@@ -4,6 +4,7 @@ import type { IsoDate } from '../../../shared/dates.ts';
 import { fetchUploads, type UploadItem } from './uploads.ts';
 import { fetchPublicVideoStats, type VideoStatRow } from './videoStats.ts';
 import { fetchVideoSnippet, type VideoSnippet } from './videoDetails.ts';
+import { fetchChannelComments, type FetchCommentsOptions } from './comments.ts';
 
 export interface PublicChannelStats {
   channelId: string;
@@ -156,6 +157,21 @@ export class YouTubeDataClient {
     } catch (error) {
       if (error instanceof Error && error.name === 'AppError') throw error;
       throw upstream(`YouTube Data API (fiche vidéo) : ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Commentaires récents de la chaîne, tous niveaux de vidéo confondus.
+   *
+   * Une clé API suffit : les commentaires publiés sont publics. Seuls ceux des vidéos
+   * non listées échappent à ce chemin — il faut alors le mode OAuth.
+   */
+  async fetchComments(options: FetchCommentsOptions) {
+    try {
+      return await fetchChannelComments(this.client, options);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AppError') throw error;
+      throw upstream(`YouTube Data API (commentaires) : ${(error as Error).message}`);
     }
   }
 

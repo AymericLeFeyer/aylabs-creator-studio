@@ -12,6 +12,7 @@ import { PlanningPage } from './presentation/pages/PlanningPage.tsx';
 import { InstagramPage } from './presentation/pages/InstagramPage.tsx';
 import { ProductionDetailPage } from './presentation/pages/ProductionDetailPage.tsx';
 import { PartnersPage } from './presentation/pages/PartnersPage.tsx';
+import { CommentsPage } from './presentation/pages/CommentsPage.tsx';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +34,7 @@ export const App = () => (
             <Route index element={<DashboardPage />} />
             <Route path="contenu" element={<ContentPage />} />
             <Route path="instagram" element={<InstagramPage />} />
+            <Route path="commentaires" element={<CommentsPage />} />
             <Route path="planning" element={<PlanningPage />} />
             <Route path="production" element={<ProductionPage />} />
             <Route path="production/:id" element={<ProductionDetailPage />} />

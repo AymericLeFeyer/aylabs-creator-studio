@@ -5,6 +5,7 @@ import type { DailyMetric } from '../../../domain/metrics/entities/DailyMetric.t
 import { upstream } from '../../../shared/errors.ts';
 import { fetchUploads, type UploadItem } from './uploads.ts';
 import { fetchVideoSnippet, type VideoSnippet } from './videoDetails.ts';
+import { fetchChannelComments, type FetchCommentsOptions } from './comments.ts';
 import type { VideoStatRow } from './videoStats.ts';
 
 /** Métriques demandées quand la chaîne est monétisée (scope monetary accordé). */
@@ -150,6 +151,22 @@ export class YouTubeAnalyticsClient {
     } catch (error) {
       if (error instanceof Error && error.name === 'AppError') throw error;
       throw upstream(`YouTube Data API (fiche vidéo) : ${this.describe(error)}`);
+    }
+  }
+
+  /**
+   * Commentaires récents de la chaîne du jeton.
+   *
+   * Le jeton passe avant la clé API pour la même raison que `fetchVideoSnippet` : c'est
+   * le seul chemin qui voie les commentaires laissés sous une vidéo **non listée**.
+   */
+  async fetchComments(options: Omit<FetchCommentsOptions, 'channelId'> & { channelId: string }) {
+    try {
+      const youtube = google.youtube({ version: 'v3', auth: this.buildAuth() });
+      return await fetchChannelComments(youtube, options);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AppError') throw error;
+      throw upstream(`YouTube Data API (commentaires) : ${this.describe(error)}`);
     }
   }
 

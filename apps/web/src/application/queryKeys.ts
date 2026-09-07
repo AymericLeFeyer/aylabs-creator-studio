@@ -29,6 +29,8 @@ export const queryKeys = {
   products: (params: unknown) => ['products', params] as const,
   sponsorships: (params: unknown) => ['sponsorships', params] as const,
   ideas: () => ['ideas'] as const,
+  comments: (params: unknown) => ['comments', params] as const,
+  commentCounts: (channelIds: string[]) => ['commentCounts', channelIds] as const,
 
   legalOverview: () => ['legalOverview'] as const,
   legalObligations: (includeArchived: boolean) => ['legalObligations', includeArchived] as const,
@@ -47,6 +49,23 @@ export const queryKeys = {
 
 /** Racines à invalider après une écriture qui change les chiffres agrégés. */
 export const MONEY_ROOTS = ['analytics', 'revenues', 'expenses'] as const;
+
+/**
+ * Ce qu'une collecte réécrit, et qui doit donc repartir avec elle.
+ *
+ * **`videos` en fait partie**, et c'est le piège : une collecte n'écrit pas que des
+ * séries, elle insère aussi les sorties. Sans cette racine, `/api/analytics` repartait
+ * bien — la vidéo apparaissait sur le dashboard et dans le catalogue — pendant que les
+ * **sélecteurs de rattachement** (« Marquer publiée », le champ vidéo d'un revenu ou d'une
+ * dépense) continuaient de servir une liste d'avant la collecte, jusqu'à cinq minutes
+ * durant. La vidéo qu'on venait de publier était visible partout sauf là où on voulait
+ * s'y rattacher.
+ *
+ * `channels` y est aussi : la collecte met à jour la miniature, le compte d'abonnés et
+ * l'identifiant de chaîne. Et une `VideoView` embarque le nom et la couleur de sa chaîne,
+ * ce qui fait que toute écriture de chaîne doit elle aussi emporter `videos`.
+ */
+export const COLLECT_ROOTS = ['analytics', 'channels', 'videos'] as const;
 
 /**
  * Écrire une règle récurrente crée, réécrit ou supprime des dépenses : les vues d'argent
@@ -105,6 +124,15 @@ export const PLANNING_ROOTS = [...PRODUCTION_ROOTS, 'planningSettings', 'workHou
  * seulement, invalidées ensemble.
  */
 export const INSTAGRAM_ROOTS = ['instagramOverview', 'instagramAccounts'] as const;
+
+/**
+ * Racines des commentaires.
+ *
+ * Le module ne croise aucun autre : un commentaire trié ne touche ni l'argent, ni la
+ * file de production, ni les alertes. Les listes et les compteurs, en revanche, bougent
+ * toujours ensemble — trier fait sortir la ligne d'un onglet et entrer dans un autre.
+ */
+export const COMMENT_ROOTS = ['comments', 'commentCounts'] as const;
 
 /**
  * Racines du suivi administratif. Le référentiel part avec l'aperçu : changer un jour

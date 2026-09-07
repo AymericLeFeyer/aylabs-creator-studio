@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-06
+> Dernière mise à jour : 2026-09-07
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -264,10 +264,14 @@ c'est du brouillon, écrit avant que la vidéo existe. `publishTitle`,
 chaînes, jamais `null` — même règle que `script` : un champ de formulaire n'a pas à
 distinguer « vide » de « pas encore renseigné ».
 
-`publishTitle` est le titre **public** et non le titre de travail. L'écran le
-préremplit avec `title` — il faut bien partir de quelque chose — mais l'enregistrer ne
-renomme pas la production : l'accroche qui fait cliquer se trouve rarement le jour où
-l'on ouvre le projet, et confondre les deux ferait perdre le titre de travail.
+`publishTitle` est le titre **public**, et **l'enregistrer renomme aussi la
+production** (`title`). Les deux ne font qu'un : le titre de travail n'est qu'un titre
+public provisoire, et les laisser diverger obligeait à renommer deux fois — la file
+d'attente restait pleine de titres périmés pendant que la vraie accroche n'existait que
+dans l'onglet Publication. Les deux colonnes subsistent en base (c'est ce qui garde le
+titre public exact, ses 100 caractères et son compteur), mais un seul enregistrement les
+aligne. Un titre **vide** ne renomme rien : `title` est obligatoire côté API, et vider le
+champ pour le retravailler ne doit pas casser la fiche.
 
 `paidPromotion` est le seul **nullable**, et c'est un troisième état qui compte :
 `null` = « pas encore tranché », auquel cas la case se déduit de la présence d'une
@@ -1010,6 +1014,84 @@ Comme le refresh token des chaînes, **il ne sort jamais de l'API** : `findAll` 
 `InstagramAccountView` où il est remplacé par `hasToken`, et les routes d'écriture
 relisent la vue plutôt que de renvoyer l'entité qu'elles viennent d'écrire.
 
+### `comment` — ce que les gens écrivent, et ce qu'on en fait
+
+`Comment { id, channelId, externalId, videoId, videoExternalId, authorName, authorAvatarUrl,
+authorChannelId, text, likeCount, publishedAt, date, status, curatedAt }` — table `comments`,
+clé unique `(channel_id, external_id)`. `CommentView` y ajoute la chaîne (nom, couleur,
+miniature) et la vidéo (titre, miniature).
+
+#### La contrainte qui décide de tout : un commentaire ne se retrouve pas
+
+L'API ne rend les commentaires que **par pages antéchronologiques**, sans recherche ni
+archive. « Le commentaire qui m'avait fait plaisir en mars » est introuvable en septembre :
+il faudrait repaginer tout le catalogue pour tomber dessus. On les archive donc au fil de
+l'eau, comme les stories Instagram — à cette différence près qu'un jour manqué **se
+rattrape** ici, tant qu'on ne dépasse pas ce que la pagination peut remonter.
+
+Une fois la ligne écrite, elle ne dépend plus de YouTube, et le statut qu'on lui a donné
+non plus.
+
+#### Le statut est la seule chose qui nous appartienne
+
+| `status`      | Sens                                                        | Où il s'affiche               |
+| ------------- | ----------------------------------------------------------- | ----------------------------- |
+| `new`         | pas encore regardé — **la file de tri**, pas un quatrième tiroir | onglet Commentaires       |
+| `encouraging` | ça fait plaisir                                             | Wall of Love, **au hasard**   |
+| `idea`        | une demande, une proposition                                | Propositions de la communauté |
+| `ignored`     | vu, écarté. On ne le revoit plus                            | nulle part                    |
+
+**`SqliteCommentRepository.upsertMany` n'écrit ni `status` ni `curated_at`** — ni à
+l'INSERT, ni dans le `DO UPDATE`. C'est toute la garantie du module : la collecte
+redescend les mêmes commentaires à chaque passage, et un commentaire écarté doit le
+rester. Le texte, les likes et l'avatar, eux, suivent : un commentaire édité doit
+s'afficher tel qu'il est aujourd'hui.
+
+Distinguer `new` d'`ignored` est ce qui permet de dire « il me reste 40 commentaires à
+regarder » plutôt que de relire chaque jour ceux qu'on a déjà écartés. Il n'y a **pas de
+suppression** : écarter se fait par le statut, et supprimer la ligne la ferait revenir
+dans la file à la collecte suivante.
+
+`curatedAt` retombe à `null` quand on remet un commentaire dans la file : il dit quand on
+a tranché, et re-cliquer la décision active dé-tranche.
+
+#### Deux colonnes pour la vidéo, et c'est délibéré
+
+`videoExternalId` est toujours renseigné ; `videoId` ne l'est que si la sortie a déjà été
+collectée. Les commentaires tombent aussi sur de vieilles vidéos, hors de la fenêtre de
+collecte (dernière vidéo connue moins 7 jours) : exiger la clé étrangère ferait **perdre**
+ces commentaires, alors qu'on peut parfaitement les afficher avec un lien YouTube. La
+jointure est donc un `LEFT JOIN`, et `linkVideos(channelId)` rattrape les rattachements à
+chaque collecte, une fois la vidéo enfin connue.
+
+#### La collecte
+
+`CollectComments` passe par **`commentThreads.list` avec `allThreadsRelatedToChannelId`**
+et non par une boucle sur les vidéos : une seule série d'appels couvre tout le catalogue,
+y compris une sortie d'il y a deux ans, pour **1 unité de quota par page de 100** — contre
+1 unité **par vidéo** pour l'autre chemin.
+
+Seuls les **commentaires de premier niveau** sont ramenés (`topLevelComment`). Les réponses
+sont laissées de côté : sur un mur, c'est le message écrit spontanément qui compte, et la
+plupart des réponses d'un fil sont les nôtres. Les commentaires dont
+`authorChannelId === channel.externalId` sont **écartés** — ses propres réponses n'ont rien
+à faire dans la file de tri.
+
+**L'arrêt est anticipé** : on s'arrête dès qu'une page ne contient aucun commentaire
+inconnu (`isKnown`), l'ordre étant antéchronologique. Sans ça, chaque passage horaire
+repaginerait tout l'historique. Plafond de 20 pages.
+
+Le jeton de la chaîne passe **avant** la clé API, même règle que `fetchVideoSnippet` : c'est
+le seul chemin qui voie les commentaires d'une sortie non listée.
+`allThreadsRelatedToChannelId` exige un identifiant de chaîne **y compris en OAuth** — il
+n'existe pas d'équivalent `mine: true` ici, d'où l'erreur explicite quand `externalId` est
+absent.
+
+Elle tourne dans le même passage que la collecte des métriques et **après** elle (les
+vidéos doivent être connues pour que le rattachement se pose du premier coup). Son échec
+est **avalé** : les métriques sont déjà écrites, et les commentaires se rattrapent au
+passage suivant.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -1129,6 +1211,10 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/instagram/collect`                            | Collecte immédiate de tous les comptes                                                                                                                                                                     |
 | `POST`   | `/api/instagram/accounts/:id/collect`               | Collecter ce compte                                                                                                                                                                                        |
 | `POST`   | `/api/instagram/accounts/:id/refresh-token`         | Échange le jeton contre un neuf (60 j de plus). Demande `META_APP_ID` / `META_APP_SECRET`                                                                                                                  |
+| `GET`    | `/api/comments`                                     | Commentaires archivés. Params `statuses` (CSV), `channelIds`, `from`/`to`, `search`, `limit` (500). Période **facultative** : on trie sa file en entier                                                    |
+| `GET`    | `/api/comments/stats`                               | Compte par statut, pour les pastilles des onglets. Param `channelIds`. **Déclaré avant `/:id`**                                                                                                            |
+| `POST`   | `/api/comments/collect`                             | Collecte immédiate de toutes les chaînes                                                                                                                                                                   |
+| `PATCH`  | `/api/comments/:id`                                 | Le seul geste : `{ status }`. `new` y est admis — c'est ce qui remet dans la file de tri. **Pas de DELETE** : écarter est un statut                                                                        |
 
 Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube.
 
@@ -1139,6 +1225,7 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 | `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, alertes (production + légal), puis **les deux graphiques seulement** (argent, audience)    |
 | `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                           |
 | `/instagram`        | `InstagramPage`        | 6 cartes, graphique à 3 onglets, puis calendrier des stories / tableau des publications                                                               |
+| `/commentaires`     | `CommentsPage`         | 3 onglets (`?onglet=`) : Wall of Love, Propositions de la communauté, Commentaires (le tableau de tri)                                                |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail à droite, bouton « Ajouter une vidéo »                                                                   |
 | `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / Créneaux & temps passé / Produits & sponsos / Notes                        |
@@ -1237,12 +1324,76 @@ cliquer.
 `ROUTES_WITHOUT_FILTERS` inclut `/planning` : la période s'y choisit dans l'écran lui-même,
 et une seconde barre de dates au-dessus dirait autre chose que la grille.
 
+`CommentsPage` porte **trois onglets et non deux** : le mur, les propositions, et le
+tableau de tri. Les deux premiers sont le **produit** du troisième — sans tri, ils restent
+vides, et leur écran vide le dit. Les séparer est ce qui permet au mur de n'être qu'un mur :
+on l'ouvre pour se faire du bien, pas pour travailler.
+
+**Le mur affiche au hasard, les propositions dans l'ordre.** Ce ne sont pas les mêmes
+objets : un mur se contemple, une liste de propositions se dépouille. Trié par date, le mur
+raconterait une chronologie et les mêmes trois messages tiendraient le haut de la page
+pendant des mois — au bout de la deuxième visite on ne le lirait plus. Le tirage
+(`shuffle`, mulberry32) est **déterministe à graine fixe** et la graine vit dans un état :
+sans ça, chaque rendu de React redistribuerait les cartes sous les yeux du lecteur. Le
+bouton « Mélanger » est le seul à la changer, et il ne coûte aucun aller-retour — la liste
+est déjà chargée. Le tirage vit côté écran plutôt que dans un `ORDER BY RANDOM()` pour
+cette raison exacte.
+
+Le mur est en **colonnes CSS** (`columns-*` + `break-inside-avoid`) et non en grille : un
+commentaire va de trois mots à dix lignes, et une grille alignerait des cartes de hauteurs
+très inégales en laissant des trous béants.
+
+`CommentStatusPicker` pose les trois décisions en **un clic chacune**, et pas dans un
+`Select` : on trie en rafale, et un menu déroulant demanderait deux clics et un déplacement
+du curseur par ligne. **Re-cliquer la décision active la défait** et remet le commentaire
+dans la file — c'est ce qui rattrape un clic de travers sans un quatrième bouton « À trier »
+sur chaque ligne. Le tableau s'ouvre sur `new` : c'est une boîte de réception, elle se vide.
+
+`ROUTES_WITHOUT_FILTERS` inclut `/commentaires` : ni la période, ni le mode CA/bénéfice, ni
+l'interrupteur « produits reçus » n'y pilotent quoi que ce soit, et une barre décorative
+au-dessus se lirait comme un filtre qui ne marche pas. Le filtrage propre à l'écran
+(statut, chaîne, recherche) vit dans le tableau, là où il sert.
+
 `AppLayout` porte la navigation dans une **barre latérale à gauche**, pas dans une rangée
 d'onglets horizontale. Trois raisons : la liste des écrans peut grandir sans se disputer
 la largeur avec la barre de filtres ; l'écran actif se repère à sa position plutôt qu'à
 sa couleur ; et sur mobile la même barre devient un **tiroir** (bouton hamburger dans
 l'en-tête, overlay + `Échap` par clic sur le fond), au lieu d'une rangée qui défile
 horizontalement.
+
+**Les écrans sont groupés par famille** (`NAV_SECTIONS`, `presentation/navigation.ts`) :
+le dashboard **hors famille** en tête, puis **Produire** (Planning, Production),
+**Audience** (Contenu, Instagram, Commentaires) et **Argent** (Partenariats, Chiffre
+d'affaires, Légal). À neuf entrées, une liste à plat obligeait à lire tous les libellés
+pour en trouver un — rien ne disait que « Contenu » et « Instagram » répondent à la même
+question. Le dashboard n'a pas d'intitulé : c'est la vue d'ensemble, elle n'appartient à
+aucun des trois métiers et lui en donner un ferait une rubrique d'une ligne. **Repliée, la
+barre remplace chaque intitulé par un filet** : 3,75 rem n'ont pas la largeur d'un mot, et
+un trait suffit à dire « on change de sujet ».
+
+**L'ordre est fixe et ne se règle plus.** Il l'était — deux flèches dans Paramètres →
+Application, `preferences.navOrder`, `orderedNav()` — et ça ne tient plus une fois les
+entrées groupées : un ordre libre à plat n'a pas d'équivalent en familles, et déplacer un
+écran hors de la sienne le rendrait introuvable. C'est d'ailleurs la position d'un écran
+qui permet de le retrouver sans lire ; un menu qui ne bouge pas s'apprend une fois. Le
+réglage, la préférence et `orderedNav` ont été supprimés ; une valeur `navOrder` restée
+dans `localStorage` est simplement ignorée.
+
+**Sur mobile, une barre du bas double le tiroir sur cinq écrans** (`MOBILE_NAV`) :
+Dashboard, Planning, Production, CA, Commentaires. Le pouce atteint le bas de l'écran, pas
+le coin haut-gauche où vit le hamburger — c'est toute sa raison d'être. **Cinq et pas
+plus** : au-delà, les cibles deviennent trop étroites et les libellés illisibles, d'où le
+champ `short` de `NavItem` (« CA », « Retours »). Elle ne **remplace pas** le tiroir, qui
+continue de porter **tout**, ces cinq-là compris : y chercher un écran ne doit jamais
+donner un trou.
+
+Deux détails non négociables : elle est en **`z-30`, sous le voile du tiroir** (`z-40`) —
+à z-index égal c'est l'ordre du DOM qui tranche, et elle serait passée par-dessus le voile
+noir ; et `main` porte un `pb-20` que `lg:pb-6` annule, sans quoi le dernier bouton d'un
+formulaire finirait sous les onglets, hors d'atteinte. Le `env(safe-area-inset-bottom)`
+vaut zéro tant que le viewport n'est pas en `viewport-fit=cover` (iOS insère alors
+lui-même la fenêtre au-dessus de la barre gestuelle) : il est là pour le jour où il y
+passera.
 
 **Repliée, la barre ne montre que les icônes** (`SIDEBAR_CLOSED` 3,75 rem contre
 `SIDEBAR_OPEN` 15 rem), le libellé revenant en infobulle. L'état est une préférence
@@ -1368,7 +1519,7 @@ Application** : c'était le seul réglage de la barre à ne jamais bouger, et il
 une place que la barre n'avait plus. La distinction est nette et vaut pour la suite : un
 **filtre** change _ce qu'on regarde_ et se règle plusieurs fois par session ; une
 **préférence** change _comment l'outil se présente_ et se règle une fois
-(`usePreferences`, clé `acs.preferences` : `sidebarCollapsed`, `compactQueue`).
+(`usePreferences`, clé `acs.preferences` : `sidebarCollapsed`, `compactQueue` — l'ordre du menu n'en fait plus partie).
 
 Ce qui reste dans la barre, dans l'ordre où on s'en sert : période, chaînes, pas
 d'agrégation, puis l'interrupteur CA / Bénéfices, la case « Produits reçus » et le bouton
@@ -1417,6 +1568,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                         | idem                                                  | Horaires de travail et connexion à l'agenda                                                         |
 | `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`          | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                               |
 | `useSlotFromTimeEntry`                                                                                                                                                                            | idem                                                  | Transforme une session de travail en créneau approuvé                                               |
+| `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                    | `application/comment/usecases/useComments.ts`         | Commentaires archivés, leur tri et leur collecte                                                    |
 | `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                            | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                            |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
@@ -1435,6 +1587,21 @@ l'avancement de la file et le compteur de la fiche bougent ; cocher une tâche d
 fiche la retire de la pile — la grille et la pile bougent. `calendars` n'est dans aucune
 racine : la liste des calendriers de l'instance ne dépend d'aucune écriture de notre côté,
 et la relire à chaque approbation ferait un aller-retour vers la domotique pour rien.
+
+`COLLECT_ROOTS` (`analytics`, `channels`, `videos`) part à chaque collecte, qu'elle
+porte sur toutes les chaînes ou sur une seule, **et à chaque écriture de chaîne**.
+`videos` en fait partie et c'est le piège : une collecte n'écrit pas que des séries, elle
+insère aussi les sorties. Sans cette racine, `/api/analytics` repartait bien — la vidéo
+apparaissait sur le dashboard et dans le catalogue — pendant que les **sélecteurs de
+rattachement** servaient encore une liste d'avant la collecte. `channels` y est parce que
+la collecte rafraîchit miniature, abonnés et identifiant de chaîne ; et une `VideoView`
+embarquant le nom et la couleur de sa chaîne, toute écriture de chaîne doit elle aussi
+emporter `videos`.
+
+`COMMENT_ROOTS` (`comments`, `commentCounts`) ne croise aucune autre racine : un
+commentaire trié ne touche ni l'argent, ni la file de production, ni les alertes. Les
+listes et les compteurs, en revanche, partent **toujours ensemble** — trier fait sortir la
+ligne d'un onglet et entrer dans un autre, et les trois pastilles bougent d'un coup.
 
 `RECURRING_ROOTS` = `MONEY_ROOTS` + `recurringExpenses` : écrire une règle crée, réécrit
 ou supprime des dépenses, les vues d'argent repartent avec elle. Le contraire n'est pas
@@ -1466,6 +1633,11 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   (`origin`, `item_id`, `calendar_uid`, `time_entry_id`). Elle n'ajoute **pas** de `status`
   aux créneaux : `origin` + `done` disent déjà tout, et un troisième champ finirait par les
   contredire.
+- **Migration 23** ajoute la table `comments`. `status` y vaut `'new'` par défaut et non
+  `'ignored'` : « pas encore trié » et « écarté » sont deux réponses différentes, et c'est
+  la première qui alimente la file de tri. Deux colonnes pour la vidéo (`video_id`
+  nullable, `video_external_id` toujours posé) parce qu'un commentaire tombe souvent sur
+  une sortie hors de la fenêtre de collecte.
 - **Migration 22** ajoute à `productions` les cinq champs du formulaire de mise en
   ligne : `publish_title`, `publish_description`, `publish_hashtags`, `publish_tags` et
   `paid_promotion`. Les quatre textes sont `NOT NULL DEFAULT ''` comme `script` ; seul
@@ -1527,8 +1699,32 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **La production porte la chaîne et la vidéo, pas le produit.** Changer l'une des deux sur une production re-synchronise les revenus de tous ses produits et sponsos (`ManageProductions.update` → `resyncProduction`). Sans ça, une sponso resterait rattachée à l'ancienne vidéo et fausserait son tableau de performance.
 - **Supprimer une production ne supprime pas ses produits ni ses sponsos** (`ON DELETE SET NULL`), mais `ManageProductions.remove` les re-synchronise après coup : leurs revenus doivent perdre le rattachement à la vidéo qui vient de disparaître. Les identifiants sont collectés **avant** la suppression, sinon plus rien ne les relierait.
 - **Les vidéos n'arrivent qu'avec une collecte** — donc « Marquer publiée » n'a rien à proposer sur une base qui n'a jamais collecté. Même piège que la case « Marquer les sorties de vidéo ».
+- **Une collecte doit invalider `videos`, pas seulement `analytics`.** C'est le bug qui
+  faisait que « Marquer publiée » ne proposait pas la vidéo qu'on venait de mettre en
+  ligne, alors qu'elle s'affichait déjà sur le dashboard et dans le catalogue : les deux
+  écrans lisent `/api/analytics` (invalidé), les sélecteurs de rattachement lisent
+  `/api/videos` (qui ne l'était pas), avec un `staleTime` de 5 minutes. `PublishDialog`
+  étant **monté en permanence** dans `ProductionDetailPage`, sa requête restait active et
+  ne repartait jamais tant qu'on ne quittait pas la page. D'où `COLLECT_ROOTS`, partagé
+  par `useCollectAll` et `useChannelMutation` pour que les deux chemins ne divergent pas.
+  Règle générale : une écriture serveur doit invalider **tout ce qu'elle écrit**, pas
+  seulement l'écran depuis lequel on l'a déclenchée.
+- **`PublishDialog` porte son propre bouton de collecte**, et c'est le seul écran dans ce
+  cas. On y arrive juste après avoir mis la vidéo en ligne, donc souvent avant qu'aucune
+  collecte n'ait tourné — et `/production/:id` n'a pas de barre de filtres, donc pas de
+  bouton « Collecter ». Il fallait aller sur un autre écran, collecter, revenir. Le bouton
+  collecte la **seule chaîne** de la production quand elle en a une (bien moins cher qu'un
+  passage complet) et retombe sur toutes les chaînes sinon ; la liste se remplit d'elle-même
+  grâce à `COLLECT_ROOTS`.
 - **`PublishDialog` trie les sorties par proximité avec la date visée**, pas par date : celle qu'on cherche est presque toujours sortie près du jour prévu, et elle doit être en tête sans faire défiler des mois d'historique.
 - **Créneaux et temps passé sont un seul onglet.** Ce sont les deux moitiés d'une même question — quand je m'y mets, et combien ça m'a réellement pris —, et deux onglets obligeaient à faire l'aller-retour pour comparer le prévu au vécu. L'onglet annonce les deux d'un coup : « Créneaux & temps passé (3) · 2 h 30 ».
+- **Enregistrer le formulaire de publication renomme la vidéo dans la file.**
+  `publishTitle` et `title` sont le même titre à deux moments de sa vie : le champ est
+  prérempli avec le titre de travail, et `PublicationPanel.save()` renvoie les deux. Ça
+  vaut même quand on n'a touché que la description — le formulaire enregistre tout d'un
+  bloc, et le texte d'aide sous le champ annonce le nouveau nom avant le clic. Un titre
+  vide est ignoré : l'API refuse un `title` vide, et effacer le champ pour le réécrire ne
+  doit pas casser la fiche.
 - **L'onglet Publication n'enregistre pas tout seul**, exactement comme l'éditeur de script et pour la même raison : une description se travaille en plusieurs passages, et une sauvegarde continue écraserait un brouillon en cours de réflexion. L'indicateur « Non enregistré » rend l'oubli visible. Les compteurs de caractères passent en rouge aux limites **de YouTube** (100 pour un titre, 5000 pour une description) : les dépasser fait rejeter la mise en ligne, et s'en apercevoir devant le formulaire de YouTube est trop tard.
 - **« Charger depuis la précédente vidéo » lit YouTube en direct, et ne stocke rien.** Une description de chaîne est un gabarit — liens d'affiliation, réseaux, chapitres, mentions — qu'on réécrit à 90 % identique à chaque sortie ; la retaper de mémoire est le meilleur moyen d'oublier un lien. Le texte pourrait être collecté avec les vidéos, mais il n'existerait alors que pour les sorties parues **après** la migration : la fenêtre de collecte ne remonte qu'à la dernière vidéo connue moins sept jours, et le bouton aurait paru cassé pendant des mois sur un catalogue pourtant complet. Un appel coûte 1 unité de quota, et il part **sur le geste**, jamais au montage de l'écran (d'où une `useMutation` et non une `useQuery`).
 - **La description chargée REMPLACE, les tags seulement s'ils sont vides.** On charge pour repartir d'un gabarit, pas pour concaténer deux descriptions — d'où la confirmation quand quelque chose serait perdu. Les tags, eux, ne s'écrasent que s'ils n'ont pas déjà été saisis : personne ne les retape volontairement, mais personne ne veut non plus les voir défaits.
@@ -1642,14 +1838,21 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   cherche des yeux en ouvrant l'écran. `inProgress` est **dérivé du statut dans la carte**
   et non passé en prop : « en cours » est une propriété de la vidéo, pas une décision de
   l'écran qui l'affiche.
-- **L'ordre de la barre latérale est une préférence** (`preferences.navOrder`), réglable
-  dans Paramètres → Application. Il est stocké **par adresse** et non par rang : un écran
-  ajouté ou retiré par une mise à jour décalerait sinon tout ce qui suit, et le menu se
-  mélangerait tout seul. `orderedNav` fait fermer la marche aux entrées absentes de l'ordre
-  persisté — un nouvel écran doit apparaître, pas disparaître. La liste vit dans
-  `presentation/navigation.ts`, qui **n'exporte aucun composant** : la mettre dans
-  `AppLayout.tsx` déclencherait `react-refresh/only-export-components`, même découpage que
-  `videoMarkers.tsx`.
+- **L'ordre de la barre latérale ne se règle plus** : il est porté par `NAV_SECTIONS` et
+  fixe. Le réglage à deux flèches (`preferences.navOrder`, `orderedNav`) a été retiré en
+  même temps que les familles ont été introduites — un ordre libre à plat n'a pas
+  d'équivalent une fois les entrées groupées, et sortir un écran de sa famille le rendrait
+  introuvable. Ne pas le réintroduire sans décider d'abord ce que « déplacer » veut dire
+  entre deux rubriques. La liste vit dans `presentation/navigation.ts`, qui **n'exporte
+  aucun composant** : la mettre dans `AppLayout.tsx` déclencherait
+  `react-refresh/only-export-components`, même découpage que `videoMarkers.tsx`.
+- **Un écran ajouté doit être rangé dans une famille**, sinon il n'apparaît nulle part :
+  `NAV` est dérivé de `NAV_SECTIONS` et non l'inverse. C'est le contraire de l'ancien
+  `orderedNav`, qui faisait fermer la marche aux entrées inconnues — il n'y a plus de
+  liste de repli, et une entrée oubliée est une entrée absente.
+- **La barre du bas ne prend que cinq écrans, et le tiroir les garde aussi.** Y ajouter une
+  sixième entrée casserait la largeur des cibles ; en retirer une du tiroir sous prétexte
+  qu'elle est en bas ferait un trou dans le seul endroit qui liste tout.
 - **La file d'attente a une vue compacte** (`preferences.compactQueue`) : une ligne par vidéo. Au-delà de cinq ou six vidéos en cours, la version détaillée oblige à faire défiler pour voir sa propre file. Le chevron d'une carte l'ouvre **à contre-courant du réglage global** (`exceptions`, un `Set` d'identifiants) : on veut souvent une file compacte _sauf_ la vidéo sur laquelle on travaille. Changer le réglage global vide les exceptions.
 - **Les confettis sont maison** (`Confetti`, canvas, ~50 lignes, aucune dépendance) et ne se déclenchent qu'à la **publication** : c'est le seul moment de l'outil qui mérite d'être fêté, tout le reste est de la comptabilité et de la planification. Le canvas est `pointer-events-none` en position fixe — il recouvre l'écran sans jamais intercepter un clic — et se démonte tout seul.
 - **Une vidéo supprimée sur YouTube disparaît des chiffres à la collecte suivante**, mais sa ligne reste en base (`deleted_at`). Les revenus et dépenses qui lui étaient rattachés gardent leur rattachement : l'argent a bien été gagné, même si la vidéo n'est plus en ligne. Conséquence à connaître : ces montants ne se lisent plus dans le tableau de performance, alors qu'ils comptent toujours dans les totaux de la période. C'est voulu — « ne plus être comptabilisée » porte sur la vidéo, pas sur l'euro.
@@ -1823,6 +2026,45 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   le cran supplémentaire de `productSortRank` entre un `received` avec et sans vidéo.
   Filtrer sur « pas encore reçu » ferait disparaître précisément les produits qu'il reste à
   tourner.
+- **La collecte de commentaires ne réécrit JAMAIS un statut.** `upsertMany` n'inclut
+  `status` ni dans ses colonnes insérées ni dans son `DO UPDATE` : c'est la seule chose
+  qui empêche un commentaire écarté de remonter dans la file à chaque passage horaire. Une
+  future catégorisation par IA devra poser son verdict ailleurs (une colonne de
+  suggestion), jamais dans cette colonne-là.
+- **Écarter n'est pas supprimer, et il n'y a pas de `DELETE`.** Supprimer la ligne ferait
+  revenir le commentaire dans la file de tri à la collecte suivante — le statut `ignored`
+  est précisément la mémoire de « déjà vu, déjà écarté ».
+- **Un commentaire sans `videoId` n'est pas une anomalie.** La fenêtre de collecte des
+  vidéos ne remonte qu'à la dernière connue moins sept jours, alors que les commentaires
+  arrivent sur tout le catalogue. La jointure est un `LEFT JOIN`, l'écran affiche « Vidéo
+  non collectée » avec le lien YouTube, et `linkVideos` rattrape le rattachement le jour
+  où la sortie est enfin connue. Passer cette jointure en `JOIN` ferait disparaître ces
+  commentaires de tous les écrans sans que rien ne le signale.
+- **`allThreadsRelatedToChannelId` exige un identifiant de chaîne, même en OAuth.** Il n'y
+  a pas d'équivalent `mine: true` sur les commentaires. Sur une chaîne jamais collectée,
+  `externalId` est vide et la collecte répond une erreur explicite plutôt que de paginer
+  dans le vide.
+- **La collecte s'arrête à la première page entièrement connue.** L'ordre est
+  antéchronologique : tout ce qui suit est déjà archivé. Ne jamais retirer ce garde-fou —
+  sans lui, chaque passage horaire repaginerait tout le catalogue pour zéro nouveauté.
+  Corollaire : une longue absence se rattrape tant qu'elle tient dans les 20 pages du
+  plafond (2 000 commentaires), au-delà les plus anciens sont perdus. C'est moins grave
+  que pour les stories Instagram, et volontairement moins protégé.
+- **Le mur des commentaires ne se trie jamais par date.** L'ordre aléatoire est la
+  fonctionnalité, pas une commodité : trié, il figerait les trois mêmes messages en haut
+  de page et cesserait d'être lu au bout de deux visites. La graine vit dans un état pour
+  que le mur ne se réorganise pas tout seul entre deux rendus — la remettre dans le rendu
+  redistribuerait les cartes sous les yeux du lecteur.
+- **Les propositions, elles, sont chronologiques.** Un mur se contemple, une liste de
+  propositions se dépouille : on veut retrouver deux fois de suite la même ligne au même
+  endroit, et un ordre aléatoire ferait relire trois fois la même idée en ratant les
+  autres. Ne pas « harmoniser » les deux onglets.
+- **Le compteur de l'onglet Commentaires est celui de la file de tri, pas le total.**
+  C'est le seul chiffre qui appelle une action ; afficher les milliers de commentaires
+  archivés n'en dirait rien.
+- **Les commentaires n'arrivent qu'avec une collecte**, comme les vidéos. Sur une base qui
+  n'a jamais collecté depuis la migration 23, les trois onglets sont vides — ce n'est pas
+  une panne, et les écrans vides le disent.
 - **`/api/productions/:id/todos` est monté AVANT `/api/productions`** dans `server.ts` : un router de préfixe plus long doit passer en premier, sinon le plus court capte la requête et répond 404. Même vigilance que `/overview` déclaré avant `/:id`.
 
 ## PWA

@@ -36,10 +36,18 @@ interface PublicationPanelProps {
  * continue écraserait un brouillon en cours de réflexion. L'indicateur « Non enregistré »
  * rend l'oubli visible.
  *
- * **Le titre public n'est pas le titre du projet.** Il est prérempli avec lui — il faut
- * bien partir de quelque chose —, mais l'enregistrer ne renomme pas la vidéo dans la
- * file : l'accroche qui fait cliquer se trouve rarement le jour où l'on ouvre le projet,
- * et confondre les deux ferait perdre le titre de travail.
+ * **Le titre public renomme aussi le projet.** Les deux ne faisaient qu'un pendant
+ * l'écriture — le titre de travail n'est qu'un titre public provisoire —, et les laisser
+ * diverger obligeait à renommer deux fois : une file d'attente pleine de titres périmés
+ * pendant que la vraie accroche n'existait que dans cet onglet. Un seul enregistrement
+ * fait les deux.
+ *
+ * Le champ reste **distinct en base** (`publishTitle` / `title`) : c'est ce qui permet de
+ * garder les 100 caractères de YouTube, le compteur, et le titre public exact même si la
+ * production venait à être renommée ailleurs.
+ *
+ * Un titre vide ne renomme rien : `title` est obligatoire côté API, et vider le champ
+ * pour le retravailler ne doit pas casser la fiche.
  */
 export const PublicationPanel = ({ production }: PublicationPanelProps) => {
   const update = useUpdateProduction();
@@ -80,11 +88,18 @@ export const PublicationPanel = ({ production }: PublicationPanelProps) => {
       setDirty(true);
     };
 
+  /** Le nom que portera la vidéo dans la file après enregistrement. */
+  const trimmedTitle = title.trim();
+
   const save = () => {
     update.mutate({
       id: production.id,
       input: {
         publishTitle: title,
+        // Le titre de travail suit le titre public : c'est le même titre, à deux moments
+        // de sa vie. Vide, on n'y touche pas — l'API le refuserait, et un champ qu'on
+        // vient d'effacer pour le réécrire ne doit pas casser la fiche.
+        ...(trimmedTitle ? { title: trimmedTitle } : {}),
         publishDescription: description,
         publishHashtags: hashtags,
         publishTags: tags,
@@ -169,8 +184,14 @@ export const PublicationPanel = ({ production }: PublicationPanelProps) => {
             placeholder="Le titre public, celui qui fait cliquer"
           />
           <p className="text-xs text-muted-foreground">
-            Prérempli avec le titre de travail « {production.title} ». Le modifier ici ne renomme
-            pas la vidéo dans la file.
+            {trimmedTitle && trimmedTitle !== production.title ? (
+              <>
+                En enregistrant, la vidéo sera renommée « {trimmedTitle} » dans la file — elle
+                s’appelle « {production.title} » pour l’instant.
+              </>
+            ) : (
+              <>Enregistrer renomme aussi la vidéo dans la file d’attente.</>
+            )}
           </p>
         </div>
 

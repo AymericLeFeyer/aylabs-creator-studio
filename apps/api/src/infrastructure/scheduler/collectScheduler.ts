@@ -54,6 +54,24 @@ export const startCollectScheduler = (container: Container): void => {
       for (const error of errors) {
         console.error(`[cron]   ${error.channelName} : ${error.message}`);
       }
+
+      try {
+        // **Après** les métriques, jamais avant : les vidéos viennent d'être collectées,
+        // et c'est ce qui permet aux commentaires du jour de se rattacher à leur sortie
+        // du premier coup plutôt qu'au passage suivant.
+        //
+        // L'échec est avalé, comme celui d'Instagram : les métriques sont déjà écrites, et
+        // les commentaires se rattrapent au passage suivant — la pagination antéchronologique
+        // remonte largement au-delà d'une journée manquée, contrairement aux stories.
+        const comments = await container.collectComments.collectAll();
+        const created = comments.reduce((total, result) => total + result.created, 0);
+        if (created > 0) console.log(`[cron] ${created} nouveau(x) commentaire(s) à trier`);
+        for (const result of comments.filter((r) => r.status === 'error')) {
+          console.warn(`[cron]   commentaires ${result.channelName} : ${result.message}`);
+        }
+      } catch (error) {
+        console.error('[cron] collecte des commentaires interrompue :', error);
+      }
     } catch (error) {
       console.error('[cron] collecte interrompue :', error);
     } finally {

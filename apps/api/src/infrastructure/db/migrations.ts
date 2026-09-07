@@ -1096,6 +1096,55 @@ const migrations: Migration[] = [
       ALTER TABLE productions ADD COLUMN paid_promotion INTEGER;
     `,
   },
+  {
+    version: 23,
+    name: 'comments',
+    // Les commentaires laisses sous les videos, archives au fil de l'eau et **tries a la
+    // main** : encourageant (mur des commentaires), idee (propositions de la communaute),
+    // ou ignore.
+    //
+    // "status" par defaut a 'new' et non 'ignored' : « pas encore trie » et « ecarte »
+    // sont deux reponses differentes, et c'est la premiere qui alimente la file de tri.
+    // La collecte ne le reecrit JAMAIS — un commentaire ignore doit le rester, meme si
+    // YouTube le renvoie a chaque passage. C'est toute la raison de la cle unique
+    // (channel_id, external_id).
+    //
+    // Deux colonnes pour la video, et c'est delibere. "video_external_id" est toujours
+    // renseigne ; "video_id" ne l'est que si la vidéo a deja ete collectee. Les
+    // commentaires arrivent aussi sur de vieilles sorties, hors de la fenetre de collecte
+    // des vidéos : exiger la cle etrangere ferait perdre le commentaire, alors qu'on peut
+    // parfaitement l'afficher avec un lien YouTube. Le rattachement se rattrape tout seul
+    // a la collecte suivante ("linkVideos").
+    //
+    // "curated_at" vient gratuitement, comme "checked_at" des coches : il dit quand on a
+    // tranche, sans champ supplementaire a tenir a jour.
+    up: `
+      CREATE TABLE comments (
+        id                TEXT PRIMARY KEY,
+        channel_id        TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+        external_id       TEXT NOT NULL,
+        video_id          TEXT REFERENCES videos(id) ON DELETE SET NULL,
+        video_external_id TEXT,
+        author_name       TEXT NOT NULL,
+        author_avatar_url TEXT,
+        author_channel_id TEXT,
+        text              TEXT NOT NULL,
+        like_count        INTEGER NOT NULL DEFAULT 0,
+        published_at      TEXT NOT NULL,
+        date              TEXT NOT NULL,
+        status            TEXT NOT NULL DEFAULT 'new'
+                          CHECK (status IN ('new','encouraging','idea','ignored')),
+        curated_at        TEXT,
+        created_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL,
+        UNIQUE (channel_id, external_id)
+      );
+      CREATE INDEX idx_comments_status ON comments(status);
+      CREATE INDEX idx_comments_date ON comments(date);
+      CREATE INDEX idx_comments_video ON comments(video_id);
+      CREATE INDEX idx_comments_pending ON comments(channel_id, video_external_id);
+    `,
+  },
 ];
 
 /**
