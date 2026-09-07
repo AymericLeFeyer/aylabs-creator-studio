@@ -38,6 +38,7 @@ import { ApproveSlotDialog } from '../components/planning/ApproveSlotDialog.tsx'
 import { SlotTimeDialog } from '../components/planning/SlotTimeDialog.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
+import { Fab } from '../components/Fab.tsx';
 import { cn } from '../../shared/cn.ts';
 
 type Span = 'day' | 'week';
@@ -195,7 +196,7 @@ export const PlanningPage = () => {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Planning</h1>
+          <h1 className="hidden text-lg font-semibold lg:block">Planning</h1>
           {/* La fenêtre est glissante : sans elle écrite noir sur blanc, « Semaine » ne
               dirait plus laquelle, et deux clics de flèche perdraient le lecteur. */}
           <p className="text-sm text-muted-foreground">
@@ -264,7 +265,10 @@ export const PlanningPage = () => {
             Repositionner
           </Button>
 
-          <Button size="sm" onClick={() => setAddOpen(true)}>
+          {/* Sur mobile ce bouton mangeait une ligne entière en haut de l'écran, au
+              plus loin du pouce : il y devient un bouton flottant, posé au-dessus de la
+              barre d'onglets. Même action, deux emplacements — jamais les deux à la fois. */}
+          <Button size="sm" className="hidden lg:inline-flex" onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4" />
             Ajouter une vidéo
           </Button>
@@ -371,6 +375,8 @@ export const PlanningPage = () => {
           )}
         </div>
       </div>
+
+      <Fab label="Ajouter une vidéo au planning" icon={Plus} onClick={() => setAddOpen(true)} />
 
       <AddToPlanDialog open={addOpen} onOpenChange={setAddOpen} />
       <ApproveSlotDialog slot={approving} onOpenChange={() => setApproving(null)} />

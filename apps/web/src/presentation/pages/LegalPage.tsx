@@ -78,7 +78,7 @@ export const LegalPage = () => {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Légal</h1>
+          <h1 className="hidden text-lg font-semibold lg:block">Légal</h1>
           <p className="text-sm text-muted-foreground">
             Une ligne par mois depuis la création de la société, une case par obligation.
           </p>

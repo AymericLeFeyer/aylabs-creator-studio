@@ -52,7 +52,7 @@ export const InstagramPage = () => {
   if (!isLoading && accounts.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-lg font-semibold">Instagram</h1>
+        <h1 className="hidden text-lg font-semibold lg:block">Instagram</h1>
         <Card className="space-y-3 p-6 text-center">
           <Instagram className="mx-auto h-8 w-8 text-muted-foreground" />
           <p className="text-sm font-medium">Aucun compte Instagram connecté</p>
@@ -76,7 +76,7 @@ export const InstagramPage = () => {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Instagram</h1>
+          <h1 className="hidden text-lg font-semibold lg:block">Instagram</h1>
           <p className="text-sm text-muted-foreground">
             {accounts.map((account) => `@${account.username}`).join(', ') || 'Aucun compte'}
           </p>

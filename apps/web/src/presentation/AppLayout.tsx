@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Menu, Moon, PanelLeftClose, PanelLeftOpen, Settings, Sun, X } from 'lucide-react';
-import { MOBILE_NAV, NAV_SECTIONS, type NavItem } from './navigation.ts';
+import { MOBILE_NAV, NAV_SECTIONS, pageTitle, type NavItem } from './navigation.ts';
 import { useTheme } from './hooks/useTheme.ts';
 import { usePreferences } from './hooks/usePreferences.ts';
 import { Button } from './components/ui/button.tsx';
 import { FiltersBar } from './components/FiltersBar.tsx';
 import { RunningTimerBar } from './components/production/RunningTimerBar.tsx';
+import { CollectAction } from './components/filters/CollectAction.tsx';
 import { cn } from '../shared/cn.ts';
 
 /** Largeur du contenu, généreuse sur grand écran : les graphiques côte à côte en ont besoin. */
@@ -32,6 +33,21 @@ const SIDEBAR_OPEN = '15rem';
 const SIDEBAR_CLOSED = '3.75rem';
 
 /**
+ * Hauteur de la barre du bas, **zone de sécurité comprise**.
+ *
+ * Elle vit dans une variable CSS parce que trois choses en dépendent et doivent bouger
+ * ensemble : la barre elle-même, la réserve de padding sous le contenu, et le bouton
+ * flottant qui se pose au-dessus. Trois valeurs écrites à la main auraient fini par se
+ * désaccorder, et le symptôme — un bouton qui recouvre un onglet — ne se voit que sur un
+ * téléphone.
+ *
+ * `env(safe-area-inset-bottom)` s'ajoute à la hauteur au lieu de s'y fondre : sur un
+ * iPhone à barre gestuelle, la fondre reviendrait à rendre les onglets plus courts là où
+ * ils sont déjà les plus difficiles à viser.
+ */
+const BOTTOM_NAV = 'calc(4.5rem + env(safe-area-inset-bottom))';
+
+/**
  * La coquille de l'application : navigation à gauche, contenu à droite.
  *
  * La barre latérale remplace l'ancienne rangée d'onglets horizontale. Trois raisons :
@@ -53,6 +69,7 @@ export const AppLayout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const collapsed = preferences.sidebarCollapsed;
+  const title = pageTitle(location.pathname);
   const showFilters = !ROUTES_WITHOUT_FILTERS.some((route) => location.pathname.startsWith(route));
 
   // Naviguer referme le tiroir : sur mobile, il recouvre le contenu qu'on vient
@@ -169,7 +186,7 @@ export const AppLayout = () => {
   );
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background" style={{ ['--bottom-nav' as string]: BOTTOM_NAV }}>
       {/* Colonne fixe, à partir de `lg` seulement. */}
       <aside
         className="fixed inset-y-0 left-0 z-40 hidden border-r border-border bg-card transition-[width] lg:block"
@@ -208,32 +225,45 @@ export const AppLayout = () => {
         <header
           className={cn(
             'sticky top-0 z-30 bg-background/85 backdrop-blur',
-            // Sans filtres, l'en-tête n'est plus qu'un support pour le bouton du menu
-            // mobile : ni trait, ni hauteur — le contenu doit démarrer tout en haut.
-            showFilters && 'border-b border-border',
+            // Sur mobile l'en-tête porte toujours la barre d'application, donc toujours
+            // son trait. Sur grand écran, sans filtres, il n'a plus rien à porter : ni
+            // trait ni hauteur, le contenu démarre tout en haut.
+            'border-b border-border',
+            !showFilters && 'lg:border-b-0',
           )}
         >
-          <div
-            className={cn(
-              CONTAINER,
-              'flex items-center gap-2',
-              showFilters ? 'pt-2.5' : 'py-1 lg:py-0',
-            )}
-          >
+          {/* Barre d'application mobile : menu, titre de l'écran, action.
+
+              Le titre y remplace celui que chaque page affichait en tête et qui est
+              désormais masqué sous `lg` — il occupait une ligne pour redire ce que
+              l'onglet actif disait déjà, en haut d'un écran où chaque ligne compte.
+
+              L'action de droite est la collecte, et seulement là où elle a un sens
+              (les écrans qui portent des filtres). C'est la place d'une action dans une
+              barre de titre, et la seule qui reste à portée de pouce une fois les
+              filtres repliés dans leur modale. */}
+          <div className={cn(CONTAINER, 'flex items-center gap-1 py-1.5 lg:hidden')}>
             <Button
               variant="ghost"
               size="icon"
-              className="lg:hidden"
+              className="-ml-2 shrink-0"
               onClick={() => setMobileOpen(true)}
               aria-label="Ouvrir le menu"
             >
-              <Menu className="h-4 w-4" />
+              <Menu className="h-5 w-5" />
             </Button>
-
-            {/* La barre de filtres occupe l'en-tête : période et chaînes restent sous la
-                main quand on descend dans un long tableau. */}
-            <div className="min-w-0 flex-1">{showFilters && <FiltersBar />}</div>
+            <span className="min-w-0 flex-1 truncate text-base font-semibold">{title}</span>
+            {showFilters && <CollectAction compact />}
           </div>
+
+          {/* La barre de filtres occupe l'en-tête : période et chaînes restent sous la
+              main quand on descend dans un long tableau. Sur mobile elle est déjà
+              repliée en un bouton (`FiltersSheet`), d'où l'absence de marge haute. */}
+          {showFilters && (
+            <div className={cn(CONTAINER, 'lg:pt-2.5')}>
+              <FiltersBar />
+            </div>
+          )}
 
           {/* Le chronomètre vit DANS l'en-tête collant : il suit l'écran et non la page —
               on le démarre sur la production et on l'arrête souvent depuis ailleurs. L'y
@@ -242,9 +272,10 @@ export const AppLayout = () => {
           <RunningTimerBar />
         </header>
 
-        {/* `pb-20` réserve la hauteur de la barre du bas : sans elle, le dernier bouton
-            d'un formulaire finirait sous les onglets, hors d'atteinte. */}
-        <main className={cn(CONTAINER, 'py-4 pb-20 sm:py-6 lg:pb-6')}>
+        {/* La réserve du bas vaut la hauteur de la barre d'onglets plus une marge :
+            sans elle, le dernier bouton d'un formulaire finirait dessous, hors
+            d'atteinte. Elle retombe à zéro dès que la barre disparaît (`lg`). */}
+        <main className={cn(CONTAINER, 'py-4 pb-[calc(var(--bottom-nav)+1rem)] sm:py-6 lg:pb-6')}>
           <Outlet />
         </main>
       </div>
@@ -262,17 +293,18 @@ export const AppLayout = () => {
           Elle est en `z-30`, sous le voile du tiroir (`z-40`) : à z-index égal, c'est
           l'ordre du DOM qui tranche, et la barre serait passée par-dessus le voile.
 
-          `env(safe-area-inset-bottom)` ne vaut zéro que parce que le viewport n'est pas
-          en `viewport-fit=cover` — iOS insère alors lui-même la fenêtre au-dessus de la
-          barre gestuelle. On le garde : le jour où le viewport passera en `cover` (pour
-          gagner la zone de l'encoche), la barre du bas ne se retrouvera pas sous le
-          trait du bas sans que personne n'y ait pensé. */}
+          Sa hauteur vient de `--bottom-nav`, qui sert aussi de réserve sous le contenu et
+          d'appui au bouton flottant : trois valeurs écrites à la main auraient fini par se
+          désaccorder, et le symptôme — un bouton qui recouvre un onglet — ne se voit que
+          sur un téléphone. La zone de sécurité s'y **ajoute** plutôt que de s'y fondre,
+          sans quoi les onglets rapetisseraient sur un iPhone à barre gestuelle, là où ils
+          sont déjà les plus difficiles à viser. */}
       <nav
         className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur lg:hidden"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        style={{ height: 'var(--bottom-nav)', paddingBottom: 'env(safe-area-inset-bottom)' }}
         aria-label="Accès rapide"
       >
-        <div className="grid grid-cols-5">
+        <div className="grid h-full grid-cols-5">
           {MOBILE_NAV.map(({ to, label, short, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -280,7 +312,7 @@ export const AppLayout = () => {
               end={end}
               className={({ isActive }) =>
                 cn(
-                  'flex flex-col items-center gap-0.5 px-1 py-2 text-[0.65rem] font-medium transition-colors',
+                  'flex flex-col items-center justify-center gap-1 px-1 text-[0.7rem] font-medium transition-colors',
                   isActive ? 'text-foreground' : 'text-muted-foreground',
                 )
               }
@@ -291,11 +323,11 @@ export const AppLayout = () => {
                       libellés de dix pixels, la seule couleur du texte ne suffit pas. */}
                   <span
                     className={cn(
-                      'flex h-7 w-12 items-center justify-center rounded-full transition-colors',
+                      'flex h-8 w-14 items-center justify-center rounded-full transition-colors',
                       isActive && 'bg-secondary',
                     )}
                   >
-                    <Icon className="h-4 w-4" />
+                    <Icon className="h-5 w-5" />
                   </span>
                   <span className="w-full truncate text-center">{short ?? label}</span>
                 </>

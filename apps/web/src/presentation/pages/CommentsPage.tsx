@@ -39,7 +39,7 @@ export const CommentsPage = () => {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Commentaires</h1>
+          <h1 className="hidden text-lg font-semibold lg:block">Commentaires</h1>
           <p className="text-sm text-muted-foreground">
             Archivés au fil de l'eau, triés à la main. YouTube ne les rend que par pages
             antéchronologiques : ce qui n'est pas collecté ne se retrouve pas.

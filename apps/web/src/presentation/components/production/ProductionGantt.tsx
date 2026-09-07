@@ -33,6 +33,14 @@ const ZOOM: Record<Zoom, { label: string; before: number; after: number; cell: n
 };
 
 /** Largeur de la colonne des titres, retranchée pour centrer le jour et non la grille. */
+/**
+ * Largeur de repli de la colonne des titres, en pixels.
+ *
+ * Elle n'est plus une constante d'affichage — la colonne est **plus étroite sur mobile**
+ * (`w-36`), sinon elle mangeait 224 px sur un écran de 390 et il ne restait rien pour les
+ * barres. Le calcul de centrage la mesure donc sur le DOM ; cette valeur ne sert que
+ * pendant le premier rendu, avant que la mesure soit disponible.
+ */
 const TITLE_WIDTH = 224;
 
 /** Au-delà, le planning prend toute la page avant même qu'on ait vu la file d'attente. */
@@ -112,6 +120,8 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
   const [zoom, setZoom] = useState<Zoom>('month');
   const [expanded, setExpanded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** Le coin de l'en-tête : il porte la largeur réelle de la colonne des titres. */
+  const titleRef = useRef<HTMLDivElement>(null);
   const { before, after, cell } = ZOOM[zoom];
 
   const { days, first } = useMemo(() => {
@@ -180,7 +190,10 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
-    const visibleWidth = container.clientWidth - TITLE_WIDTH;
+    // Mesurée et non supposée : la colonne change de largeur avec la taille d'écran, et
+    // un centrage calculé sur 224 px décalerait la vue de 80 px sur un téléphone.
+    const titleWidth = titleRef.current?.offsetWidth ?? TITLE_WIDTH;
+    const visibleWidth = container.clientWidth - titleWidth;
     container.scrollLeft = Math.max(0, todayOffset - visibleWidth / 2);
   }, [zoom, todayOffset]);
 
@@ -223,8 +236,17 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
             <div ref={scrollRef} className="overflow-x-auto">
               <div className="min-w-max">
                 {/* En-tête : le lundi porte l'étiquette, les autres jours le numéro. */}
-                <div className="sticky top-0 z-10 flex bg-card">
-                  <div className="sticky left-0 z-20 w-56 shrink-0 bg-card" />
+                {/* L'ordre d'empilement du Gantt, du fond vers la surface : trait
+                    d'aujourd'hui (0), barres (10), pastilles de créneau (20), colonne des
+                    titres (30), en-tête des jours (40) et son coin (50). Il était
+                    ambigu — les pastilles et la colonne partageaient `z-20`, et c'est
+                    l'ordre du DOM qui tranchait, donc les pastilles passaient **sur** les
+                    titres. */}
+                <div className="sticky top-0 z-40 flex bg-card">
+                  <div
+                    ref={titleRef}
+                    className="sticky left-0 z-50 w-36 shrink-0 border-r border-border bg-card lg:w-56"
+                  />
                   <div className="grid" style={gridStyle}>
                     {days.map((day) => {
                       const monday = day.getDay() === 1;
@@ -272,12 +294,19 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
                         <Link
                           to={`/production/${production.id}`}
                           className={cn(
-                            'sticky left-0 z-20 w-56 shrink-0 truncate bg-card pr-3 text-sm hover:underline',
+                            // `self-stretch` est la correction du bug : sans lui, le fond
+                            // de la colonne ne couvrait que la hauteur du texte, et le
+                            // trait d'aujourd'hui comme les barres transparaissaient
+                            // au-dessus et en dessous en défilant. Le filet de droite
+                            // donne à la colonne un bord franc, sans quoi on ne voit pas
+                            // où elle s'arrête et où le calendrier commence.
+                            'sticky left-0 z-30 flex w-36 shrink-0 items-center self-stretch',
+                            'border-r border-border bg-card pr-3 text-sm hover:underline lg:w-56',
                             done && 'text-muted-foreground',
                           )}
                           title={production.title}
                         >
-                          {production.title}
+                          <span className="truncate">{production.title}</span>
                         </Link>
 
                         <div className="relative grid h-7 items-center" style={gridStyle}>
@@ -329,6 +358,7 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
                                 aria-hidden
                                 className={cn(
                                   'pointer-events-none z-20 mx-auto h-2 w-2 rounded-full ring-2 ring-card',
+                                  // Au-dessus des barres (10), sous la colonne des titres (30).
                                   slot.done ? 'bg-muted-foreground' : 'bg-foreground',
                                 )}
                                 style={{ gridColumn: `${columnOf(slot.date) + 1} / span 1` }}

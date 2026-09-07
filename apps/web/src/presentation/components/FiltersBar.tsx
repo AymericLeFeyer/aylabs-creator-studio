@@ -1,14 +1,13 @@
-import { RefreshCw } from 'lucide-react';
-import { useCollectAll } from '../../application/analytics/usecases/useAnalytics.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
 import type { Granularity } from '../../domain/analytics/entities/Analytics.ts';
-import { Button } from './ui/button.tsx';
 import { Checkbox } from './ui/checkbox.tsx';
 import { Label } from './ui/label.tsx';
 import { Switch } from './ui/switch.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select.tsx';
 import { PeriodPicker } from './filters/PeriodPicker.tsx';
 import { ChannelPicker } from './filters/ChannelPicker.tsx';
+import { CollectAction } from './filters/CollectAction.tsx';
+import { FiltersSheet } from './filters/FiltersSheet.tsx';
 import { cn } from '../../shared/cn.ts';
 
 const GRANULARITIES: Array<{ value: Granularity | 'auto'; label: string }> = [
@@ -29,14 +28,22 @@ const GRANULARITIES: Array<{ value: Granularity | 'auto'; label: string }> = [
  * La case « Marquer les sorties de vidéo » a quitté cette barre pour Paramètres →
  * Application : elle se règle une fois et ne change plus, alors que tout ce qui reste
  * ici se change plusieurs fois par session.
+ *
+ * **Sur mobile, elle se replie en un seul bouton** (`FiltersSheet`) : les cinq réglages
+ * dépliés y occupaient quatre lignes, soit la moitié de la hauteur utile, et l'écran
+ * commençait sous le pli. La collecte, elle, n'est plus ici du tout sur mobile — elle est
+ * passée en action de la barre d'application, là où le pouce l'atteint.
  */
 export const FiltersBar = () => {
   const filters = useFilters();
-  const collectAll = useCollectAll();
 
   return (
     <div className="flex flex-col gap-2 pb-2.5">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="lg:hidden">
+        <FiltersSheet />
+      </div>
+
+      <div className="hidden flex-wrap items-center gap-x-3 gap-y-2 lg:flex">
         <PeriodPicker />
         <ChannelPicker />
 
@@ -99,43 +106,9 @@ export const FiltersBar = () => {
             </Label>
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => collectAll.mutate()}
-            disabled={collectAll.isPending}
-          >
-            <RefreshCw className={cn('h-4 w-4', collectAll.isPending && 'animate-spin')} />
-            Collecter
-          </Button>
+          <CollectAction />
         </div>
       </div>
-
-      {collectAll.data && (
-        <p
-          className={cn(
-            'truncate text-xs',
-            // Un message n'est jamais une bonne nouvelle ici : c'est soit une erreur, soit
-            // un volet de la collecte qui n'a pas abouti. Le gris le faisait passer pour
-            // un compte-rendu de routine qu'on cesse de lire.
-            collectAll.data.results.some(
-              (result) => result.status === 'error' || result.revenueAvailable === false,
-            )
-              ? 'text-[var(--negative)]'
-              : 'text-muted-foreground',
-          )}
-          title={collectAll.data.results
-            .map((result) => `${result.channelName} : ${result.message ?? 'ok'}`)
-            .join('\n')}
-        >
-          {collectAll.data.results
-            .map(
-              (result) =>
-                `${result.channelName} : ${result.message ?? `${result.daysUpserted ?? 0} jour(s)`}`,
-            )
-            .join(' · ')}
-        </p>
-      )}
     </div>
   );
 };

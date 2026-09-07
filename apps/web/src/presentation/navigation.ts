@@ -35,13 +35,17 @@ export interface NavSection {
  *
  * À neuf entrées, une liste à plat oblige à lire tous les libellés pour en trouver un :
  * rien ne dit que « Contenu » et « Instagram » répondent à la même question, ni que
- * « Partenariats » et « Chiffre d'affaires » se consultent l'un après l'autre. Trois
+ * « Partenariats » et « Chiffre d'affaires » se consultent l'un après l'autre. Quatre
  * familles courtes se balaient d'un regard, et le titre suffit à savoir dans laquelle
- * chercher.
+ * chercher : **Production**, **Audience**, **Revenus**, **Entreprise**.
  *
  * Le dashboard reste **hors famille**, en tête et sans titre : c'est la vue d'ensemble,
- * il n'appartient à aucun des trois métiers et lui donner un intitulé à lui seul ferait
- * une rubrique d'une ligne.
+ * il n'appartient à aucun des métiers et lui donner un intitulé à lui seul ferait une
+ * rubrique d'une ligne.
+ *
+ * « Entreprise » n'en porte qu'un, et c'est assumé : le suivi administratif ne répond pas
+ * à la même question que l'argent gagné, et le ranger sous « Revenus » ferait chercher
+ * l'Urssaf au milieu des sponsos.
  *
  * L'ordre est **fixe**. Il était réglable — deux flèches dans Paramètres → Application —,
  * et ça ne tenait plus : un ordre libre à plat n'a pas d'équivalent une fois les entrées
@@ -59,10 +63,13 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [{ to: '/', label: 'Dashboard', icon: BarChart3, end: true }],
   },
   {
-    label: 'Produire',
+    label: 'Production',
     items: [
       { to: '/planning', label: 'Planning', icon: CalendarClock, end: false },
-      { to: '/production', label: 'Production', icon: Clapperboard, end: false },
+      // « En cours » et non « Production » : la famille porte déjà le mot, et le répéter
+      // à l'identique juste en dessous ne dirait rien de ce que l'écran contient. C'est
+      // la file de ce sur quoi on travaille.
+      { to: '/production', label: 'En cours', icon: Clapperboard, end: false },
     ],
   },
   {
@@ -80,7 +87,7 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    label: 'Argent',
+    label: 'Revenus',
     items: [
       { to: '/partenariats', label: 'Partenariats', icon: Handshake, end: false },
       {
@@ -90,8 +97,14 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Wallet,
         end: false,
       },
-      { to: '/legal', label: 'Légal', icon: ScrollText, end: false },
     ],
+  },
+  {
+    // Le suivi administratif n'est pas un revenu : cocher sa déclaration d'Urssaf ne
+    // répond pas à la même question que « combien ai-je gagné ». Une famille à part, qui
+    // accueillera ce qui relève de la société plutôt que des chaînes.
+    label: 'Entreprise',
+    items: [{ to: '/legal', label: 'Légal', icon: ScrollText, end: false }],
   },
 ];
 
@@ -113,3 +126,31 @@ const MOBILE_PATHS = ['/', '/planning', '/production', '/chiffre-affaires', '/co
 export const MOBILE_NAV: NavItem[] = MOBILE_PATHS.map((path) =>
   NAV.find((item) => item.to === path)!,
 ).filter(Boolean);
+
+/**
+ * Le titre de l'écran courant, pour la barre d'application mobile.
+ *
+ * Dérivé de l'adresse plutôt que remonté par chaque page : faire circuler un titre
+ * demanderait un contexte et une ligne dans les dix écrans, pour une chaîne de caractères
+ * que l'URL porte déjà.
+ *
+ * Il ne reprend pas toujours le libellé du menu : « En cours » se lit sous le titre de
+ * famille « Production », mais tout seul en haut d'un écran il ne dit plus de quoi on
+ * parle. Le plus long préfixe gagne, ce qui donne son propre titre à une fiche de vidéo
+ * sans avoir à énumérer les identifiants.
+ */
+const TITLES: Array<[string, string]> = [
+  ['/production/', 'Vidéo'],
+  ['/production', 'Production'],
+  ['/planning', 'Planning'],
+  ['/contenu', 'Contenu'],
+  ['/instagram', 'Instagram'],
+  ['/commentaires', 'Commentaires'],
+  ['/partenariats', 'Partenariats'],
+  ['/chiffre-affaires', "Chiffre d'affaires"],
+  ['/legal', 'Légal'],
+  ['/parametres', 'Paramètres'],
+];
+
+export const pageTitle = (pathname: string): string =>
+  TITLES.find(([prefix]) => pathname.startsWith(prefix))?.[1] ?? 'Dashboard';

@@ -216,7 +216,7 @@ export const PartnersPage = () => {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Partenariats</h1>
+          <h1 className="hidden text-lg font-semibold lg:block">Partenariats</h1>
           <p className="text-sm text-muted-foreground">
             Les produits reçus et les sponsos payées alimentent tes revenus automatiquement — pas de
             double saisie, et pas de double comptage.

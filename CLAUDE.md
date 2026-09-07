@@ -1343,6 +1343,43 @@ Le mur est en **colonnes CSS** (`columns-*` + `break-inside-avoid`) et non en gr
 commentaire va de trois mots à dix lignes, et une grille alignerait des cartes de hauteurs
 très inégales en laissant des trous béants.
 
+**Sur mobile, la file de tri passe en cartes à faire glisser** (`CommentSwipeDeck`) :
+une carte à la fois, **droite = idée, gauche = ignoré, haut = encourageant**. Le tableau
+demande de viser trois boutons de sept millimètres dans une ligne parmi trente — faisable
+devant un écran large, pas au pouce. L'horizontale porte les deux décisions les plus
+fréquentes, une par pouce ; le haut est réservé à celle qui demande de viser, parce qu'un
+mur des commentaires qui se remplirait par accident ne vaudrait plus rien.
+
+Les **trois boutons doublent les trois gestes et jouent la même animation** : un geste ne
+s'apprend qu'en le voyant, et personne ne lit la légende d'une interface. En cliquant
+« Idée » on voit la carte partir à droite, et la fois suivante on la pousse soi-même.
+
+Cinq points de mécanique, chacun pour une raison précise :
+
+- **Le basculement est en CSS** (`lg:hidden` / `hidden lg:block`) et non sur un point de
+  rupture lu en JavaScript : les deux vues partagent alors la même requête, déjà en cache,
+  et rien ne se remonte au redimensionnement. Le deck ne remplace le tableau **que** pour
+  `new` — les autres statuts se consultent pour retrouver quelque chose, pas pour décider.
+- **La sortie est validée par `transitionend`, avec un minuteur en filet.** Une transition
+  de durée nulle n'émet aucun événement (système sans animations, onglet en arrière-plan) :
+  sans le filet, la carte resterait bloquée hors du cadre et la file figée pour de bon.
+  Les deux chemins passent par `finish()`, rendue **idempotente** par un `Set` de ref —
+  un double appel classerait deux fois.
+- **La carte suivante est remplacée, pas ramenée** (`key` sur l'identifiant) : sans ça,
+  elle reviendrait en glissant depuis l'endroit d'où la précédente est sortie.
+- **La file avance sans attendre le réseau** : `decided` retient localement ce qu'on vient
+  de classer, et la requête se recharge en arrière-plan. Elle est une **liste** et non un
+  ensemble, parce que c'est elle qui permet le retour arrière.
+- **Un bouton « Annuler » est indispensable ici**, contrairement au tableau : un geste
+  rate bien plus souvent qu'un clic, et sans lui une carte partie de travers serait
+  classée sans recours depuis cet écran. Il remet le commentaire à `new` ; il réapparaît
+  au prochain chargement, à sa place chronologique et pas forcément en tête.
+
+Le texte est **tronqué et ne défile pas** : la carte porte `touch-none` pour que le geste
+parte de n'importe où, ce qui interdit de toute façon le défilement au doigt. Une douzaine
+de lignes suffisent à trancher « encourageant, idée ou bruit », et le texte entier reste à
+un clic sur YouTube.
+
 `CommentStatusPicker` pose les trois décisions en **un clic chacune**, et pas dans un
 `Select` : on trie en rafale, et un menu déroulant demanderait deux clics et un déplacement
 du curseur par ligne. **Re-cliquer la décision active la défait** et remet le commentaire
@@ -1362,12 +1399,18 @@ l'en-tête, overlay + `Échap` par clic sur le fond), au lieu d'une rangée qui 
 horizontalement.
 
 **Les écrans sont groupés par famille** (`NAV_SECTIONS`, `presentation/navigation.ts`) :
-le dashboard **hors famille** en tête, puis **Produire** (Planning, Production),
-**Audience** (Contenu, Instagram, Commentaires) et **Argent** (Partenariats, Chiffre
-d'affaires, Légal). À neuf entrées, une liste à plat obligeait à lire tous les libellés
-pour en trouver un — rien ne disait que « Contenu » et « Instagram » répondent à la même
-question. Le dashboard n'a pas d'intitulé : c'est la vue d'ensemble, elle n'appartient à
-aucun des trois métiers et lui en donner un ferait une rubrique d'une ligne. **Repliée, la
+le dashboard **hors famille** en tête, puis **Production** (Planning, En cours),
+**Audience** (Contenu, Instagram, Commentaires), **Revenus** (Partenariats, Chiffre
+d'affaires) et **Entreprise** (Légal). À neuf entrées, une liste à plat obligeait à lire
+tous les libellés pour en trouver un — rien ne disait que « Contenu » et « Instagram »
+répondent à la même question. Le dashboard n'a pas d'intitulé : c'est la vue d'ensemble,
+elle n'appartient à aucun des métiers et lui en donner un ferait une rubrique d'une ligne.
+
+L'écran `/production` s'appelle **« En cours »** dans le menu : la famille porte déjà le
+mot « Production », et le répéter à l'identique juste en dessous ne dirait rien de ce
+qu'elle contient. **« Entreprise » ne porte qu'une entrée**, et c'est assumé — cocher sa
+déclaration d'Urssaf ne répond pas à la même question que « combien ai-je gagné », et
+ranger le Légal sous « Revenus » ferait chercher l'administratif au milieu des sponsos. **Repliée, la
 barre remplace chaque intitulé par un filet** : 3,75 rem n'ont pas la largeur d'un mot, et
 un trait suffit à dire « on change de sujet ».
 
@@ -1378,6 +1421,38 @@ entrées groupées : un ordre libre à plat n'a pas d'équivalent en familles, e
 qui permet de le retrouver sans lire ; un menu qui ne bouge pas s'apprend une fois. Le
 réglage, la préférence et `orderedNav` ont été supprimés ; une valeur `navOrder` restée
 dans `localStorage` est simplement ignorée.
+
+**Sur mobile, l'en-tête devient une barre d'application** : bouton du menu, **titre de
+l'écran** (`pageTitle`, dérivé de l'adresse — faire remonter un titre depuis chaque page
+demanderait un contexte et une ligne dans dix écrans pour une chaîne que l'URL porte
+déjà), et une **action à droite**, la collecte, sur les écrans qui portent des filtres.
+Les pages masquent leur propre `<h1>` sous `lg` (`hidden lg:block`) : il occupait une
+ligne pour redire ce que l'onglet actif disait déjà. Leur sous-titre, lui, reste — il
+explique, il ne répète pas.
+
+**Les filtres se replient en un seul bouton sur mobile** (`FiltersSheet`) : dépliés, les
+cinq réglages occupaient quatre lignes, soit la moitié de la hauteur utile, et l'écran
+commençait sous le pli. Le déclencheur affiche **l'état qui compte** — la période et le
+nombre de chaînes —, le reste vit dans une modale qui monte **les mêmes composants** que
+le grand écran (`PeriodPicker`, `ChannelPicker`) : un second jeu de contrôles tactiles
+aurait fini par se contredire avec le premier. La collecte est sortie de `FiltersBar` dans
+`CollectAction`, monté **deux fois** — en bouton dans la barre, en icône dans la barre
+d'application — et masqué en CSS ; chacun porte sa mutation, un seul est cliquable.
+
+**L'action principale d'un écran devient un bouton flottant sur mobile** (`Fab`) :
+« Ajouter une vidéo » sur le planning, « Nouvelle vidéo » sur la production. Le bouton
+mangeait une ligne entière en haut de l'écran, au plus loin du pouce. Même action, deux
+emplacements, jamais les deux à la fois (`hidden lg:inline-flex` d'un côté, `lg:hidden` de
+l'autre).
+
+**`--bottom-nav` est la seule source de la hauteur de la barre du bas** (`4,5 rem` plus la
+zone de sécurité), posée en variable CSS sur la racine de `AppLayout`. Trois choses en
+dépendent et doivent bouger ensemble : la barre, la réserve de padding sous le contenu, et
+le bouton flottant qui se pose au-dessus. Trois valeurs écrites à la main auraient fini par
+se désaccorder, et le symptôme — un bouton qui recouvre un onglet — ne se voit que sur un
+téléphone. La zone de sécurité s'**ajoute** à la hauteur au lieu de s'y fondre : la fondre
+rapetisserait les onglets sur un iPhone à barre gestuelle, là où ils sont déjà les plus
+durs à viser.
 
 **Sur mobile, une barre du bas double le tiroir sur cinq écrans** (`MOBILE_NAV`) :
 Dashboard, Planning, Production, CA, Commentaires. Le pouce atteint le bas de l'écran, pas
@@ -1830,6 +1905,24 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
 - **Le chevron de repli d'une carte de file est au même endroit dans les deux vues** —
   dernier à droite. Le déplacer d'un bord à l'autre en repliant obligerait à le rechercher
   à chaque fois, sur le seul bouton qu'on utilise en rafale.
+- **La colonne des titres du Gantt doit couvrir toute la hauteur de sa ligne.** Le
+  `<Link>` collant portait bien `bg-card`, mais en tant qu'élément de flex centré il ne
+  faisait que la hauteur de son texte : le trait d'aujourd'hui (`inset-y-0`) et les barres
+  transparaissaient **au-dessus et en dessous** en défilant. `self-stretch` est la
+  correction ; le filet de droite donne en prime un bord franc à la colonne.
+- **L'ordre d'empilement du Gantt est explicite, du fond vers la surface** : trait
+  d'aujourd'hui (0), barres (10), pastilles de créneau (20), colonne des titres (30),
+  en-tête des jours (40), son coin (50). Il était ambigu — pastilles et colonne
+  partageaient `z-20`, et c'est l'ordre du DOM qui tranchait, donc les pastilles passaient
+  **sur** les titres. Ne jamais poser deux calques du Gantt au même niveau.
+- **La largeur de la colonne des titres se mesure, elle ne se suppose pas.** Elle est plus
+  étroite sur mobile (`w-36` contre `w-56`), sinon elle mangeait 224 px sur un écran de
+  390 et il ne restait rien pour les barres. `TITLE_WIDTH` ne sert plus que de repli avant
+  la première mesure : centrer sur la constante décalerait la vue de 80 px sur un téléphone.
+- **`calc()` dans une valeur arbitraire Tailwind** : Tailwind v4 normalise bien
+  `pb-[calc(var(--bottom-nav)+1rem)]` en insérant les espaces qu'exige CSS. Un style en
+  ligne aurait en revanche battu le `lg:pb-6` qui annule cette réserve sur grand écran —
+  c'est pour ça que la réserve passe par une classe et pas par `style`.
 - **Le planning s'ouvre centré sur aujourd'hui.** `ProductionGantt` pose `scrollLeft` au montage et à chaque changement de zoom, en retranchant la largeur de la colonne des titres (`TITLE_WIDTH`). Sans ça il s'ouvrait collé à sa borne gauche, sur des jours passés. Les fenêtres couvrent donc volontairement du passé (`before` : 14, 30 ou 60 jours) pour qu'on puisse reculer. La colonne des titres est `sticky left-0` : en défilant vers le futur, on doit continuer de savoir de quelle vidéo est la barre qu'on regarde.
 - **Dans la file d'attente, le fond vert marque le travail EN COURS**
   (`production.status === 'in_progress'`), pas la prochaine vidéo. Celle-ci se repère à un

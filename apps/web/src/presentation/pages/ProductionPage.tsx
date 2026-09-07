@@ -40,6 +40,7 @@ import { ProductionGantt } from '../components/production/ProductionGantt.tsx';
 import { IdeaBox } from '../components/production/IdeaBox.tsx';
 import { StepTodosDialog } from '../components/production/StepTodosDialog.tsx';
 import { StartTimerDialog } from '../components/production/StartTimerDialog.tsx';
+import { Fab } from '../components/Fab.tsx';
 import { cn } from '../../shared/cn.ts';
 import { SlotSummary } from '../components/production/SlotSummary.tsx';
 import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
@@ -144,12 +145,14 @@ export const ProductionPage = () => {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Production</h1>
+          <h1 className="hidden text-lg font-semibold lg:block">Production</h1>
           <p className="text-sm text-muted-foreground">
             Ce qui est en cours, ce qui sort quand, et le temps que ça prend vraiment.
           </p>
         </div>
-        <Button size="sm" onClick={openCreate}>
+        {/* Même parti pris que sur le planning : à portée de pouce sur mobile, dans
+            l'en-tête sur grand écran. */}
+        <Button size="sm" className="hidden lg:inline-flex" onClick={openCreate}>
           <Plus className="h-4 w-4" />
           Nouvelle vidéo
         </Button>
@@ -385,6 +388,8 @@ export const ProductionPage = () => {
         onOpenChange={(value) => !value && setTimerFor(null)}
         production={timerFor}
       />
+
+      <Fab label="Nouvelle vidéo" icon={Plus} onClick={openCreate} />
 
       <ProductionDialog
         open={dialogOpen}

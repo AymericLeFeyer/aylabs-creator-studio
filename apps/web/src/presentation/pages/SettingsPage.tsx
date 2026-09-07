@@ -49,7 +49,7 @@ export const SettingsPage = () => {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-lg font-semibold">Paramètres</h1>
+        <h1 className="hidden text-lg font-semibold lg:block">Paramètres</h1>
         <p className="text-sm text-muted-foreground">
           Les référentiels de l'outil et la façon dont il s'affiche.
         </p>

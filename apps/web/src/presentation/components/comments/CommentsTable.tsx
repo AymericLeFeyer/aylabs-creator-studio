@@ -21,6 +21,7 @@ import { EmptyState } from '../EmptyState.tsx';
 import { CommentAuthor } from './CommentAuthor.tsx';
 import { CommentVideoLink } from './CommentVideoLink.tsx';
 import { CommentStatusPicker } from './CommentStatusPicker.tsx';
+import { CommentSwipeDeck } from './CommentSwipeDeck.tsx';
 import { cn } from '../../../shared/cn.ts';
 
 /** Sentinelle des sélecteurs facultatifs : Radix refuse une `SelectItem` de valeur vide. */
@@ -42,6 +43,17 @@ const ALL = '__all__';
  * Aucune ligne n'est jamais supprimée : « ignoré » est un statut, pas un effacement.
  * C'est ce qui fait qu'un commentaire écarté ne remonte pas dans la file à la collecte
  * suivante.
+ *
+ * **Sur mobile, la file de tri passe en cartes à faire glisser** (`CommentSwipeDeck`).
+ * Le tableau demande de viser trois boutons de sept millimètres dans une ligne parmi
+ * trente : faisable devant un écran large, pas au pouce. Le basculement se fait en CSS
+ * (`lg:hidden` / `hidden lg:block`) et non sur un point de rupture lu en JavaScript —
+ * les deux vues partagent alors la **même** requête, déjà en cache, et il n'y a pas de
+ * rendu intermédiaire au redimensionnement.
+ *
+ * Il ne remplace le tableau **que** pour `new`. Les autres statuts se consultent pour
+ * retrouver quelque chose, pas pour décider : il n'y a rien à faire glisser, et une pile
+ * de cartes y serait un moyen moins direct de lire une liste.
  */
 export const CommentsTable = ({ counts }: { counts: CommentCounts | undefined }) => {
   const [status, setStatus] = useState<CommentStatus | typeof ALL>('new');
@@ -126,80 +138,88 @@ export const CommentsTable = ({ counts }: { counts: CommentCounts | undefined })
           }
         />
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>{visible.length} commentaire(s)</CardTitle>
-          </CardHeader>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[160px]">Auteur</TableHead>
-                  <TableHead className="min-w-[320px]">Commentaire</TableHead>
-                  <TableHead className="min-w-[160px]">Vidéo</TableHead>
-                  <TableHead className="w-[110px]">Date</TableHead>
-                  <TableHead className="w-[70px] text-right">Likes</TableHead>
-                  <TableHead className="w-[110px]">Statut</TableHead>
-                  <TableHead className="w-[240px] text-right">Trier</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {visible.map((comment) => (
-                  <TableRow
-                    key={comment.id}
-                    className={cn(comment.status === 'ignored' && 'opacity-55')}
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <CommentAuthor comment={comment} />
-                        <span className="line-clamp-1" title={comment.authorName}>
-                          {comment.authorName}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {/* Trois lignes au plus : une ligne de tableau reste balayable, et
-                          le texte entier est à un survol — ou sur YouTube, à un clic. */}
-                      <p className="line-clamp-3 whitespace-pre-line" title={comment.text}>
-                        {comment.text}
-                      </p>
-                    </TableCell>
-                    <TableCell className="max-w-[220px] text-sm">
-                      <CommentVideoLink comment={comment} />
-                    </TableCell>
-                    <TableCell className="tabular text-muted-foreground">
-                      {formatDate(comment.date)}
-                    </TableCell>
-                    <TableCell className="tabular text-right text-muted-foreground">
-                      {comment.likeCount > 0 ? (
-                        <span className="inline-flex items-center gap-1">
-                          <Heart className="h-3 w-3" />
-                          {formatNumber(comment.likeCount)}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={COMMENT_STATUS_BADGES[comment.status]}>
-                        {COMMENT_STATUS_LABELS[comment.status]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <CommentStatusPicker
-                        status={comment.status}
-                        disabled={setCommentStatus.isPending}
-                        onChange={(next) =>
-                          setCommentStatus.mutate({ id: comment.id, status: next })
-                        }
-                      />
-                    </TableCell>
+        <>
+          {status === 'new' && (
+            <div className="lg:hidden">
+              <CommentSwipeDeck comments={visible} />
+            </div>
+          )}
+
+          <Card className={cn(status === 'new' && 'hidden lg:block')}>
+            <CardHeader>
+              <CardTitle>{visible.length} commentaire(s)</CardTitle>
+            </CardHeader>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[160px]">Auteur</TableHead>
+                    <TableHead className="min-w-[320px]">Commentaire</TableHead>
+                    <TableHead className="min-w-[160px]">Vidéo</TableHead>
+                    <TableHead className="w-[110px]">Date</TableHead>
+                    <TableHead className="w-[70px] text-right">Likes</TableHead>
+                    <TableHead className="w-[110px]">Statut</TableHead>
+                    <TableHead className="w-[240px] text-right">Trier</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
+                </TableHeader>
+                <TableBody>
+                  {visible.map((comment) => (
+                    <TableRow
+                      key={comment.id}
+                      className={cn(comment.status === 'ignored' && 'opacity-55')}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <CommentAuthor comment={comment} />
+                          <span className="line-clamp-1" title={comment.authorName}>
+                            {comment.authorName}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {/* Trois lignes au plus : une ligne de tableau reste balayable, et
+                          le texte entier est à un survol — ou sur YouTube, à un clic. */}
+                        <p className="line-clamp-3 whitespace-pre-line" title={comment.text}>
+                          {comment.text}
+                        </p>
+                      </TableCell>
+                      <TableCell className="max-w-[220px] text-sm">
+                        <CommentVideoLink comment={comment} />
+                      </TableCell>
+                      <TableCell className="tabular text-muted-foreground">
+                        {formatDate(comment.date)}
+                      </TableCell>
+                      <TableCell className="tabular text-right text-muted-foreground">
+                        {comment.likeCount > 0 ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Heart className="h-3 w-3" />
+                            {formatNumber(comment.likeCount)}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={COMMENT_STATUS_BADGES[comment.status]}>
+                          {COMMENT_STATUS_LABELS[comment.status]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <CommentStatusPicker
+                          status={comment.status}
+                          disabled={setCommentStatus.isPending}
+                          onChange={(next) =>
+                            setCommentStatus.mutate({ id: comment.id, status: next })
+                          }
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
+        </>
       )}
     </div>
   );
