@@ -11,6 +11,7 @@ import { ChannelsPage } from './ChannelsPage.tsx';
 import { CategoriesPage } from './CategoriesPage.tsx';
 import { BrandsPage } from './BrandsPage.tsx';
 import { StepsPage } from './StepsPage.tsx';
+import { ScriptSettingsPage } from './ScriptSettingsPage.tsx';
 import { PlanningSettingsPage } from './PlanningSettingsPage.tsx';
 import { InstagramSettingsPage } from './InstagramSettingsPage.tsx';
 import { CompanyPage } from './CompanyPage.tsx';
@@ -24,6 +25,7 @@ const TABS = [
   'abonnements',
   'marques',
   'etapes',
+  'script',
   'planning',
   'societe',
 ] as const;
@@ -67,6 +69,7 @@ export const SettingsPage = () => {
           <TabsTrigger value="abonnements">Abonnements</TabsTrigger>
           <TabsTrigger value="marques">Marques</TabsTrigger>
           <TabsTrigger value="etapes">Étapes</TabsTrigger>
+          <TabsTrigger value="script">Script</TabsTrigger>
           <TabsTrigger value="planning">Planning</TabsTrigger>
           <TabsTrigger value="societe">Société</TabsTrigger>
         </TabsList>
@@ -91,6 +94,9 @@ export const SettingsPage = () => {
         </TabsContent>
         <TabsContent value="etapes">
           <StepsPage />
+        </TabsContent>
+        <TabsContent value="script">
+          <ScriptSettingsPage />
         </TabsContent>
         <TabsContent value="planning">
           <PlanningSettingsPage />

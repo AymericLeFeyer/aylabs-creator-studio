@@ -286,4 +286,72 @@
   .prose-script .ProseMirror-gapcursor:after {
     border-top-color: var(--color-foreground);
   }
+
+  /*
+   * Un gabarit inséré : rappel d'abonnement, appel à l'action de fin.
+   *
+   * Il doit se distinguer du corps du script **sans en sortir** — on le lit à voix haute
+   * comme le reste. D'où un liseré et un fond très léger plutôt qu'un encadré complet,
+   * qui l'aurait fait passer pour une note de service.
+   *
+   * L'étiquette est un `::before` lisant `data-preset-label` : elle n'est pas dans le
+   * document, donc elle ne se sélectionne pas, ne se copie pas et n'est jamais dite.
+   */
+  .prose-script [data-script-preset] {
+    border-left: 3px solid var(--preset-color, var(--color-border));
+    border-radius: var(--radius-sm);
+    background: color-mix(in oklab, var(--preset-color, transparent) 8%, transparent);
+    padding: 0.5rem 0.75rem;
+  }
+  .prose-script [data-script-preset]::before {
+    content: attr(data-preset-label);
+    display: block;
+    margin-bottom: 0.35rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--preset-color, var(--color-muted-foreground));
+  }
+  /* Un gabarit sans nom n'affiche pas une ligne vide au-dessus de son texte. */
+  .prose-script [data-preset-label='']::before {
+    display: none;
+  }
+
+  /*
+   * Un angle de vue posé sur un passage : « cette phrase se tourne comme ça ».
+   *
+   * Le fond est **translucide** et non opaque, comme le surlignage : une teinte pleine
+   * choisie sur le thème clair rendrait le texte illisible sur le sombre, alors qu'un
+   * voile à 22 % teinte les deux sans jamais toucher au contraste.
+   *
+   * `box-decoration-break: clone` redonne fond et arrondis à chaque ligne quand le
+   * passage se répartit sur plusieurs — sans lui, la teinte s'arrête au bord droit du
+   * bloc et le début de la ligne suivante paraît hors de l'angle.
+   */
+  .prose-script [data-shot-angle] {
+    background-color: color-mix(in oklab, var(--shot-color) 22%, transparent);
+    border-bottom: 1px dashed color-mix(in oklab, var(--shot-color) 70%, transparent);
+    border-radius: var(--radius-sm);
+    padding: 0.05rem 0.15rem;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  /*
+   * Le nom de l'angle, une fois en fin de passage. Sans lui, six teintes seraient six
+   * couleurs à mémoriser — or c'est précisément ce que le marquage doit éviter.
+   */
+  .prose-script [data-shot-angle]::after {
+    content: attr(data-shot-label);
+    margin-left: 0.3rem;
+    font-size: 0.65em;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    vertical-align: 0.25em;
+    color: var(--shot-color);
+  }
+  .prose-script [data-shot-label='']::after {
+    content: none;
+  }
 }

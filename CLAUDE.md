@@ -569,6 +569,57 @@ rapportés — ils restent dans le chiffre d'affaires, sans rattachement.
 
 Volontairement pauvre : un texte, et rien d'autre. Lui donner une chaîne, une date ou un statut en ferait une production au rabais — or c'est justement l'absence de champs qui permet de noter une idée en trois secondes, et une idée qu'on ne note pas est une idée perdue. Le bouton « en faire une vidéo » la promeut en `Production` (son texte devient le titre de travail) et la retire du carnet. La promotion est faite **côté front en deux appels** : créer la production, puis supprimer l'idée — un endpoint dédié n'apporterait qu'une transaction sur deux écritures indépendantes, et l'idée ne doit disparaître que si la vidéo est réellement créée.
 
+### `script` — les gabarits et les angles de vue
+
+Deux référentiels au service d'un seul écran : l'éditeur de script.
+
+`ScriptPreset { id, label, description, content, color, sortOrder, isArchived }` — table
+`script_presets`. Le rappel d'abonnement, l'appel à l'action de fin, la mention de
+partenariat : tout ce qu'on réécrit à l'identique d'une vidéo à l'autre.
+
+**C'est un gabarit, pas une référence.** Son `content` (du HTML, comme le script) est
+**copié** dans le script à l'insertion et n'y reste pas lié. Même parti pris que « Charger
+depuis la précédente vidéo » : un appel à l'action se retouche pour la vidéo qu'on écrit —
+le produit du jour, le nom de la marque —, et un bloc qui se réécrirait tout seul depuis
+les paramètres emporterait ces retouches. C'est aussi ce qui permet de **lire le script à
+voix haute d'un bout à l'autre** : le texte est là, il n'est pas ailleurs.
+
+Le bloc inséré est un noeud TipTap `scriptPreset` (`content: 'block+'`, donc éditable)
+portant `data-preset-label` et `data-preset-color`. L'étiquette est un `::before` CSS
+lisant l'attribut : elle n'est pas dans le document, donc elle ne se sélectionne pas, ne
+se copie pas et n'est jamais dite.
+
+`ShotAngle { id, label, description, color, sortOrder, isArchived }` — table
+`shot_angles`, et `ProductionShotAngle` — table `production_shot_angles`. **Exactement le
+découpage de `step_todos` / `production_todos`** : un référentiel global (plan large, face
+caméra, insert, B-roll) et du ponctuel qui n'a de sens que sur une vidéo (« depuis le
+drone »). `ShotAngleItem` est la vue à plat des deux, avec son `origin`.
+
+Un angle ne range pas le script, il sert à **le tourner** : on sélectionne la phrase, on
+clique l'angle, le fond se teinte. Sur le papier ça se note en marge ; dans un script
+écrit, la marge n'existe pas.
+
+**La marque `shotAngle` porte le libellé et la couleur, pas seulement l'identifiant.** Un
+script est un document HTML autonome : n'y écrire qu'une clé étrangère ferait perdre
+teinte et nom le jour où l'angle est supprimé ou renommé, et un script d'il y a six mois
+redeviendrait illisible. `angleId` ne sert qu'à reconnaître un angle encore existant
+(l'état actif du menu). Les attributs sont des `data-*` et **le style n'est que du
+rendu** : `parseHTML` lit `data-shot-color`, jamais `element.style`, que le CSSOM
+normalise différemment d'un navigateur à l'autre.
+
+Conséquence assumée des deux copies : **renommer un gabarit ou un angle ne réécrit aucun
+script**, et supprimer l'un ou l'autre n'en retire rien. `SCRIPT_ROOTS` ne croise donc
+aucune autre racine de cache.
+
+La couleur est attribuée **en rotation** à la création (`DEFAULT_COLORS`, même mécanique
+que les marques) : c'est elle qu'on reconnaît dans un script de trois pages, et une teinte
+par défaut unique rendrait six angles indistinguables.
+
+`seedScriptReferentials` pose cinq angles et trois gabarits à identifiants fixes, **une
+seule fois** — mais le filet « table vide » sert ici plus qu'ailleurs : ces tables naissent
+vides sur une base déjà remplie (migration 24), et livrer les deux menus sans une seule
+entrée les ferait passer pour cassés.
+
 ### `legal`
 
 Le suivi administratif : la société, et une ligne par mois depuis sa création.
@@ -1191,6 +1242,20 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/sponsorships/:id/requirements`                | Ajouter un plan à filmer (entre en fin de liste)                                                                                                                                                           |
 | `PATCH`  | `/api/sponsorships/:id/requirements/:requirementId` | Cocher / renommer / réordonner un plan                                                                                                                                                                     |
 | `DELETE` | `/api/sponsorships/:id/requirements/:requirementId` | Retirer un plan                                                                                                                                                                                            |
+| `GET`    | `/api/script-presets`                               | Gabarits de script. Param `includeArchived`                                                                                                                                                                |
+| `POST`   | `/api/script-presets`                               | Créer. `content` facultatif : on crée souvent le gabarit avant de l'écrire                                                                                                                                 |
+| `POST`   | `/api/script-presets/reorder`                       | `{ ids }` → l'ordre du menu, le rang est l'index. **Déclaré avant `/:id`**                                                                                                                                 |
+| `PATCH`  | `/api/script-presets/:id`                           | Modifier / archiver                                                                                                                                                                                        |
+| `DELETE` | `/api/script-presets/:id`                           | Supprimer. Aucun script n'est touché : les blocs insérés en portent une copie                                                                                                                              |
+| `GET`    | `/api/shot-angles`                                  | Référentiel des angles de vue. Param `includeArchived`                                                                                                                                                     |
+| `POST`   | `/api/shot-angles`                                  | Créer. Couleur attribuée en rotation si absente                                                                                                                                                            |
+| `POST`   | `/api/shot-angles/reorder`                          | `{ ids }` → l'ordre du menu. **Déclaré avant `/:id`**                                                                                                                                                      |
+| `PATCH`  | `/api/shot-angles/:id`                              | Modifier / archiver                                                                                                                                                                                        |
+| `DELETE` | `/api/shot-angles/:id`                              | Supprimer. Les passages déjà marqués gardent leur teinte et leur nom                                                                                                                                       |
+| `GET`    | `/api/productions/:id/shot-angles`                  | Ce que l'éditeur propose : référentiel **et** angles de cette vidéo, à plat                                                                                                                                |
+| `POST`   | `/api/productions/:id/shot-angles`                  | Créer un angle **ponctuel**. Rend la liste complète, comme les tâches                                                                                                                                      |
+| `PATCH`  | `/api/productions/:id/shot-angles/:angleId`         | Modifier un angle ponctuel                                                                                                                                                                                 |
+| `DELETE` | `/api/productions/:id/shot-angles/:angleId`         | Retirer un angle ponctuel                                                                                                                                                                                  |
 | `GET`    | `/api/legal/overview`                               | Société, obligations, tableau mensuel et alertes en une requête                                                                                                                                            |
 | `GET`    | `/api/legal/company`                                | Fiche société (ligne unique)                                                                                                                                                                               |
 | `PATCH`  | `/api/legal/company`                                | Modifier. `foundedOn` décide du premier mois du tableau                                                                                                                                                    |
@@ -1241,19 +1306,19 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 
 ## Routes front
 
-| Route               | Page                   | Contenu                                                                                                                                               |
-| ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, alertes (production + légal), puis **les deux graphiques seulement** (argent, audience)    |
-| `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                           |
-| `/instagram`        | `InstagramPage`        | 6 cartes, graphique à 3 onglets, puis calendrier des stories / tableau des publications                                                               |
-| `/commentaires`     | `CommentsPage`         | 3 onglets (`?onglet=`) : Wall of Love, Propositions de la communauté, Commentaires (le tableau de tri)                                                |
-| `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail à droite, bouton « Ajouter une vidéo »                                                                   |
-| `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                |
-| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / Créneaux & temps passé / Produits & sponsos / Notes                        |
-| `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis trois onglets Produits, Sponsors et **Plateformes** (`?onglet=`). Bouton **Script** par sponso        |
-| `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                 |
-| `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                      |
-| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, **Instagram**, Catégories, Abonnements, Marques, Étapes, **Planning**, Société |
+| Route               | Page                   | Contenu                                                                                                                                                           |
+| ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, alertes (production + légal), puis **les deux graphiques seulement** (argent, audience)                |
+| `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                       |
+| `/instagram`        | `InstagramPage`        | 6 cartes, graphique à 3 onglets, puis calendrier des stories / tableau des publications                                                                           |
+| `/commentaires`     | `CommentsPage`         | 3 onglets (`?onglet=`) : Wall of Love, Propositions de la communauté, Commentaires (le tableau de tri)                                                            |
+| `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail à droite, bouton « Ajouter une vidéo »                                                                               |
+| `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                            |
+| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / Créneaux & temps passé / Produits & sponsos / Notes                                    |
+| `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis trois onglets Produits, Sponsors et **Plateformes** (`?onglet=`). Bouton **Script** par sponso                    |
+| `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                             |
+| `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                  |
+| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, **Instagram**, Catégories, Abonnements, Marques, Étapes, **Script**, **Planning**, Société |
 
 `/chaines`, `/categories`, `/marques`, `/etapes`, `/societe` et `/abonnements`
 **redirigent** vers `/parametres` sur le bon onglet : c'étaient six entrées d'un menu
@@ -1635,37 +1700,38 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 
 ## Hooks
 
-| Hook                                                                                                                                                                                              | Fichier                                               | Rôle                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `useFilters` / `FiltersProvider`                                                                                                                                                                  | `presentation/hooks/useFilters.tsx`                   | Période, chaînes, mode CA/bénéfice, en nature, repères de sortie de vidéo. Persisté en localStorage |
-| `useAnalyticsParams`                                                                                                                                                                              | idem                                                  | Paramètres prêts pour `useAnalytics`                                                                |
-| `useAnalytics`, `useCollectAll`                                                                                                                                                                   | `application/analytics/usecases/useAnalytics.ts`      | Requête principale du dashboard                                                                     |
-| `useChannels`, `useCreateChannel`, `useCollectChannel`, `useSaveManualMetrics`, `useSaveManualSnapshot`, `useResolveChannel`                                                                      | `application/channel/usecases/useChannels.ts`         | CRUD chaînes + collecte                                                                             |
-| `useCategories`, `useCreateCategory`, …                                                                                                                                                           | `application/category/usecases/useCategories.ts`      | Catégories (param `{ includeArchived, scope }`)                                                     |
-| `useVideos`                                                                                                                                                                                       | `application/video/usecases/useVideos.ts`             | Sorties de vidéo pour le sélecteur de rattachement (cache 5 min)                                    |
-| `useRevenues`, `useCreateRevenue`, …                                                                                                                                                              | `application/revenue/usecases/useRevenues.ts`         | Revenus                                                                                             |
-| `useExpenses`, `useCreateExpense`, …                                                                                                                                                              | `application/expense/usecases/useExpenses.ts`         | Dépenses                                                                                            |
-| `useTheme`, `useLocalStorage`                                                                                                                                                                     | `presentation/hooks/`                                 | Thème clair/sombre, stockage protégé                                                                |
-| `useBrands`, `useBrandStats`, `useCreateBrand`, …                                                                                                                                                 | `application/brand/usecases/useBrands.ts`             | Marques + classements du dashboard                                                                  |
-| `useProductions`, `useProduction`, `useProductionOverview`, `useCreateProduction`, `useUpdateProduction`, `useDeleteProduction`, `useReorderProductions`, `usePublishProduction`, `useToggleStep` | `application/production/usecases/useProductions.ts`   | Vidéos en préparation                                                                               |
-| `useProductionSteps`, `useCreateStep`, `useUpdateStep`, `useDeleteStep`                                                                                                                           | idem                                                  | Référentiel des étapes (cache 5 min)                                                                |
-| `useProductionSlots`, `useCreateSlot`, `useUpdateSlot`, `useDeleteSlot`                                                                                                                           | idem                                                  | Créneaux de travail                                                                                 |
-| `useProducts`, `useCreateProduct`, …                                                                                                                                                              | `application/product/usecases/useProducts.ts`         | Produits reçus                                                                                      |
-| `useSponsorships`, `useCreateSponsorship`, …                                                                                                                                                      | `application/sponsorship/usecases/useSponsorships.ts` | Sponsos                                                                                             |
-| `useAddRequirement`, `useUpdateRequirement`, `useDeleteRequirement`                                                                                                                               | idem                                                  | Plans à filmer exigés par la marque                                                                 |
-| `useLegalOverview`, `useLegalObligations`, `useUpdateCompany`, `useCreateObligation`, `useUpdateObligation`, `useDeleteObligation`, `useToggleLegalCheck`                                         | `application/legal/usecases/useLegal.ts`              | Société + obligations mensuelles                                                                    |
-| `useStepTodos`, `useCreateStepTodo`, `useUpdateStepTodo`, `useDeleteStepTodo`                                                                                                                     | `application/production/usecases/useProductions.ts`   | Référentiel des tâches d'étape (cache 5 min)                                                        |
-| `useProductionTodos`, `useToggleTodo`, `useAddProductionTodo`, `useDeleteProductionTodo`                                                                                                          | idem                                                  | Tâches d'une vidéo, coches comprises                                                                |
-| `useTimeEntries`, `useRunningTimer`, `useStartTimer`, `useStopTimer`, `useCreateTimeEntry`, `useUpdateTimeEntry`, `useDeleteTimeEntry`                                                            | idem                                                  | Chronomètre et sessions de travail                                                                  |
-| `useRecurringExpenses`, `useCreateRecurringExpense`, `useUpdateRecurringExpense`, `useDeleteRecurringExpense`                                                                                     | `application/expense/usecases/useExpenses.ts`         | Règles de dépense récurrente                                                                        |
-| `useUpcomingExpenses`, `useUpcomingRevenues`, `useUpcomingRange`                                                                                                                                  | `application/expense/usecases/useUpcoming.ts`         | Ce qui est daté en avant (demain → +3 mois)                                                         |
-| `usePreferences`                                                                                                                                                                                  | `presentation/hooks/usePreferences.ts`                | Menu replié, file compacte. Persisté en localStorage                                                |
-| `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useRemovePlanningItem`, `useClearPlanningItems`, `usePlaceItem`                  | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                  |
-| `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                         | idem                                                  | Horaires de travail et connexion à l'agenda                                                         |
-| `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`          | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                               |
-| `useSlotFromTimeEntry`                                                                                                                                                                            | idem                                                  | Transforme une session de travail en créneau approuvé                                               |
-| `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                    | `application/comment/usecases/useComments.ts`         | Commentaires archivés, leur tri et leur collecte                                                    |
-| `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                            | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                            |
+| Hook                                                                                                                                                                                                                                                                                                                           | Fichier                                               | Rôle                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `useFilters` / `FiltersProvider`                                                                                                                                                                                                                                                                                               | `presentation/hooks/useFilters.tsx`                   | Période, chaînes, mode CA/bénéfice, en nature, repères de sortie de vidéo. Persisté en localStorage |
+| `useAnalyticsParams`                                                                                                                                                                                                                                                                                                           | idem                                                  | Paramètres prêts pour `useAnalytics`                                                                |
+| `useAnalytics`, `useCollectAll`                                                                                                                                                                                                                                                                                                | `application/analytics/usecases/useAnalytics.ts`      | Requête principale du dashboard                                                                     |
+| `useChannels`, `useCreateChannel`, `useCollectChannel`, `useSaveManualMetrics`, `useSaveManualSnapshot`, `useResolveChannel`                                                                                                                                                                                                   | `application/channel/usecases/useChannels.ts`         | CRUD chaînes + collecte                                                                             |
+| `useCategories`, `useCreateCategory`, …                                                                                                                                                                                                                                                                                        | `application/category/usecases/useCategories.ts`      | Catégories (param `{ includeArchived, scope }`)                                                     |
+| `useVideos`                                                                                                                                                                                                                                                                                                                    | `application/video/usecases/useVideos.ts`             | Sorties de vidéo pour le sélecteur de rattachement (cache 5 min)                                    |
+| `useRevenues`, `useCreateRevenue`, …                                                                                                                                                                                                                                                                                           | `application/revenue/usecases/useRevenues.ts`         | Revenus                                                                                             |
+| `useExpenses`, `useCreateExpense`, …                                                                                                                                                                                                                                                                                           | `application/expense/usecases/useExpenses.ts`         | Dépenses                                                                                            |
+| `useTheme`, `useLocalStorage`                                                                                                                                                                                                                                                                                                  | `presentation/hooks/`                                 | Thème clair/sombre, stockage protégé                                                                |
+| `useBrands`, `useBrandStats`, `useCreateBrand`, …                                                                                                                                                                                                                                                                              | `application/brand/usecases/useBrands.ts`             | Marques + classements du dashboard                                                                  |
+| `useProductions`, `useProduction`, `useProductionOverview`, `useCreateProduction`, `useUpdateProduction`, `useDeleteProduction`, `useReorderProductions`, `usePublishProduction`, `useToggleStep`                                                                                                                              | `application/production/usecases/useProductions.ts`   | Vidéos en préparation                                                                               |
+| `useProductionSteps`, `useCreateStep`, `useUpdateStep`, `useDeleteStep`                                                                                                                                                                                                                                                        | idem                                                  | Référentiel des étapes (cache 5 min)                                                                |
+| `useProductionSlots`, `useCreateSlot`, `useUpdateSlot`, `useDeleteSlot`                                                                                                                                                                                                                                                        | idem                                                  | Créneaux de travail                                                                                 |
+| `useProducts`, `useCreateProduct`, …                                                                                                                                                                                                                                                                                           | `application/product/usecases/useProducts.ts`         | Produits reçus                                                                                      |
+| `useSponsorships`, `useCreateSponsorship`, …                                                                                                                                                                                                                                                                                   | `application/sponsorship/usecases/useSponsorships.ts` | Sponsos                                                                                             |
+| `useAddRequirement`, `useUpdateRequirement`, `useDeleteRequirement`                                                                                                                                                                                                                                                            | idem                                                  | Plans à filmer exigés par la marque                                                                 |
+| `useLegalOverview`, `useLegalObligations`, `useUpdateCompany`, `useCreateObligation`, `useUpdateObligation`, `useDeleteObligation`, `useToggleLegalCheck`                                                                                                                                                                      | `application/legal/usecases/useLegal.ts`              | Société + obligations mensuelles                                                                    |
+| `useStepTodos`, `useCreateStepTodo`, `useUpdateStepTodo`, `useDeleteStepTodo`                                                                                                                                                                                                                                                  | `application/production/usecases/useProductions.ts`   | Référentiel des tâches d'étape (cache 5 min)                                                        |
+| `useProductionTodos`, `useToggleTodo`, `useAddProductionTodo`, `useDeleteProductionTodo`                                                                                                                                                                                                                                       | idem                                                  | Tâches d'une vidéo, coches comprises                                                                |
+| `useTimeEntries`, `useRunningTimer`, `useStartTimer`, `useStopTimer`, `useCreateTimeEntry`, `useUpdateTimeEntry`, `useDeleteTimeEntry`                                                                                                                                                                                         | idem                                                  | Chronomètre et sessions de travail                                                                  |
+| `useRecurringExpenses`, `useCreateRecurringExpense`, `useUpdateRecurringExpense`, `useDeleteRecurringExpense`                                                                                                                                                                                                                  | `application/expense/usecases/useExpenses.ts`         | Règles de dépense récurrente                                                                        |
+| `useUpcomingExpenses`, `useUpcomingRevenues`, `useUpcomingRange`                                                                                                                                                                                                                                                               | `application/expense/usecases/useUpcoming.ts`         | Ce qui est daté en avant (demain → +3 mois)                                                         |
+| `usePreferences`                                                                                                                                                                                                                                                                                                               | `presentation/hooks/usePreferences.ts`                | Menu replié, file compacte. Persisté en localStorage                                                |
+| `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useRemovePlanningItem`, `useClearPlanningItems`, `usePlaceItem`                                                                                                                                               | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                  |
+| `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                                                                                                                                                      | idem                                                  | Horaires de travail et connexion à l'agenda                                                         |
+| `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                                                                                       | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                               |
+| `useSlotFromTimeEntry`                                                                                                                                                                                                                                                                                                         | idem                                                  | Transforme une session de travail en créneau approuvé                                               |
+| `useScriptPresets`, `useShotAngles`, `useProductionShotAngles`, `useCreateScriptPreset`, `useUpdateScriptPreset`, `useDeleteScriptPreset`, `useReorderScriptPresets`, `useCreateShotAngle`, `useUpdateShotAngle`, `useDeleteShotAngle`, `useReorderShotAngles`, `useCreateProductionShotAngle`, `useDeleteProductionShotAngle` | `application/script/usecases/useScript.ts`            | Gabarits et angles de vue (cache 5 min)                                                             |
+| `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`         | Commentaires archivés, leur tri et leur collecte                                                    |
+| `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                                                                                                                                                         | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                            |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
 
@@ -1729,6 +1795,11 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   (`origin`, `item_id`, `calendar_uid`, `time_entry_id`). Elle n'ajoute **pas** de `status`
   aux créneaux : `origin` + `done` disent déjà tout, et un troisième champ finirait par les
   contredire.
+- **Migration 24** ajoute `script_presets`, `shot_angles` et `production_shot_angles`.
+  Aucune colonne n'est ajoutée à `productions` : ce qu'on pose **dans** un script — un
+  bloc de gabarit, un angle sur un passage — vit dans le HTML du script lui-même, pas dans
+  une table de liaison. C'est ce qui rend un script lisible tout seul, et ce qui fait
+  qu'aucun de ces deux référentiels n'a de contrainte de suppression.
 - **Migration 23** ajoute la table `comments`. `status` y vaut `'new'` par défaut et non
   `'ignored'` : « pas encore trié » et « écarté » sont deux réponses différentes, et c'est
   la première qui alimente la file de tri. Deux colonnes pour la vidéo (`video_id`
@@ -1876,6 +1947,61 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   rendre `null`, d'où le `?? …` sur son résultat.
 - **Le compteur affiche la durée de lecture** (150 mots/min) plutôt que des caractères :
   c'est la seule mesure qui compte quand on écrit pour être dit à l'oral.
+- **La barre d'outils est collante, et son décalage vient de l'appelant.** Un script fait
+  plusieurs pages : devoir remonter en haut pour mettre un mot en gras revient à ne plus
+  le mettre en gras. Elle se colle sous l'en-tête de l'application dans une page
+  (`var(--app-header)`) et **tout en haut dans la modale d'un script de sponso**, qui est
+  son propre conteneur de défilement — un `sticky` s'accroche à l'ancêtre qui défile
+  réellement, et lui appliquer le décalage de l'écran y laisserait un trou.
+- **`--app-header` est la seule source de la hauteur de l'en-tête**, mesurée par un
+  `ResizeObserver` dans `AppLayout` et posée sur la racine, comme `--bottom-nav`. L'écrire
+  en dur était impossible : l'en-tête fait une, deux ou trois rangées selon l'écran, la
+  présence des filtres et celle du chronomètre. Elle est posée **directement sur le style
+  de l'élément**, sans état React — un `setState` par redimensionnement relancerait le
+  rendu de toute l'application pour une valeur que seul le CSS consomme.
+- **Un gabarit inséré est du contenu, pas un widget.** Le noeud `scriptPreset` a un
+  `content: 'block+'` : on écrit dedans, on le retouche, on le supprime comme un
+  paragraphe. `defining: true` l'empêche de se dissoudre quand on vide sa première ligne.
+  Ne jamais le transformer en noeud atomique lié au référentiel : le script cesserait
+  d'être lisible tout seul, ce qui est toute la raison d'être de l'écran.
+- **La marque `shotAngle` s'exclut elle-même** (`excludes: 'shotAngle'`) : marquer un
+  passage déjà marqué **remplace** l'angle. Un plan ne se tourne pas sous deux cadrages à
+  la fois, et deux fonds translucides empilés ne donneraient qu'une troisième couleur
+  illisible. `inclusive: false` fait que le fond enveloppe le passage au lieu de s'étendre
+  à ce qu'on tape juste après.
+- **Le fond d'un angle est translucide, jamais opaque** (`color-mix(… 22%, transparent)`),
+  exactement comme le surlignage et pour la même raison : une teinte pleine choisie sur le
+  thème clair rendrait le texte illisible sur le sombre. `box-decoration-break: clone`
+  redonne fond et arrondis à chaque ligne quand le passage en occupe plusieurs — sans lui,
+  la teinte s'arrête au bord droit du bloc.
+- **Le nom de l'angle est un `::after`, pas du texte.** Six teintes seraient six couleurs à
+  mémoriser, or le marquage doit se lire d'un regard. Comme l'étiquette d'un gabarit, il ne
+  se sélectionne pas, ne se copie pas et n'est jamais dit à voix haute.
+- **`ScriptPresetNode` et `ShotAngleMark` sont chargés même quand les outils sont
+  masqués** (le formulaire d'un gabarit). Un noeud ou une marque dont l'extension manque
+  est **supprimé au parsing** : rouvrir un script dans un éditeur allégé le viderait de ses
+  blocs et de ses angles. Même piège que `TableKit`.
+- **Créer un angle ponctuel et l'appliquer sont un seul geste.** « Nouvel angle pour cette
+  vidéo » ne demande que le nom — la couleur vient de la rotation côté API, comme pour une
+  marque créée à la volée depuis un formulaire de partenariat. Demander une teinte au
+  moment où l'on écrit ferait renoncer à créer l'angle, et l'angle non créé est une
+  indication de tournage perdue.
+- **Les angles ponctuels demandent une production.** Le script d'une sponso rattachée à une
+  vidéo en propose (`sponsorship.productionId`) ; celui d'une sponso qui n'en a pas
+  retombe sur le référentiel seul — il n'y a alors aucune fiche à laquelle les rattacher.
+- **Les deux menus de la barre sont montés conditionnellement, pas masqués.** Ils portent
+  chacun leurs requêtes : les laisser tourner dans le formulaire d'un gabarit chargerait la
+  liste des gabarits pour l'écran qui la modifie.
+- **`ScriptSurface` ne sait rien de l'enregistrement.** `ScriptEditorView` pose l'écriture
+  automatique par-dessus, le formulaire d'un gabarit la pilote en champ contrôlé
+  (`ScriptFieldView`), et les deux partagent le **même module lazy** — le second `lazy` ne
+  coûte aucun téléchargement de plus, il désigne un autre export du fichier déjà chargé.
+  Les deux doivent écrire exactement le même HTML : un gabarit rédigé dans un éditeur plus
+  pauvre produirait un bloc qui se relit mal une fois inséré.
+- **Le contenu d'un gabarit ne s'enregistre PAS tout seul**, contrairement au script. Ce
+  n'est pas une incohérence : ce texte part ensuite dans toutes les vidéos où on l'insère,
+  et le valider explicitement est le bon niveau d'engagement. Le nom et la couleur, eux, se
+  règlent sur la ligne de la liste et sont validés à la sortie du champ, comme `StepsPage`.
 - **`.prose-script` habille le rendu ET la zone d'édition** (`index.css`, écrit à la main
   sans `@tailwindcss/typography`) : c'est ce qui fait qu'on écrit exactement ce qu'on
   lira, et deux feuilles finiraient par diverger. La palette reste celle du thème plutôt

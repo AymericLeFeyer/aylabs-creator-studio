@@ -19,6 +19,11 @@ import { recurringExpensesRouter } from './routes/recurringExpenses.ts';
 import { productsRouter } from './routes/products.ts';
 import { sponsorshipsRouter } from './routes/sponsorships.ts';
 import { ideasRouter } from './routes/ideas.ts';
+import {
+  productionShotAnglesRouter,
+  scriptPresetsRouter,
+  shotAnglesRouter,
+} from './routes/script.ts';
 import { commentsRouter } from './routes/comments.ts';
 import { legalRouter } from './routes/legal.ts';
 import { affiliatePlatformsRouter } from './routes/affiliatePlatforms.ts';
@@ -51,6 +56,7 @@ export const createServer = (container: Container): express.Express => {
   // Monté AVANT `/api/productions` : un router de préfixe plus long doit passer en
   // premier, sinon c'est le plus court qui capte la requête et répond 404.
   app.use('/api/productions/:id/todos', productionTodosRouter(container));
+  app.use('/api/productions/:id/shot-angles', productionShotAnglesRouter(container));
   app.use('/api/productions', productionsRouter(container));
   app.use('/api/production-steps', productionStepsRouter(container));
   app.use('/api/production-slots', productionSlotsRouter(container));
@@ -60,6 +66,8 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/products', productsRouter(container));
   app.use('/api/sponsorships', sponsorshipsRouter(container));
   app.use('/api/ideas', ideasRouter(container));
+  app.use('/api/script-presets', scriptPresetsRouter(container));
+  app.use('/api/shot-angles', shotAnglesRouter(container));
   app.use('/api/comments', commentsRouter(container));
   app.use('/api/legal', legalRouter(container));
   app.use('/api/affiliate-platforms', affiliatePlatformsRouter(container));

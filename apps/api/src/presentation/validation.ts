@@ -872,3 +872,40 @@ export const commentStatsQuerySchema = z.object({
 export const updateCommentSchema = z.object({
   status: z.enum(['new', 'encouraging', 'idea', 'ignored']),
 });
+
+/**
+ * Les gabarits de script.
+ *
+ * `content` n'est **pas borné** comme une description de publication : ce n'est pas un
+ * champ qui part chez YouTube, c'est du texte à dire, et un bloc d'introduction complet
+ * dépasse allègrement les limites d'un formulaire. Il n'a pas non plus de valeur par
+ * défaut à la création : on crée souvent le gabarit d'abord, on l'écrit ensuite.
+ */
+export const createScriptPresetSchema = z.object({
+  label: z.string().trim().min(1, 'Le nom est obligatoire').max(80),
+  description: optionalText,
+  content: z.string().optional(),
+  color: z.string().trim().min(1).optional(),
+});
+
+export const updateScriptPresetSchema = createScriptPresetSchema.partial().extend({
+  isArchived: z.boolean().optional(),
+});
+
+/**
+ * Les angles de vue, référentiel comme ponctuels.
+ *
+ * Même schéma des deux côtés : un angle ponctuel n'est pas un angle au rabais, c'est le
+ * même objet avec une portée plus courte. La couleur reste facultative — elle est
+ * attribuée en rotation côté dépôt, et la demander à la création ferait renoncer à créer
+ * un angle en cours d'écriture.
+ */
+export const createShotAngleSchema = z.object({
+  label: z.string().trim().min(1, 'Le nom est obligatoire').max(60),
+  description: optionalText,
+  color: z.string().trim().min(1).optional(),
+});
+
+export const updateShotAngleSchema = createShotAngleSchema.partial().extend({
+  isArchived: z.boolean().optional(),
+});

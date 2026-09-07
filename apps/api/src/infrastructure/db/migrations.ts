@@ -1145,6 +1145,58 @@ const migrations: Migration[] = [
       CREATE INDEX idx_comments_pending ON comments(channel_id, video_external_id);
     `,
   },
+  {
+    version: 24,
+    name: 'script_presets_and_shot_angles',
+    // Deux referentiels au service du meme ecran : l'editeur de script.
+    //
+    // "script_presets" porte des GABARITS : leur contenu est copie dans le script a
+    // l'insertion, il n'y reste pas lie. D'ou "content" en TEXT et non une reference —
+    // un appel a l'action se retouche pour la video qu'on ecrit, et un bloc qui se
+    // reecrirait tout seul depuis les parametres emporterait ces retouches.
+    //
+    // "shot_angles" et "production_shot_angles" reprennent exactement le decoupage de
+    // "step_todos" / "production_todos" : un referentiel global, et du ponctuel qui n'a
+    // de sens que sur une video. Les angles poses dans le script, eux, ne sont dans
+    // aucune table — ce sont des marques HTML portant leur libelle et leur couleur, si
+    // bien qu'un angle supprime du referentiel ne vide pas le script de ses annotations.
+    up: `
+      CREATE TABLE script_presets (
+        id          TEXT PRIMARY KEY,
+        label       TEXT NOT NULL,
+        description TEXT,
+        content     TEXT NOT NULL DEFAULT '',
+        color       TEXT NOT NULL DEFAULT '#3b82f6',
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        is_archived INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+
+      CREATE TABLE shot_angles (
+        id          TEXT PRIMARY KEY,
+        label       TEXT NOT NULL,
+        description TEXT,
+        color       TEXT NOT NULL DEFAULT '#3b82f6',
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        is_archived INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+
+      CREATE TABLE production_shot_angles (
+        id            TEXT PRIMARY KEY,
+        production_id TEXT NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+        label         TEXT NOT NULL,
+        description   TEXT,
+        color         TEXT NOT NULL DEFAULT '#3b82f6',
+        sort_order    INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      );
+      CREATE INDEX idx_production_shot_angles ON production_shot_angles(production_id);
+    `,
+  },
 ];
 
 /**

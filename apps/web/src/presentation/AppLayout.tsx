@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Menu, Moon, PanelLeftClose, PanelLeftOpen, Settings, Sun, X } from 'lucide-react';
 import { MOBILE_NAV, NAV_SECTIONS, pageTitle, type NavItem } from './navigation.ts';
@@ -67,6 +67,34 @@ export const AppLayout = () => {
   const { preferences, set } = usePreferences();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  /*
+   * `--app-header` : la hauteur réelle de l'en-tête collant, mesurée et posée sur la
+   * racine — même parti pris que `--bottom-nav`, une seule source pour une valeur dont
+   * plusieurs choses dépendent.
+   *
+   * Elle sert aux barres qui veulent s'arrêter **sous** l'en-tête en défilant (celle de
+   * l'éditeur de script). L'écrire en dur était impossible : l'en-tête fait une, deux ou
+   * trois rangées selon l'écran, la présence des filtres et celle du chronomètre.
+   *
+   * Posée par un `ResizeObserver` directement sur le style de l'élément, sans état React :
+   * un `setState` par redimensionnement relancerait le rendu de toute l'application pour
+   * une valeur que seul le CSS consomme.
+   */
+  const rootRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    const root = rootRef.current;
+    if (!header || !root) return;
+
+    const apply = () => root.style.setProperty('--app-header', `${header.offsetHeight}px`);
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
 
   const collapsed = preferences.sidebarCollapsed;
   const title = pageTitle(location.pathname);
@@ -186,7 +214,11 @@ export const AppLayout = () => {
   );
 
   return (
-    <div className="min-h-screen bg-background" style={{ ['--bottom-nav' as string]: BOTTOM_NAV }}>
+    <div
+      ref={rootRef}
+      className="min-h-screen bg-background"
+      style={{ ['--bottom-nav' as string]: BOTTOM_NAV, ['--app-header' as string]: '0px' }}
+    >
       {/* Colonne fixe, à partir de `lg` seulement. */}
       <aside
         className="fixed inset-y-0 left-0 z-40 hidden border-r border-border bg-card transition-[width] lg:block"
@@ -223,6 +255,7 @@ export const AppLayout = () => {
         style={{ ['--sidebar-width' as string]: collapsed ? SIDEBAR_CLOSED : SIDEBAR_OPEN }}
       >
         <header
+          ref={headerRef}
           className={cn(
             'sticky top-0 z-30 bg-background/85 backdrop-blur',
             // Sur mobile l'en-tête porte toujours la barre d'application, donc toujours

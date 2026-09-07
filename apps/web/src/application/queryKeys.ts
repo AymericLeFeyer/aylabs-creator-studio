@@ -29,6 +29,9 @@ export const queryKeys = {
   products: (params: unknown) => ['products', params] as const,
   sponsorships: (params: unknown) => ['sponsorships', params] as const,
   ideas: () => ['ideas'] as const,
+  scriptPresets: (includeArchived: boolean) => ['scriptPresets', includeArchived] as const,
+  shotAngles: (includeArchived: boolean) => ['shotAngles', includeArchived] as const,
+  productionShotAngles: (id: string) => ['productionShotAngles', id] as const,
   comments: (params: unknown) => ['comments', params] as const,
   commentCounts: (channelIds: string[]) => ['commentCounts', channelIds] as const,
 
@@ -140,3 +143,13 @@ export const COMMENT_ROOTS = ['comments', 'commentCounts'] as const;
  * une alerte du dashboard.
  */
 export const LEGAL_ROOTS = ['legalOverview', 'legalObligations'] as const;
+
+/**
+ * Racines des référentiels du script : gabarits et angles de vue.
+ *
+ * Elles ne croisent **aucune** autre, et c'est la contrepartie assumée du choix de tout
+ * copier plutôt que de tout référencer : un gabarit inséré vit sa vie dans le script, un
+ * angle posé y laisse une copie de son libellé et de sa couleur. Renommer un angle ne
+ * réécrit donc aucun script — et rien d'autre n'a besoin de repartir.
+ */
+export const SCRIPT_ROOTS = ['scriptPresets', 'shotAngles', 'productionShotAngles'] as const;

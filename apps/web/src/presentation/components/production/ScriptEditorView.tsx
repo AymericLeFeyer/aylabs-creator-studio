@@ -1,21 +1,6 @@
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import { Color, TextStyle } from '@tiptap/extension-text-style';
-import Highlight from '@tiptap/extension-highlight';
-import TextAlign from '@tiptap/extension-text-align';
-import { TaskItem, TaskList } from '@tiptap/extension-list';
-import { TableKit } from '@tiptap/extension-table';
-import { Placeholder } from '@tiptap/extensions';
 import { Check, CircleAlert, LoaderCircle } from 'lucide-react';
-import { ScriptToolbar } from './ScriptToolbar.tsx';
-import { ScriptEditorSkeleton } from './ScriptEditorSkeleton.tsx';
-import {
-  fromEditorHtml,
-  scriptStats,
-  toEditorHtml,
-} from '../../../domain/production/services/script.ts';
-import { cn } from '../../../shared/cn.ts';
+import { ScriptSurface } from './ScriptSurface.tsx';
 
 /**
  * Le délai d'inactivité avant l'enregistrement automatique.
@@ -25,41 +10,44 @@ import { cn } from '../../../shared/cn.ts';
  */
 const AUTOSAVE_DELAY_MS = 1200;
 
-/** Le compteur avant que l'éditeur n'existe : « 0 mot » est plus honnête qu'un écran cassé. */
-const EMPTY_STATS = scriptStats('');
-
 type SaveStatus = 'clean' | 'dirty' | 'saving' | 'saved' | 'error';
 
 export interface ScriptEditorProps {
   value: string;
   onSave: (script: string) => Promise<unknown>;
+  /**
+   * La vidéo dont on écrit le script. Elle ouvre les **angles ponctuels** ; sans elle
+   * (une sponso sans production rattachée), seul le référentiel est proposé.
+   */
+  productionId?: string;
+  /**
+   * Où la barre d'outils s'arrête en défilant. Par défaut sous l'en-tête collant de
+   * l'application ; une modale, qui défile toute seule, passe `0px`.
+   */
+  stickyOffset?: string;
 }
 
 /**
- * L'éditeur de script, en **WYSIWYG**.
+ * L'éditeur de script : la surface d'écriture, plus **l'enregistrement automatique**.
  *
- * Il montrait avant deux panneaux — le markdown à gauche, son rendu à droite. C'est un
- * bon outil pour qui écrit du markdown ; ce n'en est pas un pour qui écrit un texte à
- * dire à voix haute, où l'on relit sans arrêt ce qu'on vient d'écrire et où la moitié de
- * la largeur part dans une syntaxe qu'on ne lira jamais à l'antenne. On écrit désormais
- * directement dans le rendu, et la mise en forme se pose depuis une barre d'outils.
- *
- * **L'enregistrement est automatique.** L'ancienne version s'y refusait par prudence, et
- * l'indicateur « Non enregistré » était là pour rendre l'oubli visible — c'est-à-dire
- * pour rendre visible un problème plutôt que pour le supprimer. Le brouillon vit
- * maintenant en base à une phrase près, et l'historique de TipTap (Ctrl+Z) couvre le
- * seul risque que le bouton protégeait vraiment : écraser un passage par mégarde.
+ * L'ancienne version s'y refusait par prudence, et l'indicateur « Non enregistré » était
+ * là pour rendre l'oubli visible — c'est-à-dire pour rendre visible un problème plutôt
+ * que pour le supprimer. Le brouillon vit maintenant en base à une phrase près, et
+ * l'historique de TipTap (Ctrl+Z) couvre le seul risque que le bouton protégeait
+ * vraiment : écraser un passage par mégarde.
  *
  * Trois filets, parce qu'un débit à retardement se perd exactement dans les moments où
  * l'on quitte l'écran : le démontage **vide la file d'attente** (on ferme la modale d'un
  * script de sponso, on change d'onglet de fiche), `beforeunload` prévient si un envoi
  * était encore en vol, et Ctrl+S force l'enregistrement pour qui ne fait confiance qu'à
  * son propre geste.
- *
- * Le compteur affiche la **durée de lecture** plutôt qu'un nombre de caractères : c'est
- * la seule mesure qui compte quand on écrit pour être dit à l'oral.
  */
-export const ScriptEditorView = ({ value, onSave }: ScriptEditorProps) => {
+export const ScriptEditorView = ({
+  value,
+  onSave,
+  productionId,
+  stickyOffset,
+}: ScriptEditorProps) => {
   const [status, setStatus] = useState<SaveStatus>('clean');
 
   /** Le dernier contenu que le serveur connaît : c'est lui qui dit s'il y a quelque chose à envoyer. */
@@ -89,7 +77,7 @@ export const ScriptEditorView = ({ value, onSave }: ScriptEditorProps) => {
       // Une frappe pendant l'envoi a remis quelque chose en file : on reste « à enregistrer ».
       setStatus(pendingRef.current === null ? 'saved' : 'dirty');
     } catch {
-      // Le contenu retourne en file : le prochain enregistrement le reprendra, et la
+      // Le contenu retourne en file : le prochain enregistrement le reprendra, et le
       // perdre ici effacerait silencieusement le travail que le réseau vient de refuser.
       pendingRef.current = html;
       setStatus('error');
@@ -101,93 +89,17 @@ export const ScriptEditorView = ({ value, onSave }: ScriptEditorProps) => {
     flushRef.current = flush;
   }, [flush]);
 
-  const schedule = useCallback((html: string) => {
+  const handleChange = useCallback((html: string) => {
+    if (html === savedRef.current) {
+      pendingRef.current = null;
+      setStatus('clean');
+      return;
+    }
     pendingRef.current = html;
     setStatus('dirty');
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(() => void flushRef.current(), AUTOSAVE_DELAY_MS);
   }, []);
-
-  const editor = useEditor({
-    /*
-     * **L'éditeur naît dans l'effet de montage, pas pendant le rendu.**
-     *
-     * Avec le défaut (`true`), `useEditor` construit l'instance dès le rendu puis
-     * programme sa destruction une milliseconde plus tard, annulée seulement si le
-     * composant s'est monté entre-temps. Un rendu concurrent découpé par React suffit à
-     * dépasser ce délai : l'éditeur est détruit, `schema` passe à `null`, et le rendu qui
-     * suit lit encore l'instance morte — `getText()` y explose sur « can't access
-     * property "nodes" ». Créer l'instance dans l'effet supprime la course : le composant
-     * est monté par construction, et rien n'est jamais programmé pour la détruire.
-     *
-     * En contrepartie, `editor` vaut `null` au premier rendu — d'où le squelette.
-     */
-    immediatelyRender: false,
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-        // Un lien s'édite, il ne se suit pas : cliquer dedans doit poser le curseur.
-        link: {
-          openOnClick: false,
-          autolink: true,
-          HTMLAttributes: { rel: 'noreferrer noopener', target: '_blank' },
-        },
-      }),
-      TextStyle,
-      Color,
-      Highlight.configure({ multicolor: true }),
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      // Les tableaux ne sont pas dans la barre d'outils, mais l'extension doit être là :
-      // sans elle, un tableau venu d'un ancien script markdown serait effacé à l'ouverture.
-      TableKit.configure({ table: { resizable: false } }),
-      Placeholder.configure({
-        placeholder:
-          "Accroche, parties, appel à l'action… tout se met en forme depuis la barre ci-dessus.",
-      }),
-    ],
-    content: toEditorHtml(value),
-    editorProps: {
-      attributes: {
-        class: 'prose-script min-h-[28rem] px-4 py-3 focus:outline-none',
-        spellcheck: 'true',
-      },
-    },
-    onUpdate: ({ editor: instance }) => {
-      const html = fromEditorHtml(instance.getHTML());
-      if (html === savedRef.current) {
-        pendingRef.current = null;
-        setStatus('clean');
-        return;
-      }
-      schedule(html);
-    },
-  });
-
-  /*
-   * `useEditorState` appelle son sélecteur avec l'instantané **courant**, qui peut porter
-   * un éditeur pas encore créé (`null`) ou déjà détruit — son `schema` est alors à `null`
-   * et `getText()` s'y écrase. Le sélecteur ne suppose donc rien : il rend un compteur
-   * vide plutôt que de faire tomber l'écran.
-   */
-  const stats =
-    useEditorState({
-      editor,
-      selector: ({ editor: instance }) =>
-        instance?.schema ? scriptStats(instance.getText()) : EMPTY_STATS,
-    }) ?? EMPTY_STATS;
-
-  /*
-   * Le script rechargé depuis le serveur remplace le contenu **tant que rien n'attend
-   * d'être envoyé** : écraser un brouillon en cours de frappe par une réponse en vol
-   * ferait disparaître la phrase qu'on est en train d'écrire.
-   */
-  useEffect(() => {
-    if (!editor || value === savedRef.current || pendingRef.current !== null) return;
-    savedRef.current = value;
-    editor.commands.setContent(toEditorHtml(value), { emitUpdate: false });
-  }, [editor, value]);
 
   /* Quitter l'écran vide la file : c'est le cas où un débit à retardement se perdrait. */
   useEffect(
@@ -212,32 +124,52 @@ export const ScriptEditorView = ({ value, onSave }: ScriptEditorProps) => {
     void flush();
   };
 
-  if (!editor) return <ScriptEditorSkeleton />;
-
   return (
-    <div className="space-y-3" onKeyDown={forceSave}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <ScriptToolbar editor={editor} />
-
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="tabular">
-            {stats.words} mots · ~{stats.duration} à lire
-          </span>
-          <SaveIndicator status={status} onRetry={() => void flush()} />
-        </div>
-      </div>
-
-      <div
-        className={cn(
-          'overflow-hidden rounded-md border border-border bg-card text-sm leading-relaxed',
-          'focus-within:ring-2 focus-within:ring-ring',
-        )}
-      >
-        <EditorContent editor={editor} />
-      </div>
+    <div onKeyDown={forceSave}>
+      <ScriptSurface
+        value={value}
+        onChange={handleChange}
+        productionId={productionId}
+        stickyOffset={stickyOffset}
+        status={<SaveIndicator status={status} onRetry={() => void flush()} />}
+      />
     </div>
   );
 };
+
+export interface ScriptFieldProps {
+  value: string;
+  onChange: (html: string) => void;
+  placeholder?: string;
+  minHeight?: string;
+  stickyOffset?: string;
+}
+
+/**
+ * La même surface, en **champ de formulaire contrôlé** : le contenu d'un gabarit.
+ *
+ * Deux différences avec l'éditeur de script, toutes deux volontaires. L'enregistrement
+ * n'est pas automatique — un gabarit se valide avec le reste de sa fiche (son nom, sa
+ * couleur), et l'écrire à la volée sans avoir validé le nom laisserait des demi-fiches.
+ * Et les **outils de script sont retirés** : un gabarit ne contient pas de gabarit, et
+ * annoter un angle de vue sur un texte destiné à dix vidéos différentes n'a pas de sens.
+ */
+export const ScriptFieldView = ({
+  value,
+  onChange,
+  placeholder,
+  minHeight = 'min-h-[14rem]',
+  stickyOffset = '0px',
+}: ScriptFieldProps) => (
+  <ScriptSurface
+    value={value}
+    onChange={onChange}
+    scriptTools={false}
+    placeholder={placeholder}
+    minHeight={minHeight}
+    stickyOffset={stickyOffset}
+  />
+);
 
 /**
  * L'état de l'enregistrement, à la place de l'ancien bouton.

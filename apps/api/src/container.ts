@@ -17,6 +17,8 @@ import { SqliteRecurringExpenseRepository } from './infrastructure/expense/repos
 import { SqliteProductRepository } from './infrastructure/product/repositories/SqliteProductRepository.ts';
 import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/repositories/SqliteSponsorshipRepository.ts';
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
+import { SqliteScriptPresetRepository } from './infrastructure/script/repositories/SqliteScriptPresetRepository.ts';
+import { SqliteShotAngleRepository } from './infrastructure/script/repositories/SqliteShotAngleRepository.ts';
 import { SqliteCommentRepository } from './infrastructure/comment/repositories/SqliteCommentRepository.ts';
 import { SqliteCompanyRepository } from './infrastructure/legal/repositories/SqliteCompanyRepository.ts';
 import { SqliteLegalObligationRepository } from './infrastructure/legal/repositories/SqliteLegalObligationRepository.ts';
@@ -35,6 +37,7 @@ import { seedDefaultCategories } from './application/category/usecases/SeedDefau
 import { seedDefaultSteps } from './application/production/usecases/SeedDefaultSteps.ts';
 import { seedDefaultStepTodos } from './application/production/usecases/SeedDefaultStepTodos.ts';
 import { seedLegalObligations } from './application/legal/usecases/SeedLegalObligations.ts';
+import { seedScriptReferentials } from './application/script/usecases/SeedScriptReferentials.ts';
 import { ManageProducts } from './application/product/usecases/ManageProducts.ts';
 import { ManageSponsorships } from './application/sponsorship/usecases/ManageSponsorships.ts';
 import { ManageProductions } from './application/production/usecases/ManageProductions.ts';
@@ -71,6 +74,10 @@ export interface Container {
   products: SqliteProductRepository;
   sponsorships: SqliteSponsorshipRepository;
   ideas: SqliteIdeaRepository;
+  /** Les gabarits insérables dans un script. Aucun effet de bord : ils sont copiés, pas liés. */
+  scriptPresets: SqliteScriptPresetRepository;
+  /** Le référentiel des angles de vue, et les angles ponctuels d'une vidéo. */
+  shotAngles: SqliteShotAngleRepository;
   /**
    * Les commentaires archivés et leur statut. La collecte ne réécrit jamais ce dernier :
    * c'est ce qui fait qu'un commentaire écarté le reste.
@@ -142,6 +149,7 @@ export const buildContainer = (config: Config): Container => {
   seedDefaultSteps(db);
   seedDefaultStepTodos(db);
   seedLegalObligations(db);
+  seedScriptReferentials(db);
 
   const channels = new SqliteChannelRepository(db);
   const metrics = new SqliteMetricsRepository(db);
@@ -159,6 +167,8 @@ export const buildContainer = (config: Config): Container => {
   const products = new SqliteProductRepository(db);
   const sponsorships = new SqliteSponsorshipRepository(db);
   const ideas = new SqliteIdeaRepository(db);
+  const scriptPresets = new SqliteScriptPresetRepository(db);
+  const shotAngles = new SqliteShotAngleRepository(db);
   const comments = new SqliteCommentRepository(db);
   const company = new SqliteCompanyRepository(db);
   const legalObligations = new SqliteLegalObligationRepository(db);
@@ -204,6 +214,8 @@ export const buildContainer = (config: Config): Container => {
     products,
     sponsorships,
     ideas,
+    scriptPresets,
+    shotAngles,
     comments,
     company,
     legalObligations,

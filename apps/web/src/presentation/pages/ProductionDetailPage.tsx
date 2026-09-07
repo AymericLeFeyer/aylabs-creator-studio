@@ -240,6 +240,7 @@ export const ProductionDetailPage = () => {
         <TabsContent value="script">
           <ScriptEditor
             value={production.script}
+            productionId={production.id}
             onSave={(script) => update.mutateAsync({ id: production.id, input: { script } })}
           />
         </TabsContent>

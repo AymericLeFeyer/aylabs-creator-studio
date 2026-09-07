@@ -63,8 +63,13 @@ export const SponsorshipScriptDialog = ({
                 requirements={sponsorship.requirements}
               />
 
+              {/* La modale défile toute seule : la barre d'outils s'y colle tout en
+                  haut, et non sous l'en-tête de l'application, qui n'est pas son
+                  conteneur de défilement. */}
               <ScriptEditor
                 value={sponsorship.script}
+                productionId={sponsorship.productionId ?? undefined}
+                stickyOffset="0px"
                 onSave={(script) => update.mutateAsync({ id: sponsorship.id, input: { script } })}
               />
             </div>
