@@ -2029,14 +2029,22 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   n'est pas une incohérence : ce texte part ensuite dans toutes les vidéos où on l'insère,
   et le valider explicitement est le bon niveau d'engagement. Le nom et la couleur, eux, se
   règlent sur la ligne de la liste et sont validés à la sortie du champ, comme `StepsPage`.
-- **Masquer les angles est un FILTRE, pas une écriture.** La case « Masquer les angles »
-  pose une classe sur l'enveloppe de l'éditeur (`script-angles-hidden`) et le CSS éteint
-  fond, soulignement et étiquette : le document n'est pas touché, aucune transaction n'est
-  émise, rien n'est enregistré, et décocher rallume les couleurs telles quelles. Réécrire
-  les marques pour les masquer aurait fait de la **lecture** une modification du script.
-  L'état est **local et non persisté** — on l'active pour relire, on le retire pour
-  annoter, plusieurs fois dans la même séance : même parti pris que « Reste à faire
-  uniquement » sur l'écran des partenariats.
+- **Masquer les angles est un FILTRE, pas une écriture.** La case « Masquer les angles de
+  vue » pose une classe sur l'enveloppe de l'éditeur (`script-angles-hidden`) et le CSS
+  éteint fond, soulignement et étiquette : le document n'est pas touché, aucune
+  transaction n'est émise, rien n'est enregistré, et décocher rallume les couleurs telles
+  quelles. Réécrire les marques pour les masquer aurait fait de la **lecture** une
+  modification du script. L'état est **local et non persisté** — on l'active pour relire,
+  on le retire pour annoter, plusieurs fois dans la même séance : même parti pris que
+  « Reste à faire uniquement » sur l'écran des partenariats.
+- **La case n'apparaît que si le script porte au moins un angle** (`hasShotAngles`, à côté
+  de la marque qu'il cherche). Sur un script pas encore annoté — l'écrasante majorité au
+  moment où on l'écrit — elle ne dirait rien et ferait un réglage de plus à lire dans une
+  barre qui en porte déjà. Le parcours du document **s'arrête au premier angle trouvé** :
+  il tourne à chaque transaction, donc à chaque frappe, et lire tout le document pour une
+  réponse booléenne reviendrait à payer un script de dix pages à chaque lettre tapée. Il
+  vit dans le **même sélecteur `useEditorState` que le compteur de mots** — deux
+  abonnements pour deux valeurs lues au même endroit doubleraient le travail pour rien.
 - **`.prose-script` habille le rendu ET la zone d'édition** (`index.css`, écrit à la main
   sans `@tailwindcss/typography`) : c'est ce qui fait qu'on écrit exactement ce qu'on
   lira, et deux feuilles finiraient par diverger. La palette reste celle du thème plutôt

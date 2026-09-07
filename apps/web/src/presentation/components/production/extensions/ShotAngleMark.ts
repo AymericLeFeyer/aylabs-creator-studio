@@ -1,4 +1,4 @@
-import { Mark, mergeAttributes } from '@tiptap/core';
+import { type Editor, Mark, mergeAttributes } from '@tiptap/core';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -26,6 +26,33 @@ declare module '@tiptap/core' {
  * `data-shot-color`, jamais `element.style`, que le CSSOM normalise différemment d'un
  * navigateur à l'autre. C'est la leçon déjà apprise sur les couleurs de texte.
  */
+/**
+ * Le document porte-t-il au moins un angle ?
+ *
+ * Sert à ne proposer « Masquer les angles de vue » que là où il y a quelque chose à
+ * masquer : sur un script pas encore annoté — l'écrasante majorité au moment où on
+ * l'écrit — la case ne dirait rien et ferait un réglage de plus à lire.
+ *
+ * Le parcours **s'arrête au premier trouvé** : il tourne à chaque transaction, donc à
+ * chaque frappe, et lire tout le document pour une réponse booléenne serait payer un
+ * script de dix pages à chaque lettre tapée.
+ */
+export const hasShotAngles = (editor: Editor): boolean => {
+  const type = editor.schema.marks[ShotAngleMark.name];
+  if (!type) return false;
+
+  let found = false;
+  editor.state.doc.descendants((node) => {
+    if (found) return false;
+    if (type.isInSet(node.marks)) {
+      found = true;
+      return false;
+    }
+    return true;
+  });
+  return found;
+};
+
 export const ShotAngleMark = Mark.create({
   name: 'shotAngle',
 

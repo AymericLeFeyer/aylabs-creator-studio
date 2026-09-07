@@ -11,7 +11,7 @@ import { ScriptToolbar } from './ScriptToolbar.tsx';
 import { Checkbox } from '../ui/checkbox.tsx';
 import { ScriptEditorSkeleton } from './ScriptEditorSkeleton.tsx';
 import { ScriptPresetNode } from './extensions/ScriptPresetNode.ts';
-import { ShotAngleMark } from './extensions/ShotAngleMark.ts';
+import { ShotAngleMark, hasShotAngles } from './extensions/ShotAngleMark.ts';
 import {
   scriptStats,
   toEditorHtml,
@@ -19,8 +19,8 @@ import {
 } from '../../../domain/production/services/script.ts';
 import { cn } from '../../../shared/cn.ts';
 
-/** Le compteur avant que l'éditeur n'existe : « 0 mot » est plus honnête qu'un écran cassé. */
-const EMPTY_STATS = scriptStats('');
+/** L'état lu avant que l'éditeur n'existe : « 0 mot » est plus honnête qu'un écran cassé. */
+const EMPTY_VIEW = { ...scriptStats(''), hasAngles: false };
 
 const DEFAULT_PLACEHOLDER =
   "Accroche, parties, appel à l'action… tout se met en forme depuis la barre ci-dessus.";
@@ -168,12 +168,14 @@ export const ScriptSurface = ({
    * un éditeur pas encore créé (`null`) ou déjà détruit — son `schema` vaut alors `null`
    * et `getText()` s'y écrase. Le sélecteur ne suppose donc rien.
    */
-  const stats =
+  const doc =
     useEditorState({
       editor,
       selector: ({ editor: instance }) =>
-        instance?.schema ? scriptStats(instance.getText()) : EMPTY_STATS,
-    }) ?? EMPTY_STATS;
+        instance?.schema
+          ? { ...scriptStats(instance.getText()), hasAngles: hasShotAngles(instance) }
+          : EMPTY_VIEW,
+    }) ?? EMPTY_VIEW;
 
   /* Un contenu venu d'ailleurs remplace le document ; celui qu'on vient d'émettre, non. */
   useEffect(() => {
@@ -200,17 +202,23 @@ export const ScriptSurface = ({
           <ScriptToolbar editor={editor} productionId={productionId} scriptTools={scriptTools} />
 
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            {scriptTools && (
+            {/*
+              La case n'apparaît que si le script porte au moins un angle : sur un script
+              pas encore annoté — l'écrasante majorité au moment où on l'écrit — elle ne
+              dirait rien et ferait un réglage de plus à lire dans une barre qui en porte
+              déjà. Elle se montre dès le premier angle posé, et se retire avec le dernier.
+            */}
+            {scriptTools && doc.hasAngles && (
               <label className="flex cursor-pointer select-none items-center gap-1.5">
                 <Checkbox
                   checked={anglesHidden}
                   onCheckedChange={(checked) => setAnglesHidden(checked === true)}
                 />
-                Masquer les angles
+                Masquer les angles de vue
               </label>
             )}
             <span className="tabular">
-              {stats.words} mots · ~{stats.duration} à lire
+              {doc.words} mots · ~{doc.duration} à lire
             </span>
             {status}
           </div>
