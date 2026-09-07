@@ -919,15 +919,34 @@ le créneau **cesse d'être une suggestion** : ses horaires sont recalés sur le
 durée réels, il passe en `done` **et** `manual` — donc immobile —, il est publié dans
 l'agenda, puis le reste est replanifié.
 
+**Un chronomètre lancé depuis une fiche de vidéo aboutit au même résultat.** Il n'a aucun
+créneau lié : l'arrêt lui en **crée** un, `manual` et `done`, posé au début local de la
+session, relié par `time_entry_id` et publié dans l'agenda — exactement ce que fait
+`slotFromTimeEntry`. C'était la moitié du chemin auparavant : la session s'arrêtait sans
+rien laisser dans le planning, et il fallait aller cliquer « en faire un créneau » sur la
+fiche pour que l'heure existe ailleurs que dans un total. Le geste était systématique,
+donc il n'avait pas à être un geste.
+
+`startDate` / `startTime` viennent **du navigateur** (`localStartOf(entry.startedAt)`,
+à côté de `planningNow`) : `startedAt` est un horodatage UTC, et en extraire l'heure côté
+serveur poserait le créneau deux heures trop tôt en été. Sans eux, la session s'arrête
+sans créneau — mieux vaut ça qu'une heure inventée.
+
 Deux différences volontaires avec `approve` :
 
 - **`plannedMinutes` n'est pas gonflé.** Le temps mesuré se déduit de l'estimation : après
   40 minutes chronométrées sur une tâche estimée à 45, il reste 5 minutes que le replan
   ira caler. Un chronomètre mesure, il ne renégocie pas la charge.
-- **La question « as-tu terminé ? » est posée APRÈS coup, pas avant.** L'arrêt rend
-  `{ entry, completable }` : `completable` décrit la ligne de pile que ce chronomètre
-  couvrait, `null` s'il n'y en avait pas (chronomètre lancé depuis une fiche de vidéo — il
-  n'y a alors rien à clore). L'écran s'en sert pour ouvrir `FinishWorkDialog`.
+- **La question « as-tu terminé ? » est posée APRÈS coup, pas avant**, et **quel que soit
+  le chemin par lequel le chronomètre a été lancé**. L'arrêt rend `{ entry, completable }` ;
+  `completableOf` préfère la ligne de pile quand il y en a une — c'est elle qui porte le
+  libellé de ce qui avait été planifié — et retombe sinon sur la session elle-même, qui
+  porte son étape et sa sous-étape, demandées au démarrage précisément pour ça. `itemId`
+  vaut alors `null`, et ça ne change rien : ce qui compte est la **tâche à cocher**, et
+  c'est elle qui retire au passage la ligne de pile s'il y en avait une. `null` seulement
+  quand il n'y a **rien à cocher** — une session « sans étape » ne ferme rien, et la
+  question n'aurait pas de réponse possible. L'écran s'en sert pour ouvrir
+  `FinishWorkDialog`.
 
   On ne peut pas répondre à la place de l'utilisateur : arrêter un chronomètre est souvent
   une pause, et cocher d'office ferait disparaître de la pile un travail à moitié fait. Ne
@@ -1289,6 +1308,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/planning/slots/:id/approve`                   | `{ finished }` **obligatoire**. Crée la session, fige et redimensionne le créneau, publie dans l'agenda ; renvoie `{ next }`, le créneau reposé si le travail continue                                     |
 | `POST`   | `/api/planning/slots/:id/unapprove`                 | Défaire : la session part, le créneau redevient mobile                                                                                                                                                     |
 | `POST`   | `/api/planning/time-entries/:id/slot`               | Transforme une session de travail en créneau approuvé. `{ date, startTime }` **fournis par le client** (le serveur est en UTC). 409 si la session tourne encore ou a déjà son créneau                      |
+| `POST`   | `/api/production-time/:id/stop`                     | Arrête le chronomètre. `{ startDate, startTime }` **locaux** posent son créneau quand il n'en avait pas, et le publient dans l'agenda. Rend `{ entry, completable }`                                       |
 | `GET`    | `/api/instagram/overview`                           | Séries, totaux, stories et publications. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                                   |
 | `GET`    | `/api/instagram/accounts`                           | Comptes suivis. **Le jeton n'en sort jamais**, remplacé par `hasToken` et `tokenDaysLeft`                                                                                                                  |
 | `POST`   | `/api/instagram/accounts`                           | Connecter un compte. 409 si l'`igUserId` est déjà suivi                                                                                                                                                    |
@@ -2009,6 +2029,14 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   n'est pas une incohérence : ce texte part ensuite dans toutes les vidéos où on l'insère,
   et le valider explicitement est le bon niveau d'engagement. Le nom et la couleur, eux, se
   règlent sur la ligne de la liste et sont validés à la sortie du champ, comme `StepsPage`.
+- **Masquer les angles est un FILTRE, pas une écriture.** La case « Masquer les angles »
+  pose une classe sur l'enveloppe de l'éditeur (`script-angles-hidden`) et le CSS éteint
+  fond, soulignement et étiquette : le document n'est pas touché, aucune transaction n'est
+  émise, rien n'est enregistré, et décocher rallume les couleurs telles quelles. Réécrire
+  les marques pour les masquer aurait fait de la **lecture** une modification du script.
+  L'état est **local et non persisté** — on l'active pour relire, on le retire pour
+  annoter, plusieurs fois dans la même séance : même parti pris que « Reste à faire
+  uniquement » sur l'écran des partenariats.
 - **`.prose-script` habille le rendu ET la zone d'édition** (`index.css`, écrit à la main
   sans `@tailwindcss/typography`) : c'est ce qui fait qu'on écrit exactement ce qu'on
   lira, et deux feuilles finiraient par diverger. La palette reste celle du thème plutôt
@@ -2189,11 +2217,18 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
 - **La barre de progression affiche le pourcentage, le détail est au survol.** Le pourcentage se compare d'une carte à l'autre ; le compte exact (« 18 sur 30 ») ne sert qu'à savoir combien il reste, ce qu'on ne demande que sur la vidéo qu'on s'apprête à attaquer.
 - **L'en-tête n'a de hauteur que s'il porte la barre de filtres.** Sur `/production`, `/partenariats`, `/legal` et `/parametres`, il perd son trait et son padding : un bandeau vide repoussait le contenu pour rien. Le bandeau du chronomètre, lui, porte une bordure **haut et bas** (`border-y`) parce qu'il peut se retrouver seul tout en haut — c'est même le cas le plus probable, `/production` étant l'écran sans filtres où un chronomètre tourne.
 - **Les liens utiles s'intercalent entre la fiche société et les alertes**, avant le tableau à cocher : on ouvre le portail, on fait la démarche, on revient cocher la case juste en dessous. La carte **entière** est le lien (cible la plus large) et s'ouvre dans un **nouvel onglet** — une navigation ferait perdre l'année choisie et la position dans le tableau. Le bloc ne s'affiche pas du tout tant qu'aucun lien n'est configuré : un encart vide prendrait la place de ce qu'on vient réellement faire sur cet écran.
-- **L'arrêt du chronomètre passe par `ManagePlanning`, pas par `TrackTime`.** Si la session
-  venait d'un créneau du planning, l'arrêt doit aussi recaler ce créneau sur les horaires
-  réellement passés et replanifier la suite. La route `/api/production-time/:id/stop`
-  délègue donc à `stopTimer` — un appel direct à `TrackTime.stop` laisserait le créneau en
-  suggestion alors que le travail a eu lieu.
+- **L'arrêt du chronomètre passe par `ManagePlanning`, pas par `TrackTime`.** L'arrêt ne
+  fige pas seulement une durée : il pose ou recale un créneau, le publie dans l'agenda et
+  replanifie la suite. La route `/api/production-time/:id/stop` délègue donc à `stopTimer`
+  — un appel direct à `TrackTime.stop` laisserait le créneau en suggestion alors que le
+  travail a eu lieu, ou ne laisserait aucune trace du tout.
+- **Arrêter un chronomètre pose TOUJOURS son créneau et le publie dans l'agenda**, qu'il
+  ait été lancé depuis le planning ou depuis une fiche de vidéo. Le second cas ne laissait
+  rien derrière lui : il fallait aller cliquer « en faire un créneau » sur la fiche, un
+  geste qu'on faisait systématiquement — donc qui n'avait pas à en être un. Seule
+  condition : que le navigateur ait envoyé `startDate` / `startTime`. Comme toujours dans
+  ce module, la publication dans l'agenda est **avalée en cas d'échec** : le temps passé
+  est déjà enregistré, l'événement est du confort.
 - **Ne jamais tirer une heure locale de `TimeEntry.startedAt`.** C'est un instant **UTC**
   (`new Date().toISOString()`), alors que `production_slots` stocke des heures locales sans
   fuseau. `slice(11, 16)` dessus donnait 12:00 pour 14:00 à Paris — le créneau se posait

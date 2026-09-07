@@ -201,6 +201,26 @@ export const localToday = (): string => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
 
+/**
+ * Le **début local** d'une session, tiré de son horodatage UTC.
+ *
+ * `TimeEntry.startedAt` est un instant (`new Date().toISOString()`) : seul le navigateur
+ * sait à quelle heure locale il correspond. C'est la version « lecture » de la règle du
+ * module — on ne tire jamais une heure locale de `startedAt` **côté serveur**, qui tourne
+ * en UTC ; ici, la conversion est exacte.
+ *
+ * Sert à poser le créneau d'un chronomètre lancé depuis une fiche de vidéo, qui n'en
+ * avait aucun.
+ */
+export const localStartOf = (startedAt: string): { startDate: string; startTime: string } => {
+  const start = new Date(startedAt);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return {
+    startDate: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
+    startTime: `${pad(start.getHours())}:${pad(start.getMinutes())}`,
+  };
+};
+
 /** Décale une date ISO de N jours, sans passer par un fuseau. */
 export const shiftDate = (date: string, days: number): string => {
   const parsed = new Date(`${date}T12:00:00`);

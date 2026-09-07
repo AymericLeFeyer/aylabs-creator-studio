@@ -565,8 +565,24 @@ const nowMinutes = z
  */
 const nowDate = isoDate.optional();
 
+/**
+ * L'arrêt du chronomètre.
+ *
+ * `startDate` / `startTime` sont le **début local** de la session, calculés par le
+ * navigateur depuis `startedAt`. Ils servent à poser le créneau d'un chronomètre lancé
+ * depuis une fiche de vidéo, qui n'en avait aucun : `startedAt` est un horodatage UTC, et
+ * en extraire l'heure côté serveur poserait le créneau deux heures trop tôt en été.
+ *
+ * Facultatifs : sans eux, la session s'arrête sans créneau — mieux vaut ça qu'une heure
+ * inventée.
+ */
 export const stopTimerSchema = z.object({
   from: isoDate.optional(),
+  startDate: isoDate.optional(),
+  startTime: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, 'Heure attendue au format HH:MM')
+    .optional(),
   nowDate,
   nowMinutes,
 });

@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Color, TextStyle } from '@tiptap/extension-text-style';
@@ -8,6 +8,7 @@ import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import { Placeholder } from '@tiptap/extensions';
 import { ScriptToolbar } from './ScriptToolbar.tsx';
+import { Checkbox } from '../ui/checkbox.tsx';
 import { ScriptEditorSkeleton } from './ScriptEditorSkeleton.tsx';
 import { ScriptPresetNode } from './extensions/ScriptPresetNode.ts';
 import { ShotAngleMark } from './extensions/ShotAngleMark.ts';
@@ -73,6 +74,20 @@ export const ScriptSurface = ({
   stickyOffset = 'var(--app-header, 0px)',
   status,
 }: ScriptSurfaceProps) => {
+  /**
+   * Masquer les angles de vue **à l'affichage seulement**.
+   *
+   * Un script annoté se lit mal : six fonds colorés et autant d'étiquettes sur une page
+   * de texte, c'est parfait pour préparer un tournage et insupportable pour relire une
+   * phrase. La case les éteint sans **rien** retirer du document — les marques sont
+   * toujours là, et les recocher les rallume telles quelles.
+   *
+   * C'est un **filtre et non une préférence** : on l'active pour relire, on le retire
+   * pour annoter, plusieurs fois dans la même séance. Même parti pris que « Reste à faire
+   * uniquement » sur l'écran des partenariats, et donc un état local, non persisté.
+   */
+  const [anglesHidden, setAnglesHidden] = useState(false);
+
   /** Le dernier HTML sorti d'ici : c'est lui qui dit si un `value` entrant est nouveau. */
   const emittedRef = useRef(value);
   const onChangeRef = useRef(onChange);
@@ -185,6 +200,15 @@ export const ScriptSurface = ({
           <ScriptToolbar editor={editor} productionId={productionId} scriptTools={scriptTools} />
 
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            {scriptTools && (
+              <label className="flex cursor-pointer select-none items-center gap-1.5">
+                <Checkbox
+                  checked={anglesHidden}
+                  onCheckedChange={(checked) => setAnglesHidden(checked === true)}
+                />
+                Masquer les angles
+              </label>
+            )}
             <span className="tabular">
               {stats.words} mots · ~{stats.duration} à lire
             </span>
@@ -193,10 +217,16 @@ export const ScriptSurface = ({
         </div>
       </div>
 
+      {/*
+        La classe éteint les angles **en CSS**, sur l'enveloppe : le document n'est pas
+        touché, aucune transaction n'est émise, et rien n'est enregistré. Réécrire les
+        marques pour les masquer aurait fait de la lecture une modification du script.
+      */}
       <div
         className={cn(
           'overflow-hidden rounded-md border border-border bg-card text-sm leading-relaxed',
           'focus-within:ring-2 focus-within:ring-ring',
+          anglesHidden && 'script-angles-hidden',
         )}
       >
         <EditorContent editor={editor} />

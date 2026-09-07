@@ -83,15 +83,20 @@ export const RunningTimerBar = () => {
           size="sm"
           variant="outline"
           className="ml-auto"
-          // Le jour et l'heure locaux accompagnent l'arrêt : si la session venait d'un
-          // créneau du planning, l'API le recale puis replanifie la suite — et elle ne
-          // peut pas déduire l'heure qu'il est, le serveur tournant en UTC. « Maintenant »
-          // est désormais posé par `useStopTimer` pour tous les appelants ; `from` reste
-          // ici parce que c'est le premier jour ouvert au moteur, pas l'heure qu'il est.
+          // Trois repères de temps, tous **locaux**, parce que le serveur tourne en UTC.
+          // « Maintenant » est posé par `useStopTimer` pour tous les appelants ; `from`
+          // est le premier jour ouvert au moteur ; `startedAt` dit à quelle heure la
+          // session a commencé — c'est là que se posera son créneau si elle n'en avait
+          // pas, et c'est ce qui la fait entrer dans l'agenda.
           onClick={async () => {
-            const result = await stop.mutateAsync({ id: running.id, from: localToday() });
-            // `null` quand la session ne couvrait aucune ligne de pile : rien à clore,
-            // donc aucune question à poser.
+            const result = await stop.mutateAsync({
+              id: running.id,
+              from: localToday(),
+              startedAt: running.startedAt,
+            });
+            // `null` seulement quand il n'y a rien à cocher — une session « sans
+            // étape ». Partout ailleurs la question se pose, que le chronomètre ait été
+            // lancé depuis un créneau du planning ou depuis une fiche de vidéo.
             setFinishing(result.completable);
           }}
           disabled={stop.isPending}

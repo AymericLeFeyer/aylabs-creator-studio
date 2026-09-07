@@ -354,4 +354,21 @@
   .prose-script [data-shot-label='']::after {
     content: none;
   }
+
+  /*
+   * Angles masqués : le texte redevient du texte.
+   *
+   * On éteint le fond, le soulignement et l'étiquette, sans toucher au document — les
+   * marques restent, et décocher la case les rallume telles quelles. La règle est posée
+   * ici plutôt que dans le rendu du composant pour que masquer un angle ne soit jamais
+   * une écriture.
+   */
+  .script-angles-hidden .prose-script [data-shot-angle] {
+    background-color: transparent;
+    border-bottom-color: transparent;
+    padding: 0;
+  }
+  .script-angles-hidden .prose-script [data-shot-angle]::after {
+    content: none;
+  }
 }

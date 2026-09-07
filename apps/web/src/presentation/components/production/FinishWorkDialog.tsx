@@ -23,9 +23,10 @@ export interface FinishWorkDialogProps {
  * « Tu as terminé ? », posée à l'arrêt du chronomètre.
  *
  * C'est la même question que l'approbation d'un créneau, au moment où elle se pose
- * vraiment : on vient de mesurer le temps, on sait si le travail est fini. Elle ne
- * s'ouvre que si la session couvrait une ligne de la pile — un chronomètre lancé depuis
- * une fiche de vidéo n'a rien à clore, et une modale y serait du bruit.
+ * vraiment : on vient de mesurer le temps, on sait si le travail est fini. Elle se pose
+ * **quel que soit le chemin par lequel le chronomètre a été lancé** — depuis un créneau
+ * du planning comme depuis une fiche de vidéo. Elle ne s'ouvre que si la session porte
+ * une étape ou une sous-étape : « sans étape », il n'y a rien à cocher.
  *
  * **On ne peut pas y répondre à sa place.** Arrêter un chronomètre est souvent une simple
  * pause : cocher d'office ferait disparaître de la pile un travail à moitié fait. Ne rien
@@ -60,8 +61,9 @@ export const FinishWorkDialog = ({ work, onOpenChange }: FinishWorkDialogProps) 
         </DialogHeader>
 
         <p className="text-sm text-muted-foreground">
-          Le temps est déjà enregistré. Répondre « Terminé » coche la tâche et la retire de la pile
-          du planning ; « Pas encore » la laisse, et le prochain replacement lui rendra un créneau.
+          Le temps est déjà enregistré et le créneau posé dans le planning. Répondre « Terminé »
+          coche la tâche, ce qui la retire de la pile si elle y était ; « Pas encore » la laisse, et
+          le prochain replacement lui rendra un créneau.
         </p>
 
         <DialogFooter className="sm:justify-between">

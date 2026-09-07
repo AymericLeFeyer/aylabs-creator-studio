@@ -45,13 +45,17 @@ const FALLBACK_MINUTES = 60;
 /**
  * Du travail que l'on vient de mesurer et qui **peut être déclaré terminé**.
  *
- * Rendu par `stopTimer` pour que l'écran sache s'il a une question à poser. `null` quand
- * la session ne couvrait aucune ligne de pile — un chronomètre lancé depuis une fiche de
- * vidéo, par exemple : il n'y a alors rien à fermer, et demander « as-tu terminé ? »
- * n'aurait aucun objet.
+ * Rendu par `stopTimer` pour que l'écran sache s'il a une question à poser. `null`
+ * seulement quand il n'y a **rien à cocher** : une session sans étape ni tâche ne ferme
+ * rien, et la question n'aurait pas de réponse possible.
+ *
+ * `itemId` est `null` pour un chronomètre lancé depuis une fiche de vidéo : il ne
+ * couvrait aucune ligne de pile. Ça ne change rien à la question posée — ce qui compte
+ * est la **tâche à cocher**, et c'est elle qui, en se cochant, retire au passage la ligne
+ * de pile s'il y en avait une (`ManageTodos`).
  */
 export interface CompletableWork {
-  itemId: string;
+  itemId: string | null;
   productionId: string;
   /** La tâche à cocher. `null` quand la ligne couvre l'étape entière. */
   todoId: string | null;
@@ -522,8 +526,7 @@ export class ManagePlanning {
       timeEntryId: entry.id,
     });
 
-    const calendarUid = await this.publish(slot.id);
-    if (calendarUid) this.slots.update(slot.id, { calendarUid });
+    await this.publishAndLink(slot.id);
 
     const item = covered;
 
@@ -599,67 +602,119 @@ export class ManagePlanning {
   }
 
   /**
-   * Arrête le chronomètre, et **complète le créneau d'où il avait été lancé**.
+   * Arrête le chronomètre, **pose son créneau dans le planning** et le publie dans
+   * l'agenda — quel que soit le chemin par lequel il a été lancé.
    *
-   * Le créneau cesse d'être une suggestion : ses horaires sont recalés sur ce qui s'est
-   * réellement passé — début réel, durée réelle — et il passe en approuvé, donc immobile.
-   * C'est ce qui fait qu'une journée finit par ressembler à ce qu'elle a été plutôt qu'à ce
-   * qu'on avait prévu.
+   * Deux origines, un seul résultat. Lancé **depuis un créneau**, celui-ci cesse d'être
+   * une suggestion : ses horaires sont recalés sur ce qui s'est réellement passé et il
+   * passe en approuvé, donc immobile. Lancé **depuis une fiche de vidéo**, il n'avait
+   * aucun créneau : on lui en crée un, `manual` et `done`, exactement comme le fait
+   * `slotFromTimeEntry`. Dans les deux cas la journée finit par ressembler à ce qu'elle a
+   * été, et l'heure passée se retrouve dans l'agenda.
+   *
+   * C'était la moitié du chemin auparavant : un chronomètre lancé à la main s'arrêtait
+   * sans rien laisser dans le planning, et il fallait aller cliquer « en faire un
+   * créneau » sur la fiche pour que l'heure existe ailleurs que dans un total. Le geste
+   * était systématique — donc il n'avait pas à être un geste.
    *
    * `plannedMinutes` n'est **pas** gonflé, contrairement à `approve(finished: false)` : le
    * temps mesuré se déduit de l'estimation, et ce qui reste — s'il reste quelque chose —
    * retrouvera une place au replan. Un chronomètre mesure, il ne renégocie pas la charge.
    *
-   * Un chronomètre lancé depuis une fiche de production n'a aucun créneau lié : la méthode
-   * se contente alors d'arrêter la session, et rien d'autre ne bouge.
+   * `startDate` / `startTime` viennent **du navigateur**, comme partout dans ce module :
+   * `startedAt` est un horodatage UTC, et en extraire l'heure côté serveur poserait le
+   * créneau deux heures trop tôt en été. Sans eux, la session s'arrête sans créneau —
+   * mieux vaut ça qu'une heure inventée.
    */
   async stopTimer(
     entryId: string,
-    options: ReplanOptions = {},
+    options: ReplanOptions & { startDate?: IsoDate; startTime?: string } = {},
   ): Promise<{ entry: TimeEntry; completable: CompletableWork | null }> {
     const entry = this.trackTime.stop(entryId);
+    const minutes = Math.max(1, entry.minutes ?? 1);
 
     const slot = this.slots.findByTimeEntry(entryId);
-    if (!slot) return { entry, completable: null };
 
-    // **Seule la durée est reprise de la session** — elle ne dépend d'aucun fuseau. Le
-    // début, lui, a été posé à l'heure locale au démarrage : le relire dans `startedAt`,
-    // qui est en UTC, décalerait le créneau de deux heures en été.
-    const minutes = Math.max(1, entry.minutes ?? 1);
-    const startMinutes = toMinutes(slot.startTime ?? '00:00');
-
-    this.slots.update(slot.id, {
-      endTime: toTime(startMinutes + minutes),
-      done: true,
-      origin: 'manual',
-    });
-
-    const calendarUid = await this.publish(slot.id);
-    if (calendarUid) this.slots.update(slot.id, { calendarUid });
+    if (slot) {
+      // **Seule la durée est reprise de la session** — elle ne dépend d'aucun fuseau. Le
+      // début, lui, a été posé à l'heure locale au démarrage : le relire dans `startedAt`,
+      // qui est en UTC, décalerait le créneau de deux heures en été.
+      const startMinutes = toMinutes(slot.startTime ?? '00:00');
+      this.slots.update(slot.id, {
+        endTime: toTime(startMinutes + minutes),
+        done: true,
+        origin: 'manual',
+      });
+      await this.publishAndLink(slot.id);
+    } else if (options.startDate && options.startTime) {
+      const view = this.trackTime.find(entryId);
+      if (view) {
+        const created = this.slots.create({
+          productionId: entry.productionId,
+          stepId: entry.stepId,
+          date: options.startDate,
+          startTime: options.startTime,
+          endTime: toTime(toMinutes(options.startTime) + minutes),
+          label: view.todoLabel ?? view.stepName ?? view.productionTitle,
+          done: true,
+          origin: 'manual',
+          notes: entry.notes,
+        });
+        this.slots.update(created.id, { timeEntryId: entry.id });
+        await this.publishAndLink(created.id);
+      }
+    }
 
     // Incrémental : ce qui reste de la tâche trouve une place, le reste de la journée
     // garde la sienne.
     await this.replan({ ...options, mode: 'incremental' });
 
-    // **La question « as-tu terminé ? » n'est pas posée ici, elle est rendue possible.**
-    // On ne peut pas y répondre à la place de l'utilisateur — arrêter un chronomètre est
-    // souvent une pause —, mais ne rien proposer laissait la ligne dans la pile jusqu'à
-    // ce qu'on aille l'y retirer à la main, alors même que le travail était fait. L'écran
-    // pose la question au bon moment ; ce champ lui dit qu'il y a lieu de la poser.
-    const covered = slot.itemId ? this.items.findById(slot.itemId) : null;
+    return { entry, completable: this.completableOf(entry, slot?.itemId ?? null) };
+  }
+
+  /**
+   * Ce que l'arrêt propose de clore.
+   *
+   * **La question « as-tu terminé ? » n'est pas répondue ici, elle est rendue possible.**
+   * On ne peut pas y répondre à la place de l'utilisateur — arrêter un chronomètre est
+   * souvent une pause —, mais ne rien proposer laissait le travail traîner jusqu'à ce
+   * qu'on aille le cocher à la main alors même qu'il venait d'être fait.
+   *
+   * La ligne de pile est **préférée** quand il y en a une : c'est elle qui porte le
+   * libellé exact de ce qui avait été planifié. À défaut, la session suffit — elle porte
+   * son étape et sa sous-étape, demandées au démarrage précisément pour ça.
+   *
+   * `null` seulement quand il n'y a **rien à cocher** : une session « sans étape » ne
+   * ferme rien, et la question n'aurait pas de réponse possible.
+   */
+  private completableOf(entry: TimeEntry, itemId: string | null): CompletableWork | null {
+    const covered = itemId ? this.items.findById(itemId) : null;
+    if (covered && covered.status === 'pending') {
+      return {
+        itemId: covered.id,
+        productionId: covered.productionId,
+        todoId: covered.todoId,
+        stepId: covered.stepId,
+        label: covered.label,
+      };
+    }
+
+    if (!entry.todoId && !entry.stepId) return null;
+
+    const view = this.trackTime.find(entry.id);
     return {
-      entry,
-      completable:
-        covered && covered.status === 'pending'
-          ? {
-              itemId: covered.id,
-              productionId: covered.productionId,
-              todoId: covered.todoId,
-              stepId: covered.stepId,
-              label: covered.label,
-            }
-          : null,
+      itemId: null,
+      productionId: entry.productionId,
+      todoId: entry.todoId,
+      stepId: entry.stepId,
+      label: view?.todoLabel ?? view?.stepName ?? view?.productionTitle ?? 'Travail',
     };
+  }
+
+  /** Publie un créneau dans l'agenda et garde l'identifiant rendu, s'il y en a un. */
+  private async publishAndLink(slotId: string): Promise<void> {
+    const calendarUid = await this.publish(slotId);
+    if (calendarUid) this.slots.update(slotId, { calendarUid });
   }
 
   /**
@@ -732,9 +787,7 @@ export class ManagePlanning {
       notes: entry.notes,
     });
     this.slots.update(slot.id, { timeEntryId: entry.id });
-
-    const calendarUid = await this.publish(slot.id);
-    if (calendarUid) this.slots.update(slot.id, { calendarUid });
+    await this.publishAndLink(slot.id);
 
     // Le créneau occupe désormais la journée. En incrémental, il devient une occupation
     // parmi d'autres et rien n'est déplacé : c'est au bouton « Repositionner » de décider

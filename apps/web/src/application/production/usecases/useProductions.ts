@@ -15,7 +15,7 @@ import type { TimeEntryInput } from '../../../domain/production/entities/TimeEnt
 import type { ProductionInput } from '../../../domain/production/entities/Production.ts';
 import type { ProductionSlotInput } from '../../../domain/production/entities/ProductionSlot.ts';
 import type { ProductionStepInput } from '../../../domain/production/entities/ProductionStep.ts';
-import { planningNow } from '../../planning/usecases/usePlanning.ts';
+import { localStartOf, planningNow } from '../../planning/usecases/usePlanning.ts';
 import { PARTNER_ROOTS, PRODUCTION_ROOTS, queryKeys } from '../../queryKeys.ts';
 
 /**
@@ -315,11 +315,24 @@ export const useStartTimer = () =>
  * créneau du planning, l'arrêt replanifie ce qui suit — et sans le jour ni l'heure d'ici,
  * l'API (en UTC) reposerait des créneaux sur des heures déjà écoulées.
  */
+/**
+ * Arrête le chronomètre.
+ *
+ * `startedAt` est **le début de la session**, converti en heure locale ici : l'API en
+ * tire le créneau d'un chronomètre lancé depuis une fiche de vidéo, qui n'en avait aucun,
+ * et le publie dans l'agenda. Sans lui, la session s'arrête sans laisser de trace dans le
+ * planning — c'est ce que faisait la version d'avant, et il fallait aller cliquer « en
+ * faire un créneau » sur la fiche pour rattraper.
+ */
 export const useStopTimer = () =>
-  useProductionMutation((input: string | { id: string; from?: string }) =>
+  useProductionMutation((input: string | { id: string; from?: string; startedAt?: string }) =>
     typeof input === 'string'
       ? productionTimeApi.stop(input, planningNow())
-      : productionTimeApi.stop(input.id, { from: input.from, ...planningNow() }),
+      : productionTimeApi.stop(input.id, {
+          from: input.from,
+          ...(input.startedAt ? localStartOf(input.startedAt) : {}),
+          ...planningNow(),
+        }),
   );
 
 export const useCreateTimeEntry = () =>

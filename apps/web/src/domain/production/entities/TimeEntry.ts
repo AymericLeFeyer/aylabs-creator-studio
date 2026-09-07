@@ -3,12 +3,16 @@
 /**
  * Du travail que l'on vient de mesurer et **qui peut être déclaré terminé**.
  *
- * Rendu par l'arrêt du chronomètre, `null` quand la session ne couvrait aucune ligne de
- * la pile du planning — un chronomètre lancé depuis une fiche de vidéo, par exemple : il
- * n'y a alors rien à fermer, et poser la question n'aurait aucun objet.
+ * Rendu par l'arrêt du chronomètre. `null` seulement quand il n'y a **rien à cocher** :
+ * une session « sans étape » ne ferme rien, et la question n'aurait pas de réponse.
+ *
+ * `itemId` est `null` pour un chronomètre lancé depuis une fiche de vidéo, qui ne
+ * couvrait aucune ligne de la pile du planning. Ça ne change rien à la question posée :
+ * ce qui compte est la **tâche à cocher**, et c'est elle qui, en se cochant, retire au
+ * passage la ligne de pile s'il y en avait une.
  */
 export interface CompletableWork {
-  itemId: string;
+  itemId: string | null;
   productionId: string;
   /** La tâche à cocher. `null` quand la ligne couvre l'étape entière. */
   todoId: string | null;
