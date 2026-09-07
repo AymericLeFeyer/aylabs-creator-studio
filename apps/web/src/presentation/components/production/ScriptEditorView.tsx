@@ -9,6 +9,7 @@ import { TableKit } from '@tiptap/extension-table';
 import { Placeholder } from '@tiptap/extensions';
 import { Check, CircleAlert, LoaderCircle } from 'lucide-react';
 import { ScriptToolbar } from './ScriptToolbar.tsx';
+import { ScriptEditorSkeleton } from './ScriptEditorSkeleton.tsx';
 import {
   fromEditorHtml,
   scriptStats,
@@ -23,6 +24,9 @@ import { cn } from '../../../shared/cn.ts';
  * long pour ne pas envoyer une requête par mot tapé.
  */
 const AUTOSAVE_DELAY_MS = 1200;
+
+/** Le compteur avant que l'éditeur n'existe : « 0 mot » est plus honnête qu'un écran cassé. */
+const EMPTY_STATS = scriptStats('');
 
 type SaveStatus = 'clean' | 'dirty' | 'saving' | 'saved' | 'error';
 
@@ -105,6 +109,20 @@ export const ScriptEditorView = ({ value, onSave }: ScriptEditorProps) => {
   }, []);
 
   const editor = useEditor({
+    /*
+     * **L'éditeur naît dans l'effet de montage, pas pendant le rendu.**
+     *
+     * Avec le défaut (`true`), `useEditor` construit l'instance dès le rendu puis
+     * programme sa destruction une milliseconde plus tard, annulée seulement si le
+     * composant s'est monté entre-temps. Un rendu concurrent découpé par React suffit à
+     * dépasser ce délai : l'éditeur est détruit, `schema` passe à `null`, et le rendu qui
+     * suit lit encore l'instance morte — `getText()` y explose sur « can't access
+     * property "nodes" ». Créer l'instance dans l'effet supprime la course : le composant
+     * est monté par construction, et rien n'est jamais programmé pour la détruire.
+     *
+     * En contrepartie, `editor` vaut `null` au premier rendu — d'où le squelette.
+     */
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
@@ -147,10 +165,18 @@ export const ScriptEditorView = ({ value, onSave }: ScriptEditorProps) => {
     },
   });
 
-  const stats = useEditorState({
-    editor,
-    selector: ({ editor: instance }) => scriptStats(instance.getText()),
-  });
+  /*
+   * `useEditorState` appelle son sélecteur avec l'instantané **courant**, qui peut porter
+   * un éditeur pas encore créé (`null`) ou déjà détruit — son `schema` est alors à `null`
+   * et `getText()` s'y écrase. Le sélecteur ne suppose donc rien : il rend un compteur
+   * vide plutôt que de faire tomber l'écran.
+   */
+  const stats =
+    useEditorState({
+      editor,
+      selector: ({ editor: instance }) =>
+        instance?.schema ? scriptStats(instance.getText()) : EMPTY_STATS,
+    }) ?? EMPTY_STATS;
 
   /*
    * Le script rechargé depuis le serveur remplace le contenu **tant que rien n'attend
@@ -158,7 +184,7 @@ export const ScriptEditorView = ({ value, onSave }: ScriptEditorProps) => {
    * ferait disparaître la phrase qu'on est en train d'écrire.
    */
   useEffect(() => {
-    if (value === savedRef.current || pendingRef.current !== null) return;
+    if (!editor || value === savedRef.current || pendingRef.current !== null) return;
     savedRef.current = value;
     editor.commands.setContent(toEditorHtml(value), { emitUpdate: false });
   }, [editor, value]);
@@ -185,6 +211,8 @@ export const ScriptEditorView = ({ value, onSave }: ScriptEditorProps) => {
     event.preventDefault();
     void flush();
   };
+
+  if (!editor) return <ScriptEditorSkeleton />;
 
   return (
     <div className="space-y-3" onKeyDown={forceSave}>

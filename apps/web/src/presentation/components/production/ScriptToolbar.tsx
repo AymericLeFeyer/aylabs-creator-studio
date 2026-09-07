@@ -115,6 +115,86 @@ const SwatchGrid = ({
   </div>
 );
 
+interface ToolbarState {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strike: boolean;
+  code: boolean;
+  h1: boolean;
+  h2: boolean;
+  h3: boolean;
+  paragraph: boolean;
+  bulletList: boolean;
+  orderedList: boolean;
+  taskList: boolean;
+  blockquote: boolean;
+  link: boolean;
+  alignLeft: boolean;
+  alignCenter: boolean;
+  alignRight: boolean;
+  color: string | null;
+  highlight: string | null;
+  canUndo: boolean;
+  canRedo: boolean;
+}
+
+/**
+ * L'état neutre, rendu quand l'éditeur n'est pas interrogeable.
+ *
+ * `useEditorState` appelle son sélecteur avec l'instantané **courant**, qui peut porter
+ * une instance déjà détruite : `schema` et `commandManager` y valent alors `null`, et
+ * `isActive` / `getAttributes` / `can()` s'y écrasent. Une barre éteinte le temps d'une
+ * image vaut mieux qu'un écran blanc.
+ */
+const INACTIVE: ToolbarState = {
+  bold: false,
+  italic: false,
+  underline: false,
+  strike: false,
+  code: false,
+  h1: false,
+  h2: false,
+  h3: false,
+  paragraph: false,
+  bulletList: false,
+  orderedList: false,
+  taskList: false,
+  blockquote: false,
+  link: false,
+  alignLeft: false,
+  alignCenter: false,
+  alignRight: false,
+  color: null,
+  highlight: null,
+  canUndo: false,
+  canRedo: false,
+};
+
+const readState = (instance: Editor): ToolbarState => ({
+  bold: instance.isActive('bold'),
+  italic: instance.isActive('italic'),
+  underline: instance.isActive('underline'),
+  strike: instance.isActive('strike'),
+  code: instance.isActive('code'),
+  h1: instance.isActive('heading', { level: 1 }),
+  h2: instance.isActive('heading', { level: 2 }),
+  h3: instance.isActive('heading', { level: 3 }),
+  paragraph: instance.isActive('paragraph'),
+  bulletList: instance.isActive('bulletList'),
+  orderedList: instance.isActive('orderedList'),
+  taskList: instance.isActive('taskList'),
+  blockquote: instance.isActive('blockquote'),
+  link: instance.isActive('link'),
+  alignLeft: instance.isActive({ textAlign: 'left' }),
+  alignCenter: instance.isActive({ textAlign: 'center' }),
+  alignRight: instance.isActive({ textAlign: 'right' }),
+  color: (instance.getAttributes('textStyle').color as string | undefined) ?? null,
+  highlight: (instance.getAttributes('highlight').color as string | undefined) ?? null,
+  canUndo: instance.can().undo(),
+  canRedo: instance.can().redo(),
+});
+
 /**
  * La barre d'outils de l'éditeur de script.
  *
@@ -128,32 +208,11 @@ const SwatchGrid = ({
  * resterait figée sur l'état du premier rendu.
  */
 export const ScriptToolbar = ({ editor }: { editor: Editor }) => {
-  const state = useEditorState({
-    editor,
-    selector: ({ editor: instance }) => ({
-      bold: instance.isActive('bold'),
-      italic: instance.isActive('italic'),
-      underline: instance.isActive('underline'),
-      strike: instance.isActive('strike'),
-      code: instance.isActive('code'),
-      h1: instance.isActive('heading', { level: 1 }),
-      h2: instance.isActive('heading', { level: 2 }),
-      h3: instance.isActive('heading', { level: 3 }),
-      paragraph: instance.isActive('paragraph'),
-      bulletList: instance.isActive('bulletList'),
-      orderedList: instance.isActive('orderedList'),
-      taskList: instance.isActive('taskList'),
-      blockquote: instance.isActive('blockquote'),
-      link: instance.isActive('link'),
-      alignLeft: instance.isActive({ textAlign: 'left' }),
-      alignCenter: instance.isActive({ textAlign: 'center' }),
-      alignRight: instance.isActive({ textAlign: 'right' }),
-      color: (instance.getAttributes('textStyle').color as string | undefined) ?? null,
-      highlight: (instance.getAttributes('highlight').color as string | undefined) ?? null,
-      canUndo: instance.can().undo(),
-      canRedo: instance.can().redo(),
-    }),
-  });
+  const state =
+    useEditorState({
+      editor,
+      selector: ({ editor: instance }) => (instance?.schema ? readState(instance) : INACTIVE),
+    }) ?? INACTIVE;
 
   const chain = () => editor.chain().focus();
 

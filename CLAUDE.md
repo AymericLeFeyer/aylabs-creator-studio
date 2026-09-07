@@ -1858,6 +1858,22 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   TipTap 3, l'éditeur ne provoque plus de rendu à chaque transaction : une barre branchée
   directement resterait figée sur l'état du premier rendu, et les boutons ne
   s'allumeraient jamais.
+- **`immediatelyRender: false` est obligatoire, et ce n'est pas un réglage de confort.**
+  Au défaut (`true`), `useEditor` construit l'instance **pendant le rendu** puis programme
+  sa destruction une milliseconde plus tard, annulée seulement si le composant s'est monté
+  entre-temps (`EditorInstanceManager.scheduleDestroy`). Un rendu concurrent découpé par
+  React suffit à dépasser ce délai : l'éditeur est détruit, `Editor.schema` passe à `null`,
+  et le rendu qui suit lit encore l'instance morte — `getText()` y explose sur
+  `can't access property "nodes", n is null`, écran blanc à l'ouverture du script. Créer
+  l'instance dans l'effet de montage supprime la course. En contrepartie `editor` vaut
+  `null` au premier rendu : d'où `ScriptEditorSkeleton`, monté **deux fois** — pendant le
+  téléchargement du chunk, puis pendant la création de l'éditeur.
+- **Un sélecteur `useEditorState` ne suppose jamais un éditeur vivant.** Il est appelé avec
+  l'instantané courant, qui peut porter `null` (pas encore créé) ou une instance détruite,
+  dont `schema` et `commandManager` valent `null` — `getText`, `isActive`, `getAttributes`
+  et `can()` s'y écrasent tous. Les deux sélecteurs du module gardent donc `instance?.schema`
+  et retombent sur une valeur neutre (`EMPTY_STATS`, `INACTIVE`). Le hook lui-même peut
+  rendre `null`, d'où le `?? …` sur son résultat.
 - **Le compteur affiche la durée de lecture** (150 mots/min) plutôt que des caractères :
   c'est la seule mesure qui compte quand on écrit pour être dit à l'oral.
 - **`.prose-script` habille le rendu ET la zone d'édition** (`index.css`, écrit à la main
@@ -1868,8 +1884,10 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   ~155 ko gzip, plus que le reste de l'application ; les mettre dans le chunk `editor` ne
   suffisait pas, un import statique les faisait télécharger dès le dashboard. C'est le
   **`lazy`** de `ScriptEditor.tsx` (une enveloppe de vingt lignes autour de
-  `ScriptEditorView.tsx`) qui rend l'isolement réel. Le repli du `Suspense` a la
-  **hauteur de l'éditeur**, sinon le contenu de l'onglet remonterait puis redescendrait.
+  `ScriptEditorView.tsx`) qui rend l'isolement réel. Le repli vit dans son **propre
+  fichier** (`ScriptEditorSkeleton.tsx`) : l'enveloppe `lazy` ne peut rien importer de la
+  vue, sinon le chunk serait chargé d'office. Il a la **hauteur de l'éditeur**, sinon le
+  contenu de l'onglet remonterait puis redescendrait.
 - **`@tiptap/pm` n'est pas listable dans `manualChunks`** : ce paquet n'expose que des
   sous-chemins (`@tiptap/pm/state`…) et rollup échoue à résoudre sa racine avec un
   `Missing "." specifier`. Ce sont les paquets `prosemirror-*` eux-mêmes qu'on nomme.
