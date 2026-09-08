@@ -1456,7 +1456,16 @@ avant celle-ci). À six vidéos en cours, une bande chacune repousserait la gril
 sous le pli alors que la plupart des fenêtres ne se chevauchent pas. Le glouton n'est
 correct que parce que **l'API trie par date de début**.
 
-**Sur mobile, la grille prend tout ce qui reste de l'écran.** Elle **sort du conteneur**
+**Sur mobile, la grille prend tout ce qui reste de l'écran, et démarre au ras de la barre
+d'application.** La page annule le `padding-top` de `main` (`-mt-4 sm:-mt-6 lg:mt-0`) :
+c'est le seul écran qui le veut, et un interstice au-dessus d'une grille qui occupe déjà
+toute la hauteur revenait à en amputer une demi-heure pour ne rien montrer. Sa racine est
+en `flex flex-col gap-4` et non en `space-y-4` : le sélecteur de `space-y`
+(`:not([hidden]) ~ :not([hidden])`) regarde l'**attribut** `hidden` et pas la classe, si
+bien qu'il posait une marge au-dessus de la grille pour un en-tête qui n'existe plus à
+l'écran. Un `gap` de flex ignore ce qui ne génère aucune boîte.
+
+Elle **sort du conteneur**
 (marges négatives compensant exactement le `px` de `CONTAINER`, bords sans arrondi ni trait
 vertical) : c'est un tableau à sept colonnes, et lui laisser les marges de la page revenait
 à en amputer un jour. Sa hauteur se **calcule** plutôt qu'elle ne se devine —
@@ -1703,11 +1712,30 @@ mangeait une ligne entière en haut de l'écran, au plus loin du pouce. Même ac
 emplacements, jamais les deux à la fois (`hidden lg:inline-flex` d'un côté, `lg:hidden` de
 l'autre).
 
-**La barre du bas est en verre liquide.** Très translucide (`bg-card/60`), fortement
-floutée **et saturée** : sans `backdrop-saturate`, ce qui passe dessous vire au gris et le
-verre se lit comme un simple voile. Le filet du haut est une lumière (`border-foreground/10`
-plus une ombre interne blanche) et non une bordure — c'est le bord du verre, pas un trait
-de séparation.
+**La barre du bas est une capsule de verre flottante**, détachée des trois bords
+(`.liquid-glass`, `index.css`). Le verre n'a de sens que si le contenu passe **autour** et
+**sous** le panneau : un bandeau pleine largeur collé en bas ne montre que sa face avant et
+se lit comme un aplat. Trois choses le font lire comme du verre, et il en manque une seule
+pour que l'effet retombe à un voile gris :
+
+1. **le fond est réfracté, pas seulement flouté** — `saturate(180%)` est la moitié
+   importante du filtre, un flou seul désature ce qui passe dessous et une image ou un
+   graphique coloré vire au gris sous la barre ;
+2. **le bord est une lumière, pas un trait** — le biseau se joue en ombres internes (ligne
+   claire en haut, ligne sombre en bas, liseré blanc très faible tout autour), là où une
+   `border` uniforme dessinerait un cadre ;
+3. **il flotte** — une ombre portée le décolle du contenu, et c'est elle qui fait
+   comprendre qu'on voit *à travers* et non *derrière*.
+
+Le reflet spéculaire est un `::before` plutôt qu'un `background-image` : le fond porte déjà
+la teinte du verre, et empiler les deux dans une même propriété rendrait le dégradé
+impossible à ajuster sans toucher à l'opacité. `color-mix` sur `--card` fait suivre le
+thème sans écrire deux règles. Un `@supports not (backdrop-filter)` **rend le verre
+opaque** : un panneau translucide non flouté est le pire des deux mondes — on lit le
+contenu à travers les onglets, et plus rien n'est lisible.
+
+`BOTTOM_NAV_HEIGHT` est la capsule seule, `--bottom-nav` y ajoute le vide qui l'entoure et
+la zone de sécurité.
 
 **`viewport-fit=cover` est dans le `<meta viewport>`, et c'est lui qui rend
 `env(safe-area-inset-*)` non nul.** Sans lui la valeur vaut zéro et iOS insère lui-même une
@@ -2614,6 +2642,16 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   `AppLayout` monte l'`Outlet` et ne connaît pas l'écran affiché. Le conteneur d'arrivée est
   une **ref de callback** : un portail vise un nœud rendu, et un `useRef` ne provoque aucun
   rendu en se remplissant — le portail n'aurait jamais rien à viser.
+- **`space-y-*` ne saute pas un enfant masqué par une CLASSE.** Son sélecteur est
+  `:not([hidden]) ~ :not([hidden])` : il regarde l'attribut HTML `hidden`, pas
+  `display: none`. Un en-tête en `hidden lg:flex` laisse donc une marge au-dessus de son
+  voisin sur mobile. `flex flex-col gap-*` n'a pas ce défaut — un élément qui ne génère
+  aucune boîte ne crée aucun `gap`. C'est le piège des interstices fantômes en vue mobile.
+- **Le verre liquide a besoin de `saturate`, d'un biseau et d'une ombre portée.** Retirer
+  la saturation fait virer au gris tout ce qui passe dessous ; remplacer le biseau (ombres
+  internes) par une `border` dessine un cadre au lieu d'une arête ; coller le panneau au
+  bord lui retire ce qu'il doit réfracter. Les trois ensemble, ou c'est un aplat
+  translucide. Et sans `backdrop-filter`, le repli doit être **opaque**.
 - **`env(safe-area-inset-*)` ne vaut quelque chose que grâce à `viewport-fit=cover`.** Le
   retirer du `<meta viewport>` remettrait la barre du bas au-dessus d'une bande insérée par
   iOS, et le `padding-top` de l'en-tête à zéro sous l'encoche. À l'inverse, le poser sans

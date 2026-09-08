@@ -271,7 +271,19 @@ export const PlanningPage = () => {
   );
 
   return (
-    <div className="space-y-4">
+    /*
+     * `flex flex-col gap-4` et non `space-y-4` : sous `lg`, l'en-tête de la page est en
+     * `display: none`, et le sélecteur de `space-y` (`:not([hidden]) ~ :not([hidden])`)
+     * regarde l'**attribut** `hidden`, pas la classe — il posait donc une marge au-dessus
+     * de la grille pour un élément qui n'existe plus à l'écran. Un `gap` de flex, lui,
+     * ignore ce qui ne génère aucune boîte.
+     *
+     * La marge négative annule le padding haut de `main` : le planning est le seul écran
+     * qui veut démarrer **au ras de la barre d'application**. La grille y occupe toute la
+     * hauteur restante, et un interstice au-dessus revenait à en amputer une demi-heure
+     * pour ne rien montrer.
+     */
+    <div className="-mt-4 flex flex-col gap-4 sm:-mt-6 lg:mt-0">
       {/* Sur mobile, la grille prend tout l'écran : ses commandes remontent donc dans la
           barre d'application. Le repositionnement d'abord — c'est le geste qu'on
           déclenche —, puis la fenêtre affichée dans un menu, parce qu'on la règle une

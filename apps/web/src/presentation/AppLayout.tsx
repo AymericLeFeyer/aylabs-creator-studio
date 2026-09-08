@@ -34,19 +34,26 @@ const SIDEBAR_OPEN = '15rem';
 const SIDEBAR_CLOSED = '3.75rem';
 
 /**
- * Hauteur de la barre du bas, **zone de sécurité comprise**.
+ * La barre du bas est une **capsule flottante**, pas un bandeau collé au bord.
  *
- * Elle vit dans une variable CSS parce que trois choses en dépendent et doivent bouger
- * ensemble : la barre elle-même, la réserve de padding sous le contenu, et le bouton
- * flottant qui se pose au-dessus. Trois valeurs écrites à la main auraient fini par se
- * désaccorder, et le symptôme — un bouton qui recouvre un onglet — ne se voit que sur un
- * téléphone.
+ * C'est ce qui distingue le verre liquide d'un simple fond translucide : on doit voir le
+ * contenu passer *autour* et *sous* le panneau, pas seulement derrière lui. Un bandeau
+ * pleine largeur collé en bas ne montre que sa face avant et se lit comme un aplat.
  *
- * `env(safe-area-inset-bottom)` s'ajoute à la hauteur au lieu de s'y fondre : sur un
- * iPhone à barre gestuelle, la fondre reviendrait à rendre les onglets plus courts là où
- * ils sont déjà les plus difficiles à viser.
+ * `BOTTOM_NAV_HEIGHT` est la capsule seule ; `--bottom-nav` y ajoute le vide qui
+ * l'entoure et la zone de sécurité. C'est cette seconde valeur qui vit en variable CSS,
+ * parce que trois choses en dépendent et doivent bouger ensemble : la position de la
+ * capsule, la réserve de padding sous le contenu, et le bouton flottant qui se pose
+ * au-dessus. Trois valeurs écrites à la main auraient fini par se désaccorder, et le
+ * symptôme — un bouton qui recouvre un onglet — ne se voit que sur un téléphone.
+ *
+ * `env(safe-area-inset-bottom)` s'**ajoute** au lieu de s'y fondre : sur un iPhone à barre
+ * gestuelle, la fondre reviendrait à rapetisser les onglets là où ils sont déjà les plus
+ * difficiles à viser.
  */
-const BOTTOM_NAV = 'calc(4.5rem + env(safe-area-inset-bottom))';
+const BOTTOM_NAV_HEIGHT = '3.75rem';
+const BOTTOM_NAV_GAP = '0.5rem';
+const BOTTOM_NAV = `calc(${BOTTOM_NAV_HEIGHT} + ${BOTTOM_NAV_GAP} * 2 + env(safe-area-inset-bottom))`;
 
 /**
  * La coquille de l'application : navigation à gauche, contenu à droite.
@@ -361,28 +368,28 @@ export const AppLayout = () => {
           Elle est en `z-30`, sous le voile du tiroir (`z-40`) : à z-index égal, c'est
           l'ordre du DOM qui tranche, et la barre serait passée par-dessus le voile.
 
-          Sa hauteur vient de `--bottom-nav`, qui sert aussi de réserve sous le contenu et
-          d'appui au bouton flottant : trois valeurs écrites à la main auraient fini par se
-          désaccorder, et le symptôme — un bouton qui recouvre un onglet — ne se voit que
-          sur un téléphone. La zone de sécurité s'y **ajoute** plutôt que de s'y fondre,
-          sans quoi les onglets rapetisseraient sur un iPhone à barre gestuelle, là où ils
-          sont déjà les plus difficiles à viser. */}
+          C'est une **capsule de verre flottante** (`.liquid-glass`) et non un bandeau
+          collé au bord : le verre n'a de sens que si le contenu passe autour et sous lui.
+          `--bottom-nav` réserve sa hauteur plus le vide qui l'entoure, et sert aussi de
+          réserve sous le contenu et d'appui au bouton flottant — trois valeurs écrites à
+          la main auraient fini par se désaccorder, et le symptôme (un bouton qui recouvre
+          un onglet) ne se voit que sur un téléphone. La zone de sécurité s'y **ajoute**
+          plutôt que de s'y fondre, sans quoi les onglets rapetisseraient sur un iPhone à
+          barre gestuelle, là où ils sont déjà les plus difficiles à viser. */}
       <nav
-        className={cn(
-          'fixed inset-x-0 bottom-0 z-30 lg:hidden',
-          // Verre liquide : très translucide, fortement flouté et **saturé** — sans la
-          // saturation, ce qui passe dessous vire au gris et le verre se lit comme un
-          // simple voile. Le filet du haut est une lumière (blanc sur fond sombre, encre
-          // sur fond clair) plutôt qu'une bordure : c'est le bord du verre, pas un trait
-          // de séparation.
-          'border-t border-foreground/10 bg-card/60',
-          'backdrop-blur-2xl backdrop-saturate-150',
-          'shadow-[inset_0_1px_0_0_rgb(255_255_255/0.14)]',
-        )}
-        style={{ height: 'var(--bottom-nav)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+        // La capsule est **détachée des bords** : c'est ce qui laisse voir le contenu
+        // défiler autour d'elle, et sans ça le verre n'a rien à réfracter. `--bottom-nav`
+        // réserve exactement sa hauteur plus les deux vides, la zone de sécurité comprise.
+        className="liquid-glass fixed z-30 overflow-hidden rounded-[1.875rem] lg:hidden"
+        style={{
+          height: BOTTOM_NAV_HEIGHT,
+          left: BOTTOM_NAV_GAP,
+          right: BOTTOM_NAV_GAP,
+          bottom: `calc(${BOTTOM_NAV_GAP} + env(safe-area-inset-bottom))`,
+        }}
         aria-label="Accès rapide"
       >
-        <div className="grid h-full grid-cols-5">
+        <div className="relative grid h-full grid-cols-5">
           {MOBILE_NAV.map(({ to, label, short, icon: Icon, end }) => (
             <NavLink
               key={to}

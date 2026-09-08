@@ -418,14 +418,16 @@ export const PlanningGrid = ({
      * plutôt qu'elle ne se devine : `100dvh` (et non `100vh`, qui ignore la barre
      * d'adresse rétractable de Safari) moins l'en-tête collant et la barre du bas, dont
      * les deux hauteurs vivent déjà en variables CSS sur la racine — les mêmes que la
-     * réserve sous le contenu et le bouton flottant. Le reste (`3rem`) est la marge
-     * verticale de `main`. Un écran de téléphone n'a la place que d'une chose à la fois :
-     * une grille horaire qui n'occupe que le tiers du haut ne montre pas une journée.
+     * réserve sous le contenu et le bouton flottant. Le dernier `1rem` est le surplus de
+     * `padding-bottom` de `main` : la page annule déjà son padding **haut** pour que la
+     * grille démarre au ras de la barre d'application. Un écran de téléphone n'a la place
+     * que d'une chose à la fois, et une grille horaire qui n'occupe que le tiers du haut
+     * ne montre pas une journée.
      */
     <div
       className={cn(
         'overflow-auto',
-        'max-h-[calc(100dvh-var(--app-header)-var(--bottom-nav)-3rem)] min-h-[16rem]',
+        'max-h-[calc(100dvh-var(--app-header)-var(--bottom-nav)-1rem)] min-h-[16rem]',
         'lg:max-h-[calc(100vh-13rem)] lg:min-h-[20rem]',
         busy && 'pointer-events-none opacity-60',
       )}
