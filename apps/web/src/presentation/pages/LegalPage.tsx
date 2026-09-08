@@ -32,6 +32,8 @@ import { LegalAlertsCard } from '../components/legal/LegalAlertsCard.tsx';
 import { LegalBookmarks } from '../components/legal/LegalBookmarks.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 import { cn } from '../../shared/cn.ts';
+import { MASKED_TEXT } from '../../domain/privacy/entities/Privacy.ts';
+import { usePrivacy } from '../hooks/usePrivacy.tsx';
 
 /**
  * Le suivi administratif : la société, et une ligne par mois depuis sa création.
@@ -43,6 +45,9 @@ import { cn } from '../../shared/cn.ts';
  */
 export const LegalPage = () => {
   const { data, isLoading } = useLegalOverview();
+  // Le nom de la société reste lisible : c'est le sien, et il est public. Ce sont les
+  // numéros d'immatriculation et l'adresse qu'on ne montre pas à un écran partagé.
+  const hideIdentity = usePrivacy().isMasked('company');
   const { data: bookmarks = [] } = useLegalBookmarks();
   const toggle = useToggleLegalCheck();
 
@@ -115,9 +120,9 @@ export const LegalPage = () => {
 
               <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
                 <Field label="Forme juridique" value={company?.legalForm} />
-                <Field label="SIRET" value={company?.siret} />
-                <Field label="N° TVA" value={company?.vatNumber} />
-                <Field label="Adresse" value={company?.address} />
+                <Field label="SIRET" value={company?.siret} masked={hideIdentity} />
+                <Field label="N° TVA" value={company?.vatNumber} masked={hideIdentity} />
+                <Field label="Adresse" value={company?.address} masked={hideIdentity} />
               </dl>
 
               {company?.notes && (
@@ -233,10 +238,27 @@ export const LegalPage = () => {
   );
 };
 
-const Field = ({ label, value }: { label: string; value: string | null | undefined }) => (
+/**
+ * Une ligne de la fiche société.
+ *
+ * `masked` remplace la valeur sans faire disparaître le libellé : un SIRET absent et un
+ * SIRET qu'on refuse de montrer n'appellent pas la même conclusion, et une ligne qui
+ * s'évanouirait laisserait croire que la fiche est incomplète.
+ */
+const Field = ({
+  label,
+  value,
+  masked = false,
+}: {
+  label: string;
+  value: string | null | undefined;
+  masked?: boolean;
+}) => (
   <div>
     <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
-    <dd className={cn('tabular', !value && 'text-muted-foreground')}>{value || '—'}</dd>
+    <dd className={cn('tabular', !value && !masked && 'text-muted-foreground')}>
+      {masked ? MASKED_TEXT : value || '—'}
+    </dd>
   </div>
 );
 

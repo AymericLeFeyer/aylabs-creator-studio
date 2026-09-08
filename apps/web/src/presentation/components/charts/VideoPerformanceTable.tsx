@@ -4,7 +4,8 @@ import type { AnalyticsResult } from '../../../domain/analytics/entities/Analyti
 import { NATURE_LABELS } from '../../../domain/category/entities/Category.ts';
 import { youtubeUrl } from '../../../domain/video/entities/Video.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
-import { formatDate, formatMoney, formatNumber, formatSigned } from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
+import { formatDate } from '../../../shared/format.ts';
 import { cn } from '../../../shared/cn.ts';
 import { Card, CardHeader, CardTitle } from '../ui/card.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
@@ -93,12 +94,19 @@ export const VideoPerformanceTable = ({
   emptyLabel = 'Aucune sortie sur cette période.',
 }: VideoPerformanceTableProps) => {
   const { moneyMode, includeInKind } = useFilters();
+  const privacy = usePrivacy();
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'date', desc: true });
 
   const input = source ?? data.videoPerformance;
+  /**
+   * Les composantes traversent la confidentialité **avant** que CA et bénéfice ne soient
+   * composés : la colonne « CA » d'une ligne retombe donc toujours sur la somme des
+   * colonnes affichées à sa gauche, et le pied de tableau sur la somme de sa colonne.
+   * Un total complet à côté de composantes trouées aurait livré ce qui manque.
+   */
   const rows = useMemo(
-    () => withMoney(input, { mode: moneyMode, includeInKind }),
-    [input, moneyMode, includeInKind],
+    () => withMoney(input, { mode: moneyMode, includeInKind }, privacy.parts),
+    [input, moneyMode, includeInKind, privacy],
   );
 
   /**
@@ -250,29 +258,33 @@ export const VideoPerformanceTable = ({
                       : undefined
                   }
                 >
-                  {row.periodViews === null ? '—' : formatNumber(row.periodViews)}
+                  {row.periodViews === null ? '—' : privacy.count(row.periodViews, 'views')}
                 </TableCell>
               )}
               <TableCell className="text-right tabular text-muted-foreground">
-                {row.hasStats ? formatNumber(row.views) : '—'}
+                {row.hasStats ? privacy.count(row.views, 'views') : '—'}
               </TableCell>
               <TableCell className="text-right tabular">
-                {row.hasStats ? formatSigned(row.subscribersGained) : '—'}
+                {row.hasStats ? privacy.signed(row.subscribersGained, 'subscribers') : '—'}
               </TableCell>
               <TableCell className="text-right tabular text-muted-foreground">
-                {formatMoney(row.adsenseCents)}
+                {privacy.money(row.adsenseCents, 'adsense')}
               </TableCell>
               <TableCell className="text-right tabular text-muted-foreground">
-                {formatMoney(row.manualCashCents)}
+                {privacy.money(row.manualCashCents, 'manualCash')}
               </TableCell>
               {includeInKind && (
                 <TableCell className="text-right tabular text-[var(--in-kind)]">
-                  {formatMoney(row.inKindCents)}
+                  {privacy.money(row.inKindCents, 'inKind')}
                 </TableCell>
               )}
-              <TableCell className="text-right tabular">{formatMoney(row.revenueCents)}</TableCell>
+              <TableCell className="text-right tabular">
+                {privacy.money(row.revenueCents, 'totals')}
+              </TableCell>
               <TableCell className="text-right tabular text-[var(--expense)]">
-                {row.expenseCents === 0 ? formatMoney(0) : `−${formatMoney(row.expenseCents)}`}
+                {privacy.isMasked('expenses') || row.expenseCents === 0
+                  ? privacy.money(0, 'expenses')
+                  : `−${privacy.money(row.expenseCents, 'expenses')}`}
               </TableCell>
               <TableCell
                 className={cn(
@@ -280,7 +292,7 @@ export const VideoPerformanceTable = ({
                   row.profitCents < 0 && 'text-[var(--negative)]',
                 )}
               >
-                {formatMoney(row.profitCents)}
+                {privacy.money(row.profitCents, 'totals')}
               </TableCell>
             </TableRow>
           ))}
@@ -291,25 +303,33 @@ export const VideoPerformanceTable = ({
             <TableCell className="whitespace-nowrap">Total ({rows.length})</TableCell>
             {showPeriodViews && (
               <TableCell className="text-right tabular">
-                {formatNumber(totals.periodViews)}
+                {privacy.count(totals.periodViews, 'views')}
               </TableCell>
             )}
-            <TableCell className="text-right tabular">{formatNumber(totals.views)}</TableCell>
             <TableCell className="text-right tabular">
-              {formatSigned(totals.subscribersGained)}
+              {privacy.count(totals.views, 'views')}
             </TableCell>
-            <TableCell className="text-right tabular">{formatMoney(totals.adsenseCents)}</TableCell>
             <TableCell className="text-right tabular">
-              {formatMoney(totals.manualCashCents)}
+              {privacy.signed(totals.subscribersGained, 'subscribers')}
+            </TableCell>
+            <TableCell className="text-right tabular">
+              {privacy.money(totals.adsenseCents, 'adsense')}
+            </TableCell>
+            <TableCell className="text-right tabular">
+              {privacy.money(totals.manualCashCents, 'manualCash')}
             </TableCell>
             {includeInKind && (
               <TableCell className="text-right tabular text-[var(--in-kind)]">
-                {formatMoney(totals.inKindCents)}
+                {privacy.money(totals.inKindCents, 'inKind')}
               </TableCell>
             )}
-            <TableCell className="text-right tabular">{formatMoney(totals.revenueCents)}</TableCell>
+            <TableCell className="text-right tabular">
+              {privacy.money(totals.revenueCents, 'totals')}
+            </TableCell>
             <TableCell className="text-right tabular text-[var(--expense)]">
-              {totals.expenseCents === 0 ? formatMoney(0) : `−${formatMoney(totals.expenseCents)}`}
+              {privacy.isMasked('expenses') || totals.expenseCents === 0
+                ? privacy.money(0, 'expenses')
+                : `−${privacy.money(totals.expenseCents, 'expenses')}`}
             </TableCell>
             <TableCell
               className={cn(
@@ -317,7 +337,7 @@ export const VideoPerformanceTable = ({
                 totals.profitCents < 0 && 'text-[var(--negative)]',
               )}
             >
-              {formatMoney(totals.profitCents)}
+              {privacy.money(totals.profitCents, 'totals')}
             </TableCell>
           </TableRow>
         </tfoot>

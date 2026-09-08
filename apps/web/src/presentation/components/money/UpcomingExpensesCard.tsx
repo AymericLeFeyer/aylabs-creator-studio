@@ -2,7 +2,8 @@ import { CalendarClock } from 'lucide-react';
 import { useUpcomingExpenses } from '../../../application/expense/usecases/useUpcoming.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
 import { UPCOMING_MONTHS } from '../../../domain/expense/services/upcoming.ts';
-import { formatDate, formatMoney } from '../../../shared/format.ts';
+import { formatDate } from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { StatCard } from '../StatCard.tsx';
 
 /**
@@ -18,15 +19,16 @@ import { StatCard } from '../StatCard.tsx';
  */
 export const UpcomingExpensesCard = () => {
   const filters = useFilters();
+  const privacy = usePrivacy();
   const { summary } = useUpcomingExpenses(filters.channelIds);
 
   return (
     <StatCard
       label="Dépenses à venir"
-      value={formatMoney(summary.totalCents)}
+      value={privacy.money(summary.totalCents, 'expenses')}
       hint={
         summary.taxCents > 0
-          ? `dont ${formatMoney(summary.taxCents)} d'impôts`
+          ? `dont ${privacy.money(summary.taxCents, 'expenses')} d'impôts`
           : `sur ${UPCOMING_MONTHS} mois, hors période`
       }
       icon={<CalendarClock className="h-4 w-4" />}
@@ -51,7 +53,9 @@ export const UpcomingExpensesCard = () => {
                     aria-hidden
                   />
                   <span className="min-w-0 flex-1 truncate">{row.name}</span>
-                  <span className="shrink-0 tabular">{formatMoney(row.totalCents)}</span>
+                  <span className="shrink-0 tabular">
+                    {privacy.money(row.totalCents, 'expenses')}
+                  </span>
                 </li>
               ))}
             </ul>

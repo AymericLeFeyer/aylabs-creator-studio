@@ -4,6 +4,7 @@ import {
   netProfit,
   type MoneyOptions,
 } from '../../../domain/analytics/services/revenueMath.ts';
+import type { MaskableMoney } from '../../../domain/privacy/services/privacy.ts';
 
 /**
  * Une ligne de performance augmentée de ses deux montants composés.
@@ -35,8 +36,28 @@ export interface VideoTotals {
   moneyCents: number;
 }
 
-export const withMoney = (rows: VideoPerformanceRow[], options: MoneyOptions): VideoRow[] =>
-  rows.map((row) => {
+/**
+ * Les composantes passées à travers la confidentialité, **avant** que CA et bénéfice ne
+ * soient composés.
+ *
+ * L'ordre est tout : composer d'abord puis masquer les composantes laisserait un CA
+ * complet à côté de ses parts trouées, et la part masquée se retrouverait par
+ * soustraction. Masquer d'abord donne au contraire des barres et des totaux qui
+ * s'additionnent, sur les seules composantes qu'on accepte de montrer.
+ *
+ * `privacy.parts` s'y branche directement ; sans argument, rien n'est masqué.
+ */
+export type MoneyMask = <T extends MaskableMoney>(parts: T) => T;
+
+const noMask: MoneyMask = (parts) => parts;
+
+export const withMoney = (
+  rows: VideoPerformanceRow[],
+  options: MoneyOptions,
+  mask: MoneyMask = noMask,
+): VideoRow[] =>
+  rows.map((source) => {
+    const row = mask(source);
     const revenueCents = grossRevenue(row, options.includeInKind);
     const profitCents = netProfit(row, options.includeInKind);
     return {

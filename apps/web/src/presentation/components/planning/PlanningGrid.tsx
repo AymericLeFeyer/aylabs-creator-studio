@@ -666,7 +666,7 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                   key={day.date}
                   className={cn(
                     'relative flex-1 border-l border-border transition-colors',
-                    isToday && 'bg-[var(--today)]/5',
+                    isToday && 'bg-[var(--today)]/10',
                     // La colonne survolée s'éclaire : sur sept colonnes, savoir où l'on
                     // va lâcher vaut mieux que de le découvrir après coup.
                     isTarget && 'bg-[var(--today)]/15',
@@ -683,6 +683,19 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                       }}
                     />
                   ))}
+
+                  {/* La teinte du jour, posée PAR-DESSUS les plages travaillables.
+                      Celles-ci sont opaques (`bg-background`) : laissée sous elles, la
+                      couleur ne survivait que dans les heures creuses, et la colonne du
+                      jour se repérait exactement là où on ne travaille pas. En surimpression,
+                      elle court sur toute la hauteur — c'est ce qui permet de retrouver
+                      aujourd'hui d'un coup d'œil sur sept colonnes. */}
+                  {isToday && (
+                    <div
+                      className="pointer-events-none absolute inset-0 bg-[var(--today)]/10"
+                      aria-hidden
+                    />
+                  )}
 
                   {/* L'agenda, en lecture seule. */}
                   {day.events

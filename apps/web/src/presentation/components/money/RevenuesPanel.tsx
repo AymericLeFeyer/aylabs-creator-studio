@@ -14,7 +14,9 @@ import {
   NATURE_LABELS,
 } from '../../../domain/category/entities/Category.ts';
 import { usePlatforms } from '../../../application/affiliate/usecases/usePlatforms.ts';
-import { formatDate, formatMoney } from '../../../shared/format.ts';
+import { formatDate } from '../../../shared/format.ts';
+import { revenueMaskKey } from '../../../domain/privacy/services/privacy.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { Button } from '../ui/button.tsx';
 import { Badge } from '../ui/badge.tsx';
 import { Card, CardHeader, CardTitle } from '../ui/card.tsx';
@@ -64,144 +66,157 @@ const RevenueTable = ({
   onDelete,
   onDocument,
   showPlatform,
-}: RevenueTableProps) => (
-  <Table>
-    <TableHeader>
-      <TableRow>
-        <TableHead>Date</TableHead>
-        <TableHead>Libellé</TableHead>
-        <TableHead>Catégorie</TableHead>
-        {showPlatform && <TableHead>Plateforme</TableHead>}
-        <TableHead>Chaîne</TableHead>
-        <TableHead>Vidéo</TableHead>
-        <TableHead className="text-right">Montant</TableHead>
-        <TableHead className="w-20" />
-      </TableRow>
-    </TableHeader>
-    <TableBody>
-      {[
-        ...upcoming.map((entry) => ({ entry, isUpcoming: true })),
-        ...entries.map((entry) => ({ entry, isUpcoming: false })),
-      ].map(({ entry, isUpcoming }) => (
-        <TableRow key={entry.id} className={cn(isUpcoming && 'bg-muted/30 text-muted-foreground')}>
-          <TableCell className="whitespace-nowrap text-muted-foreground tabular">
-            <span className="flex items-center gap-1.5">
-              {isUpcoming && <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />}
-              {formatDate(entry.date)}
-            </span>
-          </TableCell>
-          <TableCell className="font-medium">
-            {entry.label}
-            {/* Une entrée générée dit d'où elle vient et où la corriger : sans ça,
+}: RevenueTableProps) => {
+  const privacy = usePrivacy();
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Date</TableHead>
+          <TableHead>Libellé</TableHead>
+          <TableHead>Catégorie</TableHead>
+          {showPlatform && <TableHead>Plateforme</TableHead>}
+          <TableHead>Chaîne</TableHead>
+          <TableHead>Vidéo</TableHead>
+          <TableHead className="text-right">Montant</TableHead>
+          <TableHead className="w-20" />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[
+          ...upcoming.map((entry) => ({ entry, isUpcoming: true })),
+          ...entries.map((entry) => ({ entry, isUpcoming: false })),
+        ].map(({ entry, isUpcoming }) => (
+          <TableRow
+            key={entry.id}
+            className={cn(isUpcoming && 'bg-muted/30 text-muted-foreground')}
+          >
+            <TableCell className="whitespace-nowrap text-muted-foreground tabular">
+              <span className="flex items-center gap-1.5">
+                {isUpcoming && <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+                {formatDate(entry.date)}
+              </span>
+            </TableCell>
+            <TableCell className="font-medium">
+              {entry.label}
+              {/* Une entrée générée dit d'où elle vient et où la corriger : sans ça,
                 le bouton grisé serait vécu comme une panne. */}
-            {entry.origin !== 'manual' && (
-              <Link
-                to={ORIGIN_TARGET[entry.origin]}
-                className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-normal text-muted-foreground hover:text-foreground hover:underline"
-                title="Cette entrée est générée : elle se modifie depuis sa fiche."
-              >
-                <Lock className="h-3 w-3" aria-hidden />
-                {ORIGIN_LABELS[entry.origin]}
-              </Link>
-            )}
-            {entry.notes && (
-              <span className="block text-xs font-normal text-muted-foreground">{entry.notes}</span>
-            )}
-          </TableCell>
-          <TableCell>
-            <span className="flex items-center gap-2">
-              <span
-                className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: entry.categoryColor }}
-                aria-hidden
-              />
-              {entry.categoryName}
-              {entry.categoryNature === 'in_kind' && (
-                <Badge variant="inKind">{NATURE_LABELS.in_kind}</Badge>
-              )}
-            </span>
-          </TableCell>
-          {showPlatform && (
-            <TableCell>
-              {entry.platformName ? (
-                <span className="text-sm">{entry.platformName}</span>
-              ) : needsPlatform(entry) ? (
-                // Repérable d'un coup d'œil en parcourant la colonne, sans avoir à
-                // croiser mentalement la catégorie et la case vide.
-                <span
-                  className="flex items-center gap-1 text-xs font-medium text-[var(--expense)]"
-                  title="Revenu d'affiliation sans plateforme : modifie-le pour la renseigner."
+              {entry.origin !== 'manual' && (
+                <Link
+                  to={ORIGIN_TARGET[entry.origin]}
+                  className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-normal text-muted-foreground hover:text-foreground hover:underline"
+                  title="Cette entrée est générée : elle se modifie depuis sa fiche."
                 >
-                  <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />À renseigner
+                  <Lock className="h-3 w-3" aria-hidden />
+                  {ORIGIN_LABELS[entry.origin]}
+                </Link>
+              )}
+              {entry.notes && (
+                <span className="block text-xs font-normal text-muted-foreground">
+                  {entry.notes}
                 </span>
-              ) : (
-                <span className="text-muted-foreground">—</span>
               )}
             </TableCell>
-          )}
-          <TableCell className="text-muted-foreground">{entry.channelName ?? 'Global'}</TableCell>
-          <TableCell className="max-w-[14rem] text-muted-foreground">
-            <span className="line-clamp-1" title={entry.videoTitle ?? undefined}>
-              {entry.videoTitle ?? '—'}
-            </span>
-          </TableCell>
-          <TableCell
-            className={cn(
-              'text-right tabular font-medium',
-              isUpcoming && 'font-normal text-muted-foreground',
+            <TableCell>
+              <span className="flex items-center gap-2">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: entry.categoryColor }}
+                  aria-hidden
+                />
+                {entry.categoryName}
+                {entry.categoryNature === 'in_kind' && (
+                  <Badge variant="inKind">{NATURE_LABELS.in_kind}</Badge>
+                )}
+              </span>
+            </TableCell>
+            {showPlatform && (
+              <TableCell>
+                {entry.platformName ? (
+                  <span className="text-sm">{entry.platformName}</span>
+                ) : needsPlatform(entry) ? (
+                  // Repérable d'un coup d'œil en parcourant la colonne, sans avoir à
+                  // croiser mentalement la catégorie et la case vide.
+                  <span
+                    className="flex items-center gap-1 text-xs font-medium text-[var(--expense)]"
+                    title="Revenu d'affiliation sans plateforme : modifie-le pour la renseigner."
+                  >
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />À renseigner
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </TableCell>
             )}
-          >
-            {formatMoney(entry.amountCents)}
-          </TableCell>
-          <TableCell>
-            <div className="flex justify-end gap-1">
-              {/* Un produit reçu saisi à la main n'a pas de fiche : marque,
+            <TableCell className="text-muted-foreground">{entry.channelName ?? 'Global'}</TableCell>
+            <TableCell className="max-w-[14rem] text-muted-foreground">
+              <span className="line-clamp-1" title={entry.videoTitle ?? undefined}>
+                {entry.videoTitle ?? '—'}
+              </span>
+            </TableCell>
+            <TableCell
+              className={cn(
+                'text-right tabular font-medium',
+                isUpcoming && 'font-normal text-muted-foreground',
+              )}
+            >
+              {privacy.money(
+                entry.amountCents,
+                revenueMaskKey(entry.categoryId, entry.categoryNature),
+              )}
+            </TableCell>
+            <TableCell>
+              <div className="flex justify-end gap-1">
+                {/* Un produit reçu saisi à la main n'a pas de fiche : marque,
                   échéance, sponso associée, tout est perdu. Le + ouvre le
                   formulaire produit pré-rempli pour le documenter enfin. */}
-              {entry.origin === 'manual' && entry.categoryNature === 'in_kind' && (
+                {entry.origin === 'manual' && entry.categoryNature === 'in_kind' && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Créer la fiche produit correspondante"
+                    onClick={() => onDocument(entry)}
+                  >
+                    <PackagePlus className="h-3.5 w-3.5" />
+                    <span className="sr-only">Documenter « {entry.label} »</span>
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
-                  title="Créer la fiche produit correspondante"
-                  onClick={() => onDocument(entry)}
+                  disabled={entry.origin !== 'manual'}
+                  title={
+                    entry.origin === 'manual'
+                      ? 'Modifier'
+                      : 'Généré automatiquement : modifie-le depuis sa fiche.'
+                  }
+                  onClick={() => onEdit(entry)}
                 >
-                  <PackagePlus className="h-3.5 w-3.5" />
-                  <span className="sr-only">Documenter « {entry.label} »</span>
+                  <Pencil className="h-3.5 w-3.5" />
+                  <span className="sr-only">Modifier</span>
                 </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={entry.origin !== 'manual'}
-                title={
-                  entry.origin === 'manual'
-                    ? 'Modifier'
-                    : 'Généré automatiquement : modifie-le depuis sa fiche.'
-                }
-                onClick={() => onEdit(entry)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                <span className="sr-only">Modifier</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={entry.origin !== 'manual'}
-                onClick={() => onDelete(entry)}
-              >
-                <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                <span className="sr-only">Supprimer</span>
-              </Button>
-            </div>
-          </TableCell>
-        </TableRow>
-      ))}
-    </TableBody>
-  </Table>
-);
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={entry.origin !== 'manual'}
+                  onClick={() => onDelete(entry)}
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  <span className="sr-only">Supprimer</span>
+                </Button>
+              </div>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+};
 
 export const RevenuesPanel = () => {
   const filters = useFilters();
+  const privacy = usePrivacy();
   const { data: entries = [], isLoading } = useRevenues({
     from: filters.from,
     to: filters.to,
@@ -268,12 +283,12 @@ export const RevenuesPanel = () => {
         <div className="flex flex-wrap gap-4 text-sm">
           <span>
             <span className="text-muted-foreground">Encaissé : </span>
-            <span className="tabular font-semibold">{formatMoney(totals.cash)}</span>
+            <span className="tabular font-semibold">{privacy.money(totals.cash, 'cash')}</span>
           </span>
           <span>
             <span className="text-muted-foreground">{NATURE_LABELS.in_kind} : </span>
             <span className="tabular font-semibold text-[var(--in-kind)]">
-              {formatMoney(totals.inKind)}
+              {privacy.money(totals.inKind, 'inKind')}
             </span>
           </span>
           <span className="text-xs text-muted-foreground">
@@ -303,7 +318,7 @@ export const RevenuesPanel = () => {
                 className="text-xs font-normal text-muted-foreground"
               >
                 Afficher les {upcomingRows.length} revenu(s) à venir (
-                {formatMoney(upcoming.totalCents)})
+                {privacy.money(upcoming.totalCents, 'totals')})
               </Label>
             </div>
           )}

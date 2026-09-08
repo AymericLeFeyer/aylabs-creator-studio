@@ -16,6 +16,7 @@ import { PlanningSettingsPage } from './PlanningSettingsPage.tsx';
 import { InstagramSettingsPage } from './InstagramSettingsPage.tsx';
 import { CompanyPage } from './CompanyPage.tsx';
 import { RecurringExpensesPanel } from '../components/money/RecurringExpensesPanel.tsx';
+import { PrivacySettings } from '../components/PrivacySettings.tsx';
 
 const TABS = [
   'app',
@@ -198,6 +199,12 @@ const AppSettings = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Sur toute la largeur : c'est la seule carte de l'onglet qui porte une liste,
+          et la couper en deux colonnes séparerait un groupe de ses cases. */}
+      <div className="lg:col-span-2">
+        <PrivacySettings />
+      </div>
     </div>
   );
 };

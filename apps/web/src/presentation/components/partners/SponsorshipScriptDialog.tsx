@@ -1,7 +1,7 @@
 import { useUpdateSponsorship } from '../../../application/sponsorship/usecases/useSponsorships.ts';
 import type { Sponsorship } from '../../../domain/sponsorship/entities/Sponsorship.ts';
 import { SPONSORSHIP_STATUS_LABELS } from '../../../domain/sponsorship/entities/Sponsorship.ts';
-import { formatMoney } from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import {
   Dialog,
   DialogContent,
@@ -37,6 +37,7 @@ export const SponsorshipScriptDialog = ({
   sponsorship: Sponsorship | null;
   onOpenChange: (open: boolean) => void;
 }) => {
+  const privacy = usePrivacy();
   const update = useUpdateSponsorship();
 
   return (
@@ -49,7 +50,7 @@ export const SponsorshipScriptDialog = ({
               <DialogDescription>
                 {sponsorship.brandName ?? 'Sans marque'} ·{' '}
                 {SPONSORSHIP_STATUS_LABELS[sponsorship.status]} ·{' '}
-                {formatMoney(sponsorship.amountCents)}
+                {privacy.money(sponsorship.amountCents, 'sponsorships')}
                 {sponsorship.productionTitle && ` · ${sponsorship.productionTitle}`}
               </DialogDescription>
             </DialogHeader>

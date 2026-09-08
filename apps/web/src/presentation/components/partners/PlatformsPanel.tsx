@@ -8,7 +8,7 @@ import {
 import type { AffiliatePlatform } from '../../../domain/affiliate/entities/AffiliatePlatform.ts';
 import { faviconOf, hostOf } from '../../../domain/legal/entities/Legal.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
-import { formatMoney } from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { readableTextColor } from '../../../shared/contrast.ts';
 import { Badge } from '../ui/badge.tsx';
 import { Button } from '../ui/button.tsx';
@@ -64,6 +64,7 @@ const PlatformLogo = ({ platform }: { platform: AffiliatePlatform }) => {
  * simplement aucun revenu rattaché. Le sous-titre le dit plutôt que de laisser conclure.
  */
 export const PlatformsPanel = () => {
+  const privacy = usePrivacy();
   const filters = useFilters();
   const { data: platforms = [], isLoading } = usePlatforms({
     includeArchived: true,
@@ -111,10 +112,10 @@ export const PlatformsPanel = () => {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
           <span className="text-muted-foreground">Sur la période : </span>
-          <span className="tabular font-semibold">{formatMoney(periodTotal)}</span>
+          <span className="tabular font-semibold">{privacy.money(periodTotal, 'affiliation')}</span>
           {best && (
             <span className="ml-3 text-xs text-muted-foreground">
-              {best.name} en tête ({formatMoney(best.earnedCents)})
+              {best.name} en tête ({privacy.money(best.earnedCents, 'affiliation')})
             </span>
           )}
         </div>
@@ -145,11 +146,11 @@ export const PlatformsPanel = () => {
                   </p>
                   <span className="shrink-0 text-right">
                     <span className="block tabular font-semibold text-[var(--positive)]">
-                      {formatMoney(platform.earnedCents)}
+                      {privacy.money(platform.earnedCents, 'affiliation')}
                     </span>
                     <span className="block text-[11px] text-muted-foreground">
-                      {platform.entriesCount} revenu(s) · {formatMoney(platform.totalEarnedCents)}{' '}
-                      au total
+                      {platform.entriesCount} revenu(s) ·{' '}
+                      {privacy.money(platform.totalEarnedCents, 'affiliation')} au total
                     </span>
                   </span>
                 </div>

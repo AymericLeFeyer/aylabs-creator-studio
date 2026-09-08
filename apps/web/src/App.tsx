@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { FiltersProvider } from './presentation/hooks/useFilters.tsx';
+import { PrivacyProvider } from './presentation/hooks/usePrivacy.tsx';
 import { AppLayout } from './presentation/AppLayout.tsx';
 import { DashboardPage } from './presentation/pages/DashboardPage.tsx';
 import { TurnoverPage } from './presentation/pages/TurnoverPage.tsx';
@@ -28,59 +29,72 @@ const queryClient = new QueryClient({
 export const App = () => (
   <QueryClientProvider client={queryClient}>
     <FiltersProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="contenu" element={<ContentPage />} />
-            <Route path="instagram" element={<InstagramPage />} />
-            <Route path="commentaires" element={<CommentsPage />} />
-            <Route path="planning" element={<PlanningPage />} />
-            <Route path="production" element={<ProductionPage />} />
-            <Route path="production/:id" element={<ProductionDetailPage />} />
-            <Route path="partenariats" element={<PartnersPage />} />
-            <Route path="chiffre-affaires" element={<TurnoverPage />} />
-            <Route path="legal" element={<LegalPage />} />
-            {/* Revenus et dépenses sont désormais deux onglets du chiffre d'affaires.
+      {/* La confidentialité enveloppe toute l'application : cocher une case dans les
+          réglages doit masquer les montants du dashboard sans recharger la page. */}
+      <PrivacyProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<AppLayout />}>
+              <Route index element={<DashboardPage />} />
+              <Route path="contenu" element={<ContentPage />} />
+              <Route path="instagram" element={<InstagramPage />} />
+              <Route path="commentaires" element={<CommentsPage />} />
+              <Route path="planning" element={<PlanningPage />} />
+              <Route path="production" element={<ProductionPage />} />
+              <Route path="production/:id" element={<ProductionDetailPage />} />
+              <Route path="partenariats" element={<PartnersPage />} />
+              <Route path="chiffre-affaires" element={<TurnoverPage />} />
+              <Route path="legal" element={<LegalPage />} />
+              {/* Revenus et dépenses sont désormais deux onglets du chiffre d'affaires.
                 Les anciennes adresses mènent au bon onglet, pour les signets. */}
-            <Route
-              path="revenus"
-              element={<Navigate to="/chiffre-affaires?onglet=revenus" replace />}
-            />
-            <Route
-              path="depenses"
-              element={<Navigate to="/chiffre-affaires?onglet=depenses" replace />}
-            />
-            <Route
-              path="taxes"
-              element={<Navigate to="/chiffre-affaires?onglet=depenses" replace />}
-            />
-            {/* Tous les réglages vivent dans un seul écran à onglets : on configure
+              <Route
+                path="revenus"
+                element={<Navigate to="/chiffre-affaires?onglet=revenus" replace />}
+              />
+              <Route
+                path="depenses"
+                element={<Navigate to="/chiffre-affaires?onglet=depenses" replace />}
+              />
+              <Route
+                path="taxes"
+                element={<Navigate to="/chiffre-affaires?onglet=depenses" replace />}
+              />
+              {/* Tous les réglages vivent dans un seul écran à onglets : on configure
                 rarement une seule chose. Les anciennes adresses mènent au bon onglet. */}
-            <Route path="parametres" element={<SettingsPage />} />
-            <Route path="chaines" element={<Navigate to="/parametres?onglet=chaines" replace />} />
-            <Route
-              path="categories"
-              element={<Navigate to="/parametres?onglet=categories" replace />}
-            />
-            <Route path="marques" element={<Navigate to="/parametres?onglet=marques" replace />} />
-            <Route path="etapes" element={<Navigate to="/parametres?onglet=etapes" replace />} />
-            <Route path="societe" element={<Navigate to="/parametres?onglet=societe" replace />} />
-            <Route
-              path="abonnements"
-              element={<Navigate to="/parametres?onglet=abonnements" replace />}
-            />
-            <Route
-              path="horaires"
-              element={<Navigate to="/parametres?onglet=planning" replace />}
-            />
-            <Route
-              path="comptes-instagram"
-              element={<Navigate to="/parametres?onglet=instagram" replace />}
-            />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+              <Route path="parametres" element={<SettingsPage />} />
+              <Route
+                path="chaines"
+                element={<Navigate to="/parametres?onglet=chaines" replace />}
+              />
+              <Route
+                path="categories"
+                element={<Navigate to="/parametres?onglet=categories" replace />}
+              />
+              <Route
+                path="marques"
+                element={<Navigate to="/parametres?onglet=marques" replace />}
+              />
+              <Route path="etapes" element={<Navigate to="/parametres?onglet=etapes" replace />} />
+              <Route
+                path="societe"
+                element={<Navigate to="/parametres?onglet=societe" replace />}
+              />
+              <Route
+                path="abonnements"
+                element={<Navigate to="/parametres?onglet=abonnements" replace />}
+              />
+              <Route
+                path="horaires"
+                element={<Navigate to="/parametres?onglet=planning" replace />}
+              />
+              <Route
+                path="comptes-instagram"
+                element={<Navigate to="/parametres?onglet=instagram" replace />}
+              />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </PrivacyProvider>
     </FiltersProvider>
   </QueryClientProvider>
 );

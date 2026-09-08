@@ -7,7 +7,8 @@ import {
 } from '../../../application/expense/usecases/useExpenses.ts';
 import type { RecurringExpense } from '../../../domain/expense/entities/RecurringExpense.ts';
 import { intervalLabel } from '../../../domain/expense/entities/RecurringExpense.ts';
-import { formatDate, formatMoney } from '../../../shared/format.ts';
+import { formatDate } from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { Badge } from '../ui/badge.tsx';
 import { Button } from '../ui/button.tsx';
 import { Card, CardHeader, CardTitle } from '../ui/card.tsx';
@@ -33,6 +34,7 @@ import { cn } from '../../../shared/cn.ts';
  * coûtent mes outils ».
  */
 export const RecurringExpensesPanel = () => {
+  const privacy = usePrivacy();
   const { data: rules = [], isLoading } = useRecurringExpenses();
   const update = useUpdateRecurringExpense();
   const remove = useDeleteRecurringExpense();
@@ -53,10 +55,12 @@ export const RecurringExpensesPanel = () => {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
           <span className="text-muted-foreground">Coût annualisé : </span>
-          <span className="tabular font-semibold text-[var(--expense)]">{formatMoney(yearly)}</span>
+          <span className="tabular font-semibold text-[var(--expense)]">
+            {privacy.money(yearly, 'expenses')}
+          </span>
           <span className="ml-3 text-xs text-muted-foreground">
-            soit {formatMoney(Math.round(yearly / 12))} par mois, sur {active.length} règle(s)
-            active(s)
+            soit {privacy.money(Math.round(yearly / 12), 'expenses')} par mois, sur {active.length}{' '}
+            règle(s) active(s)
           </span>
         </div>
         <Button size="sm" onClick={openCreate}>
@@ -121,10 +125,10 @@ export const RecurringExpensesPanel = () => {
                     {rule.nextDate ? formatDate(rule.nextDate) : '—'}
                   </TableCell>
                   <TableCell className="text-right tabular font-medium text-[var(--expense)]">
-                    {formatMoney(rule.amountCents)}
+                    {privacy.money(rule.amountCents, 'expenses')}
                   </TableCell>
                   <TableCell className="text-right tabular text-muted-foreground">
-                    {formatMoney(rule.yearlyCents)}
+                    {privacy.money(rule.yearlyCents, 'expenses')}
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">

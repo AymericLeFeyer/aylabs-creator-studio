@@ -3,6 +3,7 @@ import { Receipt, Wallet } from 'lucide-react';
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
 import { useBrandStats } from '../../application/brand/usecases/useBrands.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
+import { usePrivacy } from '../hooks/usePrivacy.tsx';
 import {
   cashRevenue,
   compareTotals,
@@ -10,7 +11,6 @@ import {
   netProfit,
 } from '../../domain/analytics/services/revenueMath.ts';
 import { NATURE_LABELS } from '../../domain/category/entities/Category.ts';
-import { formatMoney } from '../../shared/format.ts';
 import { StatCard } from '../components/StatCard.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { MoneyChart } from '../components/charts/MoneyChart.tsx';
@@ -33,6 +33,7 @@ type TurnoverTab = (typeof TABS)[number];
  */
 export const TurnoverPage = () => {
   const filters = useFilters();
+  const privacy = usePrivacy();
   const params = useAnalyticsParams();
   const { data, isLoading } = useAnalytics(params);
 
@@ -61,32 +62,41 @@ export const TurnoverPage = () => {
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
           <StatCard
             label="Chiffre d'affaires"
-            value={formatMoney(grossRevenue(data.totals, filters.includeInKind))}
-            change={compareTotals(data.totals, data.previousTotals, (totals) =>
-              grossRevenue(totals, filters.includeInKind),
+            value={privacy.money(grossRevenue(data.totals, filters.includeInKind), 'totals')}
+            change={privacy.change(
+              compareTotals(data.totals, data.previousTotals, (totals) =>
+                grossRevenue(totals, filters.includeInKind),
+              ),
+              'totals',
             )}
-            hint={`dont ${formatMoney(cashRevenue(data.totals))} encaissés`}
+            hint={`dont ${privacy.money(cashRevenue(data.totals), 'cash')} encaissés`}
             icon={<Wallet className="h-4 w-4" />}
           />
           <StatCard
             label="Bénéfices"
-            value={formatMoney(netProfit(data.totals, filters.includeInKind))}
-            change={compareTotals(data.totals, data.previousTotals, (totals) =>
-              netProfit(totals, filters.includeInKind),
+            value={privacy.money(netProfit(data.totals, filters.includeInKind), 'totals')}
+            change={privacy.change(
+              compareTotals(data.totals, data.previousTotals, (totals) =>
+                netProfit(totals, filters.includeInKind),
+              ),
+              'totals',
             )}
             hint="CA moins les dépenses"
             icon={<Wallet className="h-4 w-4" />}
           />
           <StatCard
             label="Dépenses"
-            value={formatMoney(data.totals.expenseCents)}
-            change={compareTotals(data.totals, data.previousTotals, (t) => t.expenseCents)}
+            value={privacy.money(data.totals.expenseCents, 'expenses')}
+            change={privacy.change(
+              compareTotals(data.totals, data.previousTotals, (t) => t.expenseCents),
+              'expenses',
+            )}
             icon={<Receipt className="h-4 w-4" />}
             accent={data.totals.expenseCents > 0 ? 'var(--expense)' : undefined}
           />
           <StatCard
             label={NATURE_LABELS.in_kind}
-            value={formatMoney(data.totals.inKindCents)}
+            value={privacy.money(data.totals.inKindCents, 'inKind')}
             hint={`${data.totals.inKindEntries} produit(s) reçu(s)`}
             icon={<Wallet className="h-4 w-4" />}
             accent={data.totals.inKindCents > 0 ? 'var(--in-kind)' : undefined}

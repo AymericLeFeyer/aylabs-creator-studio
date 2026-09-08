@@ -16,13 +16,8 @@ import type {
 } from '../../../domain/analytics/entities/Analytics.ts';
 import { compareTotals } from '../../../domain/analytics/services/revenueMath.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
-import {
-  formatBucketLabel,
-  formatNumber,
-  formatNumberCompact,
-  formatPercent,
-  formatSigned,
-} from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
+import { formatBucketLabel, formatNumberCompact, formatPercent } from '../../../shared/format.ts';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs.tsx';
 import {
@@ -68,7 +63,11 @@ interface AudienceRow extends MarkerRow {
  */
 export const AudienceChart = ({ data }: AudienceChartProps) => {
   const filters = useFilters();
+  const privacy = usePrivacy();
   const [metric, setMetric] = useState<Metric>('views');
+
+  /** La clé de confidentialité qui couvre la métrique lue. */
+  const maskOf = (key: Metric) => (key === 'subscribers' ? 'subscribers' : 'views');
 
   const videosByBucket = useMemo(
     () => groupVideosByBucket(data.videos, filters.showVideos),
@@ -81,11 +80,14 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
         label: formatBucketLabel(point.date, data.query.granularity),
         bucket: point.date,
         videos: videosByBucket.get(point.date) ?? [],
-        views: point.views,
-        subscribers: point.subscribersNet,
-        watchHours: point.watchHours,
+        // Zéro et non absent : une courbe qui s'interrompt sur une période masquée
+        // se lirait aussi bien qu'une courbe tracée, et un axe qui se rétrécit
+        // donnerait l'ordre de grandeur de ce qu'on vient de retirer.
+        views: privacy.amount(point.views, 'views'),
+        subscribers: privacy.amount(point.subscribersNet, 'subscribers'),
+        watchHours: privacy.amount(point.watchHours, 'views'),
       })),
-    [data.series, data.query.granularity, videosByBucket],
+    [data.series, data.query.granularity, videosByBucket, privacy],
   );
 
   /** Ce que la métrique courante va chercher dans les cumuls, période précédente comprise. */
@@ -115,7 +117,7 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
           <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
             <p className="text-[11px] text-muted-foreground">{label}</p>
             <p className="text-base font-semibold tabular leading-tight text-popover-foreground">
-              {typeof value === 'number' ? formatNumber(value) : '—'}
+              {typeof value === 'number' ? privacy.count(value, maskOf(metric)) : '—'}
               <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
                 {METRIC_LABELS[metric]}
               </span>
@@ -141,13 +143,17 @@ export const AudienceChart = ({ data }: AudienceChartProps) => {
         <div>
           <CardTitle>Audience</CardTitle>
           <p className="mt-1 text-2xl font-semibold tabular">
-            {metric === 'subscribers' ? formatSigned(total) : formatNumber(total)}
+            {metric === 'subscribers'
+              ? privacy.signed(total, 'subscribers')
+              : metric === 'watchHours'
+                ? privacy.hours(total, 'views')
+                : privacy.count(total, 'views')}
           </p>
           {/* Toujours rendue, même sans point de comparaison : c'est cette troisième
               ligne qui donne à l'en-tête la hauteur de celui du graphique d'argent,
               pour que les deux tracés démarrent au même niveau côte à côte. */}
           <p className="text-xs text-muted-foreground">
-            {change === null
+            {privacy.change(change, maskOf(metric)) === null
               ? 'pas de période de comparaison'
               : `${formatPercent(change)} vs période précédente`}
           </p>

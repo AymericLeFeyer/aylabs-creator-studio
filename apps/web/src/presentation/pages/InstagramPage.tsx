@@ -15,6 +15,8 @@ import { Card } from '../components/ui/card.tsx';
 import { StatCard } from '../components/StatCard.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { cn } from '../../shared/cn.ts';
+import { usePrivacy } from '../hooks/usePrivacy.tsx';
+import { MASKED_TEXT } from '../../domain/privacy/entities/Privacy.ts';
 
 /**
  * Instagram : le rythme de publication, et ce que ça rapporte en audience.
@@ -30,6 +32,7 @@ import { cn } from '../../shared/cn.ts';
  */
 export const InstagramPage = () => {
   const filters = useFilters();
+  const privacy = usePrivacy();
   const [tab, setTab] = useState<'stories' | 'publications'>('stories');
 
   const { data, isLoading } = useInstagramOverview({
@@ -150,17 +153,24 @@ export const InstagramPage = () => {
         />
         <StatCard
           label="Comptes touchés"
-          value={formatCount(totals?.reach ?? null)}
+          value={privacy.isMasked('views') ? MASKED_TEXT : formatCount(totals?.reach ?? null)}
           hint="Comptes uniques ayant vu du contenu"
-          change={variation(totals?.reach ?? null, previous?.reach ?? null)}
+          change={privacy.change(
+            variation(totals?.reach ?? null, previous?.reach ?? null),
+            'views',
+          )}
         />
         <StatCard
           label="Abonnés"
-          value={formatCount(totals?.followers ?? null)}
+          value={
+            privacy.isMasked('subscribers') ? MASKED_TEXT : formatCount(totals?.followers ?? null)
+          }
           hint={
-            totals?.followersGained == null
-              ? 'Pas encore de point de comparaison'
-              : `${totals.followersGained >= 0 ? '+' : ''}${totals.followersGained} sur la période`
+            privacy.isMasked('subscribers')
+              ? 'Gain masqué'
+              : totals?.followersGained == null
+                ? 'Pas encore de point de comparaison'
+                : `${totals.followersGained >= 0 ? '+' : ''}${totals.followersGained} sur la période`
           }
         />
       </div>

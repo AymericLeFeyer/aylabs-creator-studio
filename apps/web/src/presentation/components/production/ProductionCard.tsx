@@ -24,7 +24,8 @@ import {
 } from '../../../domain/sponsorship/entities/Sponsorship.ts';
 import type { ProductionStep } from '../../../domain/production/entities/ProductionStep.ts';
 import { formatDuration } from '../../../domain/production/entities/TimeEntry.ts';
-import { formatDate, formatMoney } from '../../../shared/format.ts';
+import { formatDate } from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { Button } from '../ui/button.tsx';
 import { Card } from '../ui/card.tsx';
 import { StepChips, StepProgress } from './StepChips.tsx';
@@ -140,6 +141,7 @@ export const ProductionCard = ({
   compact,
   onToggleCompact,
 }: ProductionCardProps) => {
+  const privacy = usePrivacy();
   const counts = partnerCounts(production);
   const progress = progressCounts(production, steps.length);
   const late =
@@ -347,7 +349,7 @@ export const ProductionCard = ({
                 items={production.products.map((product) => ({
                   id: product.id,
                   label: product.name,
-                  meta: `${formatMoney(product.valueCents)} · ${PRODUCT_STATUS_LABELS[product.status]}`,
+                  meta: `${privacy.money(product.valueCents, 'inKind')} · ${PRODUCT_STATUS_LABELS[product.status]}`,
                   pending: PENDING_PRODUCT_STATUSES.includes(product.status),
                 }))}
                 trigger={
@@ -369,7 +371,7 @@ export const ProductionCard = ({
                 items={production.sponsorships.map((sponsorship) => ({
                   id: sponsorship.id,
                   label: sponsorship.label,
-                  meta: `${formatMoney(sponsorship.amountCents)} · ${SPONSORSHIP_STATUS_LABELS[sponsorship.status]}`,
+                  meta: `${privacy.money(sponsorship.amountCents, 'sponsorships')} · ${SPONSORSHIP_STATUS_LABELS[sponsorship.status]}`,
                   pending: PENDING_SPONSORSHIP_STATUSES.includes(sponsorship.status),
                 }))}
                 trigger={
@@ -378,7 +380,8 @@ export const ProductionCard = ({
                     {counts.sponsorships} sponso(s)
                     {counts.sponsorshipsPendingCents > 0 && (
                       <span className="text-[var(--positive)]">
-                        · {formatMoney(counts.sponsorshipsPendingCents)} à encaisser
+                        · {privacy.money(counts.sponsorshipsPendingCents, 'sponsorships')} à
+                        encaisser
                       </span>
                     )}
                   </>

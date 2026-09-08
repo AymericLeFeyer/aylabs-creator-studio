@@ -4,8 +4,9 @@ import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.
 import { useProductionOverview } from '../../application/production/usecases/useProductions.ts';
 import { useVideos } from '../../application/video/usecases/useVideos.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
+import { usePrivacy } from '../hooks/usePrivacy.tsx';
 import { compareTotals } from '../../domain/analytics/services/revenueMath.ts';
-import { formatHours, formatNumber, formatSigned } from '../../shared/format.ts';
+import { formatNumber } from '../../shared/format.ts';
 import { StatCard } from '../components/StatCard.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { AudienceChart } from '../components/charts/AudienceChart.tsx';
@@ -27,6 +28,7 @@ import { LatestVideoCard } from '../components/content/LatestVideoCard.tsx';
  */
 export const ContentPage = () => {
   const filters = useFilters();
+  const privacy = usePrivacy();
   const params = useAnalyticsParams();
   const { data, isLoading } = useAnalytics(params);
 
@@ -35,7 +37,7 @@ export const ContentPage = () => {
   // Sans bornes de date, comme sur le dashboard : « ma dernière vidéo, elle marche
   // comment » ne se pose pas dans une fenêtre de temps, et une période de sept jours
   // viderait le bloc précisément quand on vient le lire.
-  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 1 });
+  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 3 });
 
   const periodVideos = useMemo(() => data?.videoPerformance ?? [], [data]);
   const catalog = useMemo(() => data?.catalogPerformance ?? [], [data]);
@@ -78,15 +80,22 @@ export const ContentPage = () => {
           />
           <StatCard
             label="Vues"
-            value={formatNumber(data.totals.views)}
-            change={compareTotals(data.totals, data.previousTotals, (t) => t.views)}
+            value={privacy.count(data.totals.views, 'views')}
+            change={privacy.change(
+              compareTotals(data.totals, data.previousTotals, (t) => t.views),
+              'views',
+            )}
             icon={<Eye className="h-4 w-4" />}
           />
           {/* La question posée : « je fais aussi des vues sur mes anciennes vidéos ». */}
           <StatCard
             label="Vues du catalogue"
-            value={formatNumber(catalogViews)}
-            hint={`${Math.round(catalogShare * 100)} % des vues, hors sorties de la période`}
+            value={privacy.count(catalogViews, 'views')}
+            hint={
+              privacy.isMasked('views')
+                ? 'part du catalogue masquée'
+                : `${Math.round(catalogShare * 100)} % des vues, hors sorties de la période`
+            }
             icon={<Library className="h-4 w-4" />}
             details={
               <p className="text-muted-foreground">
@@ -99,27 +108,36 @@ export const ContentPage = () => {
           />
           <StatCard
             label="Abonnés gagnés"
-            value={formatSigned(data.totals.subscribersNet)}
-            change={compareTotals(data.totals, data.previousTotals, (t) => t.subscribersNet)}
+            value={privacy.signed(data.totals.subscribersNet, 'subscribers')}
+            change={privacy.change(
+              compareTotals(data.totals, data.previousTotals, (t) => t.subscribersNet),
+              'subscribers',
+            )}
             hint={
               data.totals.subscribersTotal === null
                 ? 'total inconnu'
-                : `${formatNumber(data.totals.subscribersTotal)} au total`
+                : `${privacy.count(data.totals.subscribersTotal, 'subscribers')} au total`
             }
             icon={<Users className="h-4 w-4" />}
             accent={data.totals.subscribersNet < 0 ? 'var(--negative)' : undefined}
           />
           <StatCard
             label="Heures vues"
-            value={formatHours(data.totals.watchHours)}
-            change={compareTotals(data.totals, data.previousTotals, (t) => t.watchHours)}
+            value={privacy.hours(data.totals.watchHours, 'views')}
+            change={privacy.change(
+              compareTotals(data.totals, data.previousTotals, (t) => t.watchHours),
+              'views',
+            )}
             icon={<Clock className="h-4 w-4" />}
           />
           <StatCard
             label="Engagement"
-            value={formatNumber(data.totals.likes)}
-            change={compareTotals(data.totals, data.previousTotals, (t) => t.likes)}
-            hint={`${formatNumber(data.totals.comments)} commentaires`}
+            value={privacy.count(data.totals.likes, 'views')}
+            change={privacy.change(
+              compareTotals(data.totals, data.previousTotals, (t) => t.likes),
+              'views',
+            )}
+            hint={`${privacy.count(data.totals.comments, 'views')} commentaires`}
             icon={<Heart className="h-4 w-4" />}
           />
         </div>
@@ -133,7 +151,7 @@ export const ContentPage = () => {
           et l'écran Contenu est celui où on vient précisément la poser. Ses compteurs
           sont des cumuls depuis la sortie — ils ne s'additionnent pas avec les totaux
           de la période affichés au-dessus. */}
-      <LatestVideoCard video={latestVideos[0]} />
+      <LatestVideoCard videos={latestVideos} />
 
       {data && (
         <>

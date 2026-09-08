@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
+import { MASKED_BREAKDOWN_LABEL } from './maskedLabel.ts';
 
 export interface RankingRow {
   id: string;
@@ -19,6 +20,8 @@ interface RankingBarsProps {
   emptyLabel: string;
   /** Au-delà, ce n'est plus un classement mais un tableau. */
   limit?: number;
+  /** Toutes les valeurs sont masquées : le dire, plutôt que d'annoncer une liste vide. */
+  masked?: boolean;
 }
 
 /**
@@ -38,6 +41,7 @@ export const RankingBars = ({
   rows,
   emptyLabel,
   limit = 6,
+  masked = false,
 }: RankingBarsProps) => {
   const visible = rows
     .filter((row) => row.value > 0)
@@ -55,7 +59,9 @@ export const RankingBars = ({
 
       <CardContent className="flex-1">
         {visible.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">{emptyLabel}</p>
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {masked ? MASKED_BREAKDOWN_LABEL : emptyLabel}
+          </p>
         ) : (
           <ol className="space-y-2.5">
             {visible.map((row, index) => (

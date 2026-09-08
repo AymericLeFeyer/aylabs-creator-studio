@@ -15,7 +15,9 @@ import type {
   CategoryBreakdownItem,
 } from '../../../domain/analytics/entities/Analytics.ts';
 import { cashRevenue } from '../../../domain/analytics/services/revenueMath.ts';
+import { revenueMaskKey } from '../../../domain/privacy/services/privacy.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { formatBucketLabel, formatMoney, formatMoneyCompact } from '../../../shared/format.ts';
 import { cn } from '../../../shared/cn.ts';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
@@ -79,6 +81,7 @@ const seriesFrom = (items: CategoryBreakdownItem[], prefix: string): ChartSeries
  */
 export const MoneyChart = ({ data }: MoneyChartProps) => {
   const filters = useFilters();
+  const privacy = usePrivacy();
   const isProfit = filters.moneyMode === 'profit';
 
   /**
@@ -95,19 +98,37 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
       return next;
     });
 
+  /**
+   * Une catégorie masquée par la confidentialité ne devient pas une barre du tout.
+   *
+   * C'est ce qui donne gratuitement la mise à zéro demandée : la série n'existe pas, la
+   * pile ne la porte pas, et la ligne comme le total du titre se recalculent sur les
+   * seules catégories restantes — il n'y a donc aucune soustraction à faire pour
+   * retrouver ce qui manque. La retirer après coup en gardant le total d'origine
+   * l'aurait au contraire annoncée.
+   */
+  const visibleCategories = useMemo(
+    () =>
+      data.byCategory.filter(
+        (item) => !privacy.isMasked(revenueMaskKey(item.categoryId, item.nature)),
+      ),
+    [data.byCategory, privacy],
+  );
+
   // Les produits reçus passent en fin de pile, pour rester lisibles au-dessus du cash.
   const revenueSeries = useMemo(() => {
-    const items = data.byCategory.filter(
+    const items = visibleCategories.filter(
       (item) => filters.includeInKind || item.nature !== 'in_kind',
     );
     const cash = items.filter((item) => item.nature === 'cash');
     const inKind = items.filter((item) => item.nature === 'in_kind');
     return seriesFrom([...cash, ...inKind], 'r');
-  }, [data.byCategory, filters.includeInKind]);
+  }, [visibleCategories, filters.includeInKind]);
 
   const expenseSeries = useMemo(
-    () => (isProfit ? seriesFrom(data.byExpenseCategory, 'e') : []),
-    [data.byExpenseCategory, isProfit],
+    () =>
+      isProfit && !privacy.isMasked('expenses') ? seriesFrom(data.byExpenseCategory, 'e') : [],
+    [data.byExpenseCategory, isProfit, privacy],
   );
 
   const visibleRevenue = revenueSeries.filter((serie) => !hidden.has(serie.toggleId));
@@ -157,14 +178,36 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
   const totals = data.totals;
   const displayedTotal = rows.reduce((sum, row) => sum + row.net, 0) * 100;
 
+  /**
+   * Ce que la confidentialité a retiré, compté à part de ce que la légende a replié.
+   *
+   * Les deux masquages produisent le même graphique mais ne se défont pas pareil : un
+   * clic suffit pour le second, le premier se règle dans les paramètres. Le total du
+   * titre passe à « ••• » plutôt que d'annoncer la somme des seules barres restantes —
+   * l'appeler « chiffre d'affaires » serait faux, et le laisser lire à côté du détail
+   * visible reviendrait à livrer la différence.
+   */
+  const privacyHiddenCount =
+    data.byCategory.length -
+    visibleCategories.length +
+    (isProfit && privacy.isMasked('expenses') ? data.byExpenseCategory.length : 0);
+
   return (
     <Card>
       <CardHeader>
         <div>
           <CardTitle>{isProfit ? 'Bénéfices' : "Chiffre d'affaires"}</CardTitle>
-          <p className="mt-1 text-2xl font-semibold tabular">{formatMoney(displayedTotal)}</p>
+          <p className="mt-1 text-2xl font-semibold tabular">
+            {privacy.money(displayedTotal, 'totals')}
+          </p>
           <p className="text-xs text-muted-foreground">
-            {hiddenCount > 0 ? (
+            {privacyHiddenCount > 0 ? (
+              <>
+                {privacyHiddenCount} catégorie{privacyHiddenCount > 1 ? 's' : ''} masquée
+                {privacyHiddenCount > 1 ? 's' : ''} par la confidentialité
+                {hiddenCount > 0 && `, ${hiddenCount} par la légende`}
+              </>
+            ) : hiddenCount > 0 ? (
               <>
                 {hiddenCount} catégorie{hiddenCount > 1 ? 's' : ''} masquée
                 {hiddenCount > 1 ? 's' : ''} ·{' '}
@@ -178,11 +221,12 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
               </>
             ) : (
               <>
-                {formatMoney(cashRevenue(totals))} encaissés
+                {privacy.money(cashRevenue(totals), 'cash')} encaissés
                 {filters.includeInKind &&
                   totals.inKindCents > 0 &&
-                  ` · ${formatMoney(totals.inKindCents)} de produits reçus`}
-                {totals.expenseCents > 0 && ` · ${formatMoney(totals.expenseCents)} de dépenses`}
+                  ` · ${privacy.money(totals.inKindCents, 'inKind')} de produits reçus`}
+                {totals.expenseCents > 0 &&
+                  ` · ${privacy.money(totals.expenseCents, 'expenses')} de dépenses`}
               </>
             )}
           </p>
@@ -336,6 +380,7 @@ const MoneyTooltip = ({
   label?: string;
   title: string;
 }) => {
+  const privacy = usePrivacy();
   if (!active || !payload?.length) return null;
 
   const row = payload[0]?.payload;
@@ -345,7 +390,7 @@ const MoneyTooltip = ({
     <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
       <p className="text-[11px] text-muted-foreground">{label}</p>
       <p className="mb-1.5 text-base font-semibold tabular leading-tight text-popover-foreground">
-        {formatMoney((row?.net ?? 0) * 100)}
+        {privacy.money((row?.net ?? 0) * 100, 'totals')}
         <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">{title}</span>
       </p>
 

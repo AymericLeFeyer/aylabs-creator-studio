@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Bar,
   CartesianGrid,
@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import type { InstagramSeriesPoint } from '../../../domain/instagram/entities/Instagram.ts';
 import { formatCount } from '../../../domain/instagram/entities/Instagram.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { formatDate } from '../../../shared/format.ts';
 import { cn } from '../../../shared/cn.ts';
 
@@ -40,7 +41,27 @@ export interface InstagramChartProps {
  * sur l'autre.
  */
 export const InstagramChart = ({ series, granularity }: InstagramChartProps) => {
+  const privacy = usePrivacy();
   const [metric, setMetric] = useState<Metric>('stories');
+
+  /**
+   * Portée et abonnés tombent à **zéro** quand ils sont masqués, ils ne disparaissent
+   * pas : une courbe qui s'arrête et un axe qui se rétrécit disent déjà l'ordre de
+   * grandeur de ce qu'on vient de retirer. Le rythme de publication, lui, n'est pas un
+   * chiffre d'audience et reste lisible.
+   */
+  const rows = useMemo(
+    () =>
+      series.map((point) => ({
+        ...point,
+        reach: privacy.isMasked('views') ? 0 : point.reach,
+        views: privacy.isMasked('views') ? 0 : point.views,
+        totalInteractions: privacy.isMasked('views') ? 0 : point.totalInteractions,
+        followers: privacy.isMasked('subscribers') ? 0 : point.followers,
+        followersGained: privacy.isMasked('subscribers') ? 0 : point.followersGained,
+      })),
+    [series, privacy],
+  );
 
   const empty = series.every(
     (point) => point.stories === 0 && point.posts === 0 && point.reach === null,
@@ -78,7 +99,7 @@ export const InstagramChart = ({ series, granularity }: InstagramChartProps) => 
         </p>
       ) : (
         <ResponsiveContainer width="100%" height={260}>
-          <ComposedChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
             <XAxis
               dataKey="date"

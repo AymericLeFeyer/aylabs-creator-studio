@@ -83,8 +83,17 @@ export const PlanningPage = () => {
   const [span, setSpan] = useState<Span>('week');
   const [anchor, setAnchor] = useState<string>(today);
 
-  const from = anchor;
-  const to = span === 'day' ? anchor : shiftDate(anchor, 6);
+  /**
+   * `anchor` est le jour **visé**, pas la borne gauche de la fenêtre.
+   *
+   * En vue large, la grille recule d'un jour avant de dérouler ses sept colonnes : la
+   * veille reste sous les yeux. C'est elle qui dit ce qui a été fait juste avant, et ce
+   * qui a débordé — un créneau non approuvé d'hier est précisément ce qu'on vient
+   * replacer aujourd'hui. Le jour visé occupe donc la **deuxième** colonne, et le bouton
+   * « Aujourd'hui » l'y ramène.
+   */
+  const from = span === 'day' ? anchor : shiftDate(anchor, -1);
+  const to = span === 'day' ? anchor : shiftDate(from, 6);
 
   const { data: board, isLoading } = usePlanningBoard(from, to);
   // Les bornes de forme d'un créneau : c'est d'elles que se déduit la durée d'un bloc

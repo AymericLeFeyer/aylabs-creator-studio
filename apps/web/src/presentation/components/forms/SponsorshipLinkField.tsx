@@ -8,7 +8,7 @@ import {
   SPONSORSHIP_STATUS_LABELS,
   SPONSORSHIP_STATUSES,
 } from '../../../domain/sponsorship/entities/Sponsorship.ts';
-import { formatMoney } from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
@@ -48,6 +48,7 @@ export const SponsorshipLinkField = ({
   brandId,
   productionId,
 }: SponsorshipLinkFieldProps) => {
+  const privacy = usePrivacy();
   const options = useMemo(() => {
     const score = (sponsorship: Sponsorship): number =>
       (sponsorship.brandId && sponsorship.brandId === brandId ? 2 : 0) +
@@ -89,7 +90,7 @@ export const SponsorshipLinkField = ({
               <SelectItem key={sponsorship.id} value={sponsorship.id}>
                 {sponsorship.label}
                 {sponsorship.brandName ? ` · ${sponsorship.brandName}` : ''} ·{' '}
-                {formatMoney(sponsorship.amountCents)}
+                {privacy.money(sponsorship.amountCents, 'sponsorships')}
               </SelectItem>
             ))}
           </SelectContent>

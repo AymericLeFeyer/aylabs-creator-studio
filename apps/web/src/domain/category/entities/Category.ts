@@ -62,4 +62,5 @@ export const usesNature = (scope: CategoryScope): boolean => scope !== 'expense'
  */
 export const ADSENSE_CATEGORY_ID = 'adsense';
 export const AFFILIATE_CATEGORY_ID = 'affiliation';
+export const SPONSOR_CATEGORY_ID = 'sponsors';
 export const TAX_CATEGORY_ID = 'impots';

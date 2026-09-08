@@ -7,7 +7,8 @@ import {
 } from '../../../domain/category/entities/Category.ts';
 import { useRevenues } from '../../../application/revenue/usecases/useRevenues.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
-import { formatMoney, formatNumber } from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
+import { formatNumber } from '../../../shared/format.ts';
 import { StatCard } from '../StatCard.tsx';
 
 /**
@@ -27,6 +28,7 @@ import { StatCard } from '../StatCard.tsx';
  */
 export const PartnerStatCards = ({ pipeline }: { pipeline: PartnerPipeline }) => {
   const filters = useFilters();
+  const privacy = usePrivacy();
   const { data: revenues = [] } = useRevenues({
     from: filters.from,
     to: filters.to,
@@ -66,27 +68,27 @@ export const PartnerStatCards = ({ pipeline }: { pipeline: PartnerPipeline }) =>
       />
       <StatCard
         label={NATURE_LABELS.in_kind}
-        value={formatMoney(pipeline.productsReceivedCents)}
+        value={privacy.money(pipeline.productsReceivedCents, 'inKind')}
         hint={`${pipeline.productsReceived} produit(s) reçu(s) sur la période`}
         icon={<Gift className="h-4 w-4" />}
         accent={pipeline.productsReceivedCents > 0 ? 'var(--in-kind)' : undefined}
       />
       <StatCard
         label="Sponsos à encaisser"
-        value={formatMoney(pipeline.sponsorshipsPendingCents)}
+        value={privacy.money(pipeline.sponsorshipsPendingCents, 'sponsorships')}
         hint={`${pipeline.sponsorshipsPending} sponso(s) non encaissée(s) · toutes périodes`}
         icon={<Handshake className="h-4 w-4" />}
       />
       <StatCard
         label="Sponsos encaissées"
-        value={formatMoney(pipeline.sponsorshipsPaidCents)}
+        value={privacy.money(pipeline.sponsorshipsPaidCents, 'sponsorships')}
         hint={`${pipeline.sponsorshipsPaid} sponso(s) payée(s) sur la période`}
         icon={<Wallet className="h-4 w-4" />}
         accent={pipeline.sponsorshipsPaidCents > 0 ? 'var(--positive)' : undefined}
       />
       <StatCard
         label="Total affiliations"
-        value={formatMoney(affiliate.totalCents)}
+        value={privacy.money(affiliate.totalCents, 'affiliation')}
         hint={
           affiliate.unlinked > 0
             ? `${affiliate.count} revenu(s) sur la période · ${affiliate.unlinked} sans plateforme`

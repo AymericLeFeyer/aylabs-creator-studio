@@ -5,7 +5,7 @@ import {
   PRODUCT_STATUS_LABELS,
   PRODUCT_STATUSES,
 } from '../../../domain/product/entities/Product.ts';
-import { formatMoney } from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { Button } from '../ui/button.tsx';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
@@ -41,6 +41,7 @@ export const ProductLinkField = ({
   brandId,
   productionId,
 }: ProductLinkFieldProps) => {
+  const privacy = usePrivacy();
   const linked = useMemo(
     () =>
       products.filter(
@@ -90,7 +91,9 @@ export const ProductLinkField = ({
               className="flex items-center gap-1.5 rounded-full border border-border py-0.5 pl-2.5 pr-1 text-xs"
             >
               <span>{product.name}</span>
-              <span className="text-muted-foreground">{formatMoney(product.valueCents)}</span>
+              <span className="text-muted-foreground">
+                {privacy.money(product.valueCents, 'inKind')}
+              </span>
               <button
                 type="button"
                 onClick={() => remove(product)}
@@ -127,7 +130,7 @@ export const ProductLinkField = ({
               <SelectItem key={product.id} value={product.id}>
                 {product.name}
                 {product.brandName ? ` · ${product.brandName}` : ''} ·{' '}
-                {formatMoney(product.valueCents)}
+                {privacy.money(product.valueCents, 'inKind')}
               </SelectItem>
             ))}
           </SelectContent>

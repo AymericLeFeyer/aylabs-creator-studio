@@ -31,10 +31,14 @@ export default tseslint.config(
   },
   {
     // Les composants shadcn/ui exportent volontairement leurs variantes (`buttonVariants`)
-    // et réexportent les primitives Radix aux côtés des composants. Le contexte de filtres
-    // expose de la même façon son provider et ses hooks. C'est le format attendu : la règle
-    // de Fast Refresh ne s'y applique pas.
-    files: ['src/presentation/components/ui/**/*.tsx', 'src/presentation/hooks/useFilters.tsx'],
+    // et réexportent les primitives Radix aux côtés des composants. Les contextes de
+    // filtres et de confidentialité exposent de la même façon leur provider et leurs
+    // hooks. C'est le format attendu : la règle de Fast Refresh ne s'y applique pas.
+    files: [
+      'src/presentation/components/ui/**/*.tsx',
+      'src/presentation/hooks/useFilters.tsx',
+      'src/presentation/hooks/usePrivacy.tsx',
+    ],
     rules: {
       'react-refresh/only-export-components': 'off',
     },

@@ -34,7 +34,8 @@ import type { ProductionStep } from '../../domain/production/entities/Production
 import { formatDuration } from '../../domain/production/entities/TimeEntry.ts';
 import { PRODUCT_STATUS_LABELS } from '../../domain/product/entities/Product.ts';
 import { SPONSORSHIP_STATUS_LABELS } from '../../domain/sponsorship/entities/Sponsorship.ts';
-import { formatDate, formatMoney } from '../../shared/format.ts';
+import { formatDate } from '../../shared/format.ts';
+import { usePrivacy } from '../hooks/usePrivacy.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.tsx';
@@ -59,6 +60,7 @@ import { PublishDialog } from '../components/forms/PublishDialog.tsx';
 import { cn } from '../../shared/cn.ts';
 
 export const ProductionDetailPage = () => {
+  const privacy = usePrivacy();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
@@ -386,7 +388,7 @@ export const ProductionDetailPage = () => {
                         </span>
                       </Link>
                       <span className="shrink-0 tabular text-[var(--in-kind)]">
-                        {formatMoney(product.valueCents)}
+                        {privacy.money(product.valueCents, 'inKind')}
                       </span>
                       {/* Détacher, pas supprimer : le produit reste reçu, il n'est plus
                           rattaché à cette vidéo. */}
@@ -415,7 +417,7 @@ export const ProductionDetailPage = () => {
                   Sponsos
                   {pendingSponsorships > 0 && (
                     <span className="text-xs font-normal text-muted-foreground">
-                      · {formatMoney(pendingSponsorships)} à encaisser
+                      · {privacy.money(pendingSponsorships, 'sponsorships')} à encaisser
                     </span>
                   )}
                 </CardTitle>
@@ -468,7 +470,7 @@ export const ProductionDetailPage = () => {
                             : 'text-muted-foreground',
                         )}
                       >
-                        {formatMoney(sponsorship.amountCents)}
+                        {privacy.money(sponsorship.amountCents, 'sponsorships')}
                       </span>
                       <Button
                         variant="ghost"

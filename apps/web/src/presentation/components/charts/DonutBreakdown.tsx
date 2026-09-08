@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { formatMoney } from '../../../shared/format.ts';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
+import { MASKED_BREAKDOWN_LABEL } from './maskedLabel.ts';
 
 export interface DonutSlice {
   id: string;
@@ -19,6 +20,14 @@ interface DonutBreakdownProps {
   emptyLabel: string;
   /** Complète le total du centre (« nature comprise »…). */
   totalHint?: string;
+  /**
+   * Toutes les tranches sont masquées par la confidentialité.
+   *
+   * Distinct du vide : un anneau sans revenu et un anneau qu'on refuse de montrer
+   * n'appellent pas la même conclusion, et laisser lire « aucun revenu » ferait passer
+   * un masquage pour un mois blanc.
+   */
+  masked?: boolean;
 }
 
 /**
@@ -31,7 +40,13 @@ interface DonutBreakdownProps {
  * La légende est en HTML sous le graphique, avec la valeur et la part : sur trois
  * anneaux côte à côte, des étiquettes posées sur les tranches se chevaucheraient.
  */
-export const DonutBreakdown = ({ title, slices, emptyLabel, totalHint }: DonutBreakdownProps) => {
+export const DonutBreakdown = ({
+  title,
+  slices,
+  emptyLabel,
+  totalHint,
+  masked = false,
+}: DonutBreakdownProps) => {
   const [active, setActive] = useState<string | null>(null);
 
   const visible = slices.filter((slice) => slice.cents !== 0);
@@ -44,7 +59,9 @@ export const DonutBreakdown = ({ title, slices, emptyLabel, totalHint }: DonutBr
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-1 items-center justify-center">
-          <p className="py-8 text-center text-sm text-muted-foreground">{emptyLabel}</p>
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {masked ? MASKED_BREAKDOWN_LABEL : emptyLabel}
+          </p>
         </CardContent>
       </Card>
     );

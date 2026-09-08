@@ -7,7 +7,7 @@ import type { Production } from '../../../domain/production/entities/Production.
 import { STATUS_LABELS } from '../../../domain/production/entities/Production.ts';
 import { PRODUCT_STATUS_LABELS } from '../../../domain/product/entities/Product.ts';
 import { SPONSORSHIP_STATUS_LABELS } from '../../../domain/sponsorship/entities/Sponsorship.ts';
-import { formatMoney } from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import type { ProductionStep } from '../../../domain/production/entities/ProductionStep.ts';
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
 import { formatSlotTime } from '../../../domain/production/entities/ProductionSlot.ts';
@@ -71,20 +71,27 @@ const barTitle = (production: Production, total: number): string =>
  * horizontalement dans un conteneur qui rogne, un panneau positionné en absolu y serait
  * coupé dès qu'on approche du bord. Le texte multi-ligne fait le travail sans ça.
  */
-const sponsorshipsTitle = (production: Production): string =>
+/**
+ * Le formateur est **passé en argument** plutôt qu'importé : ces deux fonctions sont
+ * pures et vivent hors de tout composant, or la confidentialité est un état de contexte.
+ * Leur donner le formateur de l'appelant les garde pures et masque les montants jusque
+ * dans une infobulle native, qu'aucun rendu React ne traverse.
+ */
+type MoneyFormat = (cents: number) => string;
+
+const sponsorshipsTitle = (production: Production, money: MoneyFormat): string =>
   [
     `Sponsos (${production.sponsorships.length}) :`,
     ...production.sponsorships.map(
-      (s) =>
-        `· ${s.label} — ${formatMoney(s.amountCents)} — ${SPONSORSHIP_STATUS_LABELS[s.status]}`,
+      (s) => `· ${s.label} — ${money(s.amountCents)} — ${SPONSORSHIP_STATUS_LABELS[s.status]}`,
     ),
   ].join('\n');
 
-const productsTitle = (production: Production): string =>
+const productsTitle = (production: Production, money: MoneyFormat): string =>
   [
     `Produits (${production.products.length}) :`,
     ...production.products.map(
-      (p) => `· ${p.name} — ${formatMoney(p.valueCents)} — ${PRODUCT_STATUS_LABELS[p.status]}`,
+      (p) => `· ${p.name} — ${money(p.valueCents)} — ${PRODUCT_STATUS_LABELS[p.status]}`,
     ),
   ].join('\n');
 
@@ -117,6 +124,9 @@ interface ProductionGanttProps {
  * un vert clair ne se lit pas.
  */
 export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttProps) => {
+  const privacy = usePrivacy();
+  const sponsorMoney = (cents: number) => privacy.money(cents, 'sponsorships');
+  const productMoney = (cents: number) => privacy.money(cents, 'inKind');
   const [zoom, setZoom] = useState<Zoom>('month');
   const [expanded, setExpanded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -331,15 +341,25 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
                             title={barTitle(production, steps.length)}
                           >
                             {production.sponsorships.length > 0 && (
-                              <span className="shrink-0" title={sponsorshipsTitle(production)}>
+                              <span
+                                className="shrink-0"
+                                title={sponsorshipsTitle(production, sponsorMoney)}
+                              >
                                 <DollarSign className="h-3 w-3" aria-hidden />
-                                <span className="sr-only">{sponsorshipsTitle(production)}</span>
+                                <span className="sr-only">
+                                  {sponsorshipsTitle(production, sponsorMoney)}
+                                </span>
                               </span>
                             )}
                             {production.products.length > 0 && (
-                              <span className="shrink-0" title={productsTitle(production)}>
+                              <span
+                                className="shrink-0"
+                                title={productsTitle(production, productMoney)}
+                              >
                                 <Package className="h-3 w-3" aria-hidden />
-                                <span className="sr-only">{productsTitle(production)}</span>
+                                <span className="sr-only">
+                                  {productsTitle(production, productMoney)}
+                                </span>
                               </span>
                             )}
                             <span className="truncate">{STATUS_LABELS[production.status]}</span>

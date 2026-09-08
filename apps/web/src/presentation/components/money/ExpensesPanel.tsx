@@ -8,7 +8,8 @@ import { useUpcomingExpenses } from '../../../application/expense/usecases/useUp
 import { useFilters } from '../../hooks/useFilters.tsx';
 import type { ExpenseEntry } from '../../../domain/expense/entities/Expense.ts';
 import { UPCOMING_MONTHS } from '../../../domain/expense/services/upcoming.ts';
-import { formatDate, formatMoney } from '../../../shared/format.ts';
+import { formatDate } from '../../../shared/format.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { Button } from '../ui/button.tsx';
 import { Card, CardHeader, CardTitle } from '../ui/card.tsx';
 import { Checkbox } from '../ui/checkbox.tsx';
@@ -35,69 +36,75 @@ interface ExpenseRowProps {
  * juste au-dessus d'aujourd'hui, elles se lisent comme la suite naturelle du calendrier
  * — sans jamais entrer dans le total, qui reste celui de la période.
  */
-const ExpenseRow = ({ expense, upcoming, onEdit, onDelete }: ExpenseRowProps) => (
-  <TableRow className={cn(upcoming && 'bg-muted/30 text-muted-foreground')}>
-    <TableCell className="whitespace-nowrap tabular text-muted-foreground">
-      <span className="flex items-center gap-1.5">
-        {upcoming && <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />}
-        {formatDate(expense.date)}
-      </span>
-    </TableCell>
-    <TableCell className={cn('font-medium', upcoming && 'font-normal')}>
-      {expense.label}
-      {/* Une occurrence d'abonnement se corrige sur sa règle, pas ligne à ligne :
-          la modifier ici serait réécrit à la prochaine projection. */}
-      {expense.recurringId && (
-        <span
-          className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-normal text-muted-foreground"
-          title="Engendrée par une dépense récurrente. Corrige-la dans Paramètres → Abonnements."
-        >
-          <Repeat className="h-3 w-3" aria-hidden />
-          récurrente
+const ExpenseRow = ({ expense, upcoming, onEdit, onDelete }: ExpenseRowProps) => {
+  const privacy = usePrivacy();
+
+  return (
+    <TableRow className={cn(upcoming && 'bg-muted/30 text-muted-foreground')}>
+      <TableCell className="whitespace-nowrap tabular text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          {upcoming && <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+          {formatDate(expense.date)}
         </span>
-      )}
-      {expense.notes && (
-        <span className="block text-xs font-normal text-muted-foreground">{expense.notes}</span>
-      )}
-    </TableCell>
-    <TableCell>
-      <span className="flex items-center gap-2 text-sm">
-        <span
-          className={cn('h-2.5 w-2.5 rounded-full', upcoming && 'opacity-60')}
-          style={{ backgroundColor: expense.categoryColor }}
-          aria-hidden
-        />
-        {expense.categoryName}
-      </span>
-    </TableCell>
-    <TableCell className="text-muted-foreground">{expense.channelName ?? 'Global'}</TableCell>
-    <TableCell className="max-w-[14rem] text-muted-foreground">
-      <span className="line-clamp-1" title={expense.videoTitle ?? undefined}>
-        {expense.videoTitle ?? '—'}
-      </span>
-    </TableCell>
-    <TableCell
-      className={cn(
-        'text-right font-medium tabular',
-        upcoming ? 'text-muted-foreground' : 'text-[var(--expense)]',
-      )}
-    >
-      −{formatMoney(expense.amountCents)}
-    </TableCell>
-    <TableCell>
-      <div className="flex justify-end gap-1">
-        <Button variant="ghost" size="icon" onClick={() => onEdit(expense)}>
-          <Pencil className="h-3.5 w-3.5" />
-          <span className="sr-only">Modifier</span>
-        </Button>
-        <Button variant="ghost" size="icon" onClick={() => onDelete(expense)}>
-          <Trash2 className="h-3.5 w-3.5 text-destructive" />
-          <span className="sr-only">Supprimer</span>
-        </Button>
-      </div>
-    </TableCell>
-  </TableRow>
-);
+      </TableCell>
+      <TableCell className={cn('font-medium', upcoming && 'font-normal')}>
+        {expense.label}
+        {/* Une occurrence d'abonnement se corrige sur sa règle, pas ligne à ligne :
+          la modifier ici serait réécrit à la prochaine projection. */}
+        {expense.recurringId && (
+          <span
+            className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-normal text-muted-foreground"
+            title="Engendrée par une dépense récurrente. Corrige-la dans Paramètres → Abonnements."
+          >
+            <Repeat className="h-3 w-3" aria-hidden />
+            récurrente
+          </span>
+        )}
+        {expense.notes && (
+          <span className="block text-xs font-normal text-muted-foreground">{expense.notes}</span>
+        )}
+      </TableCell>
+      <TableCell>
+        <span className="flex items-center gap-2 text-sm">
+          <span
+            className={cn('h-2.5 w-2.5 rounded-full', upcoming && 'opacity-60')}
+            style={{ backgroundColor: expense.categoryColor }}
+            aria-hidden
+          />
+          {expense.categoryName}
+        </span>
+      </TableCell>
+      <TableCell className="text-muted-foreground">{expense.channelName ?? 'Global'}</TableCell>
+      <TableCell className="max-w-[14rem] text-muted-foreground">
+        <span className="line-clamp-1" title={expense.videoTitle ?? undefined}>
+          {expense.videoTitle ?? '—'}
+        </span>
+      </TableCell>
+      <TableCell
+        className={cn(
+          'text-right font-medium tabular',
+          upcoming ? 'text-muted-foreground' : 'text-[var(--expense)]',
+        )}
+      >
+        {privacy.isMasked('expenses')
+          ? privacy.money(0, 'expenses')
+          : `−${privacy.money(expense.amountCents, 'expenses')}`}
+      </TableCell>
+      <TableCell>
+        <div className="flex justify-end gap-1">
+          <Button variant="ghost" size="icon" onClick={() => onEdit(expense)}>
+            <Pencil className="h-3.5 w-3.5" />
+            <span className="sr-only">Modifier</span>
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => onDelete(expense)}>
+            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+            <span className="sr-only">Supprimer</span>
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+};
 
 /**
  * Les dépenses de la période, précédées de ce qui arrive.
@@ -110,6 +117,7 @@ const ExpenseRow = ({ expense, upcoming, onEdit, onDelete }: ExpenseRowProps) =>
  */
 export const ExpensesPanel = () => {
   const filters = useFilters();
+  const privacy = usePrivacy();
   const { data: expenses = [], isLoading } = useExpenses({
     from: filters.from,
     to: filters.to,
@@ -156,7 +164,9 @@ export const ExpensesPanel = () => {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
           <span className="text-muted-foreground">Total sur la période : </span>
-          <span className="tabular font-semibold text-[var(--expense)]">{formatMoney(total)}</span>
+          <span className="tabular font-semibold text-[var(--expense)]">
+            {privacy.money(total, 'expenses')}
+          </span>
           <span className="ml-3 text-xs text-muted-foreground">
             Déduit du CA en mode « Bénéfices »
           </span>
@@ -175,7 +185,7 @@ export const ExpensesPanel = () => {
                 className="text-xs font-normal text-muted-foreground"
               >
                 Afficher les {upcomingRows.length} dépense(s) à venir (
-                {formatMoney(upcoming.summary.totalCents)})
+                {privacy.money(upcoming.summary.totalCents, 'expenses')})
               </Label>
             </div>
           )}

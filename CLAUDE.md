@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-07
+> Dernière mise à jour : 2026-09-08
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -685,6 +685,74 @@ personne ait rien appris au passage.
 Suppression **franche**, contrairement aux obligations qu'on archive : un lien ne porte
 aucun historique ni aucune case cochée, il n'y a rien à préserver.
 
+### `privacy` — ce qu'on accepte de laisser voir
+
+Un domaine **entièrement côté front** : aucune table, aucun endpoint, rien qui parte à
+l'API. C'est une préférence d'affichage, et le dire ainsi est important — rien n'est
+chiffré, rien n'est retiré des réponses, et le masquage ne survit pas aux outils de
+développement. **Il protège d'un regard, pas d'un attaquant** : un partage d'écran, une
+capture, un direct, un ordinateur ouvert dans un train.
+
+`PrivacyKey` (`domain/privacy/entities/Privacy.ts`) — une clé par nature d'information, et
+le découpage suit les questions qu'on se pose (« je montre mes vues, pas ce que me paient
+mes sponsors ») plutôt que la structure des tables :
+
+| Groupe         | Clés                                                                              |
+| -------------- | --------------------------------------------------------------------------------- |
+| **Argent**     | `adsense`, `sponsorships`, `affiliation`, `inKind`, `otherRevenue`, `expenses`, `totals` |
+| **Audience**   | `views` (vues, heures vues, likes, commentaires), `subscribers`                    |
+| **Entreprise** | `company` (SIRET, TVA, adresse — jamais le nom, qui est public)                   |
+
+**Masquer une composante d'argent masque les totaux, et ce n'est pas négociable.** Le CA
+est la somme de ses composantes : l'afficher à côté de celles qui restent visibles
+annoncerait la manquante par simple soustraction. `resolveMasks` force donc `totals` dès
+qu'une clé de `MONEY_COMPONENT_KEYS` est cochée, et l'écran de réglages affiche la case
+cochée **et désactivée**, avec le motif à la place du sous-titre.
+
+Deux cibles supplémentaires n'ont pas de case parce que l'API n'expose pas de granularité
+plus fine à ces endroits : `manualCash` (ce que `manualCashCents` agrège — affiliation,
+sponsos et le reste) et `cash` (l'encaissé, soit l'AdSense en plus). Chacune est masquée
+dès qu'une des familles qu'elle agrège l'est — **sur une somme, le maillon le plus discret
+décide**.
+
+`revenueMaskKey(categoryId, nature)` (`domain/privacy/services/privacy.ts`) ramène une
+catégorie de revenu à sa clé, par **identifiant fixe** et jamais par libellé : renommer
+« Sponsors » en « Partenariats » est permis et ne doit pas démasquer les montants. Une
+catégorie créée à la main tombe dans `otherRevenue`, ou `inKind` si sa nature le dit.
+
+#### Texte ou graphique : deux masquages, une seule règle
+
+| Où                                   | Ce qu'on fait      | Pourquoi                                            |
+| ------------------------------------ | ------------------ | --------------------------------------------------- |
+| Cartes, tableaux, listes, infobulles | `•••`              | on lit un chiffre, on peut lire qu'il est masqué    |
+| Barres, anneaux, courbes, classements | **zéro**          | un trou dans une pile dont le total est connu se lit aussi bien qu'une barre |
+
+C'est toute la difficulté du module, et elle tient en une phrase : **retirer une valeur
+d'un graphique en gardant le total revient à l'annoncer**. Le module ne masque donc jamais
+un montant sans que ce qui le compose et ce qu'il compose ne suivent — d'où l'ordre imposé
+partout, **masquer les composantes puis composer**, jamais l'inverse :
+
+- `MoneyChart` **retire la catégorie masquée de ses séries** ; la ligne « net » et le total
+  du titre se recalculent sur ce qui reste, il n'y a donc aucune soustraction possible. Le
+  total du titre passe quand même à `•••` (`totals` est forcé) et le sous-titre annonce
+  combien de catégories la confidentialité a retirées, à côté de celles que la légende a
+  repliées — les deux ne se défont pas au même endroit ;
+- `DonutBreakdown` / `RankingBars` écartent déjà les valeurs nulles : une part masquée
+  vaut zéro et disparaît, total et longueurs se recalculant seuls. Quand **tout** est
+  masqué, la prop `masked` remplace le message de vide par `MASKED_BREAKDOWN_LABEL`
+  (`charts/maskedLabel.ts`) — « aucun revenu » et « masqué » mènent au même écran vide mais
+  ne se corrigent pas au même endroit ;
+- `withMoney(rows, options, mask)` applique le masque **avant** `grossRevenue` /
+  `netProfit`, si bien que la colonne « CA » du tableau des vidéos retombe toujours sur la
+  somme des colonnes affichées à sa gauche ;
+- `AudienceChart` et `InstagramChart` posent leurs séries masquées à zéro plutôt que de les
+  interrompre : une courbe qui s'arrête, ou un axe qui se rétrécit, donne déjà l'ordre de
+  grandeur de ce qu'on vient de retirer.
+
+`privacy.change()` efface aussi la **variation en pourcentage** d'une valeur masquée : elle
+ne livre aucun montant, mais masquer un chiffre en laissant lire « +140 % » n'est pas
+masquer grand-chose.
+
 ### `videoStatSnapshot`
 
 Table `video_stat_snapshots` (migration 14) : un relevé daté des compteurs d'une vidéo,
@@ -1338,7 +1406,7 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 | `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis trois onglets Produits, Sponsors et **Plateformes** (`?onglet=`). Bouton **Script** par sponso                    |
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                             |
 | `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                  |
-| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, **Instagram**, Catégories, Abonnements, Marques, Étapes, **Script**, **Planning**, Société |
+| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, **Instagram**, Catégories, Abonnements, Marques, Étapes, **Script**, **Planning**, Société. L'onglet Application porte la **Confidentialité** |
 
 `/chaines`, `/categories`, `/marques`, `/etapes`, `/societe` et `/abonnements`
 **redirigent** vers `/parametres` sur le bon onglet : c'étaient six entrées d'un menu
@@ -1361,10 +1429,26 @@ heures. Ce qui se regarde au mois, c'est la sortie des vidéos — et le Gantt d
 **La fenêtre est glissante et on avance d'un jour à la fois.** La vue large montrait
 autrefois la semaine ISO (`startOfWeek`, supprimé) et les flèches sautaient de sept
 jours : mercredi, on ne pouvait pas regarder les sept jours qui venaient sans perdre de
-vue lundi et mardi. Sept jours **à partir du jour choisi** répondent à la question qu'on
+vue lundi et mardi. Sept jours **autour du jour choisi** répondent à la question qu'on
 pose réellement, et le pas d'un jour permet d'y arriver depuis n'importe où. Le sous-titre
 annonce la fenêtre affichée (`formatRange`) : sans elle écrite noir sur blanc, deux clics
 de flèche perdraient le lecteur.
+
+**`anchor` est le jour visé, pas la borne gauche.** En vue large la fenêtre recule d'un
+jour (`from = shiftDate(anchor, -1)`), si bien que le jour visé occupe la **deuxième**
+colonne et que la veille reste sous les yeux. C'est elle qui dit ce qui vient d'être fait
+et ce qui a débordé — un créneau d'hier jamais approuvé est précisément ce qu'on vient
+replacer aujourd'hui. Le bouton « Aujourd'hui » ramène `anchor`, donc la deuxième colonne.
+Aucun risque de replanifier dans le passé : `ManagePlanning.replan()` ramène déjà `from` à
+`notBefore.date`, et le bouton « Repositionner » envoie `today`, pas `from`.
+
+**La teinte du jour courant est posée PAR-DESSUS les plages travaillables**, jamais sous
+elles. Celles-ci sont opaques (`bg-background`) : sous elles, la couleur ne survivait que
+dans les heures creuses, et la colonne d'aujourd'hui se repérait exactement là où on ne
+travaille pas. En surimpression (`inset-0`, `bg-[var(--today)]/10`, `pointer-events-none`),
+elle court sur toute la hauteur — c'est ce qui permet de retrouver aujourd'hui d'un coup
+d'œil sur sept colonnes. Même opacité que l'en-tête et la swimlane, pour que la colonne se
+lise d'un seul bloc.
 
 La swimlane des vidéos est empilée en **bandes** et non en une ligne par vidéo
 (`lanes`, placement glouton : première bande dont la fenêtre précédente s'est terminée
@@ -1745,6 +1829,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useRecurringExpenses`, `useCreateRecurringExpense`, `useUpdateRecurringExpense`, `useDeleteRecurringExpense`                                                                                                                                                                                                                  | `application/expense/usecases/useExpenses.ts`         | Règles de dépense récurrente                                                                        |
 | `useUpcomingExpenses`, `useUpcomingRevenues`, `useUpcomingRange`                                                                                                                                                                                                                                                               | `application/expense/usecases/useUpcoming.ts`         | Ce qui est daté en avant (demain → +3 mois)                                                         |
 | `usePreferences`                                                                                                                                                                                                                                                                                                               | `presentation/hooks/usePreferences.ts`                | Menu replié, file compacte. Persisté en localStorage                                                |
+| `usePrivacy` / `PrivacyProvider`                                                                                                                                                                                                                                                                                              | `presentation/hooks/usePrivacy.tsx`                   | Ce qui est masqué, et les formateurs qui l'appliquent. Persisté en localStorage (`acs.privacy`)      |
 | `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useRemovePlanningItem`, `useClearPlanningItems`, `usePlaceItem`                                                                                                                                               | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                  |
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                                                                                                                                                      | idem                                                  | Horaires de travail et connexion à l'agenda                                                         |
 | `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                                                                                       | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                               |
@@ -2084,7 +2169,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Détacher n'est pas supprimer.** Le bouton ⛓ des listes d'une fiche de production met `productionId` à `null` : le produit reste reçu et son revenu existe toujours, il perd juste son rattachement à la vidéo (et donc le `videoId` de son revenu, par re-synchronisation).
 - **Rattacher une vidéo force la chaîne** du revenu ou de la dépense (une vidéo appartient à une seule chaîne), et changer de chaîne détache la vidéo. `VideoSelect` garde en tête de liste la vidéo déjà rattachée même si elle sort du filtre courant, sinon une édition l'effacerait silencieusement.
 - **Le dashboard n'a plus que deux graphiques.** Les répartitions et les classements sont dans `/chiffre-affaires` → Synthèse, la performance par vidéo dans `/contenu`. Y remettre un graphique demande de se demander lequel il remplace : la page doit se lire d'un regard, pas se parcourir.
-- **Le bloc « Dernière sortie » du dashboard ignore la période** (`LatestVideoCard`, alimenté par `useVideos({ limit: 1 })` sans bornes de date) : « ma dernière vidéo marche comment » ne se pose pas dans une fenêtre de temps, et une période de 7 jours viderait le bloc précisément quand on vient le lire. Ses compteurs sont des **cumuls depuis la sortie** : ils ne s'additionnent pas avec les totaux affichés juste au-dessus, qui comptent aussi les vidéos plus anciennes. `stats.updatedAt` à `null` affiche « — » partout plutôt qu'une série de zéros.
+- **Le bloc des dernières sorties porte les TROIS dernières, une à la fois** (`LatestVideoCard`, alimenté par `useVideos({ limit: 3 })`). Une vidéo ne se juge pas dans l'absolu : 12 000 vues ne veulent rien dire tant qu'on ne sait pas ce que les deux précédentes ont fait. Elles défilent aux chevrons plutôt que de s'afficher côte à côte — la comparaison se fait alors sur les mêmes cases, au même endroit, ce que trois colonnes rétrécies rendraient impossible. Les chevrons **s'arrêtent aux bornes** au lieu de boucler (trois éléments se parcourent en deux clics, et un enroulement ferait repartir de la plus récente sans qu'on l'ait demandé), et le rang « 2 / 3 » est écrit entre eux. Le recadrage quand la liste rétrécit — un changement de chaîne dans les filtres — est **dérivé pendant le rendu**, jamais dans un effet : `react-hooks/set-state-in-effect` refuse l'autre.
+- **Ce bloc ignore la période** (sans bornes de date) : « ma dernière vidéo marche comment » ne se pose pas dans une fenêtre de temps, et une période de 7 jours viderait le bloc précisément quand on vient le lire. Ses compteurs sont des **cumuls depuis la sortie** : ils ne s'additionnent pas avec les totaux affichés juste au-dessus, qui comptent aussi les vidéos plus anciennes. `stats.updatedAt` à `null` affiche « — » partout plutôt qu'une série de zéros.
 - **`/contenu` ne porte que de la mesure** : ce qui n'est pas encore publié se pilote sur `/production`, la dernière sortie se lit sur le dashboard. Y remettre une file ou un fil de sorties ferait trois endroits où lire la même chose.
 - **Une journée sans collecte Instagram est une journée de stories perdue pour toujours.**
   L'API ne les expose que 24 h, et rien — ni archive, ni story à la une — ne permet de
@@ -2431,6 +2517,40 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
 - **Les commentaires n'arrivent qu'avec une collecte**, comme les vidéos. Sur une base qui
   n'a jamais collecté depuis la migration 23, les trois onglets sont vides — ce n'est pas
   une panne, et les écrans vides le disent.
+- **Un montant masqué se met à ZÉRO dans un graphique, jamais en retrait.** Retirer une
+  barre d'une pile dont le total reste affiché revient à l'annoncer par soustraction. La
+  règle vaut dans les deux sens : `MoneyChart` retire la série **et** recalcule sa ligne
+  et son total sur ce qui reste, `withMoney` masque les composantes **avant** de composer
+  CA et bénéfice, et `DonutBreakdown` / `RankingBars` s'appuient sur le fait qu'une valeur
+  nulle disparaît déjà de leur rendu. Toute nouvelle vue chiffrée doit se ramener à ça.
+- **Une composante d'argent masquée entraîne les totaux, et l'utilisateur ne peut pas
+  décocher.** C'est `resolveMasks` qui force `totals`, pas l'écran de réglages — une règle
+  laissée à une case aurait fini décochée par curiosité, et le masquage n'aurait plus rien
+  masqué. La case s'affiche cochée, désactivée, avec le motif à la place du sous-titre.
+- **`revenueMaskKey` se fie aux identifiants fixes de catégorie, jamais aux libellés.**
+  Renommer « Sponsors » est permis (c'est même pour ça que les identifiants existent) et ne
+  doit pas démasquer les montants. Même règle que `TAX_CATEGORY_ID` et
+  `AFFILIATE_CATEGORY_ID`, et `SPONSOR_CATEGORY_ID` a été ajouté côté front pour ça.
+- **`manualCashCents` n'a pas de granularité plus fine côté API.** Affiliation, sponsos et
+  autres revenus y sont déjà additionnés : il suffit qu'une des trois soit masquée pour que
+  la somme le soit. Ne pas chercher à démêler ce que l'API a agrégé — c'est `manualCash`,
+  la cible virtuelle du hook, qui porte cette règle, avec `cash` juste au-dessus.
+- **La confidentialité passe par un contexte, pas par `usePreferences`.** Deux
+  `useLocalStorage` montés côte à côte gardent chacun leur état : cocher une case dans les
+  réglages n'aurait masqué que les réglages. C'est la même raison qui a donné son provider
+  à `useFilters`, et les deux fichiers sont exemptés de
+  `react-refresh/only-export-components` pour la même raison.
+- **`buildPrivacy` est une fonction pure, hors de React, et doit le rester.** Le
+  compilateur React refuse de mémoïser une valeur dont il ne peut pas suivre les fermetures
+  (`react-hooks/preserve-manual-memoization`) : construire l'objet directement dans le
+  `useMemo` du provider faisait échouer le lint. Un simple appel lui suffit.
+- **Le masquage est un affichage, et l'écran de réglages le dit.** Rien n'est chiffré, rien
+  ne change dans les réponses de l'API, et les montants restent lisibles dans l'onglet
+  réseau. Ne jamais le présenter comme une protection : il protège d'un regard.
+- **« — » l'emporte sur « ••• ».** Une vidéo pas encore mesurée, une story vue par moins de
+  cinq comptes, une période sans relevé antérieur : ne pas savoir se dit **avant** de
+  refuser de dire, sinon un masquage ferait passer une donnée manquante pour une donnée
+  cachée, et on la chercherait dans les paramètres.
 - **`/api/productions/:id/todos` est monté AVANT `/api/productions`** dans `server.ts` : un router de préfixe plus long doit passer en premier, sinon le plus court capte la requête et répond 404. Même vigilance que `/overview` déclaré avant `/:id`.
 
 ## PWA

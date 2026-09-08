@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { ArrowDown, ArrowUp, ExternalLink } from 'lucide-react';
 import type { InstagramMedia } from '../../../domain/instagram/entities/Instagram.ts';
 import { formatCount, MEDIA_TYPE_LABELS } from '../../../domain/instagram/entities/Instagram.ts';
+import { MASKED_TEXT } from '../../../domain/privacy/entities/Privacy.ts';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { Card } from '../ui/card.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
 import { formatDate } from '../../../shared/format.ts';
@@ -33,6 +35,10 @@ export interface InstagramMediaTableProps {
  * n'a pas fait un flop, il n'a pas encore été relevé.
  */
 export const InstagramMediaTable = ({ media }: InstagramMediaTableProps) => {
+  const privacy = usePrivacy();
+  /** « — » reste réservé au non mesuré : masqué et pas encore mesuré sont deux états. */
+  const count = (value: number | null) =>
+    privacy.isMasked('views') ? MASKED_TEXT : formatCount(value);
   const [column, setColumn] = useState<Column>('date');
   const [descending, setDescending] = useState(true);
 
@@ -118,11 +124,11 @@ export const InstagramMediaTable = ({ media }: InstagramMediaTableProps) => {
               </TableCell>
 
               <TableCell className="whitespace-nowrap text-sm">{formatDate(item.date)}</TableCell>
-              <TableCell className="text-right tabular">{formatCount(item.views)}</TableCell>
-              <TableCell className="text-right tabular">{formatCount(item.reach)}</TableCell>
-              <TableCell className="text-right tabular">{formatCount(item.likes)}</TableCell>
-              <TableCell className="text-right tabular">{formatCount(item.comments)}</TableCell>
-              <TableCell className="text-right tabular">{formatCount(item.saved)}</TableCell>
+              <TableCell className="text-right tabular">{count(item.views)}</TableCell>
+              <TableCell className="text-right tabular">{count(item.reach)}</TableCell>
+              <TableCell className="text-right tabular">{count(item.likes)}</TableCell>
+              <TableCell className="text-right tabular">{count(item.comments)}</TableCell>
+              <TableCell className="text-right tabular">{count(item.saved)}</TableCell>
 
               <TableCell>
                 {item.permalink && (

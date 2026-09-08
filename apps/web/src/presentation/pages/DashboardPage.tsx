@@ -22,19 +22,14 @@ import { useProductionOverview } from '../../application/production/usecases/use
 import { useLegalOverview } from '../../application/legal/usecases/useLegal.ts';
 import { partnerPipeline } from '../../domain/partner/services/pipeline.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
+import { usePrivacy } from '../hooks/usePrivacy.tsx';
 import {
   cashRevenue,
   compareTotals,
   moneyValue,
 } from '../../domain/analytics/services/revenueMath.ts';
 import { NATURE_LABELS } from '../../domain/category/entities/Category.ts';
-import {
-  formatHours,
-  formatMoney,
-  formatNumber,
-  formatSigned,
-  toIsoDate,
-} from '../../shared/format.ts';
+import { formatNumber, toIsoDate } from '../../shared/format.ts';
 import { StatCard } from '../components/StatCard.tsx';
 import { InKindList, VideoList } from '../components/StatCardLists.tsx';
 import { MoneyChart } from '../components/charts/MoneyChart.tsx';
@@ -58,6 +53,7 @@ import { EmptyState } from '../components/EmptyState.tsx';
  */
 export const DashboardPage = () => {
   const filters = useFilters();
+  const privacy = usePrivacy();
   const params = useAnalyticsParams();
   const { data, isLoading, error } = useAnalytics(params);
   const { data: channels = [], isLoading: channelsLoading } = useChannels();
@@ -87,8 +83,9 @@ export const DashboardPage = () => {
   const { data: legal } = useLegalOverview();
 
   // Sans bornes de date : l'API renvoie les plus récentes en premier, et la dernière
-  // sortie n'a aucune raison de tomber dans la période affichée.
-  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 1 });
+  // sortie n'a aucune raison de tomber dans la période affichée. Trois, parce qu'une
+  // vidéo ne se juge qu'à côté de celles qui la précèdent.
+  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 3 });
 
   const moneyOptions = { mode: filters.moneyMode, includeInKind: filters.includeInKind };
 
@@ -127,37 +124,49 @@ export const DashboardPage = () => {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 2xl:grid-cols-6">
             <StatCard
               label={filters.moneyMode === 'profit' ? 'Bénéfices' : "Chiffre d'affaires"}
-              value={formatMoney(moneyValue(data.totals, moneyOptions))}
-              change={compareTotals(data.totals, data.previousTotals, (totals) =>
-                moneyValue(totals, moneyOptions),
+              value={privacy.money(moneyValue(data.totals, moneyOptions), 'totals')}
+              change={privacy.change(
+                compareTotals(data.totals, data.previousTotals, (totals) =>
+                  moneyValue(totals, moneyOptions),
+                ),
+                'totals',
               )}
-              hint={`dont ${formatMoney(cashRevenue(data.totals))} encaissés`}
+              hint={`dont ${privacy.money(cashRevenue(data.totals), 'cash')} encaissés`}
               icon={<Wallet className="h-4 w-4" />}
             />
             <StatCard
               label="Vues"
-              value={formatNumber(data.totals.views)}
-              change={compareTotals(data.totals, data.previousTotals, (t) => t.views)}
+              value={privacy.count(data.totals.views, 'views')}
+              change={privacy.change(
+                compareTotals(data.totals, data.previousTotals, (t) => t.views),
+                'views',
+              )}
               icon={<Eye className="h-4 w-4" />}
             />
             {/* Le gain en gros, le total en petit : sur une période, ce qui se pilote
                 c'est la progression — le cumul, lui, ne bouge qu'à la marge. */}
             <StatCard
               label="Abonnés gagnés"
-              value={formatSigned(data.totals.subscribersNet)}
-              change={compareTotals(data.totals, data.previousTotals, (t) => t.subscribersNet)}
+              value={privacy.signed(data.totals.subscribersNet, 'subscribers')}
+              change={privacy.change(
+                compareTotals(data.totals, data.previousTotals, (t) => t.subscribersNet),
+                'subscribers',
+              )}
               hint={
                 data.totals.subscribersTotal === null
                   ? 'total inconnu'
-                  : `${formatNumber(data.totals.subscribersTotal)} au total`
+                  : `${privacy.count(data.totals.subscribersTotal, 'subscribers')} au total`
               }
               icon={<Users className="h-4 w-4" />}
               accent={data.totals.subscribersNet < 0 ? 'var(--color-negative)' : undefined}
             />
             <StatCard
               label="Heures vues"
-              value={formatHours(data.totals.watchHours)}
-              change={compareTotals(data.totals, data.previousTotals, (t) => t.watchHours)}
+              value={privacy.hours(data.totals.watchHours, 'views')}
+              change={privacy.change(
+                compareTotals(data.totals, data.previousTotals, (t) => t.watchHours),
+                'views',
+              )}
               icon={<Clock className="h-4 w-4" />}
             />
 
@@ -172,24 +181,30 @@ export const DashboardPage = () => {
             <StatCard
               label={NATURE_LABELS.in_kind}
               value={formatNumber(data.totals.inKindEntries)}
-              hint={`${formatMoney(data.totals.inKindCents)} valorisés`}
+              hint={`${privacy.money(data.totals.inKindCents, 'inKind')} valorisés`}
               icon={<Gift className="h-4 w-4" />}
               accent={data.totals.inKindEntries > 0 ? 'var(--in-kind)' : undefined}
               details={<InKindList entries={inKindEntries} />}
             />
             <StatCard
               label="Dépenses"
-              value={formatMoney(data.totals.expenseCents)}
-              change={compareTotals(data.totals, data.previousTotals, (t) => t.expenseCents)}
+              value={privacy.money(data.totals.expenseCents, 'expenses')}
+              change={privacy.change(
+                compareTotals(data.totals, data.previousTotals, (t) => t.expenseCents),
+                'expenses',
+              )}
               hint="déduites en mode Bénéfices"
               icon={<Receipt className="h-4 w-4" />}
               accent={data.totals.expenseCents > 0 ? 'var(--expense)' : undefined}
             />
             <StatCard
               label="Engagement"
-              value={formatNumber(data.totals.likes)}
-              change={compareTotals(data.totals, data.previousTotals, (t) => t.likes)}
-              hint={`${formatNumber(data.totals.comments)} commentaires`}
+              value={privacy.count(data.totals.likes, 'views')}
+              change={privacy.change(
+                compareTotals(data.totals, data.previousTotals, (t) => t.likes),
+                'views',
+              )}
+              hint={`${privacy.count(data.totals.comments, 'views')} commentaires`}
               icon={<Heart className="h-4 w-4" />}
             />
 
@@ -204,7 +219,7 @@ export const DashboardPage = () => {
             />
             <StatCard
               label="Sponsos à encaisser"
-              value={formatMoney(pipeline.sponsorshipsPendingCents)}
+              value={privacy.money(pipeline.sponsorshipsPendingCents, 'sponsorships')}
               hint={`${pipeline.sponsorshipsPending} sponso(s) non encaissée(s)`}
               icon={<Handshake className="h-4 w-4" />}
               accent={pipeline.sponsorshipsPendingCents > 0 ? 'var(--color-positive)' : undefined}
@@ -225,7 +240,7 @@ export const DashboardPage = () => {
 
           {/* La dernière sortie, en pleine largeur : c'est la question qui suit
               immédiatement les totaux — « et ma dernière vidéo, elle marche ? ». */}
-          <LatestVideoCard video={latestVideos[0]} />
+          <LatestVideoCard videos={latestVideos} />
 
           {/* Ce qui cloche vient avant les courbes : une déclaration en retard ou un
               produit qui n'arrive pas se traite aujourd'hui, la tendance attend. */}

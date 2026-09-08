@@ -3,13 +3,12 @@ import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 
 import type { AnalyticsResult } from '../../../domain/analytics/entities/Analytics.ts';
 import { NATURE_LABELS } from '../../../domain/category/entities/Category.ts';
 import { useFilters } from '../../hooks/useFilters.tsx';
+import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import {
   formatDate,
   formatMoney,
   formatMoneyCompact,
-  formatNumber,
   formatNumberCompact,
-  formatSigned,
 } from '../../../shared/format.ts';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs.tsx';
@@ -42,15 +41,21 @@ interface VideoPerformanceChartProps {
  */
 export const VideoPerformanceChart = ({ data }: VideoPerformanceChartProps) => {
   const { moneyMode, includeInKind } = useFilters();
+  const privacy = usePrivacy();
   const [metric, setMetric] = useState<Metric>('views');
 
+  // Les composantes sont masquées avant d'être composées : `moneyCents` ne porte donc
+  // déjà plus que ce qu'on accepte de montrer, et les barres tombent d'elles-mêmes à
+  // zéro sans qu'aucune ne disparaisse du classement.
   const rows = useMemo(
-    () => withMoney(data.videoPerformance, { mode: moneyMode, includeInKind }),
-    [data.videoPerformance, moneyMode, includeInKind],
+    () => withMoney(data.videoPerformance, { mode: moneyMode, includeInKind }, privacy.parts),
+    [data.videoPerformance, moneyMode, includeInKind, privacy],
   );
 
   const value = (row: VideoRow): number =>
-    metric === 'money' ? row.moneyCents / 100 : row[metric];
+    metric === 'money'
+      ? row.moneyCents / 100
+      : privacy.amount(row[metric], metric === 'views' ? 'views' : 'subscribers');
 
   const bars = useMemo(
     () => [...rows].sort((a, b) => value(b) - value(a)).slice(0, MAX_BARS),
@@ -69,10 +74,10 @@ export const VideoPerformanceChart = ({ data }: VideoPerformanceChartProps) => {
           <CardTitle>Classement des vidéos</CardTitle>
           <p className="mt-1 text-2xl font-semibold tabular">
             {metric === 'money'
-              ? formatMoney(totals.moneyCents)
+              ? privacy.money(totals.moneyCents, 'totals')
               : metric === 'subscribersGained'
-                ? formatSigned(totals.subscribersGained)
-                : formatNumber(totals.views)}
+                ? privacy.signed(totals.subscribersGained, 'subscribers')
+                : privacy.count(totals.views, 'views')}
           </p>
           <p className="text-xs text-muted-foreground">
             {rows.length} sortie{rows.length > 1 ? 's' : ''} sur la période
@@ -170,6 +175,7 @@ const VideoTooltip = ({
   /** Décochée, la case retire les produits reçus du total : ils sortent aussi du détail. */
   includeInKind: boolean;
 }) => {
+  const privacy = usePrivacy();
   const row = payload?.[0]?.payload;
   if (!active || !row) return null;
 
@@ -181,12 +187,12 @@ const VideoTooltip = ({
       </p>
       <p className="text-base font-semibold tabular leading-tight text-popover-foreground">
         {metric === 'money'
-          ? formatMoney(row.moneyCents)
+          ? privacy.money(row.moneyCents, 'totals')
           : !row.hasStats
             ? '—'
             : metric === 'views'
-              ? formatNumber(row.views)
-              : formatSigned(row.subscribersGained)}
+              ? privacy.count(row.views, 'views')
+              : privacy.signed(row.subscribersGained, 'subscribers')}
         <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
           {METRIC_LABELS[metric]}
         </span>

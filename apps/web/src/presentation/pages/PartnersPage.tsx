@@ -29,7 +29,8 @@ import {
   STATUS_COLORS as PRODUCTION_STATUS_COLORS,
   STATUS_LABELS as PRODUCTION_STATUS_LABELS,
 } from '../../domain/production/entities/Production.ts';
-import { formatDate, formatMoney, toIsoDate } from '../../shared/format.ts';
+import { formatDate, toIsoDate } from '../../shared/format.ts';
+import { usePrivacy } from '../hooks/usePrivacy.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardHeader, CardTitle } from '../components/ui/card.tsx';
@@ -127,6 +128,7 @@ const LinkedVideoCell = ({
 };
 
 export const PartnersPage = () => {
+  const privacy = usePrivacy();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('onglet');
   const tab =
@@ -281,8 +283,9 @@ export const PartnersPage = () => {
               <p className="text-sm">
                 <span className="text-muted-foreground">Valeur restant à intégrer : </span>
                 <span className="tabular font-semibold text-[var(--in-kind)]">
-                  {formatMoney(
+                  {privacy.money(
                     visibleProducts.reduce((total, product) => total + product.valueCents, 0),
+                    'inKind',
                   )}
                 </span>
               </p>
@@ -290,7 +293,7 @@ export const PartnersPage = () => {
               <p className="text-sm">
                 <span className="text-muted-foreground">Valeur reçue sur la période : </span>
                 <span className="tabular font-semibold text-[var(--in-kind)]">
-                  {formatMoney(pipeline.productsReceivedCents)}
+                  {privacy.money(pipeline.productsReceivedCents, 'inKind')}
                 </span>
               </p>
             )}
@@ -388,7 +391,7 @@ export const PartnersPage = () => {
                       />
                     </TableCell>
                     <TableCell className="text-right tabular font-medium text-[var(--in-kind)]">
-                      {formatMoney(product.valueCents)}
+                      {privacy.money(product.valueCents, 'inKind')}
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
@@ -438,7 +441,7 @@ export const PartnersPage = () => {
                 <>
                   <span className="text-muted-foreground">Encaissé sur la période : </span>
                   <span className="tabular font-semibold text-[var(--positive)]">
-                    {formatMoney(pipeline.sponsorshipsPaidCents)}
+                    {privacy.money(pipeline.sponsorshipsPaidCents, 'sponsorships')}
                   </span>
                 </>
               )}
@@ -446,7 +449,7 @@ export const PartnersPage = () => {
                 À encaisser (toutes périodes) :{' '}
               </span>
               <span className="tabular font-semibold">
-                {formatMoney(pipeline.sponsorshipsPendingCents)}
+                {privacy.money(pipeline.sponsorshipsPendingCents, 'sponsorships')}
               </span>
             </p>
             <Button
@@ -488,7 +491,7 @@ export const PartnersPage = () => {
                           <Gift className="h-3 w-3" aria-hidden />
                           {sponsorship.productsCount} produit(s)
                           {sponsorship.productsValueCents > 0 &&
-                            ` · ${formatMoney(sponsorship.productsValueCents)} reçus`}
+                            ` · ${privacy.money(sponsorship.productsValueCents, 'inKind')} reçus`}
                         </span>
                       )}
                     </TableCell>
@@ -541,7 +544,7 @@ export const PartnersPage = () => {
                           : 'text-muted-foreground',
                       )}
                     >
-                      {formatMoney(sponsorship.amountCents)}
+                      {privacy.money(sponsorship.amountCents, 'sponsorships')}
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">

@@ -1,6 +1,7 @@
 import type { VideoPerformanceRow } from '../../domain/analytics/entities/Analytics.ts';
 import type { RevenueEntry } from '../../domain/revenue/entities/Revenue.ts';
-import { formatDate, formatMoney } from '../../shared/format.ts';
+import { formatDate } from '../../shared/format.ts';
+import { usePrivacy } from '../hooks/usePrivacy.tsx';
 
 /** Au-delà, le panneau dépasserait la carte : le reste est compté sur une ligne. */
 const MAX_ITEMS = 5;
@@ -51,6 +52,8 @@ export const VideoList = ({ videos }: { videos: VideoPerformanceRow[] }) => {
 
 /** Les revenus en nature de la période, avec leur valorisation. */
 export const InKindList = ({ entries }: { entries: RevenueEntry[] }) => {
+  const privacy = usePrivacy();
+
   if (entries.length === 0) {
     return <p className="text-muted-foreground">Aucun produit reçu sur cette période.</p>;
   }
@@ -66,7 +69,7 @@ export const InKindList = ({ entries }: { entries: RevenueEntry[] }) => {
             <span className="text-[11px] text-muted-foreground">{formatDate(entry.date)}</span>
           </span>
           <span className="shrink-0 tabular text-[var(--in-kind)]">
-            {formatMoney(entry.amountCents)}
+            {privacy.money(entry.amountCents, 'inKind')}
           </span>
         </div>
       ))}
@@ -75,7 +78,7 @@ export const InKindList = ({ entries }: { entries: RevenueEntry[] }) => {
       )}
       <div className="flex items-baseline justify-between gap-3 border-t border-border pt-1 font-medium">
         <span className="text-muted-foreground">Total</span>
-        <span className="tabular">{formatMoney(total)}</span>
+        <span className="tabular">{privacy.money(total, 'inKind')}</span>
       </div>
     </div>
   );
