@@ -34,7 +34,7 @@ const SIDEBAR_OPEN = '15rem';
 const SIDEBAR_CLOSED = '3.75rem';
 
 /**
- * La barre du bas est une **capsule flottante**, pas un bandeau collé au bord.
+ * La barre du bas est une **capsule de verre flottante**, pas un bandeau collé au bord.
  *
  * C'est ce qui distingue le verre liquide d'un simple fond translucide : on doit voir le
  * contenu passer *autour* et *sous* le panneau, pas seulement derrière lui. Un bandeau
@@ -51,7 +51,7 @@ const SIDEBAR_CLOSED = '3.75rem';
  * gestuelle, la fondre reviendrait à rapetisser les onglets là où ils sont déjà les plus
  * difficiles à viser.
  */
-const BOTTOM_NAV_HEIGHT = '3.75rem';
+const BOTTOM_NAV_HEIGHT = '3.5rem';
 const BOTTOM_NAV_GAP = '0.5rem';
 const BOTTOM_NAV = `calc(${BOTTOM_NAV_HEIGHT} + ${BOTTOM_NAV_GAP} * 2 + env(safe-area-inset-bottom))`;
 
@@ -368,8 +368,7 @@ export const AppLayout = () => {
           Elle est en `z-30`, sous le voile du tiroir (`z-40`) : à z-index égal, c'est
           l'ordre du DOM qui tranche, et la barre serait passée par-dessus le voile.
 
-          C'est une **capsule de verre flottante** (`.liquid-glass`) et non un bandeau
-          collé au bord : le verre n'a de sens que si le contenu passe autour et sous lui.
+          C'est une **capsule de verre flottante** et non un bandeau collé au bord : le verre n'a de sens que si le contenu passe autour et sous lui.
           `--bottom-nav` réserve sa hauteur plus le vide qui l'entoure, et sert aussi de
           réserve sous le contenu et d'appui au bouton flottant — trois valeurs écrites à
           la main auraient fini par se désaccorder, et le symptôme (un bouton qui recouvre
@@ -377,48 +376,71 @@ export const AppLayout = () => {
           plutôt que de s'y fondre, sans quoi les onglets rapetisseraient sur un iPhone à
           barre gestuelle, là où ils sont déjà les plus difficiles à viser. */}
       <nav
-        // La capsule est **détachée des bords** : c'est ce qui laisse voir le contenu
-        // défiler autour d'elle, et sans ça le verre n'a rien à réfracter. `--bottom-nav`
-        // réserve exactement sa hauteur plus les deux vides, la zone de sécurité comprise.
-        className="liquid-glass fixed z-30 overflow-hidden rounded-[1.875rem] lg:hidden"
-        style={{
-          height: BOTTOM_NAV_HEIGHT,
-          left: BOTTOM_NAV_GAP,
-          right: BOTTOM_NAV_GAP,
-          bottom: `calc(${BOTTOM_NAV_GAP} + env(safe-area-inset-bottom))`,
-        }}
+        /*
+         * Le conteneur ne capte aucun geste (`pointer-events-none`) : seule la capsule le
+         * fait. Les marges qui l'entourent restent donc traversables, et on continue de
+         * faire défiler la page en posant le pouce à côté de la barre — sur un bandeau
+         * pleine largeur, cette bande était morte.
+         */
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 lg:hidden"
         aria-label="Accès rapide"
       >
-        <div className="relative grid h-full grid-cols-5">
-          {MOBILE_NAV.map(({ to, label, short, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                cn(
-                  'flex flex-col items-center justify-center gap-1 px-1 text-[0.7rem] font-medium transition-colors',
-                  isActive ? 'text-foreground' : 'text-muted-foreground',
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  {/* La pastille derrière l'icône marque l'écran actif : sur cinq
-                      libellés de dix pixels, la seule couleur du texte ne suffit pas. */}
-                  <span
-                    className={cn(
-                      'flex h-8 w-14 items-center justify-center rounded-full transition-colors',
-                      isActive && 'bg-secondary',
+        {/*
+          Le verre, en trois couches, et il en manque une seule pour que l'effet retombe à
+          un voile gris : le **flou saturé**, qui rend à ce qui passe dessous ses couleurs
+          (un flou seul désature, et une miniature vire au gris) ; le **reflet** sur
+          l'arête haute ; l'**ombre portée**, qui décolle la capsule du fond et fait
+          comprendre qu'on voit à travers et non derrière.
+
+          `isolate` lui donne son propre contexte d'empilement, et `overflow-hidden` fait
+          suivre l'arrondi à tout ce qu'elle contient.
+        */}
+        <div
+          className={cn(
+            'pointer-events-auto isolate mx-2 overflow-hidden rounded-[26px]',
+            'border border-black/[0.06] dark:border-white/[0.14]',
+            'bg-background/55 backdrop-blur-2xl backdrop-saturate-150',
+            'shadow-[0_8px_32px_-6px_rgb(0_0_0/0.28)] dark:shadow-[0_12px_40px_-8px_rgb(0_0_0/0.65)]',
+          )}
+          style={{
+            height: BOTTOM_NAV_HEIGHT,
+            marginBottom: `calc(${BOTTOM_NAV_GAP} + env(safe-area-inset-bottom))`,
+          }}
+        >
+          {/* Le reflet est porté par la rangée elle-même : franc en haut, éteint avant la
+              moitié — au-delà ce n'est plus un reflet mais un fond, et le verre se met à
+              ressembler à un bouton. */}
+          <div className="grid h-full grid-cols-5 bg-gradient-to-b from-white/40 to-transparent dark:from-white/[0.08]">
+            {MOBILE_NAV.map(({ to, label, short, icon: Icon, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) =>
+                  cn(
+                    'relative flex flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-medium transition-colors',
+                    isActive ? 'text-primary' : 'text-muted-foreground',
+                  )
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    {/* Une pastille **de verre** sous l'onglet actif, et non un aplat
+                        opaque : la barre garde sa transparence d'ensemble, sinon un
+                        cinquième d'entre elle cesserait d'être du verre. */}
+                    {isActive && (
+                      <span
+                        className="absolute inset-x-1.5 inset-y-1 rounded-[18px] bg-primary/12 ring-1 ring-primary/20 ring-inset"
+                        aria-hidden
+                      />
                     )}
-                  >
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <span className="w-full truncate text-center">{short ?? label}</span>
-                </>
-              )}
-            </NavLink>
-          ))}
+                    <Icon className="relative h-5 w-5" />
+                    <span className="relative w-full truncate text-center">{short ?? label}</span>
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </div>
         </div>
       </nav>
     </div>

@@ -1,6 +1,18 @@
 @import 'tailwindcss';
 
 /*
+ * La variante `dark:`, alignée sur le projet Todo.
+ *
+ * Le thème passe partout ailleurs par des **variables redéclarées sous `.dark`**, et ça
+ * reste la règle : une couleur de la palette n'a pas à être écrite deux fois dans un
+ * composant. La variante n'existe que pour ce qui n'est **pas** une couleur du thème —
+ * la lumière et l'ombre d'un verre sont du blanc et du noir purs, à des opacités qui ne
+ * sont les mêmes dans aucun des deux modes. En faire des jetons polluerait la palette
+ * d'entrées qui ne servent qu'à un seul panneau.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
  * Thème shadcn/ui adapté à Tailwind v4 : les tokens sont des variables CSS,
  * redéclarées sous `.dark`, et exposées à Tailwind via `@theme inline`.
  * Un seul design system dans le projet : pas de composant Ant / MUI à côté.
@@ -128,93 +140,6 @@
 }
 
 @layer components {
-  /*
-   * Verre liquide, à la manière d'iOS.
-   *
-   * Ce n'est pas un fond translucide de plus. Ce qui fait lire un panneau comme du verre
-   * tient en trois choses, et il en manque une seule pour que l'effet retombe à un voile
-   * gris :
-   *
-   * 1. **Le fond est réfracté, pas juste flouté.** `saturate(180%)` est la moitié
-   *    importante du filtre : un flou seul désature ce qui passe dessous, et une photo ou
-   *    un graphique coloré vire au gris sous la barre. La saturation lui rend sa couleur,
-   *    exactement comme un verre épais.
-   * 2. **Le bord est une lumière, pas un trait.** Le biseau se joue en ombres internes —
-   *    une ligne claire en haut (là où la lumière frappe), une ligne sombre en bas (là où
-   *    l'épaisseur porte son ombre), et un liseré blanc très faible tout autour qui donne
-   *    au verre son épaisseur. Une `border` uniforme dessinerait un cadre ; ici on dessine
-   *    une arête.
-   * 3. **Il flotte.** Une ombre portée sous le panneau le décolle du contenu, et c'est
-   *    elle qui fait comprendre qu'on voit *à travers* et non *derrière*.
-   *
-   * Le reflet spéculaire est un `::before` plutôt qu'un `background-image` : le fond porte
-   * déjà la teinte du verre, et empiler les deux dans une même propriété rendrait le
-   * dégradé impossible à ajuster sans toucher à l'opacité du verre.
-   *
-   * `color-mix` sur `--card` fait suivre le thème sans écrire deux règles : le verre est
-   * clair sur fond clair, sombre sur fond sombre, et sa transparence ne bouge pas.
-   */
-  .liquid-glass {
-    position: relative;
-    background-color: color-mix(in oklab, var(--card) 55%, transparent);
-    -webkit-backdrop-filter: blur(28px) saturate(180%);
-    backdrop-filter: blur(28px) saturate(180%);
-    box-shadow:
-      inset 0 1px 0 0 rgb(255 255 255 / 0.4),
-      inset 0 0 0 1px rgb(255 255 255 / 0.1),
-      inset 0 -1px 0 0 rgb(0 0 0 / 0.05),
-      0 10px 30px -10px rgb(0 0 0 / 0.35),
-      0 2px 8px -4px rgb(0 0 0 / 0.2);
-  }
-
-  /* Le reflet : franc en haut, éteint avant la moitié — au-delà ce n'est plus un reflet,
-     c'est un dégradé, et le verre se met à ressembler à un bouton. */
-  .liquid-glass::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    background: linear-gradient(
-      to bottom,
-      rgb(255 255 255 / 0.18),
-      rgb(255 255 255 / 0.05) 40%,
-      rgb(255 255 255 / 0) 60%
-    );
-  }
-
-  /* Sur fond sombre, la lumière du biseau doit rester perceptible sans blanchir le
-     verre : moins d'opacité en haut, et l'ombre du bas ne sert plus à rien. */
-  .dark .liquid-glass {
-    background-color: color-mix(in oklab, var(--card) 62%, transparent);
-    box-shadow:
-      inset 0 1px 0 0 rgb(255 255 255 / 0.16),
-      inset 0 0 0 1px rgb(255 255 255 / 0.06),
-      0 10px 30px -10px rgb(0 0 0 / 0.6),
-      0 2px 8px -4px rgb(0 0 0 / 0.4);
-  }
-
-  .dark .liquid-glass::before {
-    background: linear-gradient(
-      to bottom,
-      rgb(255 255 255 / 0.09),
-      rgb(255 255 255 / 0.02) 40%,
-      rgb(255 255 255 / 0) 60%
-    );
-  }
-
-  /*
-   * Repli quand le navigateur ne sait pas flouter un fond (Firefox sans le drapeau,
-   * vieux WebKit) : le verre devient opaque. Un panneau translucide **non flouté** est le
-   * pire des deux mondes — on lit le contenu à travers les onglets, et plus rien n'est
-   * lisible.
-   */
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .liquid-glass {
-      background-color: var(--card);
-    }
-  }
-
   /*
    * Rendu du script. Écrit à la main plutôt qu'avec @tailwindcss/typography : un script
    * n'a besoin que de titres, listes, gras et tableaux, et la palette doit rester celle
