@@ -51,8 +51,8 @@ export const TurnoverPage = () => {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="hidden text-lg font-semibold lg:block">Chiffre d'affaires</h1>
+      <div className="hidden lg:block">
+        <h1 className="text-lg font-semibold">Chiffre d'affaires</h1>
         <p className="text-sm text-muted-foreground">
           Ce qui rentre, ce qui sort, et la soustraction des deux — sur la période choisie en haut.
         </p>

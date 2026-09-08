@@ -413,10 +413,20 @@ export const PlanningGrid = ({
      * chercher une fin d'après-midi — on ne savait alors plus sous quel jour on regardait.
      * La gouttière des heures est collée à gauche pour la même raison, sur sept colonnes
      * qui défilent horizontalement.
+     *
+     * **Sur mobile elle prend toute la hauteur restante**, et cette hauteur se calcule
+     * plutôt qu'elle ne se devine : `100dvh` (et non `100vh`, qui ignore la barre
+     * d'adresse rétractable de Safari) moins l'en-tête collant et la barre du bas, dont
+     * les deux hauteurs vivent déjà en variables CSS sur la racine — les mêmes que la
+     * réserve sous le contenu et le bouton flottant. Le reste (`3rem`) est la marge
+     * verticale de `main`. Un écran de téléphone n'a la place que d'une chose à la fois :
+     * une grille horaire qui n'occupe que le tiers du haut ne montre pas une journée.
      */
     <div
       className={cn(
-        'max-h-[calc(100vh-13rem)] min-h-[20rem] overflow-auto',
+        'overflow-auto',
+        'max-h-[calc(100dvh-var(--app-header)-var(--bottom-nav)-3rem)] min-h-[16rem]',
+        'lg:max-h-[calc(100vh-13rem)] lg:min-h-[20rem]',
         busy && 'pointer-events-none opacity-60',
       )}
     >
@@ -428,48 +438,59 @@ export const PlanningGrid = ({
           {/* En-têtes : le jour, sa charge, et son bouton de réorganisation. */}
           <div className="flex border-b border-border">
             <div className="sticky left-0 z-10 w-14 shrink-0 bg-card" />
-            {days.map((day, index) => {
-              const isToday = day.date === today;
-              const isTarget = drag !== null && drag.targetIndex === index;
-              return (
-                <div
-                  key={day.date}
-                  className={cn(
-                    'flex-1 border-l border-border px-2 py-1.5 transition-colors',
-                    isToday && 'bg-[var(--today)]/10',
-                    isTarget && 'bg-[var(--today)]/20',
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-1">
-                    <div className="min-w-0">
-                      <p
-                        className={cn(
-                          'truncate text-xs font-medium',
-                          isToday ? 'text-[var(--today)]' : 'text-foreground',
-                        )}
+            {/* Le même emboîtement que la grille horaire, et ce n'est pas une coquetterie :
+                les colonnes doivent tomber au pixel près sous leur en-tête. Posées en
+                frères de la gouttière, ces cellules se partageaient la largeur à un
+                niveau de flex, quand les colonnes se la partagent à deux — et leur
+                `min-width: auto` (le bouton de réorganisation, non rétrécissable) les
+                empêchait de descendre aussi bas. L'en-tête finissait plus large que sa
+                colonne, et tout le tableau se décalait vers la droite. Un conteneur
+                identique donne un partage identique. */}
+            <div className="flex flex-1">
+              {days.map((day, index) => {
+                const isToday = day.date === today;
+                const isTarget = drag !== null && drag.targetIndex === index;
+                return (
+                  <div
+                    key={day.date}
+                    className={cn(
+                      'min-w-0 flex-1 border-l border-border px-2 py-1.5 transition-colors',
+                      isToday && 'bg-[var(--today)]/10',
+                      isTarget && 'bg-[var(--today)]/20',
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="min-w-0">
+                        <p
+                          className={cn(
+                            'truncate text-xs font-medium',
+                            isToday ? 'text-[var(--today)]' : 'text-foreground',
+                          )}
+                        >
+                          {WEEKDAY_SHORT[day.weekday]} {day.date.slice(8, 10)}/
+                          {day.date.slice(5, 7)}
+                        </p>
+                        <p className="truncate text-[11px] text-muted-foreground">
+                          {day.suggestedMinutes + day.approvedMinutes === 0
+                            ? '—'
+                            : formatMinutes(day.suggestedMinutes + day.approvedMinutes)}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        title="Réorganiser cette journée"
+                        onClick={() => onReorganizeDay(day.date)}
                       >
-                        {WEEKDAY_SHORT[day.weekday]} {day.date.slice(8, 10)}/{day.date.slice(5, 7)}
-                      </p>
-                      <p className="truncate text-[11px] text-muted-foreground">
-                        {day.suggestedMinutes + day.approvedMinutes === 0
-                          ? '—'
-                          : formatMinutes(day.suggestedMinutes + day.approvedMinutes)}
-                      </p>
+                        <Wand2 className="h-3 w-3" />
+                        <span className="sr-only">Réorganiser le {day.date}</span>
+                      </Button>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 shrink-0"
-                      title="Réorganiser cette journée"
-                      onClick={() => onReorganizeDay(day.date)}
-                    >
-                      <Wand2 className="h-3 w-3" />
-                      <span className="sr-only">Réorganiser le {day.date}</span>
-                    </Button>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
 
           {/* La swimlane des vidéos : de quand à quand chacune occupe le calendrier.
@@ -567,21 +588,26 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
               <div className="sticky left-0 z-10 w-14 shrink-0 bg-card px-1 py-1 text-[10px] text-muted-foreground">
                 journée
               </div>
-              {days.map((day) => (
-                <div key={day.date} className="flex-1 space-y-0.5 border-l border-border px-1 py-1">
-                  {day.events
-                    .filter((event) => event.allDay)
-                    .map((event) => (
-                      <p
-                        key={event.uid}
-                        className="truncate rounded bg-muted px-1 text-[11px] text-muted-foreground"
-                        title={event.summary}
-                      >
-                        {event.summary}
-                      </p>
-                    ))}
-                </div>
-              ))}
+              <div className="flex flex-1">
+                {days.map((day) => (
+                  <div
+                    key={day.date}
+                    className="min-w-0 flex-1 space-y-0.5 border-l border-border px-1 py-1"
+                  >
+                    {day.events
+                      .filter((event) => event.allDay)
+                      .map((event) => (
+                        <p
+                          key={event.uid}
+                          className="truncate rounded bg-muted px-1 text-[11px] text-muted-foreground"
+                          title={event.summary}
+                        >
+                          {event.summary}
+                        </p>
+                      ))}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

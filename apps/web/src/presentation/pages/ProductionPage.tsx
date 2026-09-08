@@ -143,16 +143,19 @@ export const ProductionPage = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Tout l'en-tête disparaît sous `lg` : le titre est dans la barre d'application,
+          le sous-titre explique un écran qu'on a sous les yeux, et l'action est déjà un
+          bouton flottant. Le garder pour un bloc vide aurait laissé une marge en haut. */}
+      <div className="hidden flex-wrap items-center justify-between gap-3 lg:flex">
         <div>
-          <h1 className="hidden text-lg font-semibold lg:block">Production</h1>
+          <h1 className="text-lg font-semibold">En cours</h1>
           <p className="text-sm text-muted-foreground">
             Ce qui est en cours, ce qui sort quand, et le temps que ça prend vraiment.
           </p>
         </div>
         {/* Même parti pris que sur le planning : à portée de pouce sur mobile, dans
             l'en-tête sur grand écran. */}
-        <Button size="sm" className="hidden lg:inline-flex" onClick={openCreate}>
+        <Button size="sm" onClick={openCreate}>
           <Plus className="h-4 w-4" />
           Nouvelle vidéo
         </Button>
@@ -238,8 +241,14 @@ export const ProductionPage = () => {
         </div>
 
         <TabsContent value="queue">
+          {/* `minmax(0,1fr)` borne la colonne large, et `min-w-0` borne réellement les
+              deux : une piste de grille a `min-width: auto` par défaut, donc elle
+              s'élargit au contenu le plus long — un titre de vidéo, un intitulé de
+              créneau, une idée notée d'une traite — au lieu de le tronquer. C'est ce qui
+              faisait glisser tout l'écran sur le côté. La colonne de droite garde sa
+              largeur fixe de `20rem`. */}
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-            <div className="space-y-2.5">
+            <div className="min-w-0 space-y-2.5">
               {queue.map((production, index) => (
                 <ProductionCard
                   key={production.id}
@@ -262,7 +271,7 @@ export const ProductionPage = () => {
               )}
             </div>
 
-            <div className="space-y-4">
+            <div className="min-w-0 space-y-4">
               {/* Les créneaux à venir, tous projets confondus : ce que dit l'agenda. */}
               <Card className="h-fit">
                 <CardHeader className="pb-2">

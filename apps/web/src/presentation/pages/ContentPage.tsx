@@ -37,7 +37,7 @@ export const ContentPage = () => {
   // Sans bornes de date, comme sur le dashboard : « ma dernière vidéo, elle marche
   // comment » ne se pose pas dans une fenêtre de temps, et une période de sept jours
   // viderait le bloc précisément quand on vient le lire.
-  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 3 });
+  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 10 });
 
   const periodVideos = useMemo(() => data?.videoPerformance ?? [], [data]);
   const catalog = useMemo(() => data?.catalogPerformance ?? [], [data]);
@@ -61,8 +61,8 @@ export const ContentPage = () => {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="hidden text-lg font-semibold lg:block">Contenu</h1>
+      <div className="hidden lg:block">
+        <h1 className="text-lg font-semibold">Contenu</h1>
         <p className="text-sm text-muted-foreground">
           {periodVideos.length} sortie(s) sur la période · {catalog.length} vidéo(s) au catalogue ·{' '}
           {overview?.queue.length ?? 0} en production

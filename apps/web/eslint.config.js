@@ -38,6 +38,7 @@ export default tseslint.config(
       'src/presentation/components/ui/**/*.tsx',
       'src/presentation/hooks/useFilters.tsx',
       'src/presentation/hooks/usePrivacy.tsx',
+      'src/presentation/hooks/useAppBar.tsx',
     ],
     rules: {
       'react-refresh/only-export-components': 'off',

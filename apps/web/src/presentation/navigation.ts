@@ -134,14 +134,15 @@ export const MOBILE_NAV: NavItem[] = MOBILE_PATHS.map((path) =>
  * demanderait un contexte et une ligne dans les dix écrans, pour une chaîne de caractères
  * que l'URL porte déjà.
  *
- * Il ne reprend pas toujours le libellé du menu : « En cours » se lit sous le titre de
- * famille « Production », mais tout seul en haut d'un écran il ne dit plus de quoi on
- * parle. Le plus long préfixe gagne, ce qui donne son propre titre à une fiche de vidéo
- * sans avoir à énumérer les identifiants.
+ * Il ne reprend pas toujours le libellé du menu : une fiche de vidéo n'en a aucun. Le
+ * plus long préfixe gagne, ce qui lui donne son propre titre sans avoir à énumérer les
+ * identifiants.
  */
 const TITLES: Array<[string, string]> = [
   ['/production/', 'Vidéo'],
-  ['/production', 'Production'],
+  // « En cours », comme dans le menu : « Production » en haut de l'écran redisait le
+  // titre de famille sans rien apprendre, et mangeait une ligne de barre d'application.
+  ['/production', 'En cours'],
   ['/planning', 'Planning'],
   ['/contenu', 'Contenu'],
   ['/instagram', 'Instagram'],

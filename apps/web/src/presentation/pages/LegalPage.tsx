@@ -32,6 +32,7 @@ import { LegalAlertsCard } from '../components/legal/LegalAlertsCard.tsx';
 import { LegalBookmarks } from '../components/legal/LegalBookmarks.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 import { cn } from '../../shared/cn.ts';
+import { AppBarActions } from '../hooks/useAppBar.tsx';
 import { MASKED_TEXT } from '../../domain/privacy/entities/Privacy.ts';
 import { usePrivacy } from '../hooks/usePrivacy.tsx';
 
@@ -81,9 +82,19 @@ export const LegalPage = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      {/* Sur mobile, la roue crantée remonte dans la barre d'application : c'est la
+          place d'une action secondaire, et l'en-tête n'a plus rien d'autre à porter. */}
+      <AppBarActions>
+        <Button asChild variant="ghost" size="icon">
+          <Link to="/parametres?onglet=societe" aria-label="Société et obligations">
+            <Settings className="h-5 w-5" />
+          </Link>
+        </Button>
+      </AppBarActions>
+
+      <div className="hidden flex-wrap items-start justify-between gap-3 lg:flex">
         <div>
-          <h1 className="hidden text-lg font-semibold lg:block">Légal</h1>
+          <h1 className="text-lg font-semibold">Légal</h1>
           <p className="text-sm text-muted-foreground">
             Une ligne par mois depuis la création de la société, une case par obligation.
           </p>

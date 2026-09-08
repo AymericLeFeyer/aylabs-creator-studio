@@ -2,7 +2,11 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `viewport-fit=cover` : sans lui, `env(safe-area-inset-*)` vaut zéro et iOS
+      insère lui-même une bande sous la page. Avec, la barre du bas peut se poser
+      au ras de la barre gestuelle et réserver l'espace elle-même — c'est ce que
+      font `--bottom-nav` et le `padding-top` de l'en-tête. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
 
     <!-- La couleur de la barre système suit le thème réel : une seule valeur ferait

@@ -8,6 +8,7 @@ import {
   Plus,
   RotateCw,
   Settings,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   localToday,
@@ -38,7 +39,15 @@ import { ApproveSlotDialog } from '../components/planning/ApproveSlotDialog.tsx'
 import { SlotTimeDialog } from '../components/planning/SlotTimeDialog.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu.tsx';
 import { Fab } from '../components/Fab.tsx';
+import { AppBarActions } from '../hooks/useAppBar.tsx';
 import { cn } from '../../shared/cn.ts';
 
 type Span = 'day' | 'week';
@@ -201,11 +210,105 @@ export const PlanningPage = () => {
     startTimer.isPending ||
     placeItem.isPending;
 
+  /**
+   * Les réglages d'affichage de la grille : quelle fenêtre, et large ou non.
+   *
+   * Ils vivent dans le même composant que la barre du haut, monté deux fois — au large
+   * dans l'en-tête, replié dans un menu sur mobile. Le pas de navigation reste **le
+   * jour** des deux côtés : c'est ce qui permet d'amener n'importe quelle date en
+   * deuxième colonne.
+   */
+  const viewControls = (
+    <>
+      <div className="flex items-center rounded-md border border-border">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-r-none"
+          onClick={() => setAnchor(shiftDate(anchor, -1))}
+          title="Reculer d’un jour"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          <span className="sr-only">Jour précédent</span>
+        </Button>
+        <button
+          type="button"
+          onClick={() => setAnchor(today)}
+          className="h-8 border-x border-border px-3 text-xs font-medium hover:bg-accent"
+        >
+          Aujourd’hui
+        </button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-l-none"
+          onClick={() => setAnchor(shiftDate(anchor, 1))}
+          title="Avancer d’un jour"
+        >
+          <ChevronRight className="h-4 w-4" />
+          <span className="sr-only">Jour suivant</span>
+        </Button>
+      </div>
+
+      <div className="flex items-center rounded-md border border-border p-0.5">
+        {(['day', 'week'] as Span[]).map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setSpan(value)}
+            className={cn(
+              'flex-1 rounded px-2.5 py-1 text-xs font-medium transition-colors',
+              span === value
+                ? 'bg-secondary text-secondary-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {value === 'day' ? 'Jour' : '7 jours'}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Sur mobile, la grille prend tout l'écran : ses commandes remontent donc dans la
+          barre d'application. Le repositionnement d'abord — c'est le geste qu'on
+          déclenche —, puis la fenêtre affichée dans un menu, parce qu'on la règle une
+          fois et qu'elle occupait deux lignes en haut de l'écran. */}
+      <AppBarActions>
+        <Button
+          variant="ghost"
+          size="icon"
+          disabled={busy}
+          onClick={() => replan.mutate({ from: today })}
+          title="Repositionner"
+        >
+          <RotateCw className={cn('h-5 w-5', replan.isPending && 'animate-spin')} />
+          <span className="sr-only">Repositionner les suggestions</span>
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon">
+              <SlidersHorizontal className="h-5 w-5" />
+              <span className="sr-only">Affichage du planning</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-60 p-2">
+            <DropdownMenuLabel>{formatRange(from, to)}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {/* Les mêmes contrôles qu'en grand écran, empilés : un second jeu tactile
+                aurait fini par se contredire avec le premier. */}
+            <div className="flex flex-col gap-2 pt-1 [&>div]:w-full [&>div]:justify-between">
+              {viewControls}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </AppBarActions>
+
+      <div className="hidden flex-wrap items-center justify-between gap-3 lg:flex">
         <div>
-          <h1 className="hidden text-lg font-semibold lg:block">Planning</h1>
+          <h1 className="text-lg font-semibold">Planning</h1>
           {/* La fenêtre est glissante : sans elle écrite noir sur blanc, « Semaine » ne
               dirait plus laquelle, et deux clics de flèche perdraient le lecteur. */}
           <p className="text-sm text-muted-foreground">
@@ -215,53 +318,7 @@ export const PlanningPage = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center rounded-md border border-border">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-r-none"
-              onClick={() => setAnchor(shiftDate(anchor, -1))}
-              title="Reculer d’un jour"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              <span className="sr-only">Jour précédent</span>
-            </Button>
-            <button
-              type="button"
-              onClick={() => setAnchor(today)}
-              className="h-8 border-x border-border px-3 text-xs font-medium hover:bg-accent"
-            >
-              Aujourd’hui
-            </button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-l-none"
-              onClick={() => setAnchor(shiftDate(anchor, 1))}
-              title="Avancer d’un jour"
-            >
-              <ChevronRight className="h-4 w-4" />
-              <span className="sr-only">Jour suivant</span>
-            </Button>
-          </div>
-
-          <div className="flex items-center rounded-md border border-border p-0.5">
-            {(['day', 'week'] as Span[]).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setSpan(value)}
-                className={cn(
-                  'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                  span === value
-                    ? 'bg-secondary text-secondary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {value === 'day' ? 'Jour' : '7 jours'}
-              </button>
-            ))}
-          </div>
+          {viewControls}
 
           <Button
             variant="outline"
@@ -275,9 +332,9 @@ export const PlanningPage = () => {
           </Button>
 
           {/* Sur mobile ce bouton mangeait une ligne entière en haut de l'écran, au
-              plus loin du pouce : il y devient un bouton flottant, posé au-dessus de la
-              barre d'onglets. Même action, deux emplacements — jamais les deux à la fois. */}
-          <Button size="sm" className="hidden lg:inline-flex" onClick={() => setAddOpen(true)}>
+              plus loin du pouce : il y devient un bouton flottant (`Fab`), posé au-dessus
+              de la barre d'onglets. Même action, deux emplacements. */}
+          <Button size="sm" onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4" />
             Ajouter une vidéo
           </Button>
@@ -311,8 +368,13 @@ export const PlanningPage = () => {
         </Card>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
-        <Card className="overflow-hidden">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        {/* Sur mobile la grille **sort du conteneur** et va d'un bord à l'autre :
+            c'est un tableau à sept colonnes, et lui laisser les marges de la page
+            revenait à en amputer un jour. Les marges négatives compensent exactement le
+            `px` de `CONTAINER`, et les bords perdent leur arrondi et leur trait
+            vertical — un cadre qui touche les bords de l'écran n'en est plus un. */}
+        <Card className="-mx-3 overflow-hidden rounded-none border-x-0 sm:-mx-5 lg:mx-0 lg:rounded-xl lg:border-x">
           {isLoading && (
             <p className="p-8 text-center text-sm text-muted-foreground">Chargement…</p>
           )}

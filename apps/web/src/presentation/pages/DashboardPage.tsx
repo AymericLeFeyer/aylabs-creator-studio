@@ -83,9 +83,10 @@ export const DashboardPage = () => {
   const { data: legal } = useLegalOverview();
 
   // Sans bornes de date : l'API renvoie les plus récentes en premier, et la dernière
-  // sortie n'a aucune raison de tomber dans la période affichée. Trois, parce qu'une
-  // vidéo ne se juge qu'à côté de celles qui la précèdent.
-  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 3 });
+  // sortie n'a aucune raison de tomber dans la période affichée. Dix, parce qu'une vidéo
+  // ne se juge qu'à côté de celles qui la précèdent — et qu'à trois on butait sur la
+  // borne avant d'avoir vu la tendance.
+  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 10 });
 
   const moneyOptions = { mode: filters.moneyMode, includeInKind: filters.includeInKind };
 

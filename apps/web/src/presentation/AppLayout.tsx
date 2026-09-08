@@ -8,6 +8,7 @@ import { Button } from './components/ui/button.tsx';
 import { FiltersBar } from './components/FiltersBar.tsx';
 import { RunningTimerBar } from './components/production/RunningTimerBar.tsx';
 import { CollectAction } from './components/filters/CollectAction.tsx';
+import { AppBarProvider } from './hooks/useAppBar.tsx';
 import { cn } from '../shared/cn.ts';
 
 /** Largeur du contenu, généreuse sur grand écran : les graphiques côte à côte en ont besoin. */
@@ -64,6 +65,14 @@ const BOTTOM_NAV = 'calc(4.5rem + env(safe-area-inset-bottom))';
  */
 export const AppLayout = () => {
   const { theme, toggle } = useTheme();
+  /**
+   * Le conteneur des actions de la barre d'application mobile.
+   *
+   * Une `ref` de callback plutôt qu'un `useRef` : les pages y portent leur contenu par
+   * un portail, et un portail a besoin d'un nœud **rendu**. Un `useRef` ne provoque
+   * aucun rendu quand il se remplit, et le portail n'aurait jamais rien à viser.
+   */
+  const [actionsNode, setActionsNode] = useState<HTMLDivElement | null>(null);
   const { preferences, set } = usePreferences();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -256,6 +265,9 @@ export const AppLayout = () => {
       >
         <header
           ref={headerRef}
+          // `viewport-fit=cover` fait passer le contenu sous l'encoche : l'en-tête
+          // s'en écarte de lui-même. Nul ailleurs (grand écran, appareil sans encoche).
+          style={{ paddingTop: 'env(safe-area-inset-top)' }}
           className={cn(
             'sticky top-0 z-30 bg-background/85 backdrop-blur',
             // Sur mobile l'en-tête porte toujours la barre d'application, donc toujours
@@ -286,6 +298,10 @@ export const AppLayout = () => {
               <Menu className="h-5 w-5" />
             </Button>
             <span className="min-w-0 flex-1 truncate text-base font-semibold">{title}</span>
+            {/* Les actions de l'écran, portées ici par `AppBarActions`. La collecte y
+                est posée d'office là où elle a un sens — les écrans à filtres —, les
+                autres écrans y déposent les leurs. */}
+            <div ref={setActionsNode} className="flex shrink-0 items-center gap-0.5" />
             {showFilters && <CollectAction compact />}
           </div>
 
@@ -308,8 +324,27 @@ export const AppLayout = () => {
         {/* La réserve du bas vaut la hauteur de la barre d'onglets plus une marge :
             sans elle, le dernier bouton d'un formulaire finirait dessous, hors
             d'atteinte. Elle retombe à zéro dès que la barre disparaît (`lg`). */}
-        <main className={cn(CONTAINER, 'py-4 pb-[calc(var(--bottom-nav)+1rem)] sm:py-6 lg:pb-6')}>
-          <Outlet />
+        {/* Sous `lg`, rien ne fait jamais glisser l'écran sur le côté.
+            
+            `clip` et non `hidden` : `clip` ne crée pas de conteneur de défilement, donc
+            les en-têtes collants continuent de s'accrocher à la fenêtre. Un panneau de
+            survol, une carte trop large ou une piste de grille non bornée n'a pas à
+            décaler toute la page — un symptôme qu'on ne voit que sur un téléphone, et
+            qu'on corrige une fois ici plutôt qu'à chaque composant.
+            
+            Il redevient `visible` sur grand écran : là, les panneaux de survol des cartes
+            de stats débordent volontairement du conteneur, et les rogner les couperait
+            en deux sur la première et la dernière colonne. */}
+        <main
+          className={cn(
+            CONTAINER,
+            'overflow-x-clip py-4 pb-[calc(var(--bottom-nav)+1rem)] sm:py-6',
+            'lg:overflow-x-visible lg:pb-6',
+          )}
+        >
+          <AppBarProvider node={actionsNode}>
+            <Outlet />
+          </AppBarProvider>
         </main>
       </div>
 
@@ -333,7 +368,17 @@ export const AppLayout = () => {
           sans quoi les onglets rapetisseraient sur un iPhone à barre gestuelle, là où ils
           sont déjà les plus difficiles à viser. */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur lg:hidden"
+        className={cn(
+          'fixed inset-x-0 bottom-0 z-30 lg:hidden',
+          // Verre liquide : très translucide, fortement flouté et **saturé** — sans la
+          // saturation, ce qui passe dessous vire au gris et le verre se lit comme un
+          // simple voile. Le filet du haut est une lumière (blanc sur fond sombre, encre
+          // sur fond clair) plutôt qu'une bordure : c'est le bord du verre, pas un trait
+          // de séparation.
+          'border-t border-foreground/10 bg-card/60',
+          'backdrop-blur-2xl backdrop-saturate-150',
+          'shadow-[inset_0_1px_0_0_rgb(255_255_255/0.14)]',
+        )}
         style={{ height: 'var(--bottom-nav)', paddingBottom: 'env(safe-area-inset-bottom)' }}
         aria-label="Accès rapide"
       >

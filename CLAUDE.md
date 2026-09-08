@@ -1399,9 +1399,9 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 | `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, alertes (production + légal), puis **les deux graphiques seulement** (argent, audience)                |
 | `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                       |
 | `/instagram`        | `InstagramPage`        | 6 cartes, graphique à 3 onglets, puis calendrier des stories / tableau des publications                                                                           |
-| `/commentaires`     | `CommentsPage`         | 3 onglets (`?onglet=`) : Wall of Love, Propositions de la communauté, Commentaires (le tableau de tri)                                                            |
+| `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets     |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail à droite, bouton « Ajouter une vidéo »                                                                               |
-| `/production`       | `ProductionPage`       | Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                            |
+| `/production`       | `ProductionPage`       | Titré **« En cours »**. Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                    |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / Créneaux & temps passé / Produits & sponsos / Notes                                    |
 | `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis trois onglets Produits, Sponsors et **Plateformes** (`?onglet=`). Bouton **Script** par sponso                    |
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                             |
@@ -1455,6 +1455,29 @@ La swimlane des vidéos est empilée en **bandes** et non en une ligne par vidé
 avant celle-ci). À six vidéos en cours, une bande chacune repousserait la grille horaire
 sous le pli alors que la plupart des fenêtres ne se chevauchent pas. Le glouton n'est
 correct que parce que **l'API trie par date de début**.
+
+**Sur mobile, la grille prend tout ce qui reste de l'écran.** Elle **sort du conteneur**
+(marges négatives compensant exactement le `px` de `CONTAINER`, bords sans arrondi ni trait
+vertical) : c'est un tableau à sept colonnes, et lui laisser les marges de la page revenait
+à en amputer un jour. Sa hauteur se **calcule** plutôt qu'elle ne se devine —
+`100dvh` (et non `100vh`, qui ignore la barre d'adresse rétractable de Safari) moins
+`--app-header` et `--bottom-nav`, les deux variables déjà posées sur la racine, moins la
+marge verticale de `main`. Un écran de téléphone n'a la place que d'une chose à la fois :
+une grille horaire qui n'occupe que le tiers du haut ne montre pas une journée.
+
+Ses commandes remontent donc dans la barre d'application (`AppBarActions`) : le
+**repositionnement** d'abord — c'est le geste qu'on déclenche —, puis la **fenêtre
+affichée** dans un menu, parce qu'on la règle une fois et qu'elle occupait deux lignes en
+haut de l'écran. Les contrôles sont **le même bloc JSX** monté aux deux endroits : un
+second jeu tactile aurait fini par se contredire avec le premier.
+
+**Toutes les rangées de la grille ont la même structure : gouttière figée, puis un unique
+conteneur `flex-1` portant les jours.** Ce n'est pas une coquetterie. Les cellules
+d'en-tête étaient posées en **frères** de la gouttière et se partageaient donc la largeur à
+un niveau de flex, quand les colonnes se la partagent à deux — et leur `min-width: auto`
+(le bouton de réorganisation, non rétrécissable) les empêchait de descendre aussi bas.
+L'en-tête finissait plus large que sa colonne et tout le tableau se décalait. Un emboîtement
+identique donne un partage identique ; `min-w-0` sur chaque cellule ferme la question.
 
 **La grille défile dans sa carte, et son en-tête est collant.** `PlanningGrid` porte un
 `max-h` et son propre `overflow-auto` : un `sticky` n'accroche qu'à un conteneur qui
@@ -1514,10 +1537,30 @@ cliquer.
 `ROUTES_WITHOUT_FILTERS` inclut `/planning` : la période s'y choisit dans l'écran lui-même,
 et une seconde barre de dates au-dessus dirait autre chose que la grille.
 
-`CommentsPage` porte **trois onglets et non deux** : le mur, les propositions, et le
-tableau de tri. Les deux premiers sont le **produit** du troisième — sans tri, ils restent
+`CommentsPage` porte **trois vues et non deux** : le mur, les propositions, et le tableau
+de tri. Les deux premières sont le **produit** de la troisième — sans tri, elles restent
 vides, et leur écran vide le dit. Les séparer est ce qui permet au mur de n'être qu'un mur :
 on l'ouvre pour se faire du bien, pas pour travailler.
+
+**Ce ne sont plus des onglets, mais deux icônes à pastille** (`CommentsActions`), posées à
+droite du titre au large et dans la barre d'application sur mobile. « Wall of Love »,
+« Propositions de la communauté » et « Commentaires » avec leurs compteurs faisaient une
+rangée plus large qu'un téléphone : on la faisait défiler pour découvrir qu'il n'y avait
+rien de plus à droite. Une bulle (ce qu'il reste à trier) et une ampoule (ce qui a été
+proposé) disent la même chose en trois centimètres, et le nombre tient dans la pastille —
+qui ne s'affiche pas à zéro, une pastille vide se lisant comme une alerte alors qu'elle ne
+dit que « rien à faire ». **Le mur est la vue par défaut et n'a pas de bouton** : c'est
+l'écran sur lequel on arrive, et re-cliquer le bouton actif y ramène — lui en donner un
+troisième aurait remis une rangée là où on venait d'en retirer une. L'adresse garde la vue
+(`?onglet=`), comme avant.
+
+**Chaque proposition peut être écartée sur place** (`CommunityIdeas`). Une liste de
+propositions se dépouille : on la relit en cherchant quoi tourner, et ce qui a été fait —
+ou ce qu'on ne fera pas — doit pouvoir en sortir au moment où on le décide. Sans ce geste
+il fallait retourner dans le tableau de tri retrouver la ligne parmi des centaines
+d'autres, et la liste grossissait jusqu'à ne plus être lue. Un seul bouton, et pas les
+trois du `CommentStatusPicker` : « ça fait plaisir » n'a pas de sens ici, et remettre à
+trier se fait dans le tableau.
 
 **Le mur affiche au hasard, les propositions dans l'ordre.** Ce ne sont pas les mêmes
 objets : un mur se contemple, une liste de propositions se dépouille. Trié par date, le mur
@@ -1615,10 +1658,35 @@ dans `localStorage` est simplement ignorée.
 **Sur mobile, l'en-tête devient une barre d'application** : bouton du menu, **titre de
 l'écran** (`pageTitle`, dérivé de l'adresse — faire remonter un titre depuis chaque page
 demanderait un contexte et une ligne dans dix écrans pour une chaîne que l'URL porte
-déjà), et une **action à droite**, la collecte, sur les écrans qui portent des filtres.
-Les pages masquent leur propre `<h1>` sous `lg` (`hidden lg:block`) : il occupait une
-ligne pour redire ce que l'onglet actif disait déjà. Leur sous-titre, lui, reste — il
-explique, il ne répète pas.
+déjà), puis les **actions de l'écran** à droite, la collecte comprise sur les écrans qui
+portent des filtres.
+
+**Sous `lg`, le bloc titre disparaît en entier — titre ET sous-titre.** Le titre redisait
+ce que la barre d'application affiche déjà. Le sous-titre, lui, *explique l'écran* (« Une
+ligne par mois depuis la création de la société », « Archivés au fil de l'eau… ») : c'est
+utile quand on découvre l'outil au large, et c'est deux lignes de perdues sur un écran de
+téléphone où l'on vient faire quelque chose de précis. Le bloc entier porte donc
+`hidden lg:block`, plutôt que chaque élément séparément — masquer les enfants d'un
+conteneur laisse le conteneur, son `gap` et la marge de `space-y-4`.
+
+**Les actions d'un écran remontent dans cette barre par un portail** (`AppBarActions`,
+`presentation/hooks/useAppBar.tsx`). `AppLayout` monte l'`Outlet` : il ne connaît pas
+l'écran affiché, et lui faire remonter ses boutons demanderait un contexte à écrire dans
+les dix pages. Un portail laisse chaque page déclarer ses actions **là où vivent leur état
+et leurs mutations**, et les fait apparaître au bon endroit. Le conteneur d'arrivée est une
+**ref de callback** et non un `useRef` : un portail vise un nœud rendu, et un `useRef` ne
+provoque aucun rendu en se remplissant. Il vit dans un bloc `lg:hidden`, si bien que sur
+grand écran ce qui y est porté n'est simplement pas affiché et que chaque page garde son
+en-tête. S'en servent : les commentaires (les deux accès et la collecte), le planning
+(repositionner et l'affichage), le légal (la roue crantée).
+
+**Sous `lg`, `main` porte `overflow-x-clip`.** Un panneau de survol, une carte trop large
+ou une piste de grille non bornée ne doit jamais faire glisser tout l'écran sur le côté —
+un symptôme qu'on ne voit que sur un téléphone, et qu'il vaut mieux corriger une fois ici
+qu'à chaque composant. `clip` et non `hidden` : `clip` ne crée pas de conteneur de
+défilement, donc les en-têtes collants continuent de s'accrocher à la fenêtre. Il redevient
+`visible` à partir de `lg`, où les panneaux des `StatCard` débordent volontairement du
+conteneur — les rogner les couperait en deux sur la première et la dernière colonne.
 
 **Les filtres se replient en un seul bouton sur mobile** (`FiltersSheet`) : dépliés, les
 cinq réglages occupaient quatre lignes, soit la moitié de la hauteur utile, et l'écran
@@ -1634,6 +1702,19 @@ d'application — et masqué en CSS ; chacun porte sa mutation, un seul est cliq
 mangeait une ligne entière en haut de l'écran, au plus loin du pouce. Même action, deux
 emplacements, jamais les deux à la fois (`hidden lg:inline-flex` d'un côté, `lg:hidden` de
 l'autre).
+
+**La barre du bas est en verre liquide.** Très translucide (`bg-card/60`), fortement
+floutée **et saturée** : sans `backdrop-saturate`, ce qui passe dessous vire au gris et le
+verre se lit comme un simple voile. Le filet du haut est une lumière (`border-foreground/10`
+plus une ombre interne blanche) et non une bordure — c'est le bord du verre, pas un trait
+de séparation.
+
+**`viewport-fit=cover` est dans le `<meta viewport>`, et c'est lui qui rend
+`env(safe-area-inset-*)` non nul.** Sans lui la valeur vaut zéro et iOS insère lui-même une
+bande sous la page — la barre du bas ne peut alors pas se poser au ras de la barre
+gestuelle. Avec lui, c'est à l'application de réserver l'espace : `--bottom-nav` l'ajoute à
+la hauteur des onglets, et l'en-tête collant porte un `padding-top:
+env(safe-area-inset-top)` pour ne pas passer sous l'encoche.
 
 **`--bottom-nav` est la seule source de la hauteur de la barre du bas** (`4,5 rem` plus la
 zone de sécurité), posée en variable CSS sur la racine de `AppLayout`. Trois choses en
@@ -1830,6 +1911,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useUpcomingExpenses`, `useUpcomingRevenues`, `useUpcomingRange`                                                                                                                                                                                                                                                               | `application/expense/usecases/useUpcoming.ts`         | Ce qui est daté en avant (demain → +3 mois)                                                         |
 | `usePreferences`                                                                                                                                                                                                                                                                                                               | `presentation/hooks/usePreferences.ts`                | Menu replié, file compacte. Persisté en localStorage                                                |
 | `usePrivacy` / `PrivacyProvider`                                                                                                                                                                                                                                                                                              | `presentation/hooks/usePrivacy.tsx`                   | Ce qui est masqué, et les formateurs qui l'appliquent. Persisté en localStorage (`acs.privacy`)      |
+| `AppBarActions` / `AppBarProvider`                                                                                                                                                                                                                                                                                            | `presentation/hooks/useAppBar.tsx`                    | Portail vers les actions de la barre d'application mobile                                            |
 | `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useRemovePlanningItem`, `useClearPlanningItems`, `usePlaceItem`                                                                                                                                               | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                  |
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                                                                                                                                                      | idem                                                  | Horaires de travail et connexion à l'agenda                                                         |
 | `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                                                                                       | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                               |
@@ -2517,6 +2599,25 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
 - **Les commentaires n'arrivent qu'avec une collecte**, comme les vidéos. Sur une base qui
   n'a jamais collecté depuis la migration 23, les trois onglets sont vides — ce n'est pas
   une panne, et les écrans vides le disent.
+- **Une piste de grille CSS a `min-width: auto` : elle s'élargit au contenu le plus long.**
+  C'est ce qui faisait glisser `/production` sur le côté — un titre de vidéo, un intitulé
+  de créneau ou une idée notée d'une traite élargissait la colonne au lieu d'être tronqué.
+  `minmax(0,1fr)` borne la piste **déclarée**, `min-w-0` sur l'élément borne réellement les
+  deux, et la colonne de droite (prochains créneaux, carnet d'idées) garde ses `20rem`.
+  Toute nouvelle grille à colonne souple doit poser les deux.
+- **`overflow-x-clip` sur `main` sous `lg` est un filet, pas une excuse.** Il empêche un
+  débordement de décaler tout l'écran sur un téléphone, mais il **rogne** ce qui dépasse :
+  un panneau ou une infobulle qui compte doit être borné par sa propre `max-width`. Il
+  redevient `visible` à partir de `lg`, où les panneaux des `StatCard` débordent
+  volontairement du conteneur.
+- **Les actions d'un écran passent par `AppBarActions`, jamais par une prop remontée.**
+  `AppLayout` monte l'`Outlet` et ne connaît pas l'écran affiché. Le conteneur d'arrivée est
+  une **ref de callback** : un portail vise un nœud rendu, et un `useRef` ne provoque aucun
+  rendu en se remplissant — le portail n'aurait jamais rien à viser.
+- **`env(safe-area-inset-*)` ne vaut quelque chose que grâce à `viewport-fit=cover`.** Le
+  retirer du `<meta viewport>` remettrait la barre du bas au-dessus d'une bande insérée par
+  iOS, et le `padding-top` de l'en-tête à zéro sous l'encoche. À l'inverse, le poser sans
+  réserver l'espace ferait passer le contenu sous les deux.
 - **Un montant masqué se met à ZÉRO dans un graphique, jamais en retrait.** Retirer une
   barre d'une pile dont le total reste affiché revient à l'annoncer par soustraction. La
   règle vaut dans les deux sens : `MoneyChart` retire la série **et** recalcule sa ligne
