@@ -1197,6 +1197,20 @@ const migrations: Migration[] = [
       CREATE INDEX idx_production_shot_angles ON production_shot_angles(production_id);
     `,
   },
+  {
+    version: 25,
+    name: 'production_format',
+    // Une video longue ou un short / reel. Une colonne et non une table a part : tout
+    // le reste (script, creneaux, planning, produits, sponsos) est commun aux deux, et
+    // seuls les menus les separent. L'ALTER suffit — un CHECK sur une colonne ajoutee
+    // est admis par SQLite tant que le defaut est une constante, et toutes les lignes
+    // existantes deviennent des videos, ce qu'elles etaient.
+    up: `
+      ALTER TABLE productions ADD COLUMN format TEXT NOT NULL DEFAULT 'video'
+        CHECK (format IN ('video','short'));
+      CREATE INDEX idx_productions_format ON productions(format);
+    `,
+  },
 ];
 
 /**

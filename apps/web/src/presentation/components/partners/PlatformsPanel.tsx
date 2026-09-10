@@ -90,9 +90,6 @@ export const PlatformsPanel = () => {
     return a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
   });
 
-  const periodTotal = platforms.reduce((sum, platform) => sum + platform.earnedCents, 0);
-  const best = sorted.find((platform) => !platform.isArchived && platform.earnedCents > 0);
-
   if (!isLoading && platforms.length === 0) {
     return (
       <>
@@ -109,16 +106,9 @@ export const PlatformsPanel = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm">
-          <span className="text-muted-foreground">Sur la période : </span>
-          <span className="tabular font-semibold">{privacy.money(periodTotal, 'affiliation')}</span>
-          {best && (
-            <span className="ml-3 text-xs text-muted-foreground">
-              {best.name} en tête ({privacy.money(best.earnedCents, 'affiliation')})
-            </span>
-          )}
-        </div>
+      {/* Le total de la période et la plateforme en tête sont désormais dans les cartes
+          de l'écran : les redire ici ferait deux fois le même chiffre à un pouce d'écart. */}
+      <div className="flex justify-end">
         <Button size="sm" onClick={openCreate}>
           <Plus className="h-4 w-4" />
           Nouvelle plateforme

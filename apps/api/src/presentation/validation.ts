@@ -245,6 +245,7 @@ export const createProductionSchema = z.object({
   title: z.string().trim().min(1, 'Le titre est obligatoire').max(200),
   channelId: z.string().nullable().optional(),
   videoId: z.string().nullable().optional(),
+  format: z.enum(['video', 'short']).optional(),
   status: z.enum(['idea', 'in_progress', 'paused', 'done']).optional(),
   pausedReason: z.string().trim().nullable().optional(),
   startDate: optionalIsoDate,
@@ -273,13 +274,26 @@ export const updateProductionSchema = createProductionSchema.partial();
 
 export const productionQuerySchema = z.object({
   statuses: csvList,
+  formats: csvList,
   channelIds: csvList,
   from: isoDate.optional(),
   to: isoDate.optional(),
   search: z.string().trim().optional(),
 });
 
-/** L'ordre complet de la file, dans l'ordre reçu : le rang est l'index. */
+/**
+ * `format` borne la file, les chiffres et les créneaux à un seul menu (vidéos ou shorts).
+ * Les **alertes**, elles, sont toujours complètes : ce sont elles qui alimentent les
+ * pastilles de tous les menus.
+ */
+export const productionOverviewQuerySchema = z.object({
+  format: z.enum(['video', 'short']).optional(),
+});
+
+/**
+ * L'ordre de la file, dans l'ordre reçu. Peut n'en être qu'une partie (un seul format) :
+ * le dépôt la réordonne alors entre ses propres places.
+ */
 export const reorderProductionsSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, 'Aucune production à réordonner'),
 });

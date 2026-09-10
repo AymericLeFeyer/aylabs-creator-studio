@@ -18,7 +18,9 @@ export const queryKeys = {
   brandStats: (params: BrandStatsParams) => ['brandStats', params] as const,
   productions: (params: unknown) => ['productions', params] as const,
   production: (id: string) => ['productions', 'detail', id] as const,
-  productionOverview: () => ['productionOverview'] as const,
+  // Le format fait partie de la clé, mais sous la même racine : une écriture qui invalide
+  // `['productionOverview']` emporte les trois versions d'un coup (tout, vidéos, shorts).
+  productionOverview: (format?: string) => ['productionOverview', format ?? 'all'] as const,
   productionSteps: (includeArchived: boolean) => ['productionSteps', includeArchived] as const,
   productionSlots: (params: unknown) => ['productionSlots', params] as const,
   stepTodos: (includeArchived: boolean) => ['stepTodos', includeArchived] as const,

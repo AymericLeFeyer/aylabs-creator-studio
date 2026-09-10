@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Clock, ExternalLink, Play, Timer, Trash2, Undo2, Video, Wand2 } from 'lucide-react';
+import { FormatIcon } from '../production/FormatIcon.tsx';
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
 import {
   dayBounds,
@@ -567,6 +568,9 @@ export const PlanningGrid = ({
 ${STATUS_LABELS[span.status]}${span.channelName ? ` · ${span.channelName}` : ''}
 ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${span.plannedDate.slice(5, 7)}` : ''}`}
                     >
+                      {/* Vidéos et shorts partagent la swimlane : le temps de travail est
+                          le même, seule l'icône les distingue. */}
+                      <FormatIcon format={span.format} className="h-3 w-3 shrink-0 opacity-80" />
                       <span className="truncate">{span.title}</span>
                       {/* Le point marque la sortie, et il n'apparaît que si elle tombe
                         dans le cadre : sur une fenêtre tronquée à droite, le bord de la
@@ -794,21 +798,33 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                             borderColor: color,
                             color: slot.done ? text : undefined,
                           }}
-                          title={`${slot.productionTitle}\n${slot.label || slot.stepName || ''}\n${slot.startTime} – ${slot.endTime}${slot.done ? '\n(approuvé)' : ''}`}
+                          title={`${slot.productionFormat === 'short' ? 'Short · ' : ''}${slot.productionTitle}\n${slot.label || slot.stepName || ''}\n${slot.startTime} – ${slot.endTime}${slot.done ? '\n(approuvé)' : ''}`}
                         >
                           {/* Pendant le geste, l'heure prend la place du titre : sur un
                               bloc d'un quart d'heure il n'y a de place que pour une ligne,
                               et c'est l'heure qu'on veut y lire, pas un nom qu'on connaît
-                              déjà. Le jour suit, parce qu'on déplace aussi de colonne. */}
-                          <p className="truncate text-[11px] font-medium leading-tight">
-                            {dragging
-                              ? `${toTime(drag.startMinutes)} – ${toTime(drag.startMinutes + duration)}`
-                              : resizing
-                                ? // On rallonge une séance : c'est la durée obtenue qu'on
-                                  // veut lire, pas l'heure de fin, déjà annoncée dans la
-                                  // gouttière.
-                                  `${toTime(resize.startMinutes)} – ${toTime(resize.endMinutes)} · ${formatMinutes(duration)}`
-                                : slot.label || slot.stepName || slot.productionTitle}
+                              déjà. Le jour suit, parce qu'on déplace aussi de colonne.
+
+                              L'icône du format précède le titre : vidéos et shorts se
+                              partagent la grille, et c'est la seule chose qui les distingue
+                              sur un bloc d'une ligne. */}
+                          <p className="flex min-w-0 items-center gap-1 text-[11px] font-medium leading-tight">
+                            {!dragging && !resizing && (
+                              <FormatIcon
+                                format={slot.productionFormat}
+                                className="h-3 w-3 shrink-0 opacity-80"
+                              />
+                            )}
+                            <span className="truncate">
+                              {dragging
+                                ? `${toTime(drag.startMinutes)} – ${toTime(drag.startMinutes + duration)}`
+                                : resizing
+                                  ? // On rallonge une séance : c'est la durée obtenue qu'on
+                                    // veut lire, pas l'heure de fin, déjà annoncée dans la
+                                    // gouttière.
+                                    `${toTime(resize.startMinutes)} – ${toTime(resize.endMinutes)} · ${formatMinutes(duration)}`
+                                  : slot.label || slot.stepName || slot.productionTitle}
+                            </span>
                           </p>
                           {duration >= 45 && (
                             <p className="truncate text-[10px] leading-tight opacity-80">

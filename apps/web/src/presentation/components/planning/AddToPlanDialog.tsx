@@ -13,6 +13,7 @@ import {
 import { formatMinutes } from '../../../domain/planning/entities/Planning.ts';
 import { todosOfStep } from '../../../domain/production/entities/StepTodo.ts';
 import { Badge } from '../ui/badge.tsx';
+import { FormatIcon } from '../production/FormatIcon.tsx';
 import { Button } from '../ui/button.tsx';
 import { Checkbox } from '../ui/checkbox.tsx';
 import {
@@ -157,7 +158,7 @@ export const AddToPlanDialog = ({ open, onOpenChange }: AddToPlanDialogProps) =>
           <div className="space-y-1">
             {queue.length === 0 && (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                Aucune vidéo en file d’attente. Crée-en une depuis l’écran Production.
+                Aucune vidéo en file d’attente. Crée-en une depuis Vidéos ou Shorts &amp; Réels.
               </p>
             )}
             {queue.map((item) => (
@@ -173,7 +174,13 @@ export const AddToPlanDialog = ({ open, onOpenChange }: AddToPlanDialogProps) =>
                   aria-hidden
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{item.title}</span>
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    <FormatIcon
+                      format={item.format}
+                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                    />
+                    <span className="truncate">{item.title}</span>
+                  </span>
                   <span className="block truncate text-xs text-muted-foreground">
                     {item.channelName ?? 'Sans chaîne'}
                     {item.plannedDate ? ` · sortie visée le ${item.plannedDate}` : ''}

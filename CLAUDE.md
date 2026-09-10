@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-08
+> Dernière mise à jour : 2026-09-10
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -273,6 +273,42 @@ manque est **supprimé au parsing**, pas affiché en clair.
 | `done`        | publiée                                                                                                                           |
 
 `paused_at` est posé par le **passage** en pause, pas par la mise à jour de la raison : corriger le libellé d'un blocage ne doit pas remettre le compteur « en pause depuis X jours » à zéro.
+
+**`format` (`video` | `short`, migration 25) ne sépare que les menus.** « Vidéos »
+(`/production`) et « Shorts & Réels » (`/shorts`) montent le **même** `ProductionPage`
+avec un `format` différent ; script, créneaux, tâches, produits, sponsos et planning sont
+communs. Une colonne et non une table : deux tables auraient dupliqué tout le module pour
+une étiquette. Le planning montre les deux formats **ensemble** — c'est le même temps de
+travail — et seule l'icône les distingue (`FORMAT_ICONS`, `FormatIcon` :
+`Clapperboard` / `Smartphone`, les mêmes que dans le menu). `productionFormat` est donc
+porté par `ProductionSlotView`, `PlanningItemView` et `PlanningProductionSpan.format`.
+Changer le format d'une fiche la déplace d'un menu à l'autre sans rien perdre.
+
+**L'ordre de la file reste global**, et c'est lui que suit le planning. Chaque écran ne
+réordonne pourtant que son format : `SqliteProductionRepository.reorder(ids)` accepte une
+**partie** de la file, relit l'ordre complet (`sort_order, created_at`), remet les
+identifiants reçus **dans les places qu'ils occupaient** et réécrit `1..N` sur tout. Écrire
+`1..n` sur le seul sous-ensemble aurait fait entrer ses rangs en collision avec ceux de
+l'autre format.
+
+`GetProductionOverview.execute(format?)` borne **la file, les chiffres et les créneaux** au
+format demandé ; **les alertes restent toujours complètes** et chacune porte
+`productionFormat` (celui de la production concernée, `null` sans production) : ce sont
+elles qui alimentent les pastilles de tous les menus.
+
+Deux alertes s'ajoutent aux cinq existantes :
+
+| `kind`                         | Quand                                                                                              | Sévérité  |
+| ------------------------------ | -------------------------------------------------------------------------------------------------- | --------- |
+| `production_urgent`            | `plannedDate < aujourd'hui + 7` (dépassée comprise) **et** statut `idea` ou `paused`               | `danger`  |
+| `sponsorship_awaiting_payment` | sponso en `awaiting_payment` — une relance à faire, sans échéance à dépasser                       | `warning` |
+
+« Commencée » se lit au **statut**, pas aux cases : `idea` est précisément « notée, pas
+commencée ». Une vidéo urgente **et** en pause depuis longtemps ne produit que l'alerte
+urgente — la même carte ne doit pas crier deux fois. La carte correspondante passe en
+**rouge** dans la file (`ProductionCard.urgent`), l'écran lisant l'alerte au lieu de
+réécrire la règle. Aucun montant dans le texte d'une alerte : le masquage de
+confidentialité ne s'applique pas à une phrase.
 
 `sortOrder` porte l'ordre de la file, **entièrement manuel** — l'outil ne déduit aucune priorité. `POST /api/productions/reorder` le réécrit en une transaction : un classement à moitié appliqué afficherait deux rangs identiques.
 
@@ -1299,11 +1335,11 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/brands`                                       | Créer                                                                                                                                                                                                      |
 | `PATCH`  | `/api/brands/:id`                                   | Modifier / archiver                                                                                                                                                                                        |
 | `DELETE` | `/api/brands/:id`                                   | Refusé en 409 si des produits ou sponsos y sont rattachés                                                                                                                                                  |
-| `GET`    | `/api/productions`                                  | Params `statuses` (CSV), `channelIds`, `from`/`to` (sur `plannedDate`), `search`                                                                                                                           |
-| `GET`    | `/api/productions/overview`                         | File d'attente + alertes + créneaux + charge de la semaine. **Déclaré avant `/:id`**                                                                                                                       |
+| `GET`    | `/api/productions`                                  | Params `statuses` (CSV), `formats` (CSV `video,short`), `channelIds`, `from`/`to` (sur `plannedDate`), `search`                                                                                            |
+| `GET`    | `/api/productions/overview`                         | File d'attente + alertes + créneaux + charge de la semaine. Param `format` : borne file, chiffres et créneaux ; **les alertes restent complètes**. **Déclaré avant `/:id`**                                  |
 | `GET`    | `/api/productions/:id`                              | Une production (`ProductionView`)                                                                                                                                                                          |
 | `POST`   | `/api/productions`                                  | Créer (entre en **fin** de file)                                                                                                                                                                           |
-| `POST`   | `/api/productions/reorder`                          | `{ ids }` → l'ordre manuel de la file, le rang est l'index                                                                                                                                                 |
+| `POST`   | `/api/productions/reorder`                          | `{ ids }` → l'ordre manuel de la file. Peut n'en être qu'**une partie** (un format) : réordonnée entre ses propres places, le reste ne bouge pas                                                             |
 | `PATCH`  | `/api/productions/:id`                              | Modifier (dont `script`)                                                                                                                                                                                   |
 | `DELETE` | `/api/productions/:id`                              | Supprimer ; produits et sponsos sont **détachés**, pas supprimés                                                                                                                                           |
 | `GET`    | `/api/productions/:id/previous-publication`         | Titre, description et tags de la **sortie précédente** de la même chaîne, lus en direct sur YouTube. `null` si la chaîne n'en a pas d'autre ; 400 sans chaîne renseignée                                   |
@@ -1396,14 +1432,17 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 
 | Route               | Page                   | Contenu                                                                                                                                                           |
 | ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, alertes (production + légal), puis **les deux graphiques seulement** (argent, audience)                |
-| `/contenu`          | `ContentPage`          | 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                       |
+| `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, puis **les deux graphiques seulement** (argent, audience). Plus d'alertes : elles sont en pastilles     |
+| `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                  |
 | `/instagram`        | `InstagramPage`        | 6 cartes, graphique à 3 onglets, puis calendrier des stories / tableau des publications                                                                           |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets     |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail à droite, bouton « Ajouter une vidéo »                                                                               |
-| `/production`       | `ProductionPage`       | Titré **« En cours »**. Alertes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                    |
+| `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées |
+| `/shorts`           | `ProductionPage`       | `format="short"`, titré **« Shorts & Réels »**. Exactement le même écran, borné aux formats courts                                                                |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / Créneaux & temps passé / Produits & sponsos / Notes                                    |
-| `/partenariats`     | `PartnersPage`         | 4 cartes de pipeline (`PartnerStatCards`), puis trois onglets Produits, Sponsors et **Plateformes** (`?onglet=`). Bouton **Script** par sponso                    |
+| `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                       |
+| `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                    |
+| `/plateformes`      | `PlatformsPage`        | 4 cartes (Total affiliations, Sans plateforme, En tête, Plateformes suivies), puis `PlatformsPanel`                                                              |
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                             |
 | `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                  |
 | `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, **Instagram**, Catégories, Abonnements, Marques, Étapes, **Script**, **Planning**, Société. L'onglet Application porte la **Confidentialité** |
@@ -1420,6 +1459,45 @@ après l'autre. Les tables vivent désormais dans `components/money/RevenuesPane
 `ExpensesPanel.tsx` — ce sont les anciennes pages, déplacées telles quelles.
 
 `/horaires` **redirige** vers `/parametres?onglet=planning`.
+
+`/contenu` **redirige** vers `/youtube`, et `/partenariats?onglet=…` vers `/produits`,
+`/sponsors` ou `/plateformes` (`LegacyPartnersRedirect`, dans `App.tsx`). Les trois onglets
+des partenariats sont devenus **trois entrées de menu** : ils ne posent pas la même question
+(quoi tourner, qui relancer, où est gérée l'affiliation), et chacun porte sa pastille — un
+onglet n'aurait pas pu la montrer depuis le menu. Les cellules communes aux deux tables
+(`DeadlineCell`, `LinkedVideoCell`, `OutstandingToggle`) vivent dans
+`components/partners/PartnerCells.tsx`. La case « Reste à faire uniquement » est
+désormais **propre à chaque écran**.
+
+Les deux `<Route>` de `ProductionPage` portent une **`key`** (`video` / `short`) : sans
+elle, React réutiliserait l'instance en passant d'un menu à l'autre, et les cartes
+dépliées ou une modale ouverte passeraient d'un format à l'autre.
+
+#### Les pastilles du menu remplacent les alertes du dashboard
+
+Les alertes vivaient en deux bandeaux sur le dashboard, tous sujets mêlés. Elles sont
+désormais **rangées dans le menu qui permet de les traiter** (`presentation/navBadges.ts`,
+`buildNavBadges`), et l'écran ouvert redit **en tête** pourquoi (`PageAlerts`, avant les
+cartes). Le calcul reste côté API ; le front ne fait que ranger.
+
+| Menu              | Chiffre                                | Raisons listées                                               |
+| ----------------- | -------------------------------------- | ------------------------------------------------------------- |
+| Vidéos / Shorts   | vidéos pas encore publiées du format   | `production_urgent`, `_stalled`, `_incomplete` de ce format   |
+| Produits          | alertes `product_late`                 | idem                                                          |
+| Sponsors          | **paiements en attente**               | `sponsorship_due`, `_undelivered`, `_awaiting_payment`        |
+| Légal             | alertes légales                        | `late` et `due_soon` de `GetLegalOverview`                    |
+
+**Le chiffre et la couleur ne disent pas la même chose** : la couleur est celle de la pire
+raison (rouge `danger`, orange `warning`), et sans aucune raison la pastille reste
+**neutre** — « 4 en cours » est une information, pas un problème. À zéro avec des raisons
+(une vidéo publiée incomplète alors que la file est vide), elle devient un **point** : une
+pastille « 0 » se lirait comme « rien à faire ». Repliée, la barre latérale n'affiche qu'un
+point sur l'icône ; la barre du bas affiche le nombre.
+
+`useNavBadges` lit l'aperçu de production **sans format** et l'aperçu légal — les mêmes clés
+de cache que les écrans, si bien que la pastille et l'écran ne peuvent pas se contredire.
+`PageAlerts` reçoit l'adresse de l'entrée de menu (`NavItem.to`) et non celle de la page,
+se replie à 5 lignes avec un « tout afficher ».
 
 `PlanningPage` porte **deux vues seulement, un jour ou sept, et pas de vue mois** : un
 créneau de montage se décide à l'heure près, et une grille mensuelle ne montre plus les
@@ -1641,16 +1719,18 @@ l'en-tête, overlay + `Échap` par clic sur le fond), au lieu d'une rangée qui 
 horizontalement.
 
 **Les écrans sont groupés par famille** (`NAV_SECTIONS`, `presentation/navigation.ts`) :
-le dashboard **hors famille** en tête, puis **Production** (Planning, En cours),
-**Audience** (Contenu, Instagram, Commentaires), **Revenus** (Partenariats, Chiffre
+le dashboard **hors famille** en tête, puis **Production** (Planning, Vidéos, Shorts &
+Réels), **Audience** (YouTube, Instagram, Commentaires), **Revenus** (Produits, Sponsors,
+Plateformes, Chiffre
 d'affaires) et **Entreprise** (Légal). À neuf entrées, une liste à plat obligeait à lire
 tous les libellés pour en trouver un — rien ne disait que « Contenu » et « Instagram »
 répondent à la même question. Le dashboard n'a pas d'intitulé : c'est la vue d'ensemble,
 elle n'appartient à aucun des métiers et lui en donner un ferait une rubrique d'une ligne.
 
-L'écran `/production` s'appelle **« En cours »** dans le menu : la famille porte déjà le
-mot « Production », et le répéter à l'identique juste en dessous ne dirait rien de ce
-qu'elle contient. **« Entreprise » ne porte qu'une entrée**, et c'est assumé — cocher sa
+La file de production est **coupée en deux entrées**, « Vidéos » (`/production`) et
+« Shorts & Réels » (`/shorts`) : les formats courts se préparent pareil mais pas au même
+rythme, et mêlés aux gros projets ils disparaissaient de la file. Le planning, lui, reste
+unique. **« Entreprise » ne porte qu'une entrée**, et c'est assumé — cocher sa
 déclaration d'Urssaf ne répond pas à la même question que « combien ai-je gagné », et
 ranger le Légal sous « Revenus » ferait chercher l'administratif au milieu des sponsos. **Repliée, la
 barre remplace chaque intitulé par un filet** : 3,75 rem n'ont pas la largeur d'un mot, et
@@ -1794,9 +1874,12 @@ arrêt fait depuis un autre onglet sans marteler l'API pour animer un compteur.
 
 La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait
 partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/parametres`,
-`/production`, `/partenariats`, `/legal`).
+`/commentaires`, `/planning`, `/production`, `/shorts`, `/produits`, `/sponsors`,
+`/plateformes`, `/legal`).
 
-**`/partenariats` monte le `PeriodPicker` seul, dans son en-tête.** L'écran n'a pas la
+**`/produits`, `/sponsors` et `/plateformes` montent le `PeriodPicker` seul, dans leur
+en-tête** (ce qui suit parlait d'un seul écran `/partenariats`, désormais coupé en trois ;
+la règle vaut pour chacun). L'écran n'a pas la
 barre entière — chaînes, pas d'agrégation et interrupteur CA/bénéfice n'y pilotent rien et
 resteraient décoratifs. La période, elle, y pilote beaucoup : les deux tables, les cinq
 cartes et les gains par plateforme. Sans sélecteur, l'écran affichait une période qu'on ne
@@ -1905,7 +1988,7 @@ Deux cartes déplient un panneau au survol (prop `details` de `StatCard`, ouvert
 
 La carte « Abonnés gagnés » met le **gain** en grand et le total en sous-titre : sur une période, ce qui se pilote est la progression, pas un cumul qui ne bouge qu'à la marge.
 
-Disposition du dashboard, de haut en bas : 11 cartes de stats, la **dernière sortie** en pleine largeur, les deux bandeaux d'alertes (production, légal), puis les graphiques d'argent et d'audience **côte à côte** à partir de `2xl`. **C'est tout** : anneaux, classements de partenaires et performance par vidéo ont migré vers `/chiffre-affaires` et `/contenu`, parce qu'empilés ici ils faisaient une page qu'on parcourait au lieu de la lire.
+Disposition du dashboard, de haut en bas : 11 cartes de stats, la **dernière sortie** en pleine largeur, puis les graphiques d'argent et d'audience **côte à côte** à partir de `2xl`. **C'est tout** : anneaux, classements de partenaires et performance par vidéo ont migré vers `/chiffre-affaires` et `/youtube`, parce qu'empilés ici ils faisaient une page qu'on parcourait au lieu de la lire. Les deux bandeaux d'alertes (production, légal) ont été remplacés par les **pastilles du menu** : un bloc qui mêlait une déclaration d'Urssaf, un colis en retard et une vidéo en pause ne disait pas où aller.
 
 La grille de cartes est en `lg:grid-cols-4 2xl:grid-cols-6` et non en 5 colonnes : à 11 cartes, cinq colonnes laisseraient une dernière rangée d'une seule carte. Les **trois dernières** ne suivent pas la période — « En production », « Sponsos en cours », « Produits attendus » sont des états d'une file ou d'un pipeline, pas des flux, et leur sous-titre le dit.
 
@@ -1925,7 +2008,8 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useExpenses`, `useCreateExpense`, …                                                                                                                                                                                                                                                                                           | `application/expense/usecases/useExpenses.ts`         | Dépenses                                                                                            |
 | `useTheme`, `useLocalStorage`                                                                                                                                                                                                                                                                                                  | `presentation/hooks/`                                 | Thème clair/sombre, stockage protégé                                                                |
 | `useBrands`, `useBrandStats`, `useCreateBrand`, …                                                                                                                                                                                                                                                                              | `application/brand/usecases/useBrands.ts`             | Marques + classements du dashboard                                                                  |
-| `useProductions`, `useProduction`, `useProductionOverview`, `useCreateProduction`, `useUpdateProduction`, `useDeleteProduction`, `useReorderProductions`, `usePublishProduction`, `useToggleStep`                                                                                                                              | `application/production/usecases/useProductions.ts`   | Vidéos en préparation                                                                               |
+| `useProductions`, `useProduction`, `useProductionOverview`, `useCreateProduction`, `useUpdateProduction`, `useDeleteProduction`, `useReorderProductions`, `usePublishProduction`, `useToggleStep`                                                                                                                              | `application/production/usecases/useProductions.ts`   | Vidéos en préparation. `useProductionOverview(format?)` : sans format = tout (dashboard, pastilles) ; clé `['productionOverview', format ?? 'all']` |
+| `useNavBadges`                                                                                                                                                                                                                                                                                                                 | `presentation/hooks/useNavBadges.ts`                  | Pastilles du menu et leurs raisons (`buildNavBadges`, `presentation/navBadges.ts`)                   |
 | `useProductionSteps`, `useCreateStep`, `useUpdateStep`, `useDeleteStep`                                                                                                                                                                                                                                                        | idem                                                  | Référentiel des étapes (cache 5 min)                                                                |
 | `useProductionSlots`, `useCreateSlot`, `useUpdateSlot`, `useDeleteSlot`                                                                                                                                                                                                                                                        | idem                                                  | Créneaux de travail                                                                                 |
 | `useProducts`, `useCreateProduct`, …                                                                                                                                                                                                                                                                                           | `application/product/usecases/useProducts.ts`         | Produits reçus                                                                                      |
@@ -2003,13 +2087,18 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   **Migration 15** ajoute `affiliate_platforms`, `affiliate_platform_brands` et
   `revenue_entries.platform_id`. **Migration 14** ajoute `video_stat_snapshots`.
   **Migration 13** ajoute `legal_bookmarks`. **Migration 12** en ajoute trois d'un coup — `production_time_entries` (le temps passé), `step_todos` / `production_todos` / `production_todo_checks` (les tâches d'étape), `recurring_expenses` + `expense_entries.recurring_id` (les dépenses qui reviennent) — et la colonne `channels.thumbnail_url`.
-- **Un panneau plutôt qu'une page dès que deux écrans le partagent** : `RevenuesPanel` et `ExpensesPanel` (ex-pages) sont montés dans les onglets de `/chiffre-affaires` ; `MoneyBreakdowns` porte les trois anneaux et les deux classements ; `PartnerStatCards` les quatre chiffres du pipeline. Le dupliquer ferait diverger deux écrans qui doivent annoncer le même montant.
-- **Le calcul du pipeline vit dans le domaine** (`domain/partner/services/pipeline.ts`, `partnerPipeline`) et non dans les écrans : le dashboard et `/partenariats` affichent le même « à encaisser », et deux comptages parallèles finiraient par se contredire.
+- **Un panneau plutôt qu'une page dès que deux écrans le partagent** : `RevenuesPanel` et `ExpensesPanel` (ex-pages) sont montés dans les onglets de `/chiffre-affaires` ; `MoneyBreakdowns` porte les trois anneaux et les deux classements ; `PartnerCells` les cellules communes aux tables des produits et des sponsors ; `ProductionPage` les deux files (vidéos et shorts), paramétrée par `format`. Le dupliquer ferait diverger deux écrans qui doivent annoncer le même montant.
+- **Le calcul du pipeline vit dans le domaine** (`domain/partner/services/pipeline.ts`, `partnerPipeline`) et non dans les écrans : le dashboard, `/produits` et `/sponsors` affichent le même « à encaisser », et deux comptages parallèles finiraient par se contredire.
+- **Une alerte se range dans un menu, elle ne s'affiche pas en bloc.** Toute nouvelle alerte API doit être ajoutée à `buildNavBadges` (sinon elle n'apparaît nulle part) et porter ce qui permet de la ranger (`productionFormat` pour la production). L'écran visé monte `PageAlerts` **en tête**, avant ses cartes.
 - **Migration 18** ajoute `work_hours`, `planning_settings`, `planning_items`, les colonnes
   `default_minutes` (étapes et tâches) et quatre colonnes sur `production_slots`
   (`origin`, `item_id`, `calendar_uid`, `time_entry_id`). Elle n'ajoute **pas** de `status`
   aux créneaux : `origin` + `done` disent déjà tout, et un troisième champ finirait par les
   contredire.
+- **Migration 25** ajoute `productions.format` (`'video'` par défaut, `CHECK` sur
+  `video` / `short`) et son index. Un simple `ALTER` : un `CHECK` sur une colonne ajoutée
+  est admis tant que le défaut est une constante, donc aucune reconstruction de table — et
+  toutes les lignes existantes deviennent des vidéos, ce qu'elles étaient.
 - **Migration 24** ajoute `script_presets`, `shot_angles` et `production_shot_angles`.
   Aucune colonne n'est ajoutée à `productions` : ce qu'on pose **dans** un script — un
   bloc de gabarit, un angle sur un passage — vit dans le HTML du script lui-même, pas dans
@@ -2257,7 +2346,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   `Missing "." specifier`. Ce sont les paquets `prosemirror-*` eux-mêmes qu'on nomme.
 - **Le Gantt est une grille CSS maison**, sans bibliothèque : une barre par production, une colonne par jour, rien d'autre que des jours à compter. Sans `startDate`, la barre occupe le seul jour visé — une vidéo qu'on n'a pas commencé à planifier ne doit pas paraître étalée sur trois semaines.
 - **Dans le Gantt, la couleur dit la chaîne et le contenu dit l'avancement** : une icône `$` s'il y a une sponso, une icône de carton s'il y a un produit, l'état, et le pourcentage d'étapes cochées. Écrire le nom de la chaîne serait redondant avec sa couleur ; ces quatre-là ne se lisent nulle part ailleurs sur cette vue. **L'ordre suit ce qui doit survivre au rognage** : icônes et pourcentage sont `shrink-0`, c'est le libellé d'état qui se tronque en premier — sur une barre d'un jour, savoir qu'il y a une sponso vaut mieux que lire « En cours ». L'infobulle (`barTitle`) reprend tout ce que le rognage a pu manger. La barre entière est un lien vers la fiche : c'est la cible la plus large de la ligne. Le texte prend sa couleur de `readableTextColor(fond)`.
-- **Le planning est affiché en permanence sur `/production`, pas dans un onglet** : « qu'est-ce qui sort quand » est la première question de la page. Il se replie à `COLLAPSED_ROWS` (5) lignes pour ne pas repousser la file d'attente sous le pli, et trie les vidéos encore à faire avant les terminées.
+- **Le planning est affiché en permanence sur `/production`, pas dans un onglet** : « qu'est-ce qui sort quand » est la première question de la page. Il se replie à `COLLAPSED_ROWS` (5) lignes pour ne pas repousser la file d'attente sous le pli. **L'ordre est chronologique (sortie visée, ou début à défaut), et seules les vidéos terminées dont l'échéance est passée sont renvoyées en bas.** Une vidéo terminée avant sa date garde sa place dans le calendrier, grisée : elle occupe toujours ce créneau de sortie, et la reléguer en bas faisait croire que la semaine était vide.
 - **Le carnet d'idées vit à côté de la file d'attente**, sous les prochains créneaux : une idée se note pendant qu'on regarde ce qu'on est en train de faire, pas dans un écran à part. Champ + Entrée, et c'est noté ; le champ se vide aussitôt parce qu'on note souvent trois idées d'affilée. Le texte s'édite sur place, **validé à la sortie du champ** (même piège que `StepsPage` : une mutation par frappe partirait à chaque lettre).
 - **Les classements de partenaires sont des barres, pas des anneaux.** Sur un top-N ordonné, ce qui se lit est le rang et l'écart au premier : une longueur le donne, un angle non. Les barres sont proportionnelles au **maximum** de la liste et non au total — un classement n'est pas une répartition, et rapporter au total écraserait tout le bas de liste.
 - **`StepsPage` édite en champs non contrôlés, validés à la sortie** (`defaultValue` + `onBlur`) : un `onChange` branché sur la mutation enverrait une requête par lettre tapée.
@@ -2278,10 +2367,10 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **`AttachExistingSelect` reste bloqué sur `NONE`** : il déclenche une action et se réarme, il ne mémorise pas de valeur. Sans ça, le déclencheur afficherait le dernier élément rattaché et se lirait comme un filtre.
 - **Détacher n'est pas supprimer.** Le bouton ⛓ des listes d'une fiche de production met `productionId` à `null` : le produit reste reçu et son revenu existe toujours, il perd juste son rattachement à la vidéo (et donc le `videoId` de son revenu, par re-synchronisation).
 - **Rattacher une vidéo force la chaîne** du revenu ou de la dépense (une vidéo appartient à une seule chaîne), et changer de chaîne détache la vidéo. `VideoSelect` garde en tête de liste la vidéo déjà rattachée même si elle sort du filtre courant, sinon une édition l'effacerait silencieusement.
-- **Le dashboard n'a plus que deux graphiques.** Les répartitions et les classements sont dans `/chiffre-affaires` → Synthèse, la performance par vidéo dans `/contenu`. Y remettre un graphique demande de se demander lequel il remplace : la page doit se lire d'un regard, pas se parcourir.
+- **Le dashboard n'a plus que deux graphiques.** Les répartitions et les classements sont dans `/chiffre-affaires` → Synthèse, la performance par vidéo dans `/youtube`. Y remettre un graphique demande de se demander lequel il remplace : la page doit se lire d'un regard, pas se parcourir.
 - **Le bloc des dernières sorties porte les TROIS dernières, une à la fois** (`LatestVideoCard`, alimenté par `useVideos({ limit: 3 })`). Une vidéo ne se juge pas dans l'absolu : 12 000 vues ne veulent rien dire tant qu'on ne sait pas ce que les deux précédentes ont fait. Elles défilent aux chevrons plutôt que de s'afficher côte à côte — la comparaison se fait alors sur les mêmes cases, au même endroit, ce que trois colonnes rétrécies rendraient impossible. Les chevrons **s'arrêtent aux bornes** au lieu de boucler (trois éléments se parcourent en deux clics, et un enroulement ferait repartir de la plus récente sans qu'on l'ait demandé), et le rang « 2 / 3 » est écrit entre eux. Le recadrage quand la liste rétrécit — un changement de chaîne dans les filtres — est **dérivé pendant le rendu**, jamais dans un effet : `react-hooks/set-state-in-effect` refuse l'autre.
 - **Ce bloc ignore la période** (sans bornes de date) : « ma dernière vidéo marche comment » ne se pose pas dans une fenêtre de temps, et une période de 7 jours viderait le bloc précisément quand on vient le lire. Ses compteurs sont des **cumuls depuis la sortie** : ils ne s'additionnent pas avec les totaux affichés juste au-dessus, qui comptent aussi les vidéos plus anciennes. `stats.updatedAt` à `null` affiche « — » partout plutôt qu'une série de zéros.
-- **`/contenu` ne porte que de la mesure** : ce qui n'est pas encore publié se pilote sur `/production`, la dernière sortie se lit sur le dashboard. Y remettre une file ou un fil de sorties ferait trois endroits où lire la même chose.
+- **`/youtube` (ex-`/contenu`) ne porte que de la mesure** : ce qui n'est pas encore publié se pilote sur `/production` et `/shorts`, la dernière sortie se lit sur le dashboard. Y remettre une file ou un fil de sorties ferait trois endroits où lire la même chose.
 - **Une journée sans collecte Instagram est une journée de stories perdue pour toujours.**
   L'API ne les expose que 24 h, et rien — ni archive, ni story à la une — ne permet de
   revenir en arrière. C'est pour ça qu'Instagram passe **avant** YouTube dans le scheduler
@@ -2419,7 +2508,7 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
 - **La carte de file affiche une FENÊTRE de travail, pas une échéance** (`DateRange`) : `startDate → plannedDate`, la flèche entre les deux. Les deux dates ensemble disent ce qu'aucune ne dit seule — la sortie donne l'échéance, le début dit s'il reste du temps devant ou si on est déjà dedans ; deux dates côte à côte sans flèche se liraient comme deux échéances. Le relatif (« dans 3 jours ») est **au survol** de chaque date et non dans le texte : il doublait la longueur de la ligne alors qu'on ne le lit que sur la vidéo qu'on s'apprête à attaquer — même parti pris que le détail de la barre de progression. La ligne disparaît entièrement quand aucune des deux dates n'est posée, enveloppe comprise, sinon le `gap` de la carte s'écarterait pour rien.
 - **`days()` compare des jours de calendrier LOCAUX, jamais des heures écoulées.** Les deux bornes sont ramenées à minuit avant d'être soustraites. Soustraire l'instant présent d'une date à minuit UTC faisait basculer « aujourd'hui » en « hier » à partir de 22 h à Paris, l'écart réel dépassant alors la demi-journée que `Math.round` arbitre. Ce qu'on veut savoir est de combien de **nuits** la date est séparée d'aujourd'hui.
 - **La barre de progression affiche le pourcentage, le détail est au survol.** Le pourcentage se compare d'une carte à l'autre ; le compte exact (« 18 sur 30 ») ne sert qu'à savoir combien il reste, ce qu'on ne demande que sur la vidéo qu'on s'apprête à attaquer.
-- **L'en-tête n'a de hauteur que s'il porte la barre de filtres.** Sur `/production`, `/partenariats`, `/legal` et `/parametres`, il perd son trait et son padding : un bandeau vide repoussait le contenu pour rien. Le bandeau du chronomètre, lui, porte une bordure **haut et bas** (`border-y`) parce qu'il peut se retrouver seul tout en haut — c'est même le cas le plus probable, `/production` étant l'écran sans filtres où un chronomètre tourne.
+- **L'en-tête n'a de hauteur que s'il porte la barre de filtres.** Sur les routes de `ROUTES_WITHOUT_FILTERS` (`/production`, `/shorts`, `/produits`, `/sponsors`, `/plateformes`, `/legal`, `/parametres`…), il perd son trait et son padding : un bandeau vide repoussait le contenu pour rien. Le bandeau du chronomètre, lui, porte une bordure **haut et bas** (`border-y`) parce qu'il peut se retrouver seul tout en haut — c'est même le cas le plus probable, `/production` étant l'écran sans filtres où un chronomètre tourne.
 - **Les liens utiles s'intercalent entre la fiche société et les alertes**, avant le tableau à cocher : on ouvre le portail, on fait la démarche, on revient cocher la case juste en dessous. La carte **entière** est le lien (cible la plus large) et s'ouvre dans un **nouvel onglet** — une navigation ferait perdre l'année choisie et la position dans le tableau. Le bloc ne s'affiche pas du tout tant qu'aucun lien n'est configuré : un encart vide prendrait la place de ce qu'on vient réellement faire sur cet écran.
 - **L'arrêt du chronomètre passe par `ManagePlanning`, pas par `TrackTime`.** L'arrêt ne
   fige pas seulement une durée : il pose ou recale un créneau, le publie dans l'agenda et
@@ -2690,6 +2779,17 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   cinq comptes, une période sans relevé antérieur : ne pas savoir se dit **avant** de
   refuser de dire, sinon un masquage ferait passer une donnée manquante pour une donnée
   cachée, et on la chercherait dans les paramètres.
+- **Ne jamais filtrer les alertes de l'aperçu par format.** `?format=` borne la file, les
+  chiffres et les créneaux, mais les pastilles de **tous** les menus lisent les alertes de
+  la même réponse. Les borner ferait disparaître la pastille des shorts dès qu'on ouvre
+  l'écran des vidéos. Chaque écran garde les siennes par `productionFormat`.
+- **Réordonner une file ne doit envoyer que ses propres identifiants**, et c'est le dépôt
+  qui les remet à leurs places dans l'ordre global. Revenir à un `1..n` écrit sur le
+  sous-ensemble ferait entrer en collision les rangs des vidéos et des shorts, et le
+  planning — qui suit cet ordre — travaillerait dans un ordre imprévisible.
+- **Un short se reconnaît à son icône, partout, et la même partout** (`FORMAT_ICONS`).
+  Le planning mélange volontairement les deux formats : c'est la seule chose qui les y
+  distingue. Ne pas inventer un second pictogramme pour un écran.
 - **`/api/productions/:id/todos` est monté AVANT `/api/productions`** dans `server.ts` : un router de préfixe plus long doit passer en premier, sinon le plus court capte la requête et répond 404. Même vigilance que `/overview` déclaré avant `/:id`.
 
 ## PWA

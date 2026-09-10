@@ -28,7 +28,7 @@ import {
   TableRow,
 } from '../components/ui/table.tsx';
 import { StatCard } from '../components/StatCard.tsx';
-import { LegalAlertsCard } from '../components/legal/LegalAlertsCard.tsx';
+import { PageAlerts } from '../components/PageAlerts.tsx';
 import { LegalBookmarks } from '../components/legal/LegalBookmarks.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 import { cn } from '../../shared/cn.ts';
@@ -107,6 +107,9 @@ export const LegalPage = () => {
         </Button>
       </div>
 
+      {/* Pourquoi le menu porte une pastille : tout en haut, avant la fiche. */}
+      <PageAlerts path="/legal" />
+
       {data && (
         <>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
@@ -178,8 +181,6 @@ export const LegalPage = () => {
           {/* Entre la fiche et le tableau : c'est là qu'on les cherche — on ouvre le
               portail, on fait la démarche, on revient cocher la case juste en dessous. */}
           <LegalBookmarks bookmarks={bookmarks} />
-
-          <LegalAlertsCard alerts={data.alerts} />
 
           {years.length > 1 && (
             <Tabs

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowRight,
   CalendarClock,
   ChevronDown,
@@ -48,6 +49,11 @@ interface ProductionCardProps {
   highlighted?: boolean;
   /** Le chronomètre tourne sur cette vidéo : le bouton devient un état, pas une action. */
   timerRunning?: boolean;
+  /**
+   * Sortie dans moins d'une semaine alors que la vidéo n'est pas commencée ou en pause.
+   * Vient de l'alerte `production_urgent` de l'API : la règle n'est pas réécrite ici.
+   */
+  urgent?: boolean;
   /** Carte réduite à une ligne. */
   compact?: boolean;
   /** Bascule le repli de cette carte seule, par-dessus le réglage global. */
@@ -138,6 +144,7 @@ export const ProductionCard = ({
   onMoveDown,
   highlighted,
   timerRunning,
+  urgent,
   compact,
   onToggleCompact,
 }: ProductionCardProps) => {
@@ -152,6 +159,24 @@ export const ProductionCard = ({
   // Dérivé du statut plutôt que passé en prop : « en cours » est une propriété de la
   // vidéo, pas une décision de l'écran qui l'affiche.
   const inProgress = production.status === 'in_progress';
+
+  /**
+   * Le fond de la carte : **rouge l'emporte sur vert**. Une vidéo urgente n'est jamais en
+   * cours (elle est à l'état d'idée ou en pause, c'est la définition), mais la priorité
+   * est écrite pour qu'aucun futur statut ne puisse la masquer.
+   */
+  const tone = urgent
+    ? 'border-[var(--negative)]/50 bg-[var(--negative)]/10'
+    : inProgress && 'border-[var(--positive)]/40 bg-[var(--positive)]/10';
+  const ring =
+    highlighted && (urgent ? 'ring-1 ring-[var(--negative)]' : 'ring-1 ring-[var(--positive)]');
+
+  const urgentIcon = urgent && (
+    <AlertTriangle
+      className="h-3.5 w-3.5 shrink-0 text-[var(--negative)]"
+      aria-label="Sortie dans moins d'une semaine, pas commencée"
+    />
+  );
 
   const timerButton = (
     <Button
@@ -178,11 +203,12 @@ export const ProductionCard = ({
           'flex items-center gap-2 px-3 py-2 transition-colors',
           // Le fond vert marque **le travail en cours**, pas la prochaine vidéo : c'est
           // ce qu'on cherche des yeux en ouvrant la file, et une seule carte surlignée
-          // ne disait pas où on en était sur les autres.
-          inProgress && 'border-[var(--positive)]/40 bg-[var(--positive)]/10',
-          highlighted && 'ring-1 ring-[var(--positive)]',
+          // ne disait pas où on en était sur les autres. Le rouge marque l'urgence.
+          tone,
+          ring,
         )}
       >
+        {urgentIcon}
         <Link
           to={`/production/${production.id}`}
           className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
@@ -246,13 +272,7 @@ export const ProductionCard = ({
   }
 
   return (
-    <Card
-      className={cn(
-        'flex gap-3 p-4 transition-colors',
-        inProgress && 'border-[var(--positive)]/40 bg-[var(--positive)]/10',
-        highlighted && 'ring-1 ring-[var(--positive)]',
-      )}
-    >
+    <Card className={cn('flex gap-3 p-4 transition-colors', tone, ring)}>
       {/* L'ordre de la file est entièrement manuel : deux flèches, pas de tri déduit. */}
       <div className="flex flex-col justify-center gap-0.5">
         <Button
@@ -284,9 +304,13 @@ export const ProductionCard = ({
           <div className="min-w-0">
             <Link
               to={`/production/${production.id}`}
-              className="font-medium hover:underline"
+              className={cn(
+                'flex items-center gap-1.5 font-medium hover:underline',
+                urgent && 'text-[var(--negative)]',
+              )}
               title={production.title}
             >
+              {urgentIcon}
               <span className="line-clamp-1">{production.title}</span>
             </Link>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">

@@ -1,5 +1,5 @@
 import type { IsoDate } from '../../../shared/dates.ts';
-import type { ProductionView } from './Production.ts';
+import type { ProductionFormat, ProductionView } from './Production.ts';
 import type { ProductionSlotView } from './ProductionSlot.ts';
 import type { TimeEntryView } from './TimeEntry.ts';
 
@@ -11,7 +11,11 @@ export type ProductionAlertKind =
   | 'product_late'
   | 'sponsorship_due'
   | 'sponsorship_undelivered'
+  /** Vidéo livrée, argent dû : c'est une relance à faire. */
+  | 'sponsorship_awaiting_payment'
   | 'production_stalled'
+  /** Sortie dans moins d'une semaine, et la vidéo n'est pas commencée (ou en pause). */
+  | 'production_urgent'
   /** Publiée alors qu'il restait des tâches non cochées. */
   | 'production_incomplete';
 
@@ -24,6 +28,11 @@ export interface ProductionAlert {
   /** Date concernée (échéance, mise en pause…), pour l'afficher telle quelle. */
   date: IsoDate | null;
   productionId: string | null;
+  /**
+   * Format de la production concernée, `null` sans production. C'est ce qui range une
+   * alerte dans le bon menu : celle d'un short n'a rien à faire sur l'écran des vidéos.
+   */
+  productionFormat: ProductionFormat | null;
   productId: string | null;
   sponsorshipId: string | null;
 }

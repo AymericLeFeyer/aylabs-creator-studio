@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import { FiltersProvider } from './presentation/hooks/useFilters.tsx';
 import { PrivacyProvider } from './presentation/hooks/usePrivacy.tsx';
 import { AppLayout } from './presentation/AppLayout.tsx';
@@ -12,8 +12,19 @@ import { ProductionPage } from './presentation/pages/ProductionPage.tsx';
 import { PlanningPage } from './presentation/pages/PlanningPage.tsx';
 import { InstagramPage } from './presentation/pages/InstagramPage.tsx';
 import { ProductionDetailPage } from './presentation/pages/ProductionDetailPage.tsx';
-import { PartnersPage } from './presentation/pages/PartnersPage.tsx';
+import { ProductsPage } from './presentation/pages/ProductsPage.tsx';
+import { SponsorsPage } from './presentation/pages/SponsorsPage.tsx';
+import { PlatformsPage } from './presentation/pages/PlatformsPage.tsx';
 import { CommentsPage } from './presentation/pages/CommentsPage.tsx';
+
+/** `/partenariats?onglet=…` → l'écran qui a remplacé l'onglet. */
+const LegacyPartnersRedirect = () => {
+  const [params] = useSearchParams();
+  const tab = params.get('onglet');
+  const target =
+    tab === 'sponsors' ? '/sponsors' : tab === 'plateformes' ? '/plateformes' : '/produits';
+  return <Navigate to={target} replace />;
+};
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,13 +47,23 @@ export const App = () => (
           <Routes>
             <Route element={<AppLayout />}>
               <Route index element={<DashboardPage />} />
-              <Route path="contenu" element={<ContentPage />} />
+              <Route path="youtube" element={<ContentPage />} />
+              <Route path="contenu" element={<Navigate to="/youtube" replace />} />
               <Route path="instagram" element={<InstagramPage />} />
               <Route path="commentaires" element={<CommentsPage />} />
               <Route path="planning" element={<PlanningPage />} />
-              <Route path="production" element={<ProductionPage />} />
+              {/* Un seul écran pour les deux files. La clé force un remontage en passant
+                  de l'une à l'autre : sans elle, React réutiliserait l'instance, et les
+                  cartes dépliées ou un formulaire ouvert passeraient d'un format à l'autre. */}
+              <Route path="production" element={<ProductionPage key="video" format="video" />} />
+              <Route path="shorts" element={<ProductionPage key="short" format="short" />} />
               <Route path="production/:id" element={<ProductionDetailPage />} />
-              <Route path="partenariats" element={<PartnersPage />} />
+              <Route path="produits" element={<ProductsPage />} />
+              <Route path="sponsors" element={<SponsorsPage />} />
+              <Route path="plateformes" element={<PlatformsPage />} />
+              {/* Les trois onglets des partenariats sont devenus trois écrans : l'ancienne
+                  adresse mène au bon, pour les signets. */}
+              <Route path="partenariats" element={<LegacyPartnersRedirect />} />
               <Route path="chiffre-affaires" element={<TurnoverPage />} />
               <Route path="legal" element={<LegalPage />} />
               {/* Revenus et dépenses sont désormais deux onglets du chiffre d'affaires.

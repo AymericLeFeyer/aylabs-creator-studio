@@ -7,6 +7,7 @@ import {
 } from '../../../application/planning/usecases/usePlanning.ts';
 import { Button } from '../ui/button.tsx';
 import { Card } from '../ui/card.tsx';
+import { FormatIcon } from '../production/FormatIcon.tsx';
 import { cn } from '../../../shared/cn.ts';
 
 export interface PlanningQueueProps {
@@ -56,6 +57,7 @@ export const PlanningQueue = ({ items, onPickUp, pendingId = null }: PlanningQue
   const groups: Array<{
     productionId: string;
     title: string;
+    format: PlanningItem['productionFormat'];
     color: string;
     rows: PlanningItem[];
   }> = [];
@@ -66,6 +68,7 @@ export const PlanningQueue = ({ items, onPickUp, pendingId = null }: PlanningQue
       groups.push({
         productionId: item.productionId,
         title: item.productionTitle,
+        format: item.productionFormat,
         color: item.channelColor ?? '#64748b',
         rows: [item],
       });
@@ -104,12 +107,16 @@ export const PlanningQueue = ({ items, onPickUp, pendingId = null }: PlanningQue
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <ListOrdered className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
           <span>
-            L’ordre suit la{' '}
+            L’ordre suit la file de production — commune aux{' '}
             <Link to="/production" className="underline hover:text-foreground">
-              file de production
+              vidéos
             </Link>{' '}
-            puis celui des étapes. Une tâche cochée quitte la pile toute seule — et se glisse sur la
-            grille pour lui donner une heure à la main.
+            et aux{' '}
+            <Link to="/shorts" className="underline hover:text-foreground">
+              shorts
+            </Link>{' '}
+            — puis celui des étapes. Une tâche cochée quitte la pile toute seule — et se glisse sur
+            la grille pour lui donner une heure à la main.
           </span>
         </p>
       </div>
@@ -124,6 +131,7 @@ export const PlanningQueue = ({ items, onPickUp, pendingId = null }: PlanningQue
             >
               {groupIndex + 1}
             </span>
+            <FormatIcon format={group.format} className="h-3 w-3 shrink-0 text-muted-foreground" />
             <Link
               to={`/production/${group.productionId}`}
               className="min-w-0 flex-1 truncate text-xs font-medium hover:underline"

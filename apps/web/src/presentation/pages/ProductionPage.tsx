@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CalendarClock,
@@ -22,8 +22,8 @@ import {
 } from '../../application/production/usecases/useProductions.ts';
 import { useDeleteIdea } from '../../application/idea/usecases/useIdeas.ts';
 import type { Idea } from '../../domain/idea/entities/Idea.ts';
-import type { Production } from '../../domain/production/entities/Production.ts';
-import { progressCounts } from '../../domain/production/entities/Production.ts';
+import type { Production, ProductionFormat } from '../../domain/production/entities/Production.ts';
+import { FORMAT_ROUTES, progressCounts } from '../../domain/production/entities/Production.ts';
 import type { ProductionStep } from '../../domain/production/entities/ProductionStep.ts';
 import { formatDuration } from '../../domain/production/entities/TimeEntry.ts';
 import { usePreferences } from '../hooks/usePreferences.ts';
@@ -34,7 +34,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 import { StatCard } from '../components/StatCard.tsx';
-import { AlertsBanner } from '../components/production/AlertsBanner.tsx';
+import { PageAlerts } from '../components/PageAlerts.tsx';
 import { ProductionCard } from '../components/production/ProductionCard.tsx';
 import { ProductionGantt } from '../components/production/ProductionGantt.tsx';
 import { IdeaBox } from '../components/production/IdeaBox.tsx';
@@ -49,11 +49,64 @@ import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
 const formatLoad = (minutes: number): string =>
   minutes === 0 ? 'aucun horaire posé' : formatDuration(minutes);
 
-export const ProductionPage = () => {
-  const { data: overview, isLoading } = useProductionOverview();
+/**
+ * Ce qui change d'une file à l'autre : les mots, et rien d'autre. Composants, règles et
+ * requêtes sont les mêmes — c'est tout l'intérêt d'un seul écran paramétré plutôt que de
+ * deux copies qui divergeraient à la première retouche.
+ */
+const COPY: Record<
+  ProductionFormat,
+  { title: string; subtitle: string; create: string; empty: string; emptyDone: string }
+> = {
+  video: {
+    title: 'Vidéos',
+    subtitle: 'Ce qui est en cours, ce qui sort quand, et le temps que ça prend vraiment.',
+    create: 'Nouvelle vidéo',
+    empty: 'Aucune vidéo en production',
+    emptyDone: "Aucune vidéo publiée depuis l'outil pour l'instant.",
+  },
+  short: {
+    title: 'Shorts & Réels',
+    subtitle:
+      'Les formats courts, à part des gros projets mais sur le même planning et avec les mêmes outils.',
+    create: 'Nouveau short',
+    empty: 'Aucun short en production',
+    emptyDone: "Aucun short publié depuis l'outil pour l'instant.",
+  },
+};
+
+/**
+ * La file d'un format : « Vidéos » ou « Shorts & Réels ».
+ *
+ * Les deux menus montent ce même écran. Ce qui les sépare n'est qu'un filtre — la file,
+ * ses chiffres, ses créneaux et ses terminées ne portent que le format demandé — alors
+ * que le planning, lui, continue de montrer les deux ensemble.
+ */
+export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
+  const copy = COPY[format];
+  const { data: overview, isLoading } = useProductionOverview(format);
   const { data: steps = [] } = useProductionSteps();
-  const { data: done = [] } = useProductions({ statuses: ['done'] });
-  const { data: slots = [] } = useProductionSlots();
+  const { data: done = [] } = useProductions({ statuses: ['done'], formats: [format] });
+  const { data: allSlots = [] } = useProductionSlots();
+  const slots = useMemo(
+    () => allSlots.filter((slot) => slot.productionFormat === format),
+    [allSlots, format],
+  );
+
+  /**
+   * Les vidéos en péril — sortie dans moins d'une semaine, pas commencées ou en pause —,
+   * lues dans les alertes de l'API et non recalculées ici : c'est la même règle qui
+   * allume la pastille rouge du menu, et elle ne doit exister qu'à un endroit.
+   */
+  const urgentIds = useMemo(
+    () =>
+      new Set(
+        (overview?.alerts ?? [])
+          .filter((alert) => alert.kind === 'production_urgent')
+          .map((alert) => alert.productionId),
+      ),
+    [overview],
+  );
 
   const reorder = useReorderProductions();
   const deleteIdea = useDeleteIdea();
@@ -131,12 +184,12 @@ export const ProductionPage = () => {
     return (
       <>
         <EmptyState
-          title="Aucune vidéo en production"
-          description="Crée ta première vidéo : elle portera son script, ses créneaux, ses produits et ses sponsos, puis se rattachera à sa sortie le jour de la publication."
-          actionLabel="Nouvelle vidéo"
+          title={copy.empty}
+          description="Crée la première : elle portera son script, ses créneaux, ses produits et ses sponsos, puis se rattachera à sa sortie le jour de la publication."
+          actionLabel={copy.create}
           onAction={openCreate}
         />
-        <ProductionDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+        <ProductionDialog open={dialogOpen} onOpenChange={setDialogOpen} defaultFormat={format} />
       </>
     );
   }
@@ -148,18 +201,19 @@ export const ProductionPage = () => {
           bouton flottant. Le garder pour un bloc vide aurait laissé une marge en haut. */}
       <div className="hidden flex-wrap items-center justify-between gap-3 lg:flex">
         <div>
-          <h1 className="text-lg font-semibold">En cours</h1>
-          <p className="text-sm text-muted-foreground">
-            Ce qui est en cours, ce qui sort quand, et le temps que ça prend vraiment.
-          </p>
+          <h1 className="text-lg font-semibold">{copy.title}</h1>
+          <p className="text-sm text-muted-foreground">{copy.subtitle}</p>
         </div>
         {/* Même parti pris que sur le planning : à portée de pouce sur mobile, dans
             l'en-tête sur grand écran. */}
         <Button size="sm" onClick={openCreate}>
           <Plus className="h-4 w-4" />
-          Nouvelle vidéo
+          {copy.create}
         </Button>
       </div>
+
+      {/* Pourquoi le menu porte une pastille rouge ou orange : avant tout le reste. */}
+      <PageAlerts path={FORMAT_ROUTES[format]} />
 
       {/* Les chiffres de la file. Aucun ne dépend d'une période — ce sont des états, et
           c'est pour ça que cet écran n'a pas de barre de filtres. La seule fenêtre qui
@@ -208,8 +262,6 @@ export const ProductionPage = () => {
         </div>
       )}
 
-      {overview && <AlertsBanner alerts={overview.alerts} />}
-
       {/* Le planning se lit à l'arrivée, pas derrière un onglet : c'est la vue qui
           répond à « qu'est-ce qui sort quand », la première question de la page. */}
       <ProductionGantt productions={[...queue, ...done]} slots={slots} steps={steps} />
@@ -255,6 +307,7 @@ export const ProductionPage = () => {
                   production={production}
                   steps={steps}
                   highlighted={production.id === overview?.nextId}
+                  urgent={urgentIds.has(production.id)}
                   timerRunning={overview?.running?.productionId === production.id}
                   compact={isCompact(production)}
                   onToggleCompact={() => toggleException(production.id)}
@@ -322,9 +375,7 @@ export const ProductionPage = () => {
 
         <TabsContent value="done">
           {done.length === 0 ? (
-            <Card className="p-8 text-center text-sm text-muted-foreground">
-              Aucune vidéo publiée depuis l'outil pour l'instant.
-            </Card>
+            <Card className="p-8 text-center text-sm text-muted-foreground">{copy.emptyDone}</Card>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {done.map((production) => (
@@ -398,12 +449,13 @@ export const ProductionPage = () => {
         production={timerFor}
       />
 
-      <Fab label="Nouvelle vidéo" icon={Plus} onClick={openCreate} />
+      <Fab label={copy.create} icon={Plus} onClick={openCreate} />
 
       <ProductionDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         defaultTitle={promoted?.text}
+        defaultFormat={format}
         // L'idée n'est retirée qu'une fois la vidéo réellement créée : abandonner le
         // formulaire ne doit pas la faire disparaître.
         onCreated={() => {

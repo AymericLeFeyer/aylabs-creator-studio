@@ -33,6 +33,7 @@ interface SlotRow {
 
 interface SlotViewRow extends SlotRow {
   production_title: string;
+  production_format: string;
   channel_id: string | null;
   channel_color: string | null;
   step_name: string | null;
@@ -89,6 +90,7 @@ export class SqliteProductionSlotRepository implements ProductionSlotRepository 
       .prepare(
         `SELECT s.*,
                 p.title    AS production_title,
+                p.format   AS production_format,
                 p.channel_id AS channel_id,
                 ch.color   AS channel_color,
                 st.name    AS step_name,
@@ -105,6 +107,7 @@ export class SqliteProductionSlotRepository implements ProductionSlotRepository 
     return rows.map((row) => ({
       ...toDomain(row),
       productionTitle: row.production_title,
+      productionFormat: row.production_format === 'short' ? 'short' : 'video',
       channelId: row.channel_id,
       channelColor: row.channel_color,
       stepName: row.step_name,

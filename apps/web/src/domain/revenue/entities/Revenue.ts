@@ -16,8 +16,8 @@ export const ORIGIN_LABELS: Record<Exclude<RevenueOrigin, 'manual'>, string> = {
 };
 
 export const ORIGIN_TARGET: Record<Exclude<RevenueOrigin, 'manual'>, string> = {
-  product: '/partenariats?onglet=produits',
-  sponsorship: '/partenariats?onglet=sponsors',
+  product: '/produits',
+  sponsorship: '/sponsors',
 };
 
 export interface RevenueEntry {

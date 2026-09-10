@@ -28,7 +28,13 @@ import {
   useSponsorships,
   useUpdateSponsorship,
 } from '../../application/sponsorship/usecases/useSponsorships.ts';
-import { STATUS_COLORS, STATUS_LABELS } from '../../domain/production/entities/Production.ts';
+import {
+  FORMAT_LABELS,
+  FORMAT_ROUTES,
+  STATUS_COLORS,
+  STATUS_LABELS,
+} from '../../domain/production/entities/Production.ts';
+import { FormatIcon } from '../components/production/FormatIcon.tsx';
 import type { ProductionSlot } from '../../domain/production/entities/ProductionSlot.ts';
 import type { ProductionStep } from '../../domain/production/entities/ProductionStep.ts';
 import { formatDuration } from '../../domain/production/entities/TimeEntry.ts';
@@ -151,9 +157,16 @@ export const ProductionDetailPage = () => {
 
   return (
     <div className="space-y-4">
-      <Button variant="ghost" size="sm" className="-ml-2" onClick={() => navigate('/production')}>
+      {/* Le retour mène à la file du format : un short se range dans « Shorts & Réels »,
+          et revenir sur la liste des vidéos obligerait à le rechercher ailleurs. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="-ml-2"
+        onClick={() => navigate(FORMAT_ROUTES[production.format])}
+      >
         <ArrowLeft className="h-4 w-4" />
-        Production
+        {production.format === 'short' ? 'Shorts & Réels' : 'Vidéos'}
       </Button>
 
       <Card className="space-y-4 p-5">
@@ -163,6 +176,10 @@ export const ProductionDetailPage = () => {
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <Badge variant="outline" style={{ color: STATUS_COLORS[production.status] }}>
                 {STATUS_LABELS[production.status]}
+              </Badge>
+              <Badge variant="secondary" className="gap-1">
+                <FormatIcon format={production.format} className="h-3 w-3" />
+                {FORMAT_LABELS[production.format]}
               </Badge>
               <span>{production.channelName ?? 'Chaîne à décider'}</span>
               {production.plannedDate && (
@@ -200,7 +217,9 @@ export const ProductionDetailPage = () => {
               size="icon"
               onClick={() => {
                 if (window.confirm(`Supprimer « ${production.title} » ?`)) {
-                  remove.mutate(production.id, { onSuccess: () => navigate('/production') });
+                  remove.mutate(production.id, {
+                    onSuccess: () => navigate(FORMAT_ROUTES[production.format]),
+                  });
                 }
               }}
             >
@@ -376,10 +395,7 @@ export const ProductionDetailPage = () => {
                       key={product.id}
                       className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
                     >
-                      <Link
-                        to="/partenariats?onglet=produits"
-                        className="min-w-0 flex-1 hover:underline"
-                      >
+                      <Link to="/produits" className="min-w-0 flex-1 hover:underline">
                         <span className="block truncate font-medium">{product.name}</span>
                         <span className="block truncate text-xs text-muted-foreground">
                           {product.brandName ?? 'Sans marque'} ·{' '}
@@ -450,10 +466,7 @@ export const ProductionDetailPage = () => {
                       key={sponsorship.id}
                       className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
                     >
-                      <Link
-                        to="/partenariats?onglet=sponsors"
-                        className="min-w-0 flex-1 hover:underline"
-                      >
+                      <Link to="/sponsors" className="min-w-0 flex-1 hover:underline">
                         <span className="block truncate font-medium">{sponsorship.label}</span>
                         <span className="block truncate text-xs text-muted-foreground">
                           {sponsorship.brandName ?? 'Sans marque'} ·{' '}

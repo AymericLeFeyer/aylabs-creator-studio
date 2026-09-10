@@ -1,6 +1,6 @@
 /** Contrat de `/api/productions/overview`. */
 
-import type { Production } from './Production.ts';
+import type { Production, ProductionFormat } from './Production.ts';
 import type { ProductionSlot } from './ProductionSlot.ts';
 import type { TimeEntry } from './TimeEntry.ts';
 
@@ -22,7 +22,11 @@ export type ProductionAlertKind =
   | 'product_late'
   | 'sponsorship_due'
   | 'sponsorship_undelivered'
+  /** Vidéo livrée, argent dû : une relance à faire. */
+  | 'sponsorship_awaiting_payment'
   | 'production_stalled'
+  /** Sortie dans moins d'une semaine, pas commencée ou en pause. */
+  | 'production_urgent'
   /** Publiée alors qu'il restait des tâches non cochées. */
   | 'production_incomplete';
 
@@ -33,6 +37,8 @@ export interface ProductionAlert {
   detail: string;
   date: string | null;
   productionId: string | null;
+  /** Format de la production concernée : range l'alerte dans le bon menu. */
+  productionFormat: ProductionFormat | null;
   productId: string | null;
   sponsorshipId: string | null;
 }

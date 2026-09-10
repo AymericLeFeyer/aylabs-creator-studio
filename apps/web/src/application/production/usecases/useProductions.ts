@@ -12,7 +12,10 @@ import {
 } from '../../../infrastructure/production/api/productionApi.ts';
 import type { StepTodoInput } from '../../../domain/production/entities/StepTodo.ts';
 import type { TimeEntryInput } from '../../../domain/production/entities/TimeEntry.ts';
-import type { ProductionInput } from '../../../domain/production/entities/Production.ts';
+import type {
+  ProductionFormat,
+  ProductionInput,
+} from '../../../domain/production/entities/Production.ts';
 import type { ProductionSlotInput } from '../../../domain/production/entities/ProductionSlot.ts';
 import type { ProductionStepInput } from '../../../domain/production/entities/ProductionStep.ts';
 import { localStartOf, planningNow } from '../../planning/usecases/usePlanning.ts';
@@ -58,11 +61,17 @@ export const useProduction = (id: string | undefined) =>
     enabled: Boolean(id),
   });
 
-/** File d'attente, alertes, créneaux à venir et charge de la semaine, en une requête. */
-export const useProductionOverview = () =>
+/**
+ * File d'attente, alertes, créneaux à venir et charge de la semaine, en une requête.
+ *
+ * `format` borne la file, les chiffres et les créneaux à un seul menu ; sans lui, tout est
+ * mêlé — c'est la version que lisent le dashboard et les pastilles du menu. Les alertes
+ * sont complètes dans les deux cas.
+ */
+export const useProductionOverview = (format?: ProductionFormat) =>
   useQuery({
-    queryKey: queryKeys.productionOverview(),
-    queryFn: () => productionApi.overview(),
+    queryKey: queryKeys.productionOverview(format),
+    queryFn: () => productionApi.overview(format),
     staleTime: 15_000,
   });
 

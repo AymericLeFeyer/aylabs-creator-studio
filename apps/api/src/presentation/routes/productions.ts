@@ -1,10 +1,14 @@
 import { Router } from 'express';
 import type { Container } from '../../container.ts';
-import type { ProductionStatus } from '../../domain/production/entities/Production.ts';
+import type {
+  ProductionFormat,
+  ProductionStatus,
+} from '../../domain/production/entities/Production.ts';
 import {
   createProductionSchema,
   createProductionStepSchema,
   createSlotBodySchema,
+  productionOverviewQuerySchema,
   productionQuerySchema,
   publishProductionSchema,
   reorderProductionsSchema,
@@ -25,6 +29,7 @@ export const productionsRouter = (container: Container): Router => {
     res.json(
       container.productions.findAll({
         statuses: query.statuses as ProductionStatus[],
+        formats: query.formats as ProductionFormat[],
         channelIds: query.channelIds,
         range: query.from && query.to ? { from: query.from, to: query.to } : undefined,
         search: query.search,
@@ -33,8 +38,9 @@ export const productionsRouter = (container: Container): Router => {
   });
 
   // Déclaré avant `/:id`, sinon Express prendrait « overview » pour un identifiant.
-  router.get('/overview', (_req, res) => {
-    res.json(container.getProductionOverview.execute());
+  router.get('/overview', (req, res) => {
+    const { format } = productionOverviewQuerySchema.parse(req.query);
+    res.json(container.getProductionOverview.execute(format));
   });
 
   router.get('/:id', (req, res) => {

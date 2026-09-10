@@ -2,6 +2,7 @@ import { request } from '../../http/httpClient.ts';
 import type {
   PreviousPublication,
   Production,
+  ProductionFormat,
   ProductionInput,
   ProductionStatus,
 } from '../../../domain/production/entities/Production.ts';
@@ -27,6 +28,8 @@ import type {
 
 export interface ProductionListParams {
   statuses?: ProductionStatus[];
+  /** Vide ou absent = les deux formats. */
+  formats?: ProductionFormat[];
   channelIds?: string[];
   from?: string;
   to?: string;
@@ -48,6 +51,7 @@ export const productionApi = {
     request<Production[]>('/api/productions', {
       query: {
         statuses: csv(params.statuses),
+        formats: csv(params.formats),
         channelIds: csv(params.channelIds),
         from: params.from,
         to: params.to,
@@ -57,7 +61,8 @@ export const productionApi = {
 
   get: (id: string) => request<Production>(`/api/productions/${id}`),
 
-  overview: () => request<ProductionOverview>('/api/productions/overview'),
+  overview: (format?: ProductionFormat) =>
+    request<ProductionOverview>('/api/productions/overview', { query: { format } }),
 
   create: (input: ProductionInput) =>
     request<Production>('/api/productions', { method: 'POST', body: input }),

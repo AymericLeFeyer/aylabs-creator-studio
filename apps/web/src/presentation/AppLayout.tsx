@@ -9,6 +9,8 @@ import { FiltersBar } from './components/FiltersBar.tsx';
 import { RunningTimerBar } from './components/production/RunningTimerBar.tsx';
 import { CollectAction } from './components/filters/CollectAction.tsx';
 import { AppBarProvider } from './hooks/useAppBar.tsx';
+import { useNavBadges } from './hooks/useNavBadges.ts';
+import { NavBadgePill } from './components/NavBadgePill.tsx';
 import { cn } from '../shared/cn.ts';
 
 /** Largeur du contenu, généreuse sur grand écran : les graphiques côte à côte en ont besoin. */
@@ -25,7 +27,10 @@ const ROUTES_WITHOUT_FILTERS = [
   '/commentaires',
   '/planning',
   '/production',
-  '/partenariats',
+  '/shorts',
+  '/produits',
+  '/sponsors',
+  '/plateformes',
   '/legal',
 ];
 
@@ -83,6 +88,12 @@ export const AppLayout = () => {
   const { preferences, set } = usePreferences();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  /**
+   * Les pastilles du menu. Elles remplacent les bandeaux d'alertes du dashboard : chaque
+   * problème est rangé dans le menu qui permet de le traiter, et l'écran ouvert redit en
+   * tête pourquoi (`PageAlerts`).
+   */
+  const badges = useNavBadges();
 
   /*
    * `--app-header` : la hauteur réelle de l'en-tête collant, mesurée et posée sur la
@@ -141,8 +152,14 @@ export const AppLayout = () => {
         )
       }
     >
-      <Icon className="h-4 w-4 shrink-0" />
-      {!compact && <span className="truncate">{label}</span>}
+      {/* Repliée, la barre n'a pas la place d'un nombre : un point sur l'icône suffit à
+          dire « regarde ici », et l'infobulle de la pastille donne le compte. */}
+      <span className="relative shrink-0">
+        <Icon className="h-4 w-4" />
+        {compact && <NavBadgePill badge={badges[to]} dot className="absolute -right-1 -top-1" />}
+      </span>
+      {!compact && <span className="min-w-0 flex-1 truncate">{label}</span>}
+      {!compact && <NavBadgePill badge={badges[to]} />}
     </NavLink>
   );
 
@@ -434,7 +451,10 @@ export const AppLayout = () => {
                         aria-hidden
                       />
                     )}
-                    <Icon className="relative h-5 w-5" />
+                    <span className="relative">
+                      <Icon className="h-5 w-5" />
+                      <NavBadgePill badge={badges[to]} className="absolute -right-2.5 -top-1.5" />
+                    </span>
                     <span className="relative w-full truncate text-center">{short ?? label}</span>
                   </>
                 )}

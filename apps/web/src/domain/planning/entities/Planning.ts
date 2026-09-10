@@ -1,4 +1,4 @@
-import type { ProductionStatus } from '../../production/entities/Production.ts';
+import type { ProductionFormat, ProductionStatus } from '../../production/entities/Production.ts';
 import type { ProductionSlot } from '../../production/entities/ProductionSlot.ts';
 
 /**
@@ -102,6 +102,7 @@ export interface PlanningItem {
   sequence: number;
   status: PlanningItemStatus;
   productionTitle: string;
+  productionFormat: ProductionFormat;
   /** Rang de la vidéo dans la file d'attente : c'est lui qui ordonne le travail. */
   productionOrder: number;
   /** Rang de l'étape dans le référentiel, second critère de tri. */
@@ -139,6 +140,7 @@ export interface PlanningDay {
 export interface PlanningProductionSpan {
   id: string;
   title: string;
+  format: ProductionFormat;
   status: ProductionStatus;
   channelName: string | null;
   channelColor: string | null;

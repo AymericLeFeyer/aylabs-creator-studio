@@ -19,7 +19,6 @@ import { useProducts } from '../../application/product/usecases/useProducts.ts';
 import { useVideos } from '../../application/video/usecases/useVideos.ts';
 import { useSponsorships } from '../../application/sponsorship/usecases/useSponsorships.ts';
 import { useProductionOverview } from '../../application/production/usecases/useProductions.ts';
-import { useLegalOverview } from '../../application/legal/usecases/useLegal.ts';
 import { partnerPipeline } from '../../domain/partner/services/pipeline.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
 import { usePrivacy } from '../hooks/usePrivacy.tsx';
@@ -34,9 +33,7 @@ import { StatCard } from '../components/StatCard.tsx';
 import { InKindList, VideoList } from '../components/StatCardLists.tsx';
 import { MoneyChart } from '../components/charts/MoneyChart.tsx';
 import { AudienceChart } from '../components/charts/AudienceChart.tsx';
-import { AlertsBanner } from '../components/production/AlertsBanner.tsx';
 import { LatestVideoCard } from '../components/content/LatestVideoCard.tsx';
-import { LegalAlertsCard } from '../components/legal/LegalAlertsCard.tsx';
 import { UpcomingExpensesCard } from '../components/money/UpcomingExpensesCard.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 
@@ -80,7 +77,6 @@ export const DashboardPage = () => {
   );
 
   const { data: production } = useProductionOverview();
-  const { data: legal } = useLegalOverview();
 
   // Sans bornes de date : l'API renvoie les plus récentes en premier, et la dernière
   // sortie n'a aucune raison de tomber dans la période affichée. Dix, parce qu'une vidéo
@@ -243,12 +239,10 @@ export const DashboardPage = () => {
               immédiatement les totaux — « et ma dernière vidéo, elle marche ? ». */}
           <LatestVideoCard videos={latestVideos} />
 
-          {/* Ce qui cloche vient avant les courbes : une déclaration en retard ou un
-              produit qui n'arrive pas se traite aujourd'hui, la tendance attend. */}
-          <div className="grid gap-4 xl:grid-cols-2">
-            {production && <AlertsBanner alerts={production.alerts} />}
-            {legal && <LegalAlertsCard alerts={legal.alerts} />}
-          </div>
+          {/* Plus de bandeaux d'alertes ici : chaque problème allume la pastille du menu
+              qui permet de le traiter, et l'écran ouvert redit en tête pourquoi. Un bloc
+              qui mêlait une déclaration d'Urssaf, un colis en retard et une vidéo en
+              pause ne disait pas où aller. */}
 
           {/* Même abscisse, survol synchronisé : côte à côte, une bosse de vues et un
               pic de revenus se lisent d'un seul regard. Ce sont les deux seuls

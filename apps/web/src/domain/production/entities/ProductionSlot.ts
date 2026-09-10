@@ -1,5 +1,7 @@
 /** Contrat de `/api/production-slots`. */
 
+import type { ProductionFormat } from './Production.ts';
+
 /**
  * Qui a posé le créneau. C'est ce qui dit si le planning a le droit de le déplacer : il
  * ne réécrit **que** les `planner` encore non approuvés.
@@ -27,6 +29,8 @@ export interface ProductionSlot {
   updatedAt: string;
 
   productionTitle: string;
+  /** Vidéo ou short : le planning les montre ensemble, chacun avec son icône. */
+  productionFormat: ProductionFormat;
   channelId: string | null;
   channelColor: string | null;
   stepName: string | null;

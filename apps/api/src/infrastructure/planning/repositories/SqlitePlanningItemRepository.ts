@@ -27,6 +27,7 @@ interface Row {
 
 interface ViewRow extends Row {
   production_title: string;
+  production_format: string;
   production_order: number;
   step_order: number;
   channel_id: string | null;
@@ -101,6 +102,7 @@ export class SqlitePlanningItemRepository implements PlanningItemRepository {
       .prepare(
         `SELECT i.*,
                 p.title        AS production_title,
+                p.format       AS production_format,
                 p.sort_order   AS production_order,
                 p.channel_id   AS channel_id,
                 p.planned_date AS planned_date,
@@ -132,6 +134,7 @@ export class SqlitePlanningItemRepository implements PlanningItemRepository {
     return rows.map((row) => ({
       ...toDomain(row),
       productionTitle: row.production_title,
+      productionFormat: row.production_format === 'short' ? 'short' : 'video',
       productionOrder: row.production_order,
       stepOrder: row.step_order,
       channelId: row.channel_id,

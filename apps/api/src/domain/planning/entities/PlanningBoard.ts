@@ -1,5 +1,5 @@
 import type { IsoDate } from '../../../shared/dates.ts';
-import type { ProductionStatus } from '../../production/entities/Production.ts';
+import type { ProductionFormat, ProductionStatus } from '../../production/entities/Production.ts';
 import type { ProductionSlotView } from '../../production/entities/ProductionSlot.ts';
 import type { CalendarEvent } from './CalendarEvent.ts';
 import type { PlanningItemView } from './PlanningItem.ts';
@@ -37,6 +37,7 @@ export interface PlanningDay {
 export interface PlanningProductionSpan {
   id: string;
   title: string;
+  format: ProductionFormat;
   status: ProductionStatus;
   channelName: string | null;
   channelColor: string | null;

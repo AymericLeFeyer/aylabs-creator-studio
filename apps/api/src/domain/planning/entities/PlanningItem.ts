@@ -1,4 +1,5 @@
 import type { IsoDate } from '../../../shared/dates.ts';
+import type { ProductionFormat } from '../../production/entities/Production.ts';
 
 /**
  * Une ligne de la **pile de travail** : « il reste à écrire l'accroche de cette vidéo ».
@@ -38,6 +39,8 @@ export interface PlanningItem {
 /** Ligne enrichie de tout ce que le planning affiche sur un bloc. */
 export interface PlanningItemView extends PlanningItem {
   productionTitle: string;
+  /** Vidéo ou short : la pile mélange les deux, l'icône les distingue. */
+  productionFormat: ProductionFormat;
   /** Rang de la vidéo dans la file d'attente : c'est lui qui ordonne le travail. */
   productionOrder: number;
   /** Rang de l'étape dans le référentiel, second critère de tri. */

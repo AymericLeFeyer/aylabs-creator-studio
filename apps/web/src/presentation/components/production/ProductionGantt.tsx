@@ -162,19 +162,33 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
     return offset >= 0 && offset < days.length;
   };
 
-  // Les vidéos encore à faire d'abord : le planning sert à préparer, pas à archiver.
-  const planned = useMemo(
-    () =>
-      productions
-        .filter((production) => production.plannedDate ?? production.startDate)
-        .sort((a, b) => {
-          if ((a.status === 'done') !== (b.status === 'done')) return a.status === 'done' ? 1 : -1;
-          return (a.plannedDate ?? a.startDate ?? '').localeCompare(
-            b.plannedDate ?? b.startDate ?? '',
-          );
-        }),
-    [productions],
-  );
+  /**
+   * L'ordre des lignes : la chronologie, sauf pour ce qui est **terminé ET déjà passé**.
+   *
+   * Une vidéo bouclée en avance — publiée, ou prête et marquée terminée avant sa date —
+   * reste à sa place dans le calendrier : elle occupe toujours ce créneau de sortie, et la
+   * renvoyer en bas faisait croire que la semaine était vide. Elle y reste **grisée**
+   * (titre et barre en retrait), pour qu'on ne la confonde pas avec du travail à faire.
+   *
+   * Seules les terminées dont l'échéance est **passée** ferment la marche : elles n'ont plus
+   * rien à dire sur ce qui vient, et le planning sert à préparer, pas à archiver.
+   *
+   * L'échéance est la sortie visée, ou le début à défaut — la même date qui borne la barre.
+   */
+  const planned = useMemo(() => {
+    const today = toIsoDate(new Date());
+    const deadlineOf = (production: Production) =>
+      production.plannedDate ?? production.startDate ?? '';
+    const archived = (production: Production) =>
+      production.status === 'done' && deadlineOf(production) < today;
+
+    return productions
+      .filter((production) => production.plannedDate ?? production.startDate)
+      .sort((a, b) => {
+        if (archived(a) !== archived(b)) return archived(a) ? 1 : -1;
+        return deadlineOf(a).localeCompare(deadlineOf(b));
+      });
+  }, [productions]);
 
   const rows = expanded ? planned : planned.slice(0, COLLAPSED_ROWS);
   const hidden = planned.length - rows.length;

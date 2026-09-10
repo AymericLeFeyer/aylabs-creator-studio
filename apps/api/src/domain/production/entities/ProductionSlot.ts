@@ -1,4 +1,5 @@
 import type { IsoDate } from '../../../shared/dates.ts';
+import type { ProductionFormat } from './Production.ts';
 
 /**
  * Qui a posé ce créneau.
@@ -47,6 +48,8 @@ export interface ProductionSlot {
 /** Créneau enrichi de sa production, pour l'affichage du planning global. */
 export interface ProductionSlotView extends ProductionSlot {
   productionTitle: string;
+  /** Vidéo ou short : le planning les montre ensemble, chacun avec son icône. */
+  productionFormat: ProductionFormat;
   channelId: string | null;
   channelColor: string | null;
   stepName: string | null;

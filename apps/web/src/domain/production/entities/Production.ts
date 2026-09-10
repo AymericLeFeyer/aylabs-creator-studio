@@ -11,6 +11,26 @@ export type ProductionStatus = 'idea' | 'in_progress' | 'paused' | 'done';
 
 export const PRODUCTION_STATUSES: ProductionStatus[] = ['idea', 'in_progress', 'paused', 'done'];
 
+/**
+ * Vidéo longue ou short / réel. Ne sépare que les **menus** (« Vidéos », « Shorts &
+ * Réels ») : tout le reste est commun, et le planning montre les deux ensemble.
+ */
+export type ProductionFormat = 'video' | 'short';
+
+export const PRODUCTION_FORMATS: ProductionFormat[] = ['video', 'short'];
+
+/** Libellés du format, à un seul endroit comme ceux du statut. */
+export const FORMAT_LABELS: Record<ProductionFormat, string> = {
+  video: 'Vidéo',
+  short: 'Short / Réel',
+};
+
+/** L'écran de la file de chaque format : c'est là qu'on revient depuis une fiche. */
+export const FORMAT_ROUTES: Record<ProductionFormat, string> = {
+  video: '/production',
+  short: '/shorts',
+};
+
 /** Les libellés vivent ici uniquement : les renommer ne touche ni la base ni l'API. */
 export const STATUS_LABELS: Record<ProductionStatus, string> = {
   idea: 'Idée',
@@ -66,6 +86,7 @@ export interface Production {
   /** Sortie réelle rattachée. `null` tant que la vidéo n'est pas publiée. */
   videoId: string | null;
   title: string;
+  format: ProductionFormat;
   status: ProductionStatus;
   pausedReason: string | null;
   pausedAt: string | null;
@@ -117,6 +138,7 @@ export interface ProductionInput {
   title: string;
   channelId?: string | null;
   videoId?: string | null;
+  format?: ProductionFormat;
   status?: ProductionStatus;
   pausedReason?: string | null;
   startDate?: string | null;

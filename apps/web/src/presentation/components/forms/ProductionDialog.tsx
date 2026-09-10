@@ -6,9 +6,12 @@ import {
 } from '../../../application/production/usecases/useProductions.ts';
 import type {
   Production,
+  ProductionFormat,
   ProductionStatus,
 } from '../../../domain/production/entities/Production.ts';
 import {
+  FORMAT_LABELS,
+  PRODUCTION_FORMATS,
   PRODUCTION_STATUSES,
   STATUS_HINTS,
   STATUS_LABELS,
@@ -33,12 +36,15 @@ interface ProductionDialogProps {
   production?: Production | null;
   /** Titre de travail pré-rempli, quand la vidéo naît d'une idée du carnet. */
   defaultTitle?: string;
+  /** Format d'une vidéo créée ici : celui de l'écran d'où on la crée. */
+  defaultFormat?: ProductionFormat;
   /** Appelé après une création réussie — c'est là que l'idée d'origine est retirée. */
   onCreated?: (production: Production) => void;
 }
 
 const EMPTY = {
   title: '',
+  format: 'video' as ProductionFormat,
   channelId: NONE,
   status: 'idea' as ProductionStatus,
   pausedReason: '',
@@ -59,6 +65,7 @@ export const ProductionDialog = ({
   onOpenChange,
   production,
   defaultTitle,
+  defaultFormat,
   onCreated,
 }: ProductionDialogProps) => {
   const { data: channels = [] } = useChannels();
@@ -70,7 +77,7 @@ export const ProductionDialog = ({
   const [lastKey, setLastKey] = useState<string | null>(null);
   // Le titre par défaut fait partie de la clé : deux idées promues d'affilée doivent
   // rouvrir le formulaire avec le bon titre, pas avec celui de la précédente.
-  const key = `${open}-${production?.id ?? 'new'}-${defaultTitle ?? ''}`;
+  const key = `${open}-${production?.id ?? 'new'}-${defaultTitle ?? ''}-${defaultFormat ?? ''}`;
   if (open && key !== lastKey) {
     setLastKey(key);
     setError(null);
@@ -78,6 +85,7 @@ export const ProductionDialog = ({
       production
         ? {
             title: production.title,
+            format: production.format,
             channelId: toSelectValue(production.channelId),
             status: production.status,
             pausedReason: production.pausedReason ?? '',
@@ -85,7 +93,7 @@ export const ProductionDialog = ({
             plannedDate: production.plannedDate ?? '',
             notes: production.notes ?? '',
           }
-        : { ...EMPTY, title: defaultTitle ?? '' },
+        : { ...EMPTY, title: defaultTitle ?? '', format: defaultFormat ?? 'video' },
     );
   }
 
@@ -95,6 +103,7 @@ export const ProductionDialog = ({
 
     const payload = {
       title: form.title.trim(),
+      format: form.format,
       channelId: fromSelectValue(form.channelId),
       status: form.status,
       // La raison ne survit pas à la sortie de pause : la garder ferait réapparaître
@@ -128,7 +137,13 @@ export const ProductionDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{production ? 'Modifier la vidéo' : 'Nouvelle vidéo'}</DialogTitle>
+          <DialogTitle>
+            {production
+              ? 'Modifier la vidéo'
+              : form.format === 'short'
+                ? 'Nouveau short'
+                : 'Nouvelle vidéo'}
+          </DialogTitle>
           <DialogDescription>
             Elle entre en fin de file d'attente. C'est toi qui la remontes — l'outil ne décide
             d'aucune priorité.
@@ -136,15 +151,40 @@ export const ProductionDialog = ({
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="production-title">Titre de travail</Label>
-            <Input
-              id="production-title"
-              placeholder="Le sujet, tel que tu le nommes aujourd'hui"
-              value={form.title}
-              onChange={(event) => setForm((f) => ({ ...f, title: event.target.value }))}
-              required
-            />
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_11rem]">
+            <div className="space-y-1.5">
+              <Label htmlFor="production-title">Titre de travail</Label>
+              <Input
+                id="production-title"
+                placeholder="Le sujet, tel que tu le nommes aujourd'hui"
+                value={form.title}
+                onChange={(event) => setForm((f) => ({ ...f, title: event.target.value }))}
+                required
+              />
+            </div>
+
+            {/* Le format ne décide que du menu où la vidéo se range : on peut le changer à
+                tout moment, rien d'autre ne bouge — script, créneaux et partenaires restent. */}
+            <div className="space-y-1.5">
+              <Label htmlFor="production-format">Format</Label>
+              <Select
+                value={form.format}
+                onValueChange={(value) =>
+                  setForm((f) => ({ ...f, format: value as ProductionFormat }))
+                }
+              >
+                <SelectTrigger id="production-format">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRODUCTION_FORMATS.map((format) => (
+                    <SelectItem key={format} value={format}>
+                      {FORMAT_LABELS[format]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

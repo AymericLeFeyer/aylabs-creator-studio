@@ -26,6 +26,7 @@ interface ProductionRow {
   channel_id: string | null;
   video_id: string | null;
   title: string;
+  format: string;
   status: string;
   paused_reason: string | null;
   paused_at: string | null;
@@ -59,6 +60,7 @@ const toDomain = (row: ProductionRow): Production => ({
   channelId: row.channel_id,
   videoId: row.video_id,
   title: row.title,
+  format: row.format === 'short' ? 'short' : 'video',
   status: row.status as ProductionStatus,
   pausedReason: row.paused_reason,
   pausedAt: row.paused_at,
@@ -148,6 +150,12 @@ export class SqliteProductionRepository implements ProductionRepository {
     if (statuses.length > 0) {
       conditions.push(`p.status IN (${placeholders(statuses.length)})`);
       params.push(...statuses);
+    }
+
+    const formats = filter.formats ?? [];
+    if (formats.length > 0) {
+      conditions.push(`p.format IN (${placeholders(formats.length)})`);
+      params.push(...formats);
     }
 
     const channelIds = filter.channelIds ?? [];
@@ -361,17 +369,18 @@ export class SqliteProductionRepository implements ProductionRepository {
     this.db
       .prepare(
         `INSERT INTO productions
-           (id, channel_id, video_id, title, status, paused_reason, paused_at,
+           (id, channel_id, video_id, title, format, status, paused_reason, paused_at,
             start_date, planned_date, script, publish_title, publish_description,
             publish_hashtags, publish_tags, paid_promotion, notes, sort_order,
             created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.channelId ?? null,
         input.videoId ?? null,
         input.title,
+        input.format ?? 'video',
         status,
         input.pausedReason ?? null,
         status === 'paused' ? now : null,
@@ -406,6 +415,7 @@ export class SqliteProductionRepository implements ProductionRepository {
     };
 
     if (input.title !== undefined) set('title', input.title);
+    if (input.format !== undefined) set('format', input.format);
     if (input.channelId !== undefined) set('channel_id', input.channelId);
     if (input.videoId !== undefined) set('video_id', input.videoId);
     if (input.pausedReason !== undefined) set('paused_reason', input.pausedReason);
@@ -455,14 +465,31 @@ export class SqliteProductionRepository implements ProductionRepository {
   /**
    * Réécrit l'ordre de la file en une transaction : un classement à moitié appliqué
    * afficherait deux fois le même rang et une file dans un ordre imprévisible.
+   *
+   * `ids` n'est souvent qu'**une partie** de la file — l'écran des vidéos ne réordonne
+   * que les vidéos, celui des shorts que les shorts. Écrire `1..n` sur ce seul morceau le
+   * ferait entrer en collision avec les rangs de l'autre format, et le planning, qui suit
+   * cet ordre global, travaillerait dans un ordre imprévisible. On relit donc l'ordre
+   * **complet** (celui de l'affichage : rang puis date de création), on remet les
+   * identifiants reçus dans les places qu'ils occupaient, puis on réécrit `1..N` sur tout.
+   * Le reste de la file ne bouge pas d'un cran, et les rangs redeviennent distincts.
    */
   reorder(ids: string[]): void {
     if (ids.length === 0) return;
     const stmt = this.db.prepare('UPDATE productions SET sort_order = ? WHERE id = ?');
 
+    const all = (
+      this.db.prepare('SELECT id FROM productions ORDER BY sort_order, created_at').all() as Array<{
+        id: string;
+      }>
+    ).map((row) => row.id);
+    const moved = new Set(ids);
+    const queue = ids.filter((id) => all.includes(id));
+    const order = all.map((id) => (moved.has(id) ? queue.shift()! : id));
+
     this.db.exec('BEGIN');
     try {
-      ids.forEach((id, index) => stmt.run(index + 1, id));
+      order.forEach((id, index) => stmt.run(index + 1, id));
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');

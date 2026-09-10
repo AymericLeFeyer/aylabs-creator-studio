@@ -1,15 +1,17 @@
 import {
   BarChart3,
   CalendarClock,
-  Clapperboard,
+  Gift,
   Handshake,
   Instagram,
+  Link2,
   MessagesSquare,
-  PlaySquare,
   ScrollText,
   Wallet,
+  Youtube,
   type LucideIcon,
 } from 'lucide-react';
+import { FORMAT_ICONS } from './components/production/formatIcons.ts';
 
 export interface NavItem {
   /** L'adresse, et **l'identifiant** de l'entrée. */
@@ -34,8 +36,8 @@ export interface NavSection {
  * Les écrans de travail, **groupés par ce à quoi ils servent**.
  *
  * À neuf entrées, une liste à plat oblige à lire tous les libellés pour en trouver un :
- * rien ne dit que « Contenu » et « Instagram » répondent à la même question, ni que
- * « Partenariats » et « Chiffre d'affaires » se consultent l'un après l'autre. Quatre
+ * rien ne dit que « YouTube » et « Instagram » répondent à la même question, ni que
+ * « Sponsors » et « Chiffre d'affaires » se consultent l'un après l'autre. Quatre
  * familles courtes se balaient d'un regard, et le titre suffit à savoir dans laquelle
  * chercher : **Production**, **Audience**, **Revenus**, **Entreprise**.
  *
@@ -66,16 +68,24 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Production',
     items: [
       { to: '/planning', label: 'Planning', icon: CalendarClock, end: false },
-      // « En cours » et non « Production » : la famille porte déjà le mot, et le répéter
-      // à l'identique juste en dessous ne dirait rien de ce que l'écran contient. C'est
-      // la file de ce sur quoi on travaille.
-      { to: '/production', label: 'En cours', icon: Clapperboard, end: false },
+      // Deux files, un seul module : les vidéos longues et les formats courts se
+      // préparent pareil (script, créneaux, partenaires) mais ne se pilotent pas au même
+      // rythme, et les mêler faisait disparaître les shorts sous les gros projets. Le
+      // planning, lui, les montre ensemble — c'est le même temps de travail.
+      { to: '/production', label: 'Vidéos', icon: FORMAT_ICONS.video, end: false },
+      {
+        to: '/shorts',
+        label: 'Shorts & Réels',
+        short: 'Shorts',
+        icon: FORMAT_ICONS.short,
+        end: false,
+      },
     ],
   },
   {
     label: 'Audience',
     items: [
-      { to: '/contenu', label: 'Contenu', icon: PlaySquare, end: false },
+      { to: '/youtube', label: 'YouTube', icon: Youtube, end: false },
       { to: '/instagram', label: 'Instagram', icon: Instagram, end: false },
       {
         to: '/commentaires',
@@ -89,7 +99,13 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Revenus',
     items: [
-      { to: '/partenariats', label: 'Partenariats', icon: Handshake, end: false },
+      // Trois entrées et non un écran à onglets : produits, sponsors et plateformes ne
+      // posent pas la même question (qu'est-ce que je dois tourner, qui dois-je relancer,
+      // où est gérée l'affiliation), et chacun porte sa propre pastille — un onglet
+      // n'aurait pas pu la montrer depuis le menu.
+      { to: '/produits', label: 'Produits', icon: Gift, end: false },
+      { to: '/sponsors', label: 'Sponsors', icon: Handshake, end: false },
+      { to: '/plateformes', label: 'Plateformes', icon: Link2, end: false },
       {
         to: '/chiffre-affaires',
         label: "Chiffre d'affaires",
@@ -117,7 +133,7 @@ export const NAV: NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);
  * **Cinq et pas plus** : au-delà, les cibles deviennent trop étroites pour un pouce et
  * les libellés illisibles. Ce sont ceux qu'on ouvre en déplacement — regarder où on en
  * est, ce qu'il y a à faire aujourd'hui, ce que ça rapporte, et ce qu'on nous écrit. Le
- * reste (Contenu, Instagram, Partenariats, Légal, Paramètres) se consulte assis, et reste
+ * reste (YouTube, Instagram, partenaires, Légal, Paramètres) se consulte assis, et reste
  * dans le tiroir du menu — qui, lui, contient **tout**, ces cinq-là compris : chercher
  * dans le menu ne doit jamais donner un trou.
  */
@@ -139,15 +155,16 @@ export const MOBILE_NAV: NavItem[] = MOBILE_PATHS.map((path) =>
  * identifiants.
  */
 const TITLES: Array<[string, string]> = [
-  ['/production/', 'Vidéo'],
-  // « En cours », comme dans le menu : « Production » en haut de l'écran redisait le
-  // titre de famille sans rien apprendre, et mangeait une ligne de barre d'application.
-  ['/production', 'En cours'],
+  ['/production/', 'Fiche'],
+  ['/production', 'Vidéos'],
+  ['/shorts', 'Shorts & Réels'],
   ['/planning', 'Planning'],
-  ['/contenu', 'Contenu'],
+  ['/youtube', 'YouTube'],
   ['/instagram', 'Instagram'],
   ['/commentaires', 'Commentaires'],
-  ['/partenariats', 'Partenariats'],
+  ['/produits', 'Produits'],
+  ['/sponsors', 'Sponsors'],
+  ['/plateformes', 'Plateformes'],
   ['/chiffre-affaires', "Chiffre d'affaires"],
   ['/legal', 'Légal'],
   ['/parametres', 'Paramètres'],

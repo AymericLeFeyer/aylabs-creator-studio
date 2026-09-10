@@ -941,6 +941,7 @@ export class ManagePlanning {
       spans.push({
         id: production.id,
         title: production.title,
+        format: production.format,
         status: production.status,
         channelName: production.channelName,
         channelColor: production.channelColor,

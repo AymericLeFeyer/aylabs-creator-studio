@@ -62,7 +62,7 @@ export const ContentPage = () => {
   return (
     <div className="space-y-4">
       <div className="hidden lg:block">
-        <h1 className="text-lg font-semibold">Contenu</h1>
+        <h1 className="text-lg font-semibold">YouTube</h1>
         <p className="text-sm text-muted-foreground">
           {periodVideos.length} sortie(s) sur la période · {catalog.length} vidéo(s) au catalogue ·{' '}
           {overview?.queue.length ?? 0} en production

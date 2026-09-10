@@ -1,6 +1,9 @@
 import { addDays, today } from '../../../shared/dates.ts';
 import type { IsoDate } from '../../../shared/dates.ts';
-import type { ProductionView } from '../../../domain/production/entities/Production.ts';
+import type {
+  ProductionFormat,
+  ProductionView,
+} from '../../../domain/production/entities/Production.ts';
 import type {
   ProductionAlert,
   ProductionOverview,
@@ -76,9 +79,19 @@ export class GetProductionOverview {
     this.times = times;
   }
 
-  execute(): ProductionOverview {
+  /**
+   * `format` borne la file, ses chiffres et ses créneaux à un seul menu (« Vidéos » ou
+   * « Shorts & Réels »).
+   *
+   * Les **alertes**, elles, portent toujours sur tout : ce sont elles qui alimentent les
+   * pastilles de **tous** les menus, et chacune est étiquetée de son format
+   * (`productionFormat`) pour que l'écran garde les siennes. Les filtrer ici obligerait le
+   * menu à lancer autant de requêtes qu'il a de pastilles.
+   */
+  execute(format?: ProductionFormat): ProductionOverview {
     const now = today();
-    const queue = this.productions.findAll({ statuses: ['idea', 'in_progress', 'paused'] });
+    const fullQueue = this.productions.findAll({ statuses: ['idea', 'in_progress', 'paused'] });
+    const queue = format ? fullQueue.filter((p) => p.format === format) : fullQueue;
     // Une seule lecture complète, partagée par les alertes : elles ont besoin des
     // publiées (celles qui ont une sortie rattachée) autant que de la file.
     const all = this.productions.findAll();
@@ -87,10 +100,12 @@ export class GetProductionOverview {
     // Si tout est en pause, on retombe sur la tête de file plutôt que sur rien.
     const next = queue.find((p) => p.status !== 'paused') ?? queue[0] ?? null;
 
-    const upcomingSlots = this.slots.findAll({
-      range: { from: now, to: addDays(now, 14) },
-      includeDone: false,
-    });
+    const upcomingSlots = this.slots
+      .findAll({
+        range: { from: now, to: addDays(now, 14) },
+        includeDone: false,
+      })
+      .filter((slot) => !format || slot.productionFormat === format);
 
     const weekEnd = addDays(now, 6);
     const weekLoadMinutes = upcomingSlots
@@ -100,7 +115,7 @@ export class GetProductionOverview {
     return {
       queue,
       nextId: next?.id ?? null,
-      alerts: this.buildAlerts(now, queue, all),
+      alerts: this.buildAlerts(now, fullQueue, all),
       upcomingSlots,
       weekLoadMinutes,
       stats: this.buildStats(now, queue),
@@ -164,6 +179,50 @@ export class GetProductionOverview {
     const alerts: ProductionAlert[] = [];
     const soon = addDays(now, DEADLINE_WARNING_DAYS);
 
+    // Le format de chaque production, pour ranger les alertes de produit et de sponso
+    // rattachés dans le bon menu.
+    const formats = new Map(all.map((production) => [production.id, production.format]));
+    const formatOf = (productionId: string | null): ProductionFormat | null =>
+      productionId ? (formats.get(productionId) ?? null) : null;
+
+    // Sortie dans moins d'une semaine, et rien n'a commencé — ou tout est bloqué.
+    //
+    // C'est l'alerte qui compte le plus dans la file, parce qu'elle est la seule qui dise
+    // « il n'y a déjà plus le temps » : une vidéo à l'état d'idée à six jours de sa sortie
+    // ne sortira pas sans qu'on décide quelque chose aujourd'hui. Une date déjà dépassée y
+    // entre aussi — c'est le même cas, en pire. `danger`, donc pastille rouge et carte
+    // rouge dans la file.
+    //
+    // « Commencée » se lit au **statut** et non aux cases cochées : `idea` est
+    // précisément « notée, pas commencée », et une vidéo en pause n'avance pas plus.
+    const urgentIds = new Set<string>();
+    for (const production of queue) {
+      if (production.status !== 'idea' && production.status !== 'paused') continue;
+      if (!production.plannedDate || production.plannedDate >= soon) continue;
+      urgentIds.add(production.id);
+      const delta = daysBetween(now, production.plannedDate);
+      const when =
+        delta < 0
+          ? 'Sortie dépassée'
+          : delta === 0
+            ? "Sortie aujourd'hui"
+            : `Sortie dans ${plural(delta, 'jour')}`;
+      alerts.push({
+        kind: 'production_urgent',
+        severity: 'danger',
+        title: `${when}, ${production.status === 'paused' ? 'en pause' : 'pas commencée'} : ${production.title}`,
+        detail:
+          production.status === 'paused'
+            ? (production.pausedReason ?? 'En pause, aucune raison notée')
+            : "Encore à l'état d'idée",
+        date: production.plannedDate,
+        productionId: production.id,
+        productionFormat: production.format,
+        productId: null,
+        sponsorshipId: null,
+      });
+    }
+
     for (const product of this.products.findAll({ statuses: PENDING_PRODUCT_STATUSES })) {
       if (!product.deadline || product.deadline > soon) continue;
       const late = product.deadline < now;
@@ -174,6 +233,7 @@ export class GetProductionOverview {
         detail: `${product.brandName ?? 'Sans marque'} — échéance ${late ? 'dépassée' : 'proche'}`,
         date: product.deadline,
         productionId: product.productionId,
+        productionFormat: formatOf(product.productionId),
         productId: product.id,
         sponsorshipId: null,
       });
@@ -191,6 +251,7 @@ export class GetProductionOverview {
         detail: `${sponsorship.brandName ?? 'Sans marque'} — ${sponsorship.productionTitle ?? 'aucune vidéo rattachée'}`,
         date: sponsorship.deadline,
         productionId: sponsorship.productionId,
+        productionFormat: formatOf(sponsorship.productionId),
         productId: null,
         sponsorshipId: sponsorship.id,
       });
@@ -216,6 +277,25 @@ export class GetProductionOverview {
         detail: `${sponsorship.brandName ?? 'Sans marque'} — encaissée le ${sponsorship.paidAt ?? '—'}`,
         date: sponsorship.paidAt,
         productionId: sponsorship.productionId,
+        productionFormat: formatOf(sponsorship.productionId),
+        productId: null,
+        sponsorshipId: sponsorship.id,
+      });
+    }
+
+    // La vidéo livrée dont l'argent n'est pas arrivé. C'est le seul statut de sponso qui
+    // coûte de l'argent si on l'oublie, et il n'a pas d'échéance à dépasser : tant qu'il
+    // est là, il y a une relance à faire. Aucun montant dans le texte — le masquage de
+    // confidentialité ne s'applique pas à une phrase.
+    for (const sponsorship of this.sponsorships.findAll({ statuses: ['awaiting_payment'] })) {
+      alerts.push({
+        kind: 'sponsorship_awaiting_payment',
+        severity: 'warning',
+        title: `Paiement en attente : ${sponsorship.label}`,
+        detail: `${sponsorship.brandName ?? 'Sans marque'} — vidéo livrée, à relancer`,
+        date: sponsorship.deadline,
+        productionId: sponsorship.productionId,
+        productionFormat: formatOf(sponsorship.productionId),
         productId: null,
         sponsorshipId: sponsorship.id,
       });
@@ -223,6 +303,8 @@ export class GetProductionOverview {
 
     for (const production of queue) {
       if (production.status !== 'paused' || !production.pausedAt) continue;
+      // Déjà signalée comme urgente : la même carte ne doit pas crier deux fois.
+      if (urgentIds.has(production.id)) continue;
       const days = daysBetween(production.pausedAt.slice(0, 10), now);
       if (days < STALLED_DAYS) continue;
       alerts.push({
@@ -232,6 +314,7 @@ export class GetProductionOverview {
         detail: production.pausedReason ?? 'Aucune raison notée',
         date: production.pausedAt.slice(0, 10),
         productionId: production.id,
+        productionFormat: production.format,
         productId: null,
         sponsorshipId: null,
       });
@@ -283,6 +366,7 @@ export class GetProductionOverview {
         detail: rest > 0 ? `${listed.join(', ')} — et ${rest} autre(s)` : listed.join(', '),
         date: published,
         productionId: production.id,
+        productionFormat: production.format,
         productId: null,
         sponsorshipId: null,
       });

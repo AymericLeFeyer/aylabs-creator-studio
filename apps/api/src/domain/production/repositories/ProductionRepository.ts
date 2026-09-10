@@ -2,6 +2,7 @@ import type { IsoDate } from '../../../shared/dates.ts';
 import type {
   CreateProductionInput,
   Production,
+  ProductionFormat,
   ProductionStatus,
   ProductionView,
   UpdateProductionInput,
@@ -22,6 +23,8 @@ import type {
 export interface ProductionFilter {
   /** Vide ou absent = tous les statuts. */
   statuses?: ProductionStatus[];
+  /** Vide ou absent = les deux formats. */
+  formats?: ProductionFormat[];
   channelIds?: string[];
   /** Fenêtre sur `plannedDate`, pour le planning. Ignore les productions sans date. */
   range?: { from: IsoDate; to: IsoDate };
@@ -35,7 +38,13 @@ export interface ProductionRepository {
   create(input: CreateProductionInput): Production;
   update(id: string, input: UpdateProductionInput): Production;
   delete(id: string): void;
-  /** Réécrit l'ordre de la file d'attente d'un coup, dans l'ordre des identifiants reçus. */
+  /**
+   * Réécrit l'ordre de la file d'attente d'un coup, dans l'ordre des identifiants reçus.
+   *
+   * La liste peut n'être qu'**une partie** de la file (les vidéos, ou les shorts) : ses
+   * éléments sont alors réordonnés **entre eux, aux places qu'ils occupaient**, sans rien
+   * déplacer du reste. L'ordre reste global — c'est lui que suit le planning.
+   */
   reorder(ids: string[]): void;
 
   /** Coche une étape (idempotent : recocher ne change pas la date de complétion). */

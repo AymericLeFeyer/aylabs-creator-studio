@@ -16,6 +16,17 @@ export type ProductionStatus = 'idea' | 'in_progress' | 'paused' | 'done';
 export const PRODUCTION_STATUSES: ProductionStatus[] = ['idea', 'in_progress', 'paused', 'done'];
 
 /**
+ * Vidéo longue ou short / réel.
+ *
+ * Le format ne sépare que les **menus** : script, créneaux, planning, produits et sponsos
+ * sont communs aux deux, et le planning les montre ensemble. Une colonne plutôt qu'une
+ * table à part, donc — deux tables auraient dupliqué tout le module pour une étiquette.
+ */
+export type ProductionFormat = 'video' | 'short';
+
+export const PRODUCTION_FORMATS: ProductionFormat[] = ['video', 'short'];
+
+/**
  * Une vidéo en préparation.
  *
  * Elle vit avant la publication, puis se rattache à la ligne `videos` collectée sur
@@ -30,6 +41,8 @@ export interface Production {
   /** Sortie réelle correspondante. `null` tant que la vidéo n'est pas publiée. */
   videoId: string | null;
   title: string;
+  /** Vidéo longue ou short / réel : décide seulement du menu où elle apparaît. */
+  format: ProductionFormat;
   status: ProductionStatus;
   /** Pourquoi ça n'avance pas. N'a de sens qu'en statut `paused`. */
   pausedReason: string | null;
@@ -132,6 +145,7 @@ export interface CreateProductionInput {
   title: string;
   channelId?: string | null;
   videoId?: string | null;
+  format?: ProductionFormat;
   status?: ProductionStatus;
   pausedReason?: string | null;
   startDate?: IsoDate | null;
