@@ -368,7 +368,7 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
 
               {/* Le carnet vit à côté de la file, pas dans un écran à part : une idée se
                   note pendant qu'on regarde ce qu'on est en train de faire. */}
-              <IdeaBox onPromote={promote} />
+              <IdeaBox format={format} onPromote={promote} />
             </div>
           </div>
         </TabsContent>

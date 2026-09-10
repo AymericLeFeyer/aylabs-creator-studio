@@ -1211,6 +1211,18 @@ const migrations: Migration[] = [
       CREATE INDEX idx_productions_format ON productions(format);
     `,
   },
+  {
+    version: 26,
+    name: 'idea_format',
+    // Le carnet d'idees suit le menu ou on le lit : une idee de short notee depuis
+    // "Shorts & Reels" n'a rien a faire sous la file des videos longues. Toutes les
+    // idees deja notees l'ont ete depuis l'unique ecran de production qui existait :
+    // elles deviennent des videos, ce qu'elles etaient.
+    up: `
+      ALTER TABLE ideas ADD COLUMN format TEXT NOT NULL DEFAULT 'video'
+        CHECK (format IN ('video','short'));
+    `,
+  },
 ];
 
 /**

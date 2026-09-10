@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ideaApi } from '../../../infrastructure/idea/api/ideaApi.ts';
 import type { IdeaInput } from '../../../domain/idea/entities/Idea.ts';
+import type { ProductionFormat } from '../../../domain/production/entities/Production.ts';
 import { queryKeys } from '../../queryKeys.ts';
 
 /**
@@ -20,10 +21,11 @@ const useIdeaMutation = <TVariables, TData>(
   });
 };
 
-export const useIdeas = () =>
+/** Le carnet d'un menu. La clé reste sous `['ideas']` : une écriture invalide les deux. */
+export const useIdeas = (format?: ProductionFormat) =>
   useQuery({
-    queryKey: queryKeys.ideas(),
-    queryFn: () => ideaApi.list(),
+    queryKey: queryKeys.ideas(format),
+    queryFn: () => ideaApi.list(format),
     staleTime: 30_000,
   });
 

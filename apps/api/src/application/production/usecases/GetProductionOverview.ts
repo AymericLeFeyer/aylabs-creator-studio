@@ -118,7 +118,7 @@ export class GetProductionOverview {
       alerts: this.buildAlerts(now, fullQueue, all),
       upcomingSlots,
       weekLoadMinutes,
-      stats: this.buildStats(now, queue),
+      stats: this.buildStats(now, queue, format, all),
       running: this.times.findRunning(),
     };
   }
@@ -130,7 +130,19 @@ export class GetProductionOverview {
    * annoncée par la barre de progression d'une carte, et deux pondérations différentes
    * feraient dire deux choses au même écran.
    */
-  private buildStats(now: IsoDate, queue: ProductionView[]): ProductionStats {
+  /**
+   * `queue` est déjà bornée au format ; le temps passé, lui, vient des sessions de
+   * travail, qui ne portent que leur production. `all` sert à retrouver le format de
+   * chacune — publiées comprises, puisqu'on a pu travailler cette semaine sur une vidéo
+   * sortie hier.
+   */
+  private buildStats(
+    now: IsoDate,
+    queue: ProductionView[],
+    format: ProductionFormat | undefined,
+    all: ProductionView[],
+  ): ProductionStats {
+    const formats = new Map(all.map((production) => [production.id, production.format]));
     const weekEnd = addDays(now, 6);
     const stepsCount = this.steps.findAll().length;
 
@@ -150,6 +162,7 @@ export class GetProductionOverview {
     // resterait figé pendant qu'on travaille, exactement quand on le regarde.
     const weekTrackedMinutes = this.times
       .findAll({ from: addDays(now, -6), to: now })
+      .filter((entry) => !format || formats.get(entry.productionId) === format)
       .reduce((total, entry) => total + entryMinutes(entry), 0);
 
     return {

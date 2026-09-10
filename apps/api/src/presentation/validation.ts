@@ -422,9 +422,16 @@ export const updateRequirementSchema = z.object({
 
 export const createIdeaSchema = z.object({
   text: z.string().trim().min(1, "L'idée ne peut pas être vide").max(500),
+  /** Le carnet où elle est notée : celui de l'écran « Vidéos » ou « Shorts & Réels ». */
+  format: z.enum(['video', 'short']).optional(),
 });
 
 export const updateIdeaSchema = createIdeaSchema.partial();
+
+/** `format` absent = les idées des deux carnets. */
+export const ideaQuerySchema = z.object({
+  format: z.enum(['video', 'short']).optional(),
+});
 
 /** Un mois, maille du tableau légal. */
 const isoMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Mois attendu au format AAAA-MM');

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Container } from '../../container.ts';
-import { createIdeaSchema, updateIdeaSchema } from '../validation.ts';
+import { createIdeaSchema, ideaQuerySchema, updateIdeaSchema } from '../validation.ts';
 import { param } from '../helpers.ts';
 
 /**
@@ -13,8 +13,9 @@ import { param } from '../helpers.ts';
 export const ideasRouter = (container: Container): Router => {
   const router = Router();
 
-  router.get('/', (_req, res) => {
-    res.json(container.ideas.findAll());
+  // `?format=` : le carnet d'un seul menu. Absent, les deux.
+  router.get('/', (req, res) => {
+    res.json(container.ideas.findAll(ideaQuerySchema.parse(req.query).format));
   });
 
   router.post('/', (req, res) => {

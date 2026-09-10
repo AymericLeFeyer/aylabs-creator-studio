@@ -7,11 +7,17 @@ import {
   useUpdateIdea,
 } from '../../../application/idea/usecases/useIdeas.ts';
 import type { Idea } from '../../../domain/idea/entities/Idea.ts';
+import type { ProductionFormat } from '../../../domain/production/entities/Production.ts';
 import { Button } from '../ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
 import { Input } from '../ui/input.tsx';
 
 interface IdeaBoxProps {
+  /**
+   * Le carnet de quel menu. Les idées notées ici prennent ce format, et seules celles de
+   * ce format s'y relisent : une idée de short n'a rien à faire sous la file des vidéos.
+   */
+  format: ProductionFormat;
   /** Ouvre le formulaire de vidéo avec cette idée comme titre de travail. */
   onPromote: (idea: Idea) => void;
 }
@@ -26,8 +32,8 @@ interface IdeaBoxProps {
  * Le texte s'édite sur place, validé à la sortie du champ : une mutation par frappe
  * partirait à chaque lettre.
  */
-export const IdeaBox = ({ onPromote }: IdeaBoxProps) => {
-  const { data: ideas = [] } = useIdeas();
+export const IdeaBox = ({ format, onPromote }: IdeaBoxProps) => {
+  const { data: ideas = [] } = useIdeas(format);
   const create = useCreateIdea();
   const update = useUpdateIdea();
   const remove = useDeleteIdea();
@@ -39,7 +45,7 @@ export const IdeaBox = ({ onPromote }: IdeaBoxProps) => {
     if (!text) return;
     // Le champ se vide tout de suite : on note souvent trois idées d'affilée.
     setDraft('');
-    create.mutate({ text });
+    create.mutate({ text, format });
   };
 
   return (
@@ -59,7 +65,7 @@ export const IdeaBox = ({ onPromote }: IdeaBoxProps) => {
           <Input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Une idée…"
+            placeholder={format === 'short' ? 'Une idée de short…' : 'Une idée de vidéo…'}
             aria-label="Nouvelle idée"
           />
           <Button type="submit" size="icon" variant="outline" disabled={!draft.trim()}>

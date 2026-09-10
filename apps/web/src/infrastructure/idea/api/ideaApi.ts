@@ -1,8 +1,9 @@
 import { request } from '../../http/httpClient.ts';
 import type { Idea, IdeaInput } from '../../../domain/idea/entities/Idea.ts';
+import type { ProductionFormat } from '../../../domain/production/entities/Production.ts';
 
 export const ideaApi = {
-  list: () => request<Idea[]>('/api/ideas'),
+  list: (format?: ProductionFormat) => request<Idea[]>('/api/ideas', { query: { format } }),
 
   create: (input: IdeaInput) => request<Idea>('/api/ideas', { method: 'POST', body: input }),
 

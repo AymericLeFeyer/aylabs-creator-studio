@@ -291,8 +291,11 @@ identifiants reçus **dans les places qu'ils occupaient** et réécrit `1..N` su
 `1..n` sur le seul sous-ensemble aurait fait entrer ses rangs en collision avec ceux de
 l'autre format.
 
-`GetProductionOverview.execute(format?)` borne **la file, les chiffres et les créneaux** au
-format demandé ; **les alertes restent toujours complètes** et chacune porte
+`GetProductionOverview.execute(format?)` borne **la file, tous les chiffres et les
+créneaux** au format demandé — y compris « Temps cette semaine », qui filtre les sessions de
+travail par le format de leur production (publiées comprises : on a pu travailler cette
+semaine sur une vidéo sortie hier). Chaque carte de l'écran parle donc du seul format
+affiché ; **les alertes restent toujours complètes** et chacune porte
 `productionFormat` (celui de la production concernée, `null` sans production) : ce sont
 elles qui alimentent les pastilles de tous les menus.
 
@@ -601,7 +604,14 @@ rapportés — ils restent dans le chiffre d'affaires, sans rattachement.
 
 ### `idea`
 
-`Idea { id, text, createdAt, updatedAt }` — table `ideas` (migration 7).
+`Idea { id, text, format, createdAt, updatedAt }` — table `ideas` (migration 7, `format` en migration 26).
+
+**`format` n'est pas un champ qu'on remplit** : il vient de l'écran où l'idée est notée.
+« Vidéos » et « Shorts & Réels » ont chacun leur carnet (`IdeaBox format=…`,
+`GET /api/ideas?format=`), et la vidéo née d'une idée prend le format de l'écran — qui est
+aussi celui de l'idée. Les idées notées avant la migration l'ont été depuis l'unique écran
+de production d'alors : elles sont devenues des vidéos. La clé de cache est
+`['ideas', format ?? 'all']`, si bien qu'une écriture invalide les deux carnets.
 
 Volontairement pauvre : un texte, et rien d'autre. Lui donner une chaîne, une date ou un statut en ferait une production au rabais — or c'est justement l'absence de champs qui permet de noter une idée en trois secondes, et une idée qu'on ne note pas est une idée perdue. Le bouton « en faire une vidéo » la promeut en `Production` (son texte devient le titre de travail) et la retire du carnet. La promotion est faite **côté front en deux appels** : créer la production, puis supprimer l'idée — un endpoint dédié n'apporterait qu'une transaction sur deux écritures indépendantes, et l'idée ne doit disparaître que si la vidéo est réellement créée.
 
@@ -2095,6 +2105,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   (`origin`, `item_id`, `calendar_uid`, `time_entry_id`). Elle n'ajoute **pas** de `status`
   aux créneaux : `origin` + `done` disent déjà tout, et un troisième champ finirait par les
   contredire.
+- **Migration 26** ajoute `ideas.format` (`'video'` par défaut, même `CHECK`) : le carnet
+  d'idées suit le menu où on le lit, et toutes les idées déjà notées deviennent des vidéos.
 - **Migration 25** ajoute `productions.format` (`'video'` par défaut, `CHECK` sur
   `video` / `short`) et son index. Un simple `ALTER` : un `CHECK` sur une colonne ajoutée
   est admis tant que le défaut est une constante, donc aucune reconstruction de table — et
