@@ -620,6 +620,17 @@ export const createTimeEntrySchema = z.object({
     .min(1, 'Au moins une minute')
     .max(24 * 60),
   notes: z.string().trim().max(500).nullable().optional(),
+  /**
+   * Le jour et l'heure **locaux** du début, fournis par le navigateur. Présents, ils
+   * posent le créneau du temps passé dans le planning (et l'agenda) du même geste. Ils ne
+   * se déduisent pas de `startedAt`, qui est un instant UTC — le serveur, en UTC lui aussi,
+   * poserait le créneau deux heures trop tôt en été.
+   */
+  date: isoDate.optional(),
+  startTime: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Heure attendue au format HH:MM')
+    .optional(),
 });
 
 export const updateTimeEntrySchema = z.object({
@@ -633,6 +644,12 @@ export const updateTimeEntrySchema = z.object({
     .max(24 * 60)
     .optional(),
   notes: z.string().trim().max(500).nullable().optional(),
+  /** Même rôle qu'à la création : recaler le créneau lié sur l'heure locale corrigée. */
+  date: isoDate.optional(),
+  startTime: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Heure attendue au format HH:MM')
+    .optional(),
 });
 
 export const timeEntryQuerySchema = z.object({
@@ -863,6 +880,11 @@ export const placeSlotSchema = z.object({
 
 export const approveSlotSchema = z.object({
   finished: z.boolean(),
+  /**
+   * Heure de début réelle, pour un créneau posé **sans horaire** (« samedi »). Sans elle
+   * il n'aurait aucune place dans la journée ; avec, il se valide comme les autres.
+   */
+  startTime: clockTime.optional(),
   /** Temps réellement passé, si différent de la durée prévue. */
   minutes: z
     .number()

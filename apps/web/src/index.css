@@ -383,4 +383,39 @@
   .script-angles-hidden .prose-script [data-shot-angle]::after {
     content: none;
   }
+
+  /*
+   * Le mode lecture (`ScriptReader`) : même feuille, plus gros, plus aéré.
+   *
+   * Les titres de `.prose-script` sont en `rem` — ils ne suivraient pas une taille de base
+   * agrandie, et un titre plus petit que le texte qu'il annonce se lirait à l'envers. On
+   * les repasse donc en `em` ici. Les cases à cocher sont inertes : on lit, on ne coche pas.
+   */
+  .script-reader {
+    line-height: 1.7;
+  }
+  .script-reader-md {
+    font-size: 1.125rem;
+  }
+  .script-reader-lg {
+    font-size: 1.35rem;
+  }
+  .script-reader-xl {
+    font-size: 1.7rem;
+  }
+  .script-reader > * + * {
+    margin-top: 0.9em;
+  }
+  .script-reader h1 {
+    font-size: 1.5em;
+  }
+  .script-reader h2 {
+    font-size: 1.3em;
+  }
+  .script-reader h3 {
+    font-size: 1.1em;
+  }
+  .script-reader input {
+    pointer-events: none;
+  }
 }

@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
-import { Clock, Eye, Heart, Library, Users, Video } from 'lucide-react';
+import { Clapperboard, Clock, Eye, Heart, Library, TrendingUp, Users, Video } from 'lucide-react';
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
+import { useChannels } from '../../application/channel/usecases/useChannels.ts';
 import { useProductionOverview } from '../../application/production/usecases/useProductions.ts';
 import { useVideos } from '../../application/video/usecases/useVideos.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
 import { usePrivacy } from '../hooks/usePrivacy.tsx';
 import { compareTotals } from '../../domain/analytics/services/revenueMath.ts';
-import { formatNumber } from '../../shared/format.ts';
+import { formatDate, formatNumber } from '../../shared/format.ts';
 import { StatCard } from '../components/StatCard.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { AudienceChart } from '../components/charts/AudienceChart.tsx';
@@ -59,6 +60,43 @@ export const ContentPage = () => {
 
   const catalogShare = data && data.totals.views > 0 ? catalogViews / data.totals.views : 0;
 
+  /**
+   * Les trois chiffres de la chaîne **tels qu'ils sont aujourd'hui**, hors période.
+   *
+   * Tout le reste de l'écran répond à « qu'est-ce qui s'est passé sur la période » ; ces
+   * trois-là répondent à « où en est la chaîne », qu'on vient chercher d'abord et qu'une
+   * fenêtre de sept jours ne doit pas faire disparaître. Ils viennent du dernier relevé de
+   * chaque chaîne (`latestSnapshot`, un CUMUL) : on prend la dernière valeur connue par
+   * chaîne, puis on somme entre chaînes — la règle de `channel_snapshots`.
+   *
+   * La sélection de chaînes, elle, s'applique : « toutes » est l'absence de sélection.
+   */
+  const { data: channels = [] } = useChannels();
+  const lifetime = useMemo(() => {
+    const selected = channels.filter(
+      (channel) =>
+        channel.latestSnapshot !== null &&
+        (filters.channelIds.length === 0 || filters.channelIds.includes(channel.id)),
+    );
+    if (selected.length === 0) return null;
+    const latestDate = selected
+      .map((channel) => channel.latestSnapshot!.date)
+      .sort()
+      .at(-1)!;
+    return {
+      subscribers: selected.reduce((sum, c) => sum + c.latestSnapshot!.subscribers, 0),
+      views: selected.reduce((sum, c) => sum + c.latestSnapshot!.totalViews, 0),
+      videos: selected.reduce((sum, c) => sum + c.latestSnapshot!.totalVideos, 0),
+      channels: selected.length,
+      date: latestDate,
+    };
+  }, [channels, filters.channelIds]);
+  const lifetimeHint = lifetime
+    ? `depuis toujours · relevé du ${formatDate(lifetime.date)}${
+        lifetime.channels > 1 ? ` · ${lifetime.channels} chaînes` : ''
+      }`
+    : '';
+
   return (
     <div className="space-y-4">
       <div className="hidden lg:block">
@@ -68,6 +106,32 @@ export const ContentPage = () => {
           {overview?.queue.length ?? 0} en production
         </p>
       </div>
+
+      {/* Les chiffres de la chaîne, hors période : où elle en est aujourd'hui. Une rangée
+          à part, avant ceux de la période, pour qu'on ne lise pas « 12 400 vues » d'un côté
+          et « 1,2 M de vues » de l'autre comme deux mesures de la même chose. */}
+      {lifetime && (
+        <div className="grid grid-cols-3 gap-3">
+          <StatCard
+            label="Abonnés"
+            value={privacy.count(lifetime.subscribers, 'subscribers')}
+            hint={lifetimeHint}
+            icon={<Users className="h-4 w-4" />}
+          />
+          <StatCard
+            label="Vues au total"
+            value={privacy.count(lifetime.views, 'views')}
+            hint={lifetimeHint}
+            icon={<TrendingUp className="h-4 w-4" />}
+          />
+          <StatCard
+            label="Vidéos au total"
+            value={formatNumber(lifetime.videos)}
+            hint={lifetimeHint}
+            icon={<Clapperboard className="h-4 w-4" />}
+          />
+        </div>
+      )}
 
       {data && (
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">

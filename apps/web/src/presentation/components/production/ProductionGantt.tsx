@@ -9,8 +9,6 @@ import { PRODUCT_STATUS_LABELS } from '../../../domain/product/entities/Product.
 import { SPONSORSHIP_STATUS_LABELS } from '../../../domain/sponsorship/entities/Sponsorship.ts';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import type { ProductionStep } from '../../../domain/production/entities/ProductionStep.ts';
-import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
-import { formatSlotTime } from '../../../domain/production/entities/ProductionSlot.ts';
 import { toIsoDate } from '../../../shared/format.ts';
 import { readableTextColor } from '../../../shared/contrast.ts';
 import { Button } from '../ui/button.tsx';
@@ -97,7 +95,6 @@ const productsTitle = (production: Production, money: MoneyFormat): string =>
 
 interface ProductionGanttProps {
   productions: Production[];
-  slots: ProductionSlot[];
   /** Sert à calculer l'avancement : le pourcentage n'a de sens que rapporté au total. */
   steps: ProductionStep[];
 }
@@ -123,7 +120,7 @@ interface ProductionGanttProps {
  * La couleur du texte est calculée pour chaque fond (`readableTextColor`) : du blanc sur
  * un vert clair ne se lit pas.
  */
-export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttProps) => {
+export const ProductionGantt = ({ productions, steps }: ProductionGanttProps) => {
   const privacy = usePrivacy();
   const sponsorMoney = (cents: number) => privacy.money(cents, 'sponsorships');
   const productMoney = (cents: number) => privacy.money(cents, 'inKind');
@@ -143,24 +140,9 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
     };
   }, [before, after]);
 
-  const slotsByProduction = useMemo(() => {
-    const map = new Map<string, ProductionSlot[]>();
-    for (const slot of slots) {
-      const list = map.get(slot.productionId) ?? [];
-      list.push(slot);
-      map.set(slot.productionId, list);
-    }
-    return map;
-  }, [slots]);
-
   /** Position d'une date dans la grille, ramenée dans les bornes visibles. */
   const columnOf = (date: string): number =>
     Math.max(0, Math.min(days.length - 1, differenceInCalendarDays(parseISO(date), first)));
-
-  const isVisible = (date: string): boolean => {
-    const offset = differenceInCalendarDays(parseISO(date), first);
-    return offset >= 0 && offset < days.length;
-  };
 
   /**
    * L'ordre des lignes : la chronologie, sauf pour ce qui est **terminé ET déjà passé**.
@@ -227,8 +209,7 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
         <div>
           <CardTitle>Planning</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Du début du travail à la date de sortie visée. La couleur est la chaîne, les points sont
-            tes créneaux.
+            Du début du travail à la date de sortie visée. La couleur est la chaîne.
           </p>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-muted p-1 text-sm">
@@ -260,12 +241,12 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
             <div ref={scrollRef} className="overflow-x-auto">
               <div className="min-w-max">
                 {/* En-tête : le lundi porte l'étiquette, les autres jours le numéro. */}
-                {/* L'ordre d'empilement du Gantt, du fond vers la surface : trait
-                    d'aujourd'hui (0), barres (10), pastilles de créneau (20), colonne des
-                    titres (30), en-tête des jours (40) et son coin (50). Il était
-                    ambigu — les pastilles et la colonne partageaient `z-20`, et c'est
-                    l'ordre du DOM qui tranchait, donc les pastilles passaient **sur** les
-                    titres. */}
+                {/* L'ordre d'empilement du Gantt, du fond vers la surface : barres (10),
+                    trait d'aujourd'hui (20), colonne des titres (30), en-tête des jours
+                    (40) et son coin (50). Le trait passe PAR-DESSUS les barres : sous
+                    elles, il disparaissait précisément sur les vidéos en cours — celles
+                    dont la barre couvre aujourd'hui. Les pastilles de créneau ont été
+                    retirées : un point par créneau, sur une barre colorée, ne se lisait pas. */}
                 <div className="sticky top-0 z-40 flex bg-card">
                   <div
                     ref={titleRef}
@@ -334,10 +315,12 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
                         </Link>
 
                         <div className="relative grid h-7 items-center" style={gridStyle}>
-                          {/* Trait d'aujourd'hui, posé sur toute la hauteur de la ligne. */}
+                          {/* Trait d'aujourd'hui, posé sur toute la hauteur de la ligne et
+                              au-dessus des barres. Épais de 3 px et centré sur son offset :
+                              un trait d'un pixel se perdait dans les filets de la grille. */}
                           <span
                             aria-hidden
-                            className="pointer-events-none absolute inset-y-0 z-0 w-px bg-[var(--negative)]/60"
+                            className="pointer-events-none absolute inset-y-0 z-20 w-[3px] -translate-x-1/2 rounded-full bg-[var(--negative)]"
                             style={{ left: todayOffset }}
                           />
 
@@ -383,22 +366,6 @@ export const ProductionGantt = ({ productions, slots, steps }: ProductionGanttPr
                               </span>
                             )}
                           </Link>
-
-                          {(slotsByProduction.get(production.id) ?? [])
-                            .filter((slot) => isVisible(slot.date))
-                            .map((slot) => (
-                              <span
-                                key={slot.id}
-                                aria-hidden
-                                className={cn(
-                                  'pointer-events-none z-20 mx-auto h-2 w-2 rounded-full ring-2 ring-card',
-                                  // Au-dessus des barres (10), sous la colonne des titres (30).
-                                  slot.done ? 'bg-muted-foreground' : 'bg-foreground',
-                                )}
-                                style={{ gridColumn: `${columnOf(slot.date) + 1} / span 1` }}
-                                title={`${slot.label || 'Créneau'} · ${formatSlotTime(slot)}`}
-                              />
-                            ))}
                         </div>
                       </div>
                     );

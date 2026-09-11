@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
 import { Menu, Moon, PanelLeftClose, PanelLeftOpen, Settings, Sun, X } from 'lucide-react';
 import { MOBILE_NAV, NAV_SECTIONS, pageTitle, type NavItem } from './navigation.ts';
 import { useTheme } from './hooks/useTheme.ts';
@@ -11,6 +11,8 @@ import { CollectAction } from './components/filters/CollectAction.tsx';
 import { AppBarProvider } from './hooks/useAppBar.tsx';
 import { useNavBadges } from './hooks/useNavBadges.ts';
 import { NavBadgePill } from './components/NavBadgePill.tsx';
+import { useProduction } from '../application/production/usecases/useProductions.ts';
+import { FORMAT_ROUTES } from '../domain/production/entities/Production.ts';
 import { cn } from '../shared/cn.ts';
 
 /** Largeur du contenu, généreuse sur grand écran : les graphiques côte à côte en ont besoin. */
@@ -123,6 +125,20 @@ export const AppLayout = () => {
     return () => observer.disconnect();
   }, []);
 
+  /*
+   * La fiche d'une vidéo vit à `/production/:id`, quel que soit son format — si bien que
+   * `NavLink` allumait « Vidéos » sur la fiche d'un short. Le menu actif se lit donc au
+   * **format de la fiche** : sa requête est déjà en cache (la page la charge), et c'est la
+   * même clé, donc aucun aller-retour de plus. Changer l'adresse en `/shorts/:id` aurait
+   * obligé chaque lien vers une fiche — planning, alertes, chronomètre, partenaires — à
+   * connaître le format de la vidéo qu'il vise.
+   */
+  const detailId = matchPath('/production/:id', location.pathname)?.params.id;
+  const { data: detail } = useProduction(detailId);
+  const detailRoute = detailId && detail ? FORMAT_ROUTES[detail.format] : null;
+  const isItemActive = (to: string, isActive: boolean): boolean =>
+    detailRoute && (to === '/production' || to === '/shorts') ? to === detailRoute : isActive;
+
   const collapsed = preferences.sidebarCollapsed;
   const title = pageTitle(location.pathname);
   const showFilters = !ROUTES_WITHOUT_FILTERS.some((route) => location.pathname.startsWith(route));
@@ -146,7 +162,7 @@ export const AppLayout = () => {
         cn(
           'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
           compact && 'justify-center px-0',
-          isActive
+          isItemActive(to, isActive)
             ? 'bg-secondary text-secondary-foreground'
             : 'text-muted-foreground hover:bg-muted hover:text-foreground',
         )
@@ -436,28 +452,31 @@ export const AppLayout = () => {
                 className={({ isActive }) =>
                   cn(
                     'relative flex flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-medium transition-colors',
-                    isActive ? 'text-primary' : 'text-muted-foreground',
+                    isItemActive(to, isActive) ? 'text-primary' : 'text-muted-foreground',
                   )
                 }
               >
-                {({ isActive }) => (
-                  <>
-                    {/* Une pastille **de verre** sous l'onglet actif, et non un aplat
+                {({ isActive: routeActive }) => {
+                  const isActive = isItemActive(to, routeActive);
+                  return (
+                    <>
+                      {/* Une pastille **de verre** sous l'onglet actif, et non un aplat
                         opaque : la barre garde sa transparence d'ensemble, sinon un
                         cinquième d'entre elle cesserait d'être du verre. */}
-                    {isActive && (
-                      <span
-                        className="absolute inset-x-1.5 inset-y-1 rounded-[18px] bg-primary/12 ring-1 ring-primary/20 ring-inset"
-                        aria-hidden
-                      />
-                    )}
-                    <span className="relative">
-                      <Icon className="h-5 w-5" />
-                      <NavBadgePill badge={badges[to]} className="absolute -right-2.5 -top-1.5" />
-                    </span>
-                    <span className="relative w-full truncate text-center">{short ?? label}</span>
-                  </>
-                )}
+                      {isActive && (
+                        <span
+                          className="absolute inset-x-1.5 inset-y-1 rounded-[18px] bg-primary/12 ring-1 ring-primary/20 ring-inset"
+                          aria-hidden
+                        />
+                      )}
+                      <span className="relative">
+                        <Icon className="h-5 w-5" />
+                        <NavBadgePill badge={badges[to]} className="absolute -right-2.5 -top-1.5" />
+                      </span>
+                      <span className="relative w-full truncate text-center">{short ?? label}</span>
+                    </>
+                  );
+                }}
               </NavLink>
             ))}
           </div>

@@ -7,7 +7,9 @@ import TextAlign from '@tiptap/extension-text-align';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import { Placeholder } from '@tiptap/extensions';
+import { Eye } from 'lucide-react';
 import { ScriptToolbar } from './ScriptToolbar.tsx';
+import { ScriptReader } from './ScriptReader.tsx';
 import { Checkbox } from '../ui/checkbox.tsx';
 import { ScriptEditorSkeleton } from './ScriptEditorSkeleton.tsx';
 import { ScriptPresetNode } from './extensions/ScriptPresetNode.ts';
@@ -87,6 +89,8 @@ export const ScriptSurface = ({
    * uniquement » sur l'écran des partenariats, et donc un état local, non persisté.
    */
   const [anglesHidden, setAnglesHidden] = useState(false);
+  /** Le mode lecture plein écran. Son HTML est relu à l'ouverture, pas à chaque frappe. */
+  const [readerHtml, setReaderHtml] = useState<string | null>(null);
 
   /** Le dernier HTML sorti d'ici : c'est lui qui dit si un `value` entrant est nouveau. */
   const emittedRef = useRef(value);
@@ -221,9 +225,29 @@ export const ScriptSurface = ({
               {doc.words} mots · ~{doc.duration} à lire
             </span>
             {status}
+            {/* Le mode lecture : plein écran, gros caractères, rien d'éditable — pour lire
+                le script à voix haute, surtout sur un téléphone. */}
+            {scriptTools && (
+              <button
+                type="button"
+                onClick={() => setReaderHtml(doc.words > 0 ? editor.getHTML() : '')}
+                className="flex items-center gap-1 rounded-md border border-border px-2 py-1 font-medium text-foreground transition-colors hover:bg-muted"
+                title="Lire en plein écran"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                Lire
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      <ScriptReader
+        open={readerHtml !== null}
+        onOpenChange={(value) => !value && setReaderHtml(null)}
+        html={readerHtml ?? ''}
+        hasAngles={doc.hasAngles}
+      />
 
       {/*
         La classe éteint les angles **en CSS**, sur l'enveloppe : le document n'est pas

@@ -8,6 +8,7 @@ import type {
   ProductionAlert,
   ProductionOverview,
   ProductionStats,
+  StepTimeAverage,
 } from '../../../domain/production/entities/ProductionOverview.ts';
 import { entryMinutes } from '../../../domain/production/entities/TimeEntry.ts';
 import type { SqliteTimeEntryRepository } from '../../../infrastructure/production/repositories/SqliteTimeEntryRepository.ts';
@@ -119,8 +120,80 @@ export class GetProductionOverview {
       upcomingSlots,
       weekLoadMinutes,
       stats: this.buildStats(now, queue, format, all),
+      ...this.buildTimeAverages(format ? all.filter((p) => p.format === format) : all),
       running: this.times.findRunning(),
     };
+  }
+
+  /**
+   * Le temps moyen par étape, et celui d'une vidéo entière.
+   *
+   * **Une vidéo ne compte pour une étape que si l'étape y est terminée** — cochée, ou la
+   * vidéo publiée. Sans ça, chaque vidéo en préparation tirerait la moyenne vers le bas :
+   * un montage commencé hier compterait pour vingt minutes. Même logique pour le total :
+   * seules les vidéos **publiées** donnent le coût d'une vidéo.
+   *
+   * Seul le temps **vécu** compte (les sessions de travail), jamais les créneaux planifiés
+   * — moyenner des estimations ne ferait que redire l'estimation.
+   *
+   * Une seule lecture des sessions pour tout le catalogue : quelques milliers de lignes
+   * au plus, bien moins cher qu'une requête par étape.
+   */
+  private buildTimeAverages(
+    productions: ProductionView[],
+  ): Pick<ProductionOverview, 'stepAverages' | 'averageVideoMinutes'> {
+    const byProduction = new Map(productions.map((production) => [production.id, production]));
+    const perStep = new Map<string, Map<string, number>>();
+    const perVideo = new Map<string, number>();
+
+    for (const entry of this.times.findAll()) {
+      if (!byProduction.has(entry.productionId)) continue;
+      const minutes = entryMinutes(entry);
+      perVideo.set(entry.productionId, (perVideo.get(entry.productionId) ?? 0) + minutes);
+      if (!entry.stepId) continue;
+      const videos = perStep.get(entry.stepId) ?? new Map<string, number>();
+      videos.set(entry.productionId, (videos.get(entry.productionId) ?? 0) + minutes);
+      perStep.set(entry.stepId, videos);
+    }
+
+    const stepAverages: StepTimeAverage[] = [];
+    for (const step of this.steps.findAll()) {
+      const videos = perStep.get(step.id);
+      if (!videos) continue;
+      const finished = [...videos].filter(([productionId, minutes]) => {
+        const production = byProduction.get(productionId)!;
+        return (
+          minutes > 0 &&
+          (production.status === 'done' ||
+            production.steps.some((check) => check.stepId === step.id))
+        );
+      });
+      if (finished.length === 0) continue;
+      const total = finished.reduce((sum, [, minutes]) => sum + minutes, 0);
+      stepAverages.push({
+        stepId: step.id,
+        stepName: step.name,
+        stepColor: step.color,
+        averageMinutes: Math.round(total / finished.length),
+        videos: finished.length,
+      });
+    }
+
+    const published = productions.filter(
+      (production) => production.status === 'done' && (perVideo.get(production.id) ?? 0) > 0,
+    );
+    const averageVideoMinutes =
+      published.length === 0
+        ? null
+        : {
+            minutes: Math.round(
+              published.reduce((sum, production) => sum + perVideo.get(production.id)!, 0) /
+                published.length,
+            ),
+            videos: published.length,
+          };
+
+    return { stepAverages, averageVideoMinutes };
   }
 
   /**

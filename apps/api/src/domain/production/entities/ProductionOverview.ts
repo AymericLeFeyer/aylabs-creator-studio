@@ -62,6 +62,26 @@ export interface ProductionStats {
   averageProgress: number;
 }
 
+/**
+ * Le temps moyen qu'une étape prend **sur une vidéo**.
+ *
+ * Une vidéo n'entre dans la moyenne d'une étape que si cette étape y est **terminée** —
+ * cochée, ou la vidéo publiée. Compter une vidéo dont le montage est à moitié fait tirerait
+ * la moyenne vers le bas pendant toute sa préparation, et « le montage me prend 3 h »
+ * deviendrait faux précisément pendant qu'on monte.
+ *
+ * Seules les sessions de travail comptent (le temps **vécu**) : un créneau planifié n'est
+ * qu'une estimation, et moyenner des estimations ne dirait rien de nouveau.
+ */
+export interface StepTimeAverage {
+  stepId: string;
+  stepName: string;
+  stepColor: string;
+  averageMinutes: number;
+  /** Nombre de vidéos sur lesquelles la moyenne est calculée. */
+  videos: number;
+}
+
 /** Tout ce que l'écran de production affiche en tête : « où j'en suis », en une requête. */
 export interface ProductionOverview {
   /** Vidéos encore à faire, dans l'ordre manuel. */
@@ -75,6 +95,13 @@ export interface ProductionOverview {
   weekLoadMinutes: number;
   /** Les chiffres du bandeau. */
   stats: ProductionStats;
+  /**
+   * Temps moyen par étape, borné au format demandé. Étapes sans aucune vidéo mesurée
+   * absentes : une ligne « 0 min » se lirait comme « ça ne prend pas de temps ».
+   */
+  stepAverages: StepTimeAverage[];
+  /** Temps total moyen d'une vidéo publiée, `null` sans aucune publiée mesurée. */
+  averageVideoMinutes: { minutes: number; videos: number } | null;
   /**
    * Le chronomètre en cours, s'il y en a un. Il vit dans l'aperçu et non dans un appel
    * séparé : la barre qui l'affiche est en haut de l'écran de production, chargé par

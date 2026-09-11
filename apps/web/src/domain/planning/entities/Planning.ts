@@ -176,6 +176,8 @@ export interface ApproveSlotInput {
   finished: boolean;
   minutes?: number;
   notes?: string | null;
+  /** Heure de début réelle, pour un créneau posé sans horaire. */
+  startTime?: string;
   from?: string;
   nowDate?: string;
   nowMinutes?: number;

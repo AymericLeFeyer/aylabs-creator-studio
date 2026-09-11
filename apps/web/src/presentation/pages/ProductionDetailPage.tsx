@@ -2,8 +2,6 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
-  CalendarClock,
-  Check,
   ExternalLink,
   Gift,
   Handshake,
@@ -16,12 +14,9 @@ import {
 } from 'lucide-react';
 import {
   useDeleteProduction,
-  useDeleteSlot,
   useProduction,
-  useProductionSlots,
   useProductionSteps,
   useUpdateProduction,
-  useUpdateSlot,
 } from '../../application/production/usecases/useProductions.ts';
 import { useProducts, useUpdateProduct } from '../../application/product/usecases/useProducts.ts';
 import {
@@ -35,7 +30,6 @@ import {
   STATUS_LABELS,
 } from '../../domain/production/entities/Production.ts';
 import { FormatIcon } from '../components/production/FormatIcon.tsx';
-import type { ProductionSlot } from '../../domain/production/entities/ProductionSlot.ts';
 import type { ProductionStep } from '../../domain/production/entities/ProductionStep.ts';
 import { formatDuration } from '../../domain/production/entities/TimeEntry.ts';
 import { PRODUCT_STATUS_LABELS } from '../../domain/product/entities/Product.ts';
@@ -49,15 +43,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.
 import { StepChips, StepProgress } from '../components/production/StepChips.tsx';
 import { StepTodosDialog } from '../components/production/StepTodosDialog.tsx';
 import { StartTimerDialog } from '../components/production/StartTimerDialog.tsx';
-import { TimeEntriesPanel } from '../components/production/TimeEntriesPanel.tsx';
+import { TimeSpentPanel } from '../components/production/TimeSpentPanel.tsx';
 import { Confetti } from '../components/Confetti.tsx';
 import { ScriptEditor } from '../components/production/ScriptEditor.tsx';
 import { PublicationPanel } from '../components/production/PublicationPanel.tsx';
-import { SlotSummary } from '../components/production/SlotSummary.tsx';
 import { ProductionDialog } from '../components/forms/ProductionDialog.tsx';
 import { ProductDialog } from '../components/forms/ProductDialog.tsx';
 import { SponsorshipDialog } from '../components/forms/SponsorshipDialog.tsx';
-import { SlotDialog } from '../components/forms/SlotDialog.tsx';
 import {
   AttachExistingSelect,
   type AttachOption,
@@ -72,7 +64,6 @@ export const ProductionDetailPage = () => {
 
   const { data: production, isLoading } = useProduction(id);
   const { data: steps = [] } = useProductionSteps();
-  const { data: slots = [] } = useProductionSlots({ productionIds: id ? [id] : [] });
   // Toutes les fiches, pas seulement celles de cette vidéo : la même liste sert à
   // afficher les rattachées ET à proposer les autres au rattachement.
   const { data: allProducts = [] } = useProducts();
@@ -82,15 +73,11 @@ export const ProductionDetailPage = () => {
   const remove = useDeleteProduction();
   const updateProduct = useUpdateProduct();
   const updateSponsorship = useUpdateSponsorship();
-  const updateSlot = useUpdateSlot();
-  const deleteSlot = useDeleteSlot();
 
   const [editOpen, setEditOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
   const [sponsorshipOpen, setSponsorshipOpen] = useState(false);
-  const [slotOpen, setSlotOpen] = useState(false);
-  const [editingSlot, setEditingSlot] = useState<ProductionSlot | null>(null);
   /** L'étape dont on regarde les tâches. Cliquer une pastille ne coche plus rien. */
   const [openStep, setOpenStep] = useState<ProductionStep | null>(null);
   const [timerOpen, setTimerOpen] = useState(false);
@@ -245,11 +232,10 @@ export const ProductionDetailPage = () => {
         <TabsList>
           <TabsTrigger value="script">Script</TabsTrigger>
           <TabsTrigger value="publication">Publication</TabsTrigger>
-          {/* Créneaux et temps passé ne sont que les deux moitiés d'une même question :
-              quand je m'y mets, et combien ça m'a réellement pris. Deux onglets
-              obligeaient à faire l'aller-retour pour comparer le prévu au vécu. */}
+          {/* Un seul onglet, une seule liste : un créneau n'est que du temps passé qu'on
+              n'a pas encore vécu. Le prévu et le réel s'y lisent côte à côte. */}
           <TabsTrigger value="time">
-            Créneaux &amp; temps passé ({slots.length})
+            Temps passé
             {production.trackedMinutes > 0 && ` · ${formatDuration(production.trackedMinutes)}`}
           </TabsTrigger>
           <TabsTrigger value="money">
@@ -266,86 +252,8 @@ export const ProductionDetailPage = () => {
           />
         </TabsContent>
 
-        <TabsContent value="time" className="space-y-4">
-          <Card>
-            <CardHeader className="flex-row items-center justify-between pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <CalendarClock className="h-4 w-4" />
-                Créneaux de travail
-              </CardTitle>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setEditingSlot(null);
-                  setSlotOpen(true);
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                Poser un créneau
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {slots.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  Aucun créneau. Pose une date pour t'engager sur un moment de travail.
-                </p>
-              ) : (
-                slots.map((slot) => (
-                  <div
-                    key={slot.id}
-                    className={cn(
-                      'flex flex-wrap items-center gap-3 rounded-md border border-border px-3 py-2 text-sm',
-                      slot.done && 'opacity-60',
-                    )}
-                  >
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateSlot.mutate({ id: slot.id, input: { done: !slot.done } })
-                      }
-                      className={cn(
-                        'flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors',
-                        slot.done
-                          ? 'border-transparent bg-[var(--positive)] text-white'
-                          : 'border-border hover:border-foreground',
-                      )}
-                      title={slot.done ? 'Marquer à faire' : 'Marquer fait'}
-                    >
-                      {slot.done && <Check className="h-3.5 w-3.5" />}
-                      <span className="sr-only">{slot.done ? 'Fait' : 'À faire'}</span>
-                    </button>
-
-                    <SlotSummary slot={slot} strikeWhenDone />
-
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setEditingSlot(slot);
-                          setSlotOpen(true);
-                        }}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        <span className="sr-only">Modifier</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteSlot.mutate(slot.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                        <span className="sr-only">Supprimer</span>
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-
-          <TimeEntriesPanel
+        <TabsContent value="time">
+          <TimeSpentPanel
             production={production}
             steps={steps}
             onStartTimer={() => setTimerOpen(true)}
@@ -549,12 +457,6 @@ export const ProductionDetailPage = () => {
         open={sponsorshipOpen}
         onOpenChange={setSponsorshipOpen}
         defaultProductionId={production.id}
-      />
-      <SlotDialog
-        open={slotOpen}
-        onOpenChange={setSlotOpen}
-        productionId={production.id}
-        slot={editingSlot}
       />
     </div>
   );

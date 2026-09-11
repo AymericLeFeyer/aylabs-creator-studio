@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-10
+> Dernière mise à jour : 2026-09-11
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -291,6 +291,13 @@ identifiants reçus **dans les places qu'ils occupaient** et réécrit `1..N` su
 `1..n` sur le seul sous-ensemble aurait fait entrer ses rangs en collision avec ceux de
 l'autre format.
 
+`GetProductionOverview` porte aussi `stepAverages` (temps moyen **vécu** par étape,
+`StepTimeAverage`) et `averageVideoMinutes` (temps total moyen d'une vidéo **publiée**),
+bornés au format. Une vidéo ne compte pour une étape que si l'étape y est **terminée**
+(cochée, ou vidéo `done`) : une vidéo en cours de montage tirerait sinon la moyenne vers le
+bas pendant toute sa préparation. Seules les sessions comptent, jamais les créneaux prévus.
+Affichés par `StepAveragesCard`, colonne de droite de `/production` et `/shorts`.
+
 `GetProductionOverview.execute(format?)` borne **la file, tous les chiffres et les
 créneaux** au format demandé — y compris « Temps cette semaine », qui filtre les sessions de
 travail par le format de leur production (publiées comprises : on a pu travailler cette
@@ -363,6 +370,31 @@ Table `production_step_checks` (PK `(production_id, step_id)`, colonne `checked_
 `ProductionSlot { id, productionId, stepId, date, startTime, endTime, label, done, notes }` — table `production_slots`. **Les heures sont facultatives** : « samedi » est un créneau valable, et les exiger ferait renoncer à en poser un. `slotMinutes()` renvoie `0` sans horaire complet — mieux vaut sous-estimer la charge que d'inventer une durée par défaut. Le helper est dupliqué à l'identique côté front.
 
 ### `timeEntry` — le temps passé
+
+**Tout est du temps passé, prévu ou réel.** L'onglet de la fiche (`TimeSpentPanel`)
+ne sépare plus « créneaux » et « temps passé » : un créneau non validé est du temps
+**prévisionnel**, une session est du temps **réel**, et les deux vivent dans une seule
+liste (prévu en pointillés, « à valider » une fois sa date passée). Trois règles, toutes
+dans `ManagePlanning` — les routes de `/api/production-time` y délèguent leurs écritures :
+
+- **ajouter du temps réel pose son créneau tout seul** (`addTimeEntry`) : `manual` +
+  `done`, relié par `time_entry_id`, publié dans l'agenda. Le bouton « en faire un
+  créneau » ne subsiste que pour les sessions antérieures à la règle ;
+- **corriger une session recale son créneau** (`updateTimeEntry` : jour, heure, durée,
+  étape, note ; le libellé ne suit l'étape que sur un créneau né d'une session, pas sur
+  celui d'une ligne de pile) ;
+- **supprimer une session supprime son créneau approuvé** (`removeTimeEntry`) ; un créneau
+  encore en cours (chronomètre lancé depuis le planning) redevient seulement prévu.
+
+Le jour et l'heure **locaux** voyagent dans le corps (`date`, `startTime`) : `startedAt`
+est un instant UTC. Sans eux, la session est enregistrée sans créneau. Un créneau prévu
+se **valide** par l'approbation du planning (`ApproveSlotDialog`), qui accepte désormais
+un créneau **sans horaire** (`startTime` dans le corps, durée obligatoire) et ne pose la
+question « as-tu terminé ? » que pour un créneau issu de la pile (`itemId`).
+
+`SlotDialog` a été supprimé : le prévu se crée et se corrige depuis la modale du panneau
+(bascule « Déjà fait » / « Prévu » à la création seulement — un prévu devient réel en le
+validant, pas en changeant de case). Corriger un prévu le passe en `manual`.
 
 `TimeEntry { id, productionId, stepId, todoId, startedAt, endedAt, minutes, notes }` — table
 `production_time_entries` (migration 12, `todo_id` en migration 19).
@@ -1419,10 +1451,13 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `DELETE` | `/api/planning/items/:id`                           | Retirer de la pile. Les créneaux déjà posés **restent**                                                                                                                                                    |
 | `POST`   | `/api/planning/slots`                               | **Poser un créneau à la main** sur une ligne de la pile (glisser-déposer). `{ itemId, date, startTime, minutes? }`. Naît `manual`, ne replanifie rien, et on peut en poser **plusieurs sur la même ligne** |
 | `POST`   | `/api/planning/replan`                              | Repositionner. `onlyDate` = une seule colonne, sinon tout l'horizon                                                                                                                                        |
-| `POST`   | `/api/planning/slots/:id/approve`                   | `{ finished }` **obligatoire**. Crée la session, fige et redimensionne le créneau, publie dans l'agenda ; renvoie `{ next }`, le créneau reposé si le travail continue                                     |
+| `POST`   | `/api/planning/slots/:id/approve`                   | `{ finished, minutes?, startTime? }` — `startTime` pour un créneau posé sans horaire. `finished` **obligatoire**. Crée la session, fige et redimensionne le créneau, publie dans l'agenda ; renvoie `{ next }`, le créneau reposé si le travail continue                                     |
 | `POST`   | `/api/planning/slots/:id/unapprove`                 | Défaire : la session part, le créneau redevient mobile                                                                                                                                                     |
 | `POST`   | `/api/planning/time-entries/:id/slot`               | Transforme une session de travail en créneau approuvé. `{ date, startTime }` **fournis par le client** (le serveur est en UTC). 409 si la session tourne encore ou a déjà son créneau                      |
 | `POST`   | `/api/production-time/:id/stop`                     | Arrête le chronomètre. `{ startDate, startTime }` **locaux** posent son créneau quand il n'en avait pas, et le publient dans l'agenda. Rend `{ entry, completable }`                                       |
+| `POST`   | `/api/production-time`                              | Saisie manuelle `{ productionId, startedAt, minutes, stepId?, todoId?, notes?, date?, startTime? }`. `date`/`startTime` **locaux** posent le créneau approuvé dans le planning et l'agenda |
+| `PATCH`  | `/api/production-time/:id`                          | Corrige la session **et recale son créneau** (mêmes champs, tous facultatifs). Une session sans créneau en reçoit un si `date`/`startTime` sont fournis |
+| `DELETE` | `/api/production-time/:id`                          | Supprime la session **et son créneau approuvé** ; un créneau encore en cours redevient prévu |
 | `GET`    | `/api/instagram/overview`                           | Séries, totaux, stories et publications. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                                   |
 | `GET`    | `/api/instagram/accounts`                           | Comptes suivis. **Le jeton n'en sort jamais**, remplacé par `hasToken` et `tokenDaysLeft`                                                                                                                  |
 | `POST`   | `/api/instagram/accounts`                           | Connecter un compte. 409 si l'`igUserId` est déjà suivi                                                                                                                                                    |
@@ -1443,13 +1478,13 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 | Route               | Page                   | Contenu                                                                                                                                                           |
 | ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, puis **les deux graphiques seulement** (argent, audience). Plus d'alertes : elles sont en pastilles     |
-| `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 5 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                  |
+| `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                  |
 | `/instagram`        | `InstagramPage`        | 6 cartes, graphique à 3 onglets, puis calendrier des stories / tableau des publications                                                                           |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets     |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail à droite, bouton « Ajouter une vidéo »                                                                               |
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées |
 | `/shorts`           | `ProductionPage`       | `format="short"`, titré **« Shorts & Réels »**. Exactement le même écran, borné aux formats courts                                                                |
-| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / Créneaux & temps passé / Produits & sponsos / Notes                                    |
+| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / Notes                                    |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                       |
 | `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                    |
 | `/plateformes`      | `PlatformsPage`        | 4 cartes (Total affiliations, Sans plateforme, En tête, Plateformes suivies), puis `PlatformsPanel`                                                              |
@@ -1478,6 +1513,12 @@ onglet n'aurait pas pu la montrer depuis le menu. Les cellules communes aux deux
 (`DeadlineCell`, `LinkedVideoCell`, `OutstandingToggle`) vivent dans
 `components/partners/PartnerCells.tsx`. La case « Reste à faire uniquement » est
 désormais **propre à chaque écran**.
+
+**La fiche d'un short allume « Shorts & Réels » dans le menu**, pas « Vidéos », bien
+qu'elle vive à `/production/:id`. `AppLayout` lit le format de la fiche ouverte
+(`useProduction`, même clé de cache que la page) et corrige l'état actif de `NavLink`
+(`isItemActive`). Changer l'adresse en `/shorts/:id` aurait obligé chaque lien vers une
+fiche — planning, alertes, chronomètre, partenaires — à connaître le format visé.
 
 Les deux `<Route>` de `ProductionPage` portent une **`key`** (`video` / `short`) : sans
 elle, React réutiliserait l'instance en passant d'un menu à l'autre, et les cartes
@@ -2200,7 +2241,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   passage complet) et retombe sur toutes les chaînes sinon ; la liste se remplit d'elle-même
   grâce à `COLLECT_ROOTS`.
 - **`PublishDialog` trie les sorties par proximité avec la date visée**, pas par date : celle qu'on cherche est presque toujours sortie près du jour prévu, et elle doit être en tête sans faire défiler des mois d'historique.
-- **Créneaux et temps passé sont un seul onglet.** Ce sont les deux moitiés d'une même question — quand je m'y mets, et combien ça m'a réellement pris —, et deux onglets obligeaient à faire l'aller-retour pour comparer le prévu au vécu. L'onglet annonce les deux d'un coup : « Créneaux & temps passé (3) · 2 h 30 ».
+- **Créneaux et temps passé sont une seule liste** (`TimeSpentPanel`), pas deux cartes : un créneau n'est que du temps passé pas encore vécu. Le total par étape distingue le réel du prévu (« 3 h · (+1 h prévu) ») — les additionner ferait passer une estimation pour du travail fait. Un créneau coché « fait » à l'ancienne, sans session, s'affiche « fait, non chronométré » et n'entre dans aucun total.
+- **`findByTimeEntry` ne rend que les créneaux NON approuvés par défaut** : c'est la question de l'arrêt du chronomètre. Corriger ou supprimer du temps passé doit passer `{ includeDone: true }` — sans ça, la correction créait un second créneau et la suppression laissait l'ancien dans la grille.
 - **Enregistrer le formulaire de publication renomme la vidéo dans la file.**
   `publishTitle` et `title` sont le même titre à deux moments de sa vie : le champ est
   prérempli avec le titre de travail, et `PublicationPanel.save()` renvoie les deux. Ça
@@ -2261,6 +2303,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   et `can()` s'y écrasent tous. Les deux sélecteurs du module gardent donc `instance?.schema`
   et retombent sur une valeur neutre (`EMPTY_STATS`, `INACTIVE`). Le hook lui-même peut
   rendre `null`, d'où le `?? …` sur son résultat.
+- **Le mode lecture du script (`ScriptReader`, bouton « Lire ») est une modale Radix plein écran**, pas un `fixed` maison : ouvert depuis le script d'une sponso, il vit dans une modale centrée par `transform`, où un `fixed` serait positionné par rapport à elle. Il rend le HTML **sérialisé par l'éditeur** (`getHTML`, déjà filtré par le schéma), jamais la chaîne en base, et n'est pas éditable — un doigt qui fait défiler ne doit pas ouvrir le clavier. Les titres de `.prose-script` étant en `rem`, `.script-reader` les repasse en `em` pour qu'ils suivent les trois tailles de texte.
 - **Le compteur affiche la durée de lecture** (150 mots/min) plutôt que des caractères :
   c'est la seule mesure qui compte quand on écrit pour être dit à l'oral.
 - **La barre d'outils est collante, et son décalage vient de l'appelant.** Un script fait
@@ -2460,11 +2503,12 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   faisait que la hauteur de son texte : le trait d'aujourd'hui (`inset-y-0`) et les barres
   transparaissaient **au-dessus et en dessous** en défilant. `self-stretch` est la
   correction ; le filet de droite donne en prime un bord franc à la colonne.
-- **L'ordre d'empilement du Gantt est explicite, du fond vers la surface** : trait
-  d'aujourd'hui (0), barres (10), pastilles de créneau (20), colonne des titres (30),
-  en-tête des jours (40), son coin (50). Il était ambigu — pastilles et colonne
-  partageaient `z-20`, et c'est l'ordre du DOM qui tranchait, donc les pastilles passaient
-  **sur** les titres. Ne jamais poser deux calques du Gantt au même niveau.
+- **L'ordre d'empilement du Gantt est explicite, du fond vers la surface** : barres (10),
+  trait d'aujourd'hui (20, **par-dessus les barres**, 3 px), colonne des titres (30),
+  en-tête des jours (40), son coin (50). Sous les barres, le trait disparaissait
+  précisément sur les vidéos en cours. Les pastilles de créneau ont été **retirées** : un
+  point par créneau sur une barre colorée ne se lisait pas, et le Gantt ne reçoit plus les
+  créneaux. Ne jamais poser deux calques du Gantt au même niveau.
 - **La largeur de la colonne des titres se mesure, elle ne se suppose pas.** Elle est plus
   étroite sur mobile (`w-36` contre `w-56`), sinon elle mangeait 224 px sur un écran de
   390 et il ne restait rien pour les barres. `TITLE_WIDTH` ne sert plus que de repli avant
@@ -2654,7 +2698,7 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   une place au prochain replacement. C'est l'usage : « pas maintenant » n'est pas
   « jamais ».
 - **Les créneaux suggérés apparaissent aussi dans l'écran Production** (prochains créneaux,
-  charge de la semaine, Gantt) : ce sont de vrais `production_slots`. C'est voulu — du
+  charge de la semaine) : ce sont de vrais `production_slots`. C'est voulu — du
   travail planifié est du travail planifié, quelle que soit la main qui l'a posé.
 - **Le planning fonctionne sans agenda.** Sans connexion, il place les créneaux dans les
   horaires de travail sans connaître les rendez-vous, et l'écran le dit. Sans **horaires**,

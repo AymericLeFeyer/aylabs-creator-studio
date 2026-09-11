@@ -197,9 +197,22 @@ export class SqliteProductionSlotRepository implements ProductionSlotRepository 
    * déduisait de `startedAt`, qui est un instant **UTC** — sur une session démarrée après
    * 22 h heure de Paris, elle visait déjà le lendemain.
    */
-  findByTimeEntry(timeEntryId: string): ProductionSlot | null {
+  /**
+   * Le créneau relié à une session. Par défaut **non approuvé** seulement : c'est la
+   * question que pose l'arrêt d'un chronomètre (« quel créneau recaler ? »). Corriger ou
+   * supprimer du temps passé demande au contraire le créneau approuvé qui le représente,
+   * d'où `includeDone`.
+   */
+  findByTimeEntry(
+    timeEntryId: string,
+    options: { includeDone?: boolean } = {},
+  ): ProductionSlot | null {
     const row = this.db
-      .prepare('SELECT * FROM production_slots WHERE time_entry_id = ? AND done = 0 LIMIT 1')
+      .prepare(
+        `SELECT * FROM production_slots WHERE time_entry_id = ?${
+          options.includeDone ? '' : ' AND done = 0'
+        } ORDER BY done DESC LIMIT 1`,
+      )
       .get(timeEntryId) as SlotRow | undefined;
     return row ? toDomain(row) : null;
   }

@@ -63,17 +63,30 @@ export const productionTimeRouter = (container: Container): Router => {
     res.json(await container.managePlanning.stopTimer(param(req, 'id'), body));
   });
 
-  /** Saisie manuelle : un début et une durée, jamais une fin. */
-  router.post('/', (req, res) => {
-    res.status(201).json(container.trackTime.addManual(createTimeEntrySchema.parse(req.body)));
+  /**
+   * Saisie manuelle : un début et une durée, jamais une fin.
+   *
+   * Les trois écritures passent par `ManagePlanning` : une session a son créneau dans le
+   * planning, et l'ajouter, la corriger ou la supprimer doit faire de même avec lui —
+   * sinon la grille et les totaux finiraient par raconter deux journées différentes.
+   */
+  router.post('/', async (req, res) => {
+    res
+      .status(201)
+      .json(await container.managePlanning.addTimeEntry(createTimeEntrySchema.parse(req.body)));
   });
 
-  router.patch('/:id', (req, res) => {
-    res.json(container.trackTime.update(param(req, 'id'), updateTimeEntrySchema.parse(req.body)));
+  router.patch('/:id', async (req, res) => {
+    res.json(
+      await container.managePlanning.updateTimeEntry(
+        param(req, 'id'),
+        updateTimeEntrySchema.parse(req.body),
+      ),
+    );
   });
 
   router.delete('/:id', (req, res) => {
-    container.timeEntries.delete(param(req, 'id'));
+    container.managePlanning.removeTimeEntry(param(req, 'id'));
     res.status(204).end();
   });
 

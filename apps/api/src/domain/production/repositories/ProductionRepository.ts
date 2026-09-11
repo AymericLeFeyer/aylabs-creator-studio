@@ -79,7 +79,7 @@ export interface ProductionSlotRepository {
   update(id: string, input: UpdateProductionSlotInput): ProductionSlot;
   delete(id: string): void;
   /** Le créneau d'où une session a été lancée, s'il existe et n'est pas déjà clos. */
-  findByTimeEntry(timeEntryId: string): ProductionSlot | null;
+  findByTimeEntry(timeEntryId: string, options?: { includeDone?: boolean }): ProductionSlot | null;
   /**
    * Efface les suggestions déplaçables d'une fenêtre, préalable de tout replan.
    * `from` à `null` remonte jusqu'au début : un replan complet balaie aussi les

@@ -141,7 +141,12 @@ export const planningRouter = (container: Container): Router => {
     const body = approveSlotSchema.parse(req.body);
     const next = await container.managePlanning.approve(
       param(req, 'id'),
-      { finished: body.finished, minutes: body.minutes, notes: body.notes },
+      {
+        finished: body.finished,
+        minutes: body.minutes,
+        notes: body.notes,
+        startTime: body.startTime,
+      },
       { from: body.from, nowDate: body.nowDate, nowMinutes: body.nowMinutes },
     );
     res.json({ next });

@@ -487,19 +487,24 @@ export class ManagePlanning {
    */
   async approve(
     slotId: string,
-    input: { finished: boolean; minutes?: number; notes?: string | null },
+    input: { finished: boolean; minutes?: number; notes?: string | null; startTime?: string },
     options: ReplanOptions = {},
   ): Promise<ProductionSlotView | null> {
-    const slot = this.slots.findById(slotId);
-    if (!slot) throw notFound('Créneau');
-    if (slot.done) throw conflict('Ce créneau est déjà approuvé.');
-    if (!slot.startTime || !slot.endTime) {
-      throw badRequest("Ce créneau n'a pas d'horaire : renseigne-le avant de l'approuver.");
+    const found = this.slots.findById(slotId);
+    if (!found) throw notFound('Créneau');
+    if (found.done) throw conflict('Ce créneau est déjà approuvé.');
+
+    // Un créneau posé sans horaire (« samedi ») se valide en donnant l'heure où l'on s'y
+    // est mis : c'est elle qui lui donne une place dans la journée et dans l'agenda.
+    const startTime = found.startTime ?? input.startTime ?? null;
+    if (!startTime || (!found.endTime && !input.minutes)) {
+      throw badRequest("Ce créneau n'a pas d'horaire : indique l'heure de début et la durée.");
     }
+    const slot = { ...found, startTime };
 
     // La durée prévue sert deux fois : de valeur par défaut, et de taille du créneau à
     // reposer quand le travail continue.
-    const plannedDuration = Math.max(1, slotMinutes(slot));
+    const plannedDuration = Math.max(1, slotMinutes(slot) || input.minutes || 1);
     const minutes = input.minutes ?? plannedDuration;
 
     // La session de travail porte le temps réellement passé. C'est elle qui alimente
@@ -521,7 +526,8 @@ export class ManagePlanning {
     // Le créneau est recalé sur le temps vécu **avant** d'être publié : l'événement
     // écrit dans l'agenda doit dire ce qui a eu lieu, pas ce qui était prévu.
     this.slots.update(slot.id, {
-      endTime: toTime(toMinutes(slot.startTime) + minutes),
+      startTime: slot.startTime,
+      endTime: toTime(Math.min(24 * 60, toMinutes(slot.startTime) + minutes)),
       done: true,
       timeEntryId: entry.id,
     });
@@ -775,19 +781,7 @@ export class ManagePlanning {
     }
     if (entry.slotId) throw conflict('Cette session a déjà son créneau dans le planning.');
 
-    const slot = this.slots.create({
-      productionId: entry.productionId,
-      stepId: entry.stepId,
-      date: input.date,
-      startTime: input.startTime,
-      endTime: toTime(toMinutes(input.startTime) + entry.minutes),
-      label: entry.todoLabel ?? entry.stepName ?? entry.productionTitle,
-      done: true,
-      origin: 'manual',
-      notes: entry.notes,
-    });
-    this.slots.update(slot.id, { timeEntryId: entry.id });
-    await this.publishAndLink(slot.id);
+    const slot = await this.materialize(entry, input.date, input.startTime);
 
     // Le créneau occupe désormais la journée. En incrémental, il devient une occupation
     // parmi d'autres et rien n'est déplacé : c'est au bouton « Repositionner » de décider
@@ -804,6 +798,142 @@ export class ManagePlanning {
         .findAll({ range: { from: input.date, to: input.date } })
         .find((candidate) => candidate.id === slot.id) ?? null
     );
+  }
+
+  /**
+   * Le créneau approuvé qui représente une session dans le planning — et dans l'agenda.
+   *
+   * `manual` **et** `done` : il raconte du temps déjà passé, rien ne le déplacera, et il
+   * occupe la place aux yeux du moteur. `time_entry_id` le relie à la session, qui reste
+   * la seule source des totaux.
+   */
+  private async materialize(
+    entry: TimeEntryView,
+    date: IsoDate,
+    startTime: string,
+  ): Promise<ProductionSlotView> {
+    const minutes = Math.max(1, entry.minutes ?? 1);
+    const slot = this.slots.create({
+      productionId: entry.productionId,
+      stepId: entry.stepId,
+      date,
+      startTime,
+      endTime: toTime(Math.min(24 * 60, toMinutes(startTime) + minutes)),
+      label: entry.todoLabel ?? entry.stepName ?? entry.productionTitle,
+      done: true,
+      origin: 'manual',
+      notes: entry.notes,
+    });
+    this.slots.update(slot.id, { timeEntryId: entry.id });
+    await this.publishAndLink(slot.id);
+    return this.slots
+      .findAll({ range: { from: date, to: date } })
+      .find((candidate) => candidate.id === slot.id)!;
+  }
+
+  // --- Le temps passé -------------------------------------------------------
+
+  /**
+   * Ajoute du temps passé à la main — **et le pose dans le planning du même geste**.
+   *
+   * « J'ai monté 2 h hier soir » était jusqu'ici une ligne dans un total, et il fallait
+   * cliquer « en faire un créneau » pour que ces deux heures existent dans la journée et
+   * dans l'agenda. Le geste était systématique : il n'a plus à en être un. C'est la même
+   * règle que l'arrêt du chronomètre.
+   *
+   * `date` / `startTime` viennent du navigateur ; sans eux, la session est enregistrée
+   * sans créneau — mieux vaut ça qu'une heure inventée par un serveur en UTC.
+   *
+   * **Aucun replan** : un créneau vécu n'appartient à aucune ligne de pile, et poser du
+   * passé ne demande pas de réécrire l'avenir.
+   */
+  async addTimeEntry(input: {
+    productionId: string;
+    stepId?: string | null;
+    todoId?: string | null;
+    startedAt: string;
+    minutes: number;
+    notes?: string | null;
+    date?: IsoDate;
+    startTime?: string;
+  }): Promise<TimeEntry> {
+    const { date, startTime, ...rest } = input;
+    const entry = this.trackTime.addManual(rest);
+    const view = this.trackTime.find(entry.id);
+    if (view && date && startTime) await this.materialize(view, date, startTime);
+    return entry;
+  }
+
+  /**
+   * Corrige une session, **et son créneau avec elle**.
+   *
+   * La session et son créneau disent la même chose à deux endroits : corriger la durée
+   * dans la fiche sans toucher au planning les ferait diverger, et la journée afficherait
+   * un bloc de deux heures pour quarante minutes comptées. Le créneau suit donc le jour,
+   * l'heure, la durée, l'étape et la note.
+   *
+   * Une session sans créneau (antérieure à cette règle) en reçoit un dès qu'on la corrige
+   * avec son heure locale. L'événement déjà publié dans l'agenda, lui, ne bouge pas :
+   * Home Assistant ne sait pas modifier un événement.
+   */
+  async updateTimeEntry(
+    id: string,
+    input: {
+      stepId?: string | null;
+      todoId?: string | null;
+      startedAt?: string;
+      minutes?: number;
+      notes?: string | null;
+      date?: IsoDate;
+      startTime?: string;
+    },
+  ): Promise<TimeEntry> {
+    const { date, startTime, ...rest } = input;
+    const entry = this.trackTime.update(id, rest);
+    if (entry.endedAt === null || entry.minutes === null) return entry;
+
+    const view = this.trackTime.find(id);
+    const slot = this.slots.findByTimeEntry(id, { includeDone: true });
+    if (!slot) {
+      if (view && date && startTime) await this.materialize(view, date, startTime);
+      return entry;
+    }
+
+    const start = startTime ?? slot.startTime;
+    // Le libellé ne suit l'étape que sur un créneau né de la session : celui d'une ligne
+    // de pile porte l'intitulé de ce qui avait été planifié, et doit le garder.
+    const relabel = !slot.itemId && (rest.stepId !== undefined || rest.todoId !== undefined);
+    this.slots.update(slot.id, {
+      date: date ?? slot.date,
+      ...(start
+        ? {
+            startTime: start,
+            endTime: toTime(Math.min(24 * 60, toMinutes(start) + entry.minutes)),
+          }
+        : {}),
+      stepId: entry.stepId,
+      ...(relabel && view
+        ? { label: view.todoLabel ?? view.stepName ?? view.productionTitle }
+        : {}),
+      ...(rest.notes !== undefined ? { notes: rest.notes } : {}),
+    });
+    return entry;
+  }
+
+  /**
+   * Supprime du temps passé, **et ce qu'il occupait dans le planning**.
+   *
+   * Sans ça, la journée gardait un bloc approuvé qui ne comptait plus nulle part — du
+   * temps affiché dans la grille, absent de tous les totaux. Un créneau approuvé part
+   * avec sa session ; un créneau encore en cours (chronomètre lancé depuis le planning)
+   * redevient simplement un créneau prévu.
+   */
+  removeTimeEntry(id: string): void {
+    const slot = this.slots.findByTimeEntry(id, { includeDone: true });
+    this.trackTime.remove(id);
+    if (!slot) return;
+    if (slot.done) this.slots.delete(slot.id);
+    else this.slots.update(slot.id, { timeEntryId: null });
   }
 
   /** Défait une approbation : la session part, le créneau redevient déplaçable. */

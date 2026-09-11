@@ -43,6 +43,19 @@ export interface ProductionAlert {
   sponsorshipId: string | null;
 }
 
+/**
+ * Temps moyen d'une étape sur une vidéo. Ne compte que les vidéos où l'étape est
+ * terminée (cochée, ou vidéo publiée), et seulement le temps vécu (sessions de travail).
+ */
+export interface StepTimeAverage {
+  stepId: string;
+  stepName: string;
+  stepColor: string;
+  averageMinutes: number;
+  /** Nombre de vidéos sur lesquelles la moyenne est calculée. */
+  videos: number;
+}
+
 export interface ProductionOverview {
   queue: Production[];
   /** La prochaine à travailler : la première de la file qui n'est pas en pause. */
@@ -51,6 +64,10 @@ export interface ProductionOverview {
   upcomingSlots: ProductionSlot[];
   weekLoadMinutes: number;
   stats: ProductionStats;
+  /** Temps moyen par étape, borné au format. Étapes jamais mesurées absentes. */
+  stepAverages: StepTimeAverage[];
+  /** Temps total moyen d'une vidéo publiée, `null` sans aucune publiée mesurée. */
+  averageVideoMinutes: { minutes: number; videos: number } | null;
   /** Le chronomètre en cours, `null` s'il n'y en a pas. */
   running: TimeEntry | null;
 }

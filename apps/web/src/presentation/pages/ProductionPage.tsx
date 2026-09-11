@@ -16,7 +16,6 @@ import {
 import {
   useProductionOverview,
   useProductions,
-  useProductionSlots,
   useProductionSteps,
   useReorderProductions,
 } from '../../application/production/usecases/useProductions.ts';
@@ -38,6 +37,7 @@ import { PageAlerts } from '../components/PageAlerts.tsx';
 import { ProductionCard } from '../components/production/ProductionCard.tsx';
 import { ProductionGantt } from '../components/production/ProductionGantt.tsx';
 import { IdeaBox } from '../components/production/IdeaBox.tsx';
+import { StepAveragesCard } from '../components/production/StepAveragesCard.tsx';
 import { StepTodosDialog } from '../components/production/StepTodosDialog.tsx';
 import { StartTimerDialog } from '../components/production/StartTimerDialog.tsx';
 import { Fab } from '../components/Fab.tsx';
@@ -56,10 +56,18 @@ const formatLoad = (minutes: number): string =>
  */
 const COPY: Record<
   ProductionFormat,
-  { title: string; subtitle: string; create: string; empty: string; emptyDone: string }
+  {
+    title: string;
+    subtitle: string;
+    create: string;
+    empty: string;
+    emptyDone: string;
+    published: string;
+  }
 > = {
   video: {
     title: 'Vidéos',
+    published: 'Une vidéo publiée',
     subtitle: 'Ce qui est en cours, ce qui sort quand, et le temps que ça prend vraiment.',
     create: 'Nouvelle vidéo',
     empty: 'Aucune vidéo en production',
@@ -67,6 +75,7 @@ const COPY: Record<
   },
   short: {
     title: 'Shorts & Réels',
+    published: 'Un short publié',
     subtitle:
       'Les formats courts, à part des gros projets mais sur le même planning et avec les mêmes outils.',
     create: 'Nouveau short',
@@ -87,11 +96,6 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
   const { data: overview, isLoading } = useProductionOverview(format);
   const { data: steps = [] } = useProductionSteps();
   const { data: done = [] } = useProductions({ statuses: ['done'], formats: [format] });
-  const { data: allSlots = [] } = useProductionSlots();
-  const slots = useMemo(
-    () => allSlots.filter((slot) => slot.productionFormat === format),
-    [allSlots, format],
-  );
 
   /**
    * Les vidéos en péril — sortie dans moins d'une semaine, pas commencées ou en pause —,
@@ -264,7 +268,7 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
 
       {/* Le planning se lit à l'arrivée, pas derrière un onglet : c'est la vue qui
           répond à « qu'est-ce qui sort quand », la première question de la page. */}
-      <ProductionGantt productions={[...queue, ...done]} slots={slots} steps={steps} />
+      <ProductionGantt productions={[...queue, ...done]} steps={steps} />
 
       <Tabs defaultValue="queue">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -365,6 +369,15 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Où part le temps, étape par étape : la question qu'on se pose en
+                  estimant la prochaine vidéo. Borné au format de l'écran — un short et une
+                  vidéo longue n'ont pas le même montage. */}
+              <StepAveragesCard
+                averages={overview?.stepAverages ?? []}
+                video={overview?.averageVideoMinutes ?? null}
+                publishedLabel={copy.published}
+              />
 
               {/* Le carnet vit à côté de la file, pas dans un écran à part : une idée se
                   note pendant qu'on regarde ce qu'on est en train de faire. */}

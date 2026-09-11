@@ -67,6 +67,12 @@ export interface TimeEntryInput {
   startedAt: string;
   minutes: number;
   notes?: string | null;
+  /**
+   * Jour et heure **locaux** du début. Ils posent le créneau du temps passé dans le
+   * planning : l'API, en UTC, ne peut pas les tirer de `startedAt`.
+   */
+  date?: string;
+  startTime?: string;
 }
 
 /**
