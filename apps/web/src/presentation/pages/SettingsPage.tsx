@@ -17,6 +17,7 @@ import { InstagramSettingsPage } from './InstagramSettingsPage.tsx';
 import { CompanyPage } from './CompanyPage.tsx';
 import { RecurringExpensesPanel } from '../components/money/RecurringExpensesPanel.tsx';
 import { PrivacySettings } from '../components/PrivacySettings.tsx';
+import { ApiSettingsPage } from './ApiSettingsPage.tsx';
 
 const TABS = [
   'app',
@@ -29,6 +30,7 @@ const TABS = [
   'script',
   'planning',
   'societe',
+  'api',
 ] as const;
 type SettingsTab = (typeof TABS)[number];
 
@@ -73,6 +75,7 @@ export const SettingsPage = () => {
           <TabsTrigger value="script">Script</TabsTrigger>
           <TabsTrigger value="planning">Planning</TabsTrigger>
           <TabsTrigger value="societe">Société</TabsTrigger>
+          <TabsTrigger value="api">API</TabsTrigger>
         </TabsList>
 
         <TabsContent value="app">
@@ -104,6 +107,9 @@ export const SettingsPage = () => {
         </TabsContent>
         <TabsContent value="societe">
           <CompanyPage />
+        </TabsContent>
+        <TabsContent value="api">
+          <ApiSettingsPage />
         </TabsContent>
       </Tabs>
     </div>

@@ -51,6 +51,16 @@ import { CollectComments } from './application/comment/usecases/CollectComments.
 import { GetPreviousPublication } from './application/production/usecases/GetPreviousPublication.ts';
 import { GetAnalytics } from './application/analytics/usecases/GetAnalytics.ts';
 import { YouTubeDataClient } from './infrastructure/youtube/api/YouTubeDataClient.ts';
+import { SqliteIntegrationRepository } from './infrastructure/integration/repositories/SqliteIntegrationRepository.ts';
+import { SqliteExportKeyRepository } from './infrastructure/integration/repositories/SqliteExportKeyRepository.ts';
+import { SqliteLocalSourceRepository } from './infrastructure/integration/repositories/SqliteLocalSourceRepository.ts';
+import { SecretBox } from './infrastructure/integration/secrets/SecretBox.ts';
+import { AmazonScraper } from './infrastructure/integration/api/AmazonScraper.ts';
+import { DomadooScraper } from './infrastructure/integration/api/DomadooScraper.ts';
+import { DiscordClient } from './infrastructure/integration/api/DiscordClient.ts';
+import { ManageIntegrations } from './application/integration/usecases/ManageIntegrations.ts';
+import { CollectIntegrations } from './application/integration/usecases/CollectIntegrations.ts';
+import { GetExport } from './application/integration/usecases/GetExport.ts';
 
 export interface Container {
   db: DatabaseSync;
@@ -140,6 +150,15 @@ export interface Container {
   getInstagramOverview: GetInstagramOverview;
   /** `null` tant qu'aucune clé API YouTube n'est configurée. */
   youtubeData: YouTubeDataClient | null;
+  /**
+   * Paramètres → API : sources de l'export, identifiants et clés d'accès. Seul point où
+   * un secret est chiffré ou déchiffré.
+   */
+  manageIntegrations: ManageIntegrations;
+  /** Amazon, Domadoo, Discord. YouTube et Instagram n'ont rien à collecter en plus. */
+  collectIntegrations: CollectIntegrations;
+  /** Ce que lit Home Assistant sur `/api/export`. Ne collecte jamais rien. */
+  getExport: GetExport;
 }
 
 /** Assemble les implémentations concrètes derrière les interfaces du domaine. */
@@ -194,6 +213,15 @@ export const buildContainer = (config: Config): Container => {
   // montrer ce qui arrive même si aucune écriture n'a eu lieu depuis des semaines.
   const syncRecurringExpenses = new SyncRecurringExpenses(recurringExpenses, expenses);
   syncRecurringExpenses.execute();
+
+  const integrations = new SqliteIntegrationRepository(db);
+  const manageIntegrations = new ManageIntegrations(
+    integrations,
+    new SqliteExportKeyRepository(db),
+    new SqliteLocalSourceRepository(db),
+    new SecretBox(config.secretsKey),
+    config.integrationEnv,
+  );
 
   return {
     db,
@@ -283,5 +311,12 @@ export const buildContainer = (config: Config): Container => {
     }),
     getAnalytics: new GetAnalytics(channels, metrics, revenues, categories, expenses, videos),
     youtubeData: config.youtubeApiKey ? new YouTubeDataClient(config.youtubeApiKey) : null,
+    manageIntegrations,
+    collectIntegrations: new CollectIntegrations(integrations, manageIntegrations, {
+      amazon: new AmazonScraper(),
+      domadoo: new DomadooScraper(),
+      discord: new DiscordClient(),
+    }),
+    getExport: new GetExport(integrations, manageIntegrations),
   };
 };

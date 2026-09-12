@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { INTEGRATION_ENV_VARS } from './domain/integration/entities/Integration.ts';
 
 const optional = (key: string): string | null => {
   const value = process.env[key]?.trim();
@@ -33,6 +34,16 @@ export interface Config {
   collectAtStartup: boolean;
   backfillDays: number;
   corsOrigins: string[];
+  /**
+   * Clé de chiffrement des secrets saisis dans Paramètres → API (16 caractères minimum).
+   * Sans elle, ces secrets ne peuvent passer que par les variables d'environnement.
+   */
+  secretsKey: string | null;
+  /**
+   * Identifiants des sources de l'export lus dans l'environnement (`AMAZON_LOGIN`…). Ils
+   * l'emportent sur ce qui est saisi à l'écran.
+   */
+  integrationEnv: Record<string, string | null>;
 }
 
 export const loadConfig = (): Config => ({
@@ -52,4 +63,6 @@ export const loadConfig = (): Config => ({
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
+  secretsKey: optional('SECRETS_KEY'),
+  integrationEnv: Object.fromEntries(INTEGRATION_ENV_VARS.map((key) => [key, optional(key)])),
 });

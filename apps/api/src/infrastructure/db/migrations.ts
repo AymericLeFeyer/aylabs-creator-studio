@@ -1223,6 +1223,56 @@ const migrations: Migration[] = [
         CHECK (format IN ('video','short'));
     `,
   },
+  {
+    version: 27,
+    name: 'integrations',
+    // L'export vers Home Assistant (ex YouTube-Money-Exporter) : les comptes que le
+    // studio va chercher en plus des siens, et les cles qui autorisent a le lire.
+    //
+    // - "integration_settings" : une ligne par source, creee a la premiere ecriture.
+    //   Pas de ligne = active, une source jamais touchee n'est pas desactivee.
+    // - "integration_credentials" : identifiants, une LIGNE par champ et non une colonne,
+    //   comme les etapes de production — ajouter un champ ne demande aucune migration.
+    //   Les secrets y sont CHIFFRES (AES-256-GCM, cle SECRETS_KEY hors de la base).
+    // - "integration_snapshots" : le dernier resultat de chaque collecte distante. Un
+    //   echec n'ecrit que "last_error" : la derniere bonne valeur reste publiee.
+    // - "export_keys" : seule l'EMPREINTE du jeton est stockee. Le jeton n'est montre
+    //   qu'une fois, a la creation ; une fuite de la base ne donne acces a rien.
+    up: `
+      CREATE TABLE integration_settings (
+        provider   TEXT PRIMARY KEY,
+        enabled    INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE integration_credentials (
+        provider   TEXT NOT NULL,
+        key        TEXT NOT NULL,
+        value      TEXT NOT NULL,
+        is_secret  INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (provider, key)
+      );
+
+      CREATE TABLE integration_snapshots (
+        key             TEXT PRIMARY KEY,
+        data            TEXT,
+        fetched_at      TEXT,
+        last_attempt_at TEXT,
+        last_error      TEXT,
+        duration_ms     INTEGER
+      );
+
+      CREATE TABLE export_keys (
+        id           TEXT PRIMARY KEY,
+        label        TEXT NOT NULL,
+        token_hash   TEXT NOT NULL UNIQUE,
+        prefix       TEXT NOT NULL,
+        created_at   TEXT NOT NULL,
+        last_used_at TEXT
+      );
+    `,
+  },
 ];
 
 /**

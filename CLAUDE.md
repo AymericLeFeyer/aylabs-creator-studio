@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-11
+> Dernière mise à jour : 2026-09-12
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -102,7 +102,7 @@ Les deux applications suivent la même découpe.
 ```
 apps/api/src/
 ├── domain/          channel, metrics, category, revenue, expense, video, analytics,
-│                    brand, production, product, sponsorship, idea, legal
+│                    brand, production, product, sponsorship, idea, legal, integration
 │   └── <domaine>/{entities,repositories,services}    # repositories = interfaces seules
 ├── application/<domaine>/usecases/
 ├── infrastructure/
@@ -1329,6 +1329,79 @@ vidéos doivent être connues pour que le rattachement se pose du premier coup).
 est **avalé** : les métriques sont déjà écrites, et les commentaires se rattrapent au
 passage suivant.
 
+### `integration` — l'export pour Home Assistant (ex YouTube-Money-Exporter)
+
+Remplace l'outil séparé `YouTube-Money-Exporter` : le studio publie `GET /api/export`,
+**même forme JSON** (`youtube.thisMonth.views`, `youtube.lastVideo.stats.viewCount`,
+`amazon.thisMonth.earnings`, `domadoo.total.balance`, `discord.members_online`…), si bien
+qu'une config Home Assistant existante ne change que d'adresse et gagne un en-tête. Deux
+différences voulues : les valeurs sont des **nombres** (plus de `"12,34 €"` — les
+gabarits HA existants passent, `replace`/`float` acceptent un nombre) et les montants
+sont en **euros** (contrat de sortie, pas le domaine : un capteur `monetary` attend des
+euros). Types dans `domain/integration/entities/ExportData.ts`.
+
+| Source      | `kind`   | D'où                                                                                                     | Rythme                     |
+| ----------- | -------- | -------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `youtube`   | `local`  | calculé **à la lecture** : `daily_metrics` (flux), dernier `channel_snapshots` (cumul), dernière `videos` | chaque requête             |
+| `instagram` | `local`  | `ig_accounts` + dernier `ig_account_snapshots`                                                           | chaque requête             |
+| `discord`   | `remote` | `GET discord.com/api/v10/invites/<code>?with_counts=true`, sans bot ni jeton                             | cron horaire               |
+| `amazon`    | `remote` | Playwright Firefox sur partenaires.amazon.fr, code TOTP maison (`totp.ts`, RFC 6238 vérifiée)            | cron horaire               |
+| `domadoo`   | `remote` | Playwright Firefox **furtif** (`playwright-extra` + stealth) : résumé, puis ventes en attente paginées  | horaire + `30 3 * * *`     |
+
+**Local = jamais figé** : une collecte lancée à la main depuis le dashboard doit se voir
+dans l'export sans attendre le passage horaire. Chaînes et comptes archivés exclus,
+`lastUpdate` = dernier `captured_at` / `last_collected_at`. Le jour est celui du serveur
+(UTC) : aucun navigateur n'est là pour donner l'heure locale.
+
+**Remote = instantané** dans `integration_snapshots` (clé = la source, plus
+`domadoo:sales` pour le relevé nocturne). `saveFailure` n'écrit **jamais** `data` ni
+`fetched_at` : un captcha un mardi laisse la dernière bonne valeur publiée, et le
+`lastUpdate` de l'export (= `fetched_at`) vieillit pour le dire. Une requête d'export ne
+lance jamais de navigateur. Verrou en mémoire par clé (`CollectIntegrations.running`,
+409) : le cron et un clic ne connectent pas deux navigateurs au même compte — c'est
+exactement ce qui déclenche un captcha.
+
+**Identifiants** : `PROVIDERS` décrit les champs de chaque source (`key`, `secret`,
+`envVar`, `optional`) ; une **ligne par champ** dans `integration_credentials`, comme les
+étapes — ajouter un champ ne demande aucune migration. Les variables d'environnement
+gardent les noms de l'ancien outil (`AMAZON_LOGIN`, `AMAZON_PASSWORD`,
+`AMAZON_SECRET_KEY`, `DOMADOO_LOGIN`, `DOMADOO_PASSWORD`, `DISCORD_SERVER_CODE`) et
+**l'emportent toujours** : `update` refuse en 409 un champ couvert par l'env, sinon la
+correction faite à l'écran « ne marcherait pas » sans raison visible.
+
+**Secrets** : `SecretBox` (AES-256-GCM, clé dérivée par HKDF de `SECRETS_KEY`, 16
+caractères minimum, format `v1:iv:tag:chiffré`, donnée authentifiée `provider:key` —
+recopier un chiffré dans un autre champ le rend illisible). **La clé ne vit jamais dans
+le volume** : une clé générée à côté de la base serait partie avec elle. Sans
+`SECRETS_KEY`, écrire un secret répond 409 — jamais de clair. Changer la clé rend les
+secrets `unreadable`, à ressaisir. **Seul `ManageIntegrations` chiffre ou déchiffre** ;
+une `IntegrationView` ne dit d'un secret que sa `source` (`env` | `app` | `null`).
+
+**Clés d'accès** (`export_keys`) : jeton `acs_` + 24 octets base64url, montré **une
+seule fois** ; seule l'empreinte SHA-256 est stockée (pas de hachage lent : 192 bits
+aléatoires, aucun dictionnaire à essayer). Une clé par client, révocable. Lue dans
+`Authorization: Bearer …`, sinon `?key=`. Aucune clé = 401 partout. **`/api/export` est la
+seule route authentifiée de l'API** : elle est faite pour être lue depuis une autre
+machine et porte des montants.
+
+Use cases :
+
+- `ManageIntegrations` — `overview()`, `view(p)`, `update(p, { enabled?, credentials? })`,
+  `resolve(p)` → `{ values, missing }` **en clair, jamais renvoyé à une route**,
+  `localData(p)`, `listKeys()`, `createKey(label)`, `deleteKey(id)`, `authenticate(token)`.
+- `CollectIntegrations` — `collectAll()` (Discord puis Amazon puis Domadoo, sautées si
+  désactivées ou incomplètes), `collectOne(p)` (400 sur une source locale),
+  `collectDomadooSales()`. Le premier passage Domadoo relève les ventes s'il n'y en a pas
+  encore, pour que `waitingSalesTotal` ne reste pas vide jusqu'à la nuit.
+- `GetExport` — `execute()`, `entry(p)`. Les clés restent présentes à `null` : un gabarit
+  HA doit tomber sur un vide, pas sur une clé absente qui casse tout le capteur REST.
+
+Ports (`domain/integration/repositories/`) : `IntegrationRepository` (`isEnabled`,
+`setEnabled`, `storedCredentials`, `setCredential`, `snapshot`, `saveSuccess`,
+`saveFailure`), `ExportKeyRepository` (`findAll`, `create`, `delete`, `touch`, `count`),
+`LocalSourceRepository` (`youtube(today)`, `instagram()`), `SecretCipher`,
+`IntegrationCollectors`.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -1470,8 +1543,16 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/comments/stats`                               | Compte par statut, pour les pastilles des onglets. Param `channelIds`. **Déclaré avant `/:id`**                                                                                                            |
 | `POST`   | `/api/comments/collect`                             | Collecte immédiate de toutes les chaînes                                                                                                                                                                   |
 | `PATCH`  | `/api/comments/:id`                                 | Le seul geste : `{ status }`. `new` y est admis — c'est ce qui remet dans la file de tri. **Pas de DELETE** : écarter est un statut                                                                        |
+| `GET`    | `/api/integrations`                                 | `{ secretsKeyConfigured, providers: IntegrationView[] }`. Aucun secret n'en sort, seulement sa `source`                                                                                                    |
+| `GET`    | `/api/integrations/keys`                            | Clés d'accès à l'export (sans jeton). **Déclaré avant `/:provider`**                                                                                                                                       |
+| `POST`   | `/api/integrations/keys`                            | `{ label }` → `{ key, token }`. Le jeton n'est **montré qu'une fois**                                                                                                                                      |
+| `DELETE` | `/api/integrations/keys/:id`                        | Révoquer une clé                                                                                                                                                                                           |
+| `PATCH`  | `/api/integrations/:provider`                       | `{ enabled?, credentials? }` — champ absent conservé, `null`/`""` efface. 409 si le champ est couvert par l'env, ou si c'est un secret sans `SECRETS_KEY`                                                  |
+| `POST`   | `/api/integrations/:provider/collect`               | Collecte immédiate d'une source distante (400 sur `youtube`/`instagram`, 409 si déjà en cours). ~20 s avec navigateur. Rend `{ result, integration }`                                                     |
+| `GET`    | `/api/export`                                       | **Clé obligatoire** (`Authorization: Bearer acs_…` ou `?key=`). `{ generatedAt, youtube, instagram, amazon, domadoo, discord }`, `null` si désactivée ou rien collecté. `Cache-Control: no-store`         |
+| `GET`    | `/api/export/:provider`                             | Une seule source, même clé. 404 si rien à publier                                                                                                                                                          |
 
-Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube.
+Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube ou d'une source de l'export.
 
 ## Routes front
 
@@ -1490,7 +1571,7 @@ Erreurs : `{ error, code, details? }`. `422` pour une validation zod (avec `deta
 | `/plateformes`      | `PlatformsPage`        | 4 cartes (Total affiliations, Sans plateforme, En tête, Plateformes suivies), puis `PlatformsPanel`                                                              |
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                             |
 | `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                  |
-| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, **Instagram**, Catégories, Abonnements, Marques, Étapes, **Script**, **Planning**, Société. L'onglet Application porte la **Confidentialité** |
+| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, **Instagram**, Catégories, Abonnements, Marques, Étapes, **Script**, **Planning**, Société, **API** (`ApiSettingsPage` : clés d'accès, secrets, une carte par source de l'export). L'onglet Application porte la **Confidentialité** |
 
 `/chaines`, `/categories`, `/marques`, `/etapes`, `/societe` et `/abonnements`
 **redirigent** vers `/parametres` sur le bon onglet : c'étaient six entrées d'un menu
@@ -2082,6 +2163,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useScriptPresets`, `useShotAngles`, `useProductionShotAngles`, `useCreateScriptPreset`, `useUpdateScriptPreset`, `useDeleteScriptPreset`, `useReorderScriptPresets`, `useCreateShotAngle`, `useUpdateShotAngle`, `useDeleteShotAngle`, `useReorderShotAngles`, `useCreateProductionShotAngle`, `useDeleteProductionShotAngle` | `application/script/usecases/useScript.ts`            | Gabarits et angles de vue (cache 5 min)                                                             |
 | `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`         | Commentaires archivés, leur tri et leur collecte                                                    |
 | `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                                                                                                                                                         | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                            |
+| `useIntegrations`, `useUpdateIntegration`, `useCollectIntegration`, `useExportKeys`, `useCreateExportKey`, `useDeleteExportKey`                                                                                                                                                                                                | `application/integration/usecases/useIntegrations.ts` | Paramètres → API : sources de l'export, identifiants, clés d'accès                                  |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
 
@@ -2114,6 +2196,11 @@ emporter `videos`.
 commentaire trié ne touche ni l'argent, ni la file de production, ni les alertes. Les
 listes et les compteurs, en revanche, partent **toujours ensemble** — trier fait sortir la
 ligne d'un onglet et entrer dans un autre, et les trois pastilles bougent d'un coup.
+
+`integrations` et `exportKeys` ne croisent aucune racine, et pas davantage l'une
+l'autre : ce que le studio publie à l'extérieur ne change ni un chiffre, ni une alerte,
+ni une file. Une écriture de source n'invalide que `integrations`, une écriture de clé que
+`exportKeys`.
 
 `RECURRING_ROOTS` = `MONEY_ROOTS` + `recurringExpenses` : écrire une règle crée, réécrit
 ou supprime des dépenses, les vues d'argent repartent avec elle. Le contraire n'est pas
@@ -2148,6 +2235,15 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   contredire.
 - **Migration 26** ajoute `ideas.format` (`'video'` par défaut, même `CHECK`) : le carnet
   d'idées suit le menu où on le lit, et toutes les idées déjà notées deviennent des vidéos.
+- **Migration 27** ajoute `integration_settings` (pas de ligne = source active),
+  `integration_credentials` (une ligne par champ, secrets **chiffrés**),
+  `integration_snapshots` (dernier résultat de chaque collecte distante) et `export_keys`
+  (empreinte du jeton seulement).
+- **Un secret stocké en base est chiffré, et sa clé vient de l'environnement.** Le patron
+  est `SecretBox` + `SecretCipher` : seul le use case propriétaire chiffre et déchiffre, le
+  dépôt range des chiffrés, la vue n'expose que la provenance. Les jetons plus anciens
+  (`channels.refresh_token`, `planning_settings.calendar_token`, `ig_accounts.access_token`)
+  sont encore en clair et pourraient y passer.
 - **Migration 25** ajoute `productions.format` (`'video'` par défaut, `CHECK` sur
   `video` / `short`) et son index. Un simple `ALTER` : un `CHECK` sur une colonne ajoutée
   est admis tant que le défaut est une constante, donc aucune reconstruction de table — et
@@ -2847,6 +2943,29 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   Le planning mélange volontairement les deux formats : c'est la seule chose qui les y
   distingue. Ne pas inventer un second pictogramme pour un écran.
 - **`/api/productions/:id/todos` est monté AVANT `/api/productions`** dans `server.ts` : un router de préfixe plus long doit passer en premier, sinon le plus court capte la requête et répond 404. Même vigilance que `/overview` déclaré avant `/:id`.
+- **L'image de l'API est passée d'Alpine à Debian** (`node:24-bookworm-slim`) : Playwright
+  ne fournit ses navigateurs que pour la glibc. Firefox est installé au build
+  (`npx playwright install --with-deps firefox`, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`),
+  soit environ 500 Mo de plus ; `--build-arg INSTALL_BROWSERS=false` redonne une image
+  légère où seules Amazon et Domadoo échouent. **Les imports de Playwright sont
+  dynamiques** (`browser.ts`) : sans navigateur, l'API démarre quand même et la carte de la
+  source dit quoi faire. En local : `npx playwright install firefox`.
+- **Amazon et Domadoo sont du scraping, donc fragiles par nature.** Aucune API n'expose les
+  gains d'un compte Partenaires ni l'espace d'affiliation Domadoo. Les sélecteurs sont repris
+  de l'ancien outil ; un DOM modifié donne une erreur explicite sur la carte, et la dernière
+  valeur reste publiée. Pour Amazon, la double authentification doit avoir l'**application**
+  comme méthode par défaut (pas le SMS) et `AMAZON_SECRET_KEY` est la clé base32, pas un
+  code à six chiffres.
+- **Jamais d'espace insécable littéral dans une source.** `no-irregular-whitespace` le
+  refuse et il est invisible à la relecture — et un outil d'édition qui convertit ` `
+  en caractère réel le réintroduit sans prévenir. `browser.ts` construit sa regex par
+  `String.fromCharCode(0xa0, 0x202f)`.
+- **`?key=` finit dans les journaux de nginx.** Il existe pour les clients qui ne savent pas
+  poser d'en-tête ; Home Assistant sait (`headers:` du capteur `rest`), et l'écran propose
+  l'en-tête.
+- **L'aperçu « Données publiées » de Paramètres → API suit la confidentialité**
+  (`PREVIEW_MASKS`) : un bloc JSON brut contournerait tous les masques, qui ne s'appliquent
+  qu'à ce que l'outil affiche lui-même.
 
 ## PWA
 
@@ -2954,6 +3073,8 @@ Images publiées sur GHCR par `.github/workflows/release.yml` :
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 
-Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`), qui l'emportent sur l'écran. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+
+Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer.
 
 Build local des images : `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build`.

@@ -50,6 +50,11 @@ export const queryKeys = {
 
   instagramOverview: (params: unknown) => ['instagramOverview', params] as const,
   instagramAccounts: (includeArchived: boolean) => ['instagramAccounts', includeArchived] as const,
+
+  // Paramètres → API. Aucune autre racine ne les croise : ce que le studio publie à
+  // l'extérieur ne change ni un chiffre, ni une alerte, ni une file.
+  integrations: () => ['integrations'] as const,
+  exportKeys: () => ['exportKeys'] as const,
 };
 
 /** Racines à invalider après une écriture qui change les chiffres agrégés. */

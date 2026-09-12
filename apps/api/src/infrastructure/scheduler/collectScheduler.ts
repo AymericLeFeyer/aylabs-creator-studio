@@ -72,6 +72,21 @@ export const startCollectScheduler = (container: Container): void => {
       } catch (error) {
         console.error('[cron] collecte des commentaires interrompue :', error);
       }
+
+      try {
+        // En dernier : Amazon et Domadoo ouvrent un navigateur et prennent chacun une
+        // vingtaine de secondes, ils n'ont pas à retarder ce qui alimente les écrans.
+        // YouTube et Instagram n'y figurent pas — l'export les relit depuis la base.
+        const integrations = await container.collectIntegrations.collectAll();
+        for (const result of integrations) {
+          if (result.status === 'ok') console.log(`[cron]   export ${result.provider} à jour`);
+          if (result.status === 'error') {
+            console.warn(`[cron]   export ${result.provider} : ${result.message}`);
+          }
+        }
+      } catch (error) {
+        console.error('[cron] collecte des sources de l’export interrompue :', error);
+      }
     } catch (error) {
       console.error('[cron] collecte interrompue :', error);
     } finally {
@@ -81,6 +96,18 @@ export const startCollectScheduler = (container: Container): void => {
 
   cron.schedule(collectCron, () => void run('planifiée'));
   console.log(`[cron] collecte planifiée (${collectCron})`);
+
+  // Le relevé des ventes Domadoo en attente se pagine et ne bouge pas d'une heure à
+  // l'autre : une fois par nuit suffit. Hors du verrou horaire (il a le sien, dans
+  // `CollectIntegrations`) et décalé de la demi-heure pour ne pas tomber sur 3 h pile.
+  cron.schedule('30 3 * * *', () => {
+    void container.collectIntegrations
+      .collectDomadooSales()
+      .then((result) => {
+        if (result.status === 'error') console.warn(`[cron] ventes Domadoo : ${result.message}`);
+      })
+      .catch((error: unknown) => console.error('[cron] ventes Domadoo interrompues :', error));
+  });
 
   if (collectAtStartup) {
     void run('au démarrage');

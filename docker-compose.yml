@@ -20,6 +20,17 @@ services:
       BACKFILL_DAYS: ${BACKFILL_DAYS:-730}
       # Le front appelle /api en relatif via nginx : aucune origine tierce à autoriser.
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      # Chiffre les mots de passe saisis dans Paramètres -> API (16 caractères minimum,
+      # ex. `openssl rand -base64 32`). La changer rend illisibles ceux déjà enregistrés.
+      SECRETS_KEY: ${SECRETS_KEY:-}
+      # Sources de l'export (facultatif) : l'environnement l'emporte sur l'écran. Mêmes
+      # noms que l'ancien YouTube-Money-Exporter.
+      AMAZON_LOGIN: ${AMAZON_LOGIN:-}
+      AMAZON_PASSWORD: ${AMAZON_PASSWORD:-}
+      AMAZON_SECRET_KEY: ${AMAZON_SECRET_KEY:-}
+      DOMADOO_LOGIN: ${DOMADOO_LOGIN:-}
+      DOMADOO_PASSWORD: ${DOMADOO_PASSWORD:-}
+      DISCORD_SERVER_CODE: ${DISCORD_SERVER_CODE:-}
     volumes:
       - creator-studio-data:/app/data
     # Pas de ports exposés : seul nginx parle à l'API, sur le réseau interne.

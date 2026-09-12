@@ -968,3 +968,17 @@ export const createShotAngleSchema = z.object({
 export const updateShotAngleSchema = createShotAngleSchema.partial().extend({
   isArchived: z.boolean().optional(),
 });
+
+/**
+ * Une source de l'export. `credentials` ne porte que les champs modifiés : absent =
+ * conservé, `null` ou `""` = effacé — la même convention que `refreshToken`, parce qu'un
+ * mot de passe ne se ressaisit pas pour cocher une case.
+ */
+export const updateIntegrationSchema = z.object({
+  enabled: z.boolean().optional(),
+  credentials: z.record(z.string(), z.string().max(500).nullable()).optional(),
+});
+
+export const createExportKeySchema = z.object({
+  label: z.string().trim().min(1, 'Donne un nom à la clé (ex. « Home Assistant »)').max(60),
+});
