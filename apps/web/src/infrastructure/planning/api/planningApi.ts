@@ -23,8 +23,28 @@ export interface ReplanInput {
 }
 
 export const planningApi = {
-  board: (from: string, to: string) =>
-    request<PlanningBoard>('/api/planning/board', { query: { from, to } }),
+  /** `today` vient du navigateur : c'est lui qui dit quelles tâches Todo sont en retard. */
+  board: (from: string, to: string, today: string) =>
+    request<PlanningBoard>('/api/planning/board', { query: { from, to, today } }),
+
+  /** Coche ou décoche une tâche Todo : l'écriture part dans Todo. */
+  setTodoDone: (id: string, done: boolean) =>
+    request<void>(`/api/planning/todo-tasks/${id}/${done ? 'complete' : 'uncomplete'}`, {
+      method: 'POST',
+    }),
+
+  /**
+   * Donne une heure à une tâche Todo. `dueDate` est son échéance actuelle : sur un autre
+   * jour, l'API déplace l'échéance dans Todo.
+   */
+  placeTodo: (
+    id: string,
+    input: { date: string; startTime: string; minutes: number; dueDate: string },
+  ) => request<unknown>(`/api/planning/todo-tasks/${id}/placement`, { method: 'PUT', body: input }),
+
+  /** Retire l'heure : la tâche retourne sous son jour. */
+  unplaceTodo: (id: string) =>
+    request<void>(`/api/planning/todo-tasks/${id}/placement`, { method: 'DELETE' }),
 
   settings: () => request<PlanningSettings>('/api/planning/settings'),
 

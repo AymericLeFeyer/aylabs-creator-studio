@@ -10,6 +10,7 @@ import {
   planTargetsSchema,
   replaceWorkHoursSchema,
   replanSchema,
+  todoPlacementSchema,
 } from '../validation.ts';
 import { param } from '../helpers.ts';
 
@@ -30,7 +31,7 @@ export const planningRouter = (container: Container): Router => {
   /** La grille, ses occupations et la pile de travail, en une requête. */
   router.get('/board', async (req, res) => {
     const query = planningBoardQuerySchema.parse(req.query);
-    res.json(await container.managePlanning.board(query.from, query.to));
+    res.json(await container.managePlanning.board(query.from, query.to, query.today));
   });
 
   // --- Réglages -------------------------------------------------------------
@@ -40,7 +41,14 @@ export const planningRouter = (container: Container): Router => {
   });
 
   router.patch('/settings', (req, res) => {
-    container.planningSettings.update(planningSettingsSchema.parse(req.body));
+    const { todoBaseUrl, todoApiKey, todoTags, ...rest } = planningSettingsSchema.parse(req.body);
+    container.planningSettings.update(rest);
+    // La connexion à Todo passe par son use case : c'est lui, et lui seul, qui chiffre la clé.
+    container.manageTodoTasks.updateConnection({
+      baseUrl: todoBaseUrl,
+      apiKey: todoApiKey,
+      tags: todoTags,
+    });
     res.json(container.managePlanning.settingsView());
   });
 
@@ -178,6 +186,34 @@ export const planningRouter = (container: Container): Router => {
   /** Défait une approbation : la session de travail part, le créneau redevient mobile. */
   router.post('/slots/:id/unapprove', (req, res) => {
     container.managePlanning.unapprove(param(req, 'id'));
+    res.status(204).end();
+  });
+
+  // --- Les tâches de l'app Todo ---------------------------------------------
+
+  /** Cocher : l'écriture part dans Todo, qui reste la source de vérité. */
+  router.post('/todo-tasks/:id/complete', async (req, res) => {
+    await container.manageTodoTasks.setDone(param(req, 'id'), true);
+    res.status(204).end();
+  });
+
+  router.post('/todo-tasks/:id/uncomplete', async (req, res) => {
+    await container.manageTodoTasks.setDone(param(req, 'id'), false);
+    res.status(204).end();
+  });
+
+  /**
+   * Donne une heure à une tâche. Sur un autre jour que son échéance, l'échéance suit dans
+   * Todo. **Rien n'est replanifié** : le prochain « Repositionner » en tiendra compte.
+   */
+  router.put('/todo-tasks/:id/placement', async (req, res) => {
+    const body = todoPlacementSchema.parse(req.body);
+    res.json(await container.manageTodoTasks.place(param(req, 'id'), body));
+  });
+
+  /** Retire l'heure : la tâche retourne sous son jour, sans rien écrire dans Todo. */
+  router.delete('/todo-tasks/:id/placement', (req, res) => {
+    container.manageTodoTasks.unplace(param(req, 'id'));
     res.status(204).end();
   });
 

@@ -1,3 +1,5 @@
+import type { TodoConnectionView } from '../../todoApp/entities/TodoTask.ts';
+
 /**
  * Les réglages du planning : où poser les créneaux, et à quel rythme.
  *
@@ -35,6 +37,8 @@ export interface PlanningSettings {
  */
 export interface PlanningSettingsView extends PlanningSettings {
   hasToken: boolean;
+  /** La connexion à l'app Todo. Sa clé n'en sort jamais, seule sa provenance. */
+  todo: TodoConnectionView;
 }
 
 export type PlanningSettingsInput = Partial<

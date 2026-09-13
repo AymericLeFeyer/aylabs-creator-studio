@@ -802,12 +802,38 @@ export const planningSettingsSchema = z.object({
   breakMinutes: z.number().int().min(0).max(120).optional(),
   horizonDays: z.number().int().min(1).max(120).optional(),
   pushToCalendar: z.boolean().optional(),
+  /** L'app Todo. Absolue, le front complète le `https://` manquant. `null` déconnecte. */
+  todoBaseUrl: z.string().trim().url('Adresse invalide (https://…)').nullable().optional(),
+  /** `""` ou `null` efface la clé, absent la conserve. Chiffrée avant d'être rangée. */
+  todoApiKey: z.string().nullable().optional(),
+  /** Slugs de tags à afficher. Vide = toutes les tâches. */
+  todoTags: z.array(z.string().trim().min(1).max(48)).max(20).optional(),
+});
+
+/**
+ * L'heure donnée à une tâche Todo. `dueDate` est son échéance actuelle : si elle diffère
+ * de `date`, l'échéance est déplacée dans Todo — sinon rien n'y est écrit.
+ */
+export const todoPlacementSchema = z.object({
+  date: isoDate,
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, 'Heure attendue au format HH:MM'),
+  minutes: z
+    .number()
+    .int()
+    .min(5)
+    .max(12 * 60),
+  dueDate: isoDate.nullable().optional(),
 });
 
 /** Fenêtre affichée par l'écran de planning. */
 export const planningBoardQuerySchema = z.object({
   from: isoDate,
   to: isoDate,
+  /**
+   * Le jour qu'il est **pour le navigateur** : c'est lui qui décide quelles tâches Todo
+   * sont en retard. Le serveur tourne en UTC, et à 0 h 30 à Paris il serait encore la veille.
+   */
+  today: isoDate.optional(),
 });
 
 export const planTargetsSchema = z.object({

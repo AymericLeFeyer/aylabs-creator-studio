@@ -1,6 +1,7 @@
 import type { IsoDate } from '../../../shared/dates.ts';
 import { addDays, today } from '../../../shared/dates.ts';
 import { badRequest, conflict, notFound } from '../../../shared/errors.ts';
+import type { ManageTodoTasks } from '../../todoApp/usecases/ManageTodoTasks.ts';
 import type {
   CalendarEvent,
   CalendarRef,
@@ -140,6 +141,8 @@ export class ManagePlanning {
   private readonly manageTodos: ManageTodos;
   private readonly trackTime: TrackTime;
   private readonly makeClient: (baseUrl: string, token: string) => HomeAssistantClient;
+  /** Les tâches de l'app Todo : affichées dans la grille, et leurs heures posées occupent. */
+  private readonly todoTasks: ManageTodoTasks;
 
   constructor(
     items: PlanningItemRepository,
@@ -152,6 +155,7 @@ export class ManagePlanning {
     manageTodos: ManageTodos,
     trackTime: TrackTime,
     makeClient: (baseUrl: string, token: string) => HomeAssistantClient,
+    todoTasks: ManageTodoTasks,
   ) {
     this.items = items;
     this.workHours = workHours;
@@ -163,13 +167,18 @@ export class ManagePlanning {
     this.manageTodos = manageTodos;
     this.trackTime = trackTime;
     this.makeClient = makeClient;
+    this.todoTasks = todoTasks;
   }
 
   // --- Réglages -------------------------------------------------------------
 
   /** Les réglages **sans le jeton** : il ne sort jamais de l'API. */
   settingsView(): PlanningSettingsView {
-    return { ...this.settings.get(), hasToken: this.settings.token() !== null };
+    return {
+      ...this.settings.get(),
+      hasToken: this.settings.token() !== null,
+      todo: this.todoTasks.view(),
+    };
   }
 
   private client(): HomeAssistantClient | null {
@@ -461,7 +470,14 @@ export class ManagePlanning {
       .filter((task) => task.minutes > 0);
 
     const external = await this.readCalendar(from, to);
-    const busy = [...external.blocks, ...this.immovableBusy(from, to, mode)];
+    // Une tâche Todo posée à une heure occupe cette heure, exactement comme un rendez-vous :
+    // on l'a placée là, le moteur n'a pas à y mettre un montage par-dessus. Lue en base
+    // locale, sans appel à Todo — un replan ne doit pas dépendre d'une autre machine.
+    const busy = [
+      ...external.blocks,
+      ...this.immovableBusy(from, to, mode),
+      ...this.todoTasks.busyBlocks(from, to),
+    ];
 
     const result = schedule({
       from,
@@ -1024,10 +1040,15 @@ export class ManagePlanning {
   // --- Lecture --------------------------------------------------------------
 
   /** Tout l'écran de planning en une requête : la grille, ses occupations et la pile. */
-  async board(from: IsoDate, to: IsoDate): Promise<PlanningBoard> {
+  async board(from: IsoDate, to: IsoDate, todayDate: IsoDate = today()): Promise<PlanningBoard> {
     const workHours = this.workHoursMap();
     const slots = this.slots.findAll({ range: { from, to } });
-    const external = await this.readCalendar(from, to);
+    // Les deux sources externes sont lues en même temps : elles ne dépendent pas l'une de
+    // l'autre, et une instance lente ne doit pas faire attendre la seconde.
+    const [external, todo] = await Promise.all([
+      this.readCalendar(from, to),
+      this.todoTasks.forBoard(from, to, todayDate),
+    ]);
 
     const eventsByDate = new Map<IsoDate, CalendarEvent[]>();
     for (const event of external.events) {
@@ -1052,6 +1073,7 @@ export class ManagePlanning {
         windows: workHours.get(weekdayOf(cursor)) ?? [],
         slots: daySlots,
         events: eventsByDate.get(cursor) ?? [],
+        tasks: todo.byDate.get(cursor) ?? [],
         suggestedMinutes: daySlots
           .filter((slot) => !slot.done)
           .reduce((sum, slot) => sum + slotMinutes(slot), 0),
@@ -1070,6 +1092,7 @@ export class ManagePlanning {
       calendarConnected: external.connected,
       calendarError: external.error,
       hasWorkHours: workHours.size > 0,
+      todo: { connected: todo.connected, error: todo.error },
     };
   }
 

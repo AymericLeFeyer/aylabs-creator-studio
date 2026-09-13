@@ -57,12 +57,67 @@ export interface PlanningSettings {
   pushToCalendar: boolean;
   /** Le jeton lui-même ne sort jamais de l'API : seul le fait qu'il existe est exposé. */
   hasToken: boolean;
+  /** La connexion à l'app Todo. Sa clé ne sort jamais de l'API, seule sa provenance. */
+  todo: TodoConnection;
   updatedAt: string;
 }
 
+export interface TodoConnection {
+  baseUrl: string | null;
+  /** L'adresse vient de `TODO_BASE_URL` : elle ne se change pas depuis l'écran. */
+  baseUrlFromEnv: boolean;
+  /** `unreadable` = chiffrée avec une autre `SECRETS_KEY`, à ressaisir. */
+  keySource: 'env' | 'app' | 'unreadable' | null;
+  /** Slugs de tags filtrés. Vide = toutes les tâches. */
+  tags: string[];
+  secretsKeyConfigured: boolean;
+}
+
 export type PlanningSettingsInput = Partial<
-  Omit<PlanningSettings, 'hasToken' | 'updatedAt'> & { calendarToken: string | null }
+  Omit<PlanningSettings, 'hasToken' | 'updatedAt' | 'todo'> & {
+    calendarToken: string | null;
+    todoBaseUrl: string | null;
+    /** `""` efface la clé, absent la conserve. */
+    todoApiKey: string | null;
+    todoTags: string[];
+  }
 >;
+
+export interface TodoTag {
+  name: string;
+  slug: string;
+  color: string;
+}
+
+/**
+ * Une tâche de l'app Todo, rangée sous le jour où elle s'affiche.
+ *
+ * Todo reste la source de vérité : cocher ici coche là-bas. Seule l'**heure** vit dans le
+ * studio (`placement`) — Todo n'a qu'un jour et une durée.
+ */
+export interface TodoTask {
+  id: string;
+  title: string;
+  /** L'échéance réelle dans Todo — une tâche en retard s'affiche pourtant sous aujourd'hui. */
+  dueDate: string;
+  /** 15, 30 ou 60 : l'estimation saisie dans Todo. */
+  duration: number | null;
+  done: boolean;
+  overdue: boolean;
+  tags: TodoTag[];
+  /** `null` = « à caler » : sous le jour, sans heure. */
+  placement: { startTime: string; minutes: number } | null;
+}
+
+/** Durée d'un bloc quand Todo n'en donne pas. Même valeur que l'API. */
+export const DEFAULT_TODO_MINUTES = 30;
+
+/** La durée du bloc d'une tâche : celle posée dans le planning, sinon l'estimation de Todo. */
+export const todoMinutes = (task: TodoTask): number =>
+  task.placement?.minutes ?? task.duration ?? DEFAULT_TODO_MINUTES;
+
+/** La couleur d'une tâche : celle de son premier tag, comme dans l'app Todo. */
+export const todoColor = (task: TodoTask): string => task.tags[0]?.color ?? '#3b82f6';
 
 export interface CalendarRef {
   id: string;
@@ -124,6 +179,8 @@ export interface PlanningDay {
   windows: Interval[];
   slots: ProductionSlot[];
   events: CalendarEvent[];
+  /** Les tâches Todo de ce jour, placées ou à caler. Celles en retard sont sous aujourd'hui. */
+  tasks: TodoTask[];
   suggestedMinutes: number;
   approvedMinutes: number;
 }
@@ -160,6 +217,8 @@ export interface PlanningBoard {
   calendarConnected: boolean;
   calendarError: string | null;
   hasWorkHours: boolean;
+  /** L'app Todo : `connected` à `false` tant qu'aucune adresse n'est réglée. */
+  todo: { connected: boolean; error: string | null };
 }
 
 export interface PlanTargetsInput {
@@ -255,6 +314,12 @@ export const dayBounds = (days: PlanningDay[]): Interval => {
       if (event.allDay || event.start === null || event.end === null) continue;
       start = Math.min(start, event.start);
       end = Math.max(end, event.end);
+    }
+    for (const task of day.tasks) {
+      if (!task.placement) continue;
+      const taskStart = toMinutes(task.placement.startTime);
+      start = Math.min(start, taskStart);
+      end = Math.max(end, taskStart + task.placement.minutes);
     }
   }
 

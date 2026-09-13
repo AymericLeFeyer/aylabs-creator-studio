@@ -102,7 +102,8 @@ Les deux applications suivent la même découpe.
 ```
 apps/api/src/
 ├── domain/          channel, metrics, category, revenue, expense, video, analytics,
-│                    brand, production, product, sponsorship, idea, legal, integration
+│                    brand, production, product, sponsorship, idea, legal, integration,
+│                    todoApp
 │   └── <domaine>/{entities,repositories,services}    # repositories = interfaces seules
 ├── application/<domaine>/usecases/
 ├── infrastructure/
@@ -1170,6 +1171,53 @@ Une lecture d'agenda qui échoue **ne fait pas échouer le planning** : la grill
 occupations externes, avec `calendarError` renseigné. Une page vide dirait moins qu'une
 page qui prévient qu'elle est incomplète.
 
+### `todoApp` — les tâches de l'app Todo dans le planning
+
+L'app Todo (dépôt voisin `../todo`, Fastify + SQLite, API REST) porte les tâches du
+quotidien, avec un **jour** (`dueDate`) et une **durée** (15 | 30 | 60 | `null`), mais
+**pas d'heure**. Le planning les affiche sous chaque jour et permet de leur en donner une.
+
+**Todo reste la source de vérité.** Rien n'est copié : `ManageTodoTasks.forBoard` relit
+l'API à chaque ouverture du board, et cocher ici coche là-bas
+(`POST /api/tasks/:id/complete`). Le studio ne possède que l'**heure** :
+`TodoPlacement { taskId, date, startTime, minutes }`, table `todo_placements`
+(migration 28), une ligne par tâche placée.
+
+Trois règles, toutes dans `ManageTodoTasks` :
+
+- **Une tâche en retard s'affiche sous aujourd'hui**, comme dans l'app Todo
+  (`TodoTaskView.overdue`, `dueDate` gardant l'échéance réelle). « Aujourd'hui » vient du
+  navigateur (`?today=` sur `/board`) — le serveur est en UTC. Deux lectures : tout ce qui
+  est daté dans la période (faites comprises, affichées barrées), puis, si aujourd'hui est
+  à l'écran, les tâches **ouvertes** datées d'avant la période.
+- **Poser une tâche sur un autre jour déplace son échéance dans Todo** (`PATCH dueDate`),
+  **avant** d'écrire le placement : si Todo refuse, rien n'est posé. `date` d'un placement
+  vaut donc toujours l'échéance de la tâche.
+- **Un placement périmé se nettoie à la lecture** : tâche reportée ou supprimée depuis
+  l'app → son heure n'a plus d'objet. Aucune clé étrangère n'est possible (autre base).
+  **Seule une lecture réussie nettoie** : une Todo injoignable ne doit rien effacer.
+
+**Une tâche placée occupe son heure pour le moteur** (`busyBlocks`, ajouté aux occupations
+de `replan`), lu en **base locale** : un replan ne dépend jamais d'une autre machine. Une
+tâche faite continue d'occuper — le temps a été pris.
+
+Connexion : `todo_base_url`, `todo_api_key`, `todo_tags` sur `planning_settings`. La clé
+est **chiffrée** par `SecretBox` (contexte `todo:apiKey`), la même instance que l'export ;
+seul `ManageTodoTasks` chiffre et déchiffre. Elle est **facultative** : une instance Todo
+sans `APP_PASSWORD` répond sans clé. `TODO_BASE_URL` / `TODO_API_KEY` l'emportent sur
+l'écran (409 si on tente de les changer depuis l'écran). `PlanningSettingsView.todo`
+(`TodoConnectionView`) n'expose que la provenance de la clé (`env | app | unreadable | null`).
+`todo_tags` filtre par tag (`tagsMode=any`) ; Todo convertit lui-même les noms en slugs.
+
+Côté grille (`PlanningGrid`) : une rangée « Todo » sous les en-têtes (tâches **sans heure**,
+case à cocher, durée, retard en rouge), et les tâches placées en blocs dans les colonnes.
+Les blocs Todo réutilisent **les mêmes états de geste** que les créneaux (`drag`, `resize`),
+avec une clé préfixée `todo:` — donc les mêmes repères (heure dans la gouttière, trait de
+visée). Le dépôt venu de la rangée passe par le même mécanisme que la pile : la prop
+`pendingItem` est devenue `pendingGhost { label, color }`, alimentée par l'écran avec une
+ligne de pile **ou** une tâche Todo. Allonger un bloc ne change que `minutes` dans le studio :
+Todo ne connaît que 15/30/60.
+
 ### `instagram` — le rythme de publication
 
 Un domaine **à part** et non une `channel` de plus. Une chaîne YouTube et un compte
@@ -1516,7 +1564,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/legal/bookmarks`                              | Créer. `url` doit être **absolue** (le front complète le `https://` manquant)                                                                                                                              |
 | `PATCH`  | `/api/legal/bookmarks/:id`                          | Modifier / réordonner                                                                                                                                                                                      |
 | `DELETE` | `/api/legal/bookmarks/:id`                          | Supprimer (pas d'archivage : rien n'en dépend)                                                                                                                                                             |
-| `GET`    | `/api/planning/board`                               | Grille, occupations et pile de travail en une requête. Params `from`, `to` (obligatoires)                                                                                                                  |
+| `GET`    | `/api/planning/board`                               | Grille, occupations, pile et tâches Todo en une requête. Params `from`, `to` (obligatoires), `today` (jour local, décide des tâches Todo en retard)                                                                                                                  |
 | `GET`    | `/api/planning/settings`                            | Réglages. **Le jeton n'en sort jamais**, remplacé par `hasToken`                                                                                                                                           |
 | `PATCH`  | `/api/planning/settings`                            | Modifier. `calendarToken: ""` efface, absent conserve                                                                                                                                                      |
 | `GET`    | `/api/planning/calendars`                           | Entités calendrier de l'instance. 400 tant qu'aucune connexion n'est configurée                                                                                                                            |
@@ -1531,6 +1579,9 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/planning/replan`                              | Repositionner. `onlyDate` = une seule colonne, sinon tout l'horizon                                                                                                                                        |
 | `POST`   | `/api/planning/slots/:id/approve`                   | `{ finished, minutes?, startTime? }` — `startTime` pour un créneau posé sans horaire. `finished` **obligatoire**. Crée la session, fige et redimensionne le créneau, publie dans l'agenda ; renvoie `{ next }`, le créneau reposé si le travail continue                                     |
 | `POST`   | `/api/planning/slots/:id/unapprove`                 | Défaire : la session part, le créneau redevient mobile                                                                                                                                                     |
+| `POST`   | `/api/planning/todo-tasks/:id/complete`             | Coche la tâche **dans Todo**. `/uncomplete` la décoche. 204 |
+| `PUT`    | `/api/planning/todo-tasks/:id/placement`            | `{ date, startTime, minutes, dueDate? }` → donne une heure. `dueDate` ≠ `date` déplace l'échéance dans Todo. Ne replanifie rien |
+| `DELETE` | `/api/planning/todo-tasks/:id/placement`            | Retire l'heure : la tâche retourne sous son jour. Rien n'est écrit dans Todo |
 | `POST`   | `/api/planning/time-entries/:id/slot`               | Transforme une session de travail en créneau approuvé. `{ date, startTime }` **fournis par le client** (le serveur est en UTC). 409 si la session tourne encore ou a déjà son créneau                      |
 | `POST`   | `/api/production-time/:id/stop`                     | Arrête le chronomètre. `{ startDate, startTime }` **locaux** posent son créneau quand il n'en avait pas, et le publient dans l'agenda. Rend `{ entry, completable }`                                       |
 | `POST`   | `/api/production-time`                              | Saisie manuelle `{ productionId, startedAt, minutes, stepId?, todoId?, notes?, date?, startTime? }`. `date`/`startTime` **locaux** posent le créneau approuvé dans le planning et l'agenda |
@@ -2164,6 +2215,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `usePrivacy` / `PrivacyProvider`                                                                                                                                                                                                                                                                                              | `presentation/hooks/usePrivacy.tsx`                   | Ce qui est masqué, et les formateurs qui l'appliquent. Persisté en localStorage (`acs.privacy`)      |
 | `AppBarActions` / `AppBarProvider`                                                                                                                                                                                                                                                                                            | `presentation/hooks/useAppBar.tsx`                    | Portail vers les actions de la barre d'application mobile                                            |
 | `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useRemovePlanningItem`, `useClearPlanningItems`, `usePlaceItem`                                                                                                                                               | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                  |
+| `useToggleTodoTask`, `usePlaceTodoTask`, `useUnplaceTodoTask` | `application/planning/usecases/usePlanning.ts` | Tâches Todo du planning. N'invalident **que** `planningBoard` : une coche Todo ne touche ni la pile ni la file |
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                                                                                                                                                      | idem                                                  | Horaires de travail et connexion à l'agenda                                                         |
 | `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                                                                                       | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                               |
 | `useSlotFromTimeEntry`                                                                                                                                                                                                                                                                                                         | idem                                                  | Transforme une session de travail en créneau approuvé                                               |
@@ -2242,6 +2294,9 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   contredire.
 - **Migration 26** ajoute `ideas.format` (`'video'` par défaut, même `CHECK`) : le carnet
   d'idées suit le menu où on le lit, et toutes les idées déjà notées deviennent des vidéos.
+- **Migration 28** ajoute `planning_settings.todo_base_url`, `todo_api_key` (chiffrée),
+  `todo_tags`, et la table `todo_placements` (l'heure donnée à une tâche Todo, sans clé
+  étrangère : la tâche vit dans une autre base).
 - **Migration 27** ajoute `integration_settings` (pas de ligne = source active),
   `integration_credentials` (une ligne par champ, secrets **chiffrés**),
   `integration_snapshots` (dernier résultat de chaque collecte distante) et `export_keys`
@@ -3080,7 +3135,7 @@ Images publiées sur GHCR par `.github/workflows/release.yml` :
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 
-Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`), qui l'emportent sur l'écran. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
 
 Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer.
 

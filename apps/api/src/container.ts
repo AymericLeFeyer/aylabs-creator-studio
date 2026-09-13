@@ -61,6 +61,10 @@ import { DiscordClient } from './infrastructure/integration/api/DiscordClient.ts
 import { ManageIntegrations } from './application/integration/usecases/ManageIntegrations.ts';
 import { CollectIntegrations } from './application/integration/usecases/CollectIntegrations.ts';
 import { GetExport } from './application/integration/usecases/GetExport.ts';
+import { ManageTodoTasks } from './application/todoApp/usecases/ManageTodoTasks.ts';
+import { SqliteTodoPlacementRepository } from './infrastructure/todoApp/repositories/SqliteTodoPlacementRepository.ts';
+import { SqliteTodoConnectionRepository } from './infrastructure/todoApp/repositories/SqliteTodoConnectionRepository.ts';
+import { TodoAppClient } from './infrastructure/todoApp/api/TodoAppClient.ts';
 
 export interface Container {
   db: DatabaseSync;
@@ -159,6 +163,11 @@ export interface Container {
   collectIntegrations: CollectIntegrations;
   /** Ce que lit Home Assistant sur `/api/export`. Ne collecte jamais rien. */
   getExport: GetExport;
+  /**
+   * Les tâches de l'app Todo dans le planning : lecture, coches, heures posées. Seul
+   * point où la clé API de Todo est chiffrée ou déchiffrée.
+   */
+  manageTodoTasks: ManageTodoTasks;
 }
 
 /** Assemble les implémentations concrètes derrière les interfaces du domaine. */
@@ -214,13 +223,24 @@ export const buildContainer = (config: Config): Container => {
   const syncRecurringExpenses = new SyncRecurringExpenses(recurringExpenses, expenses);
   syncRecurringExpenses.execute();
 
+  // Un seul coffre pour tous les secrets saisis à l'écran : même clé, même format.
+  const secrets = new SecretBox(config.secretsKey);
+
   const integrations = new SqliteIntegrationRepository(db);
   const manageIntegrations = new ManageIntegrations(
     integrations,
     new SqliteExportKeyRepository(db),
     new SqliteLocalSourceRepository(db),
-    new SecretBox(config.secretsKey),
+    secrets,
     config.integrationEnv,
+  );
+
+  const manageTodoTasks = new ManageTodoTasks(
+    new SqliteTodoPlacementRepository(db),
+    new SqliteTodoConnectionRepository(db),
+    secrets,
+    { baseUrl: config.todoBaseUrl, apiKey: config.todoApiKey },
+    (baseUrl, apiKey) => new TodoAppClient(baseUrl, apiKey),
   );
 
   return {
@@ -285,6 +305,7 @@ export const buildContainer = (config: Config): Container => {
       manageTodos,
       trackTime,
       (baseUrl, token) => new HomeAssistantClient(baseUrl, token),
+      manageTodoTasks,
     ),
     syncRecurringExpenses,
     getLegalOverview: new GetLegalOverview(company, legalObligations),
@@ -318,5 +339,6 @@ export const buildContainer = (config: Config): Container => {
       discord: new DiscordClient(),
     }),
     getExport: new GetExport(integrations, manageIntegrations),
+    manageTodoTasks,
   };
 };

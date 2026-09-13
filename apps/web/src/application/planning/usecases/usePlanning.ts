@@ -33,10 +33,13 @@ const usePlanningMutation = <TVariables, TData>(
 };
 
 /** La grille, ses occupations et la pile de travail, en une requête. */
-export const usePlanningBoard = (from: string, to: string) =>
-  useQuery({
-    queryKey: queryKeys.planningBoard({ from, to }),
-    queryFn: () => planningApi.board(from, to),
+export const usePlanningBoard = (from: string, to: string) => {
+  // Le jour d'ici fait partie de la clé : passé minuit, les tâches Todo d'hier non faites
+  // deviennent « en retard » et changent de colonne.
+  const today = localToday();
+  return useQuery({
+    queryKey: queryKeys.planningBoard({ from, to, today }),
+    queryFn: () => planningApi.board(from, to, today),
     // Le planning se lit à côté d'un agenda ouvert ailleurs : une donnée d'une minute
     // est déjà trop vieille pour décider quoi faire maintenant.
     staleTime: 30_000,
@@ -51,6 +54,43 @@ export const usePlanningBoard = (from: string, to: string) =>
      */
     placeholderData: (previous) => previous,
   });
+};
+
+/**
+ * Les écritures sur les tâches Todo n'invalident **que la grille**.
+ *
+ * Une coche ou une heure posée ne touche ni la pile, ni la file de production, ni les
+ * compteurs de temps : repartir sur toutes les racines du planning ferait clignoter la
+ * file pour une case cochée dans une autre application.
+ */
+const useTodoMutation = <TVariables, TData>(
+  mutationFn: (variables: TVariables) => Promise<TData>,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['planningBoard'] }),
+  });
+};
+
+/** Coche ou décoche une tâche Todo. */
+export const useToggleTodoTask = () =>
+  useTodoMutation((input: { id: string; done: boolean }) =>
+    planningApi.setTodoDone(input.id, input.done),
+  );
+
+/** Donne une heure à une tâche Todo, ou la déplace. */
+export const usePlaceTodoTask = () =>
+  useTodoMutation(
+    (input: { id: string; date: string; startTime: string; minutes: number; dueDate: string }) => {
+      const { id, ...rest } = input;
+      return planningApi.placeTodo(id, rest);
+    },
+  );
+
+/** Renvoie une tâche Todo sous son jour, sans heure. */
+export const useUnplaceTodoTask = () =>
+  useTodoMutation((id: string) => planningApi.unplaceTodo(id));
 
 export const usePlanningItems = () =>
   useQuery({

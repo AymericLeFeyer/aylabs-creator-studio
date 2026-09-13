@@ -1273,6 +1273,33 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 28,
+    name: 'todo_link',
+    // Les taches de l'app Todo, affichees dans le planning.
+    //
+    // - La connexion vit sur "planning_settings", ligne unique, a cote de celle de
+    //   l'agenda : c'est le meme ecran et la meme question. La cle API y est CHIFFREE
+    //   (SecretBox, cle SECRETS_KEY hors de la base), comme les secrets de l'export.
+    // - "todo_placements" porte l'HEURE donnee a une tache. L'app Todo n'a qu'un jour et
+    //   une duree : l'heure n'existe que dans le planning, et c'est donc ici qu'elle se
+    //   range. Pas de cle etrangere possible, la tache vit dans une autre base ; un
+    //   placement dont la tache a change de jour ou disparu est nettoye a la lecture.
+    up: `
+      ALTER TABLE planning_settings ADD COLUMN todo_base_url TEXT;
+      ALTER TABLE planning_settings ADD COLUMN todo_api_key TEXT;
+      ALTER TABLE planning_settings ADD COLUMN todo_tags TEXT NOT NULL DEFAULT '';
+
+      CREATE TABLE todo_placements (
+        task_id    TEXT PRIMARY KEY,
+        date       TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        minutes    INTEGER NOT NULL CHECK (minutes > 0),
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_todo_placements_date ON todo_placements (date);
+    `,
+  },
 ];
 
 /**

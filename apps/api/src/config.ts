@@ -44,6 +44,12 @@ export interface Config {
    * l'emportent sur ce qui est saisi à l'écran.
    */
   integrationEnv: Record<string, string | null>;
+  /**
+   * L'app Todo affichée dans le planning. Facultatives : elles l'emportent sur ce qui est
+   * saisi dans Paramètres → Planning, comme les identifiants de l'export.
+   */
+  todoBaseUrl: string | null;
+  todoApiKey: string | null;
 }
 
 export const loadConfig = (): Config => ({
@@ -65,4 +71,6 @@ export const loadConfig = (): Config => ({
     .filter(Boolean),
   secretsKey: optional('SECRETS_KEY'),
   integrationEnv: Object.fromEntries(INTEGRATION_ENV_VARS.map((key) => [key, optional(key)])),
+  todoBaseUrl: optional('TODO_BASE_URL')?.replace(/\/+$/, '') ?? null,
+  todoApiKey: optional('TODO_API_KEY'),
 });

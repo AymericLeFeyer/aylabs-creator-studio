@@ -4,6 +4,7 @@ import type { ProductionSlotView } from '../../production/entities/ProductionSlo
 import type { CalendarEvent } from './CalendarEvent.ts';
 import type { PlanningItemView } from './PlanningItem.ts';
 import type { Interval } from '../services/scheduler.ts';
+import type { TodoTaskView } from '../../todoApp/entities/TodoTask.ts';
 
 /**
  * Une journée du planning, telle que l'écran la dessine : les plages où l'on travaille,
@@ -19,6 +20,11 @@ export interface PlanningDay {
   slots: ProductionSlotView[];
   /** Événements de l'agenda externe. Lecture seule : on ne les touche jamais. */
   events: CalendarEvent[];
+  /**
+   * Les tâches de l'app Todo qui tombent ce jour-là — placées dans la journée ou « à
+   * caler ». Celles en retard sont rangées sous aujourd'hui.
+   */
+  tasks: TodoTaskView[];
   /** Minutes de travail suggérées et pas encore approuvées. */
   suggestedMinutes: number;
   /** Minutes approuvées : du temps réellement passé. */
@@ -74,4 +80,9 @@ export interface PlanningBoard {
   calendarError: string | null;
   /** Aucune plage travaillable configurée : le moteur n'a nulle part où poser. */
   hasWorkHours: boolean;
+  /**
+   * L'app Todo. `connected` à `false` tant qu'aucune adresse n'est réglée ; une lecture
+   * qui échoue ne fait pas échouer le planning, elle remplit `error`.
+   */
+  todo: { connected: boolean; error: string | null };
 }

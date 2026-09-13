@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, Clock, ExternalLink, Play, Timer, Trash2, Undo2, Video, Wand2 } from 'lucide-react';
+import {
+  Check,
+  Clock,
+  ExternalLink,
+  ListTodo,
+  Play,
+  Timer,
+  Trash2,
+  Undo2,
+  Video,
+  Wand2,
+  X,
+} from 'lucide-react';
 import { FormatIcon } from '../production/FormatIcon.tsx';
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
 import {
@@ -9,12 +21,14 @@ import {
   toMinutes,
   toTime,
   WEEKDAY_SHORT,
+  todoColor,
   type PlanningDay,
-  type PlanningItem,
   type PlanningProductionSpan,
+  type TodoTask,
 } from '../../../domain/planning/entities/Planning.ts';
 import { STATUS_LABELS } from '../../../domain/production/entities/Production.ts';
 import { Button } from '../ui/button.tsx';
+import { Checkbox } from '../ui/checkbox.tsx';
 import { cn } from '../../../shared/cn.ts';
 import { readableTextColor } from '../../../shared/contrast.ts';
 
@@ -56,13 +70,27 @@ export interface PlanningGridProps {
    */
   onResize: (slot: ProductionSlot, endMinutes: number) => void;
   /**
-   * La tâche que l'on est en train de faire glisser depuis la pile « En cours ».
+   * Ce que l'on est en train de faire glisser vers la grille : une ligne de la pile
+   * « En cours », ou une tâche Todo attrapée sous son jour.
    *
    * La grille est la seule à connaître sa propre géométrie : c'est donc elle qui suit le
-   * pointeur, dessine le bloc fantôme et résout le jour et l'heure visés. La pile, elle,
-   * ne fait que dire ce qu'on a attrapé.
+   * pointeur, dessine le bloc fantôme et résout le jour et l'heure visés. L'écran, lui,
+   * ne fait que dire ce qu'on a attrapé — d'où ce seul libellé et cette seule couleur.
    */
-  pendingItem?: PlanningItem | null;
+  pendingGhost?: { label: string; color: string } | null;
+  /** La tâche Todo en cours de glissement : sa pastille s'efface pendant le geste. */
+  pendingTaskId?: string | null;
+  /** Todo est branché : la rangée des tâches s'affiche, même vide. */
+  todoConnected?: boolean;
+  onToggleTask?: (task: TodoTask, done: boolean) => void;
+  /** Une tâche « à caler » vient d'être attrapée pour recevoir une heure. */
+  onPickTask?: (task: TodoTask) => void;
+  /** Une tâche placée a été glissée ailleurs — autre heure, ou autre jour. */
+  onMoveTask?: (task: TodoTask, date: string, startMinutes: number) => void;
+  /** Une tâche placée a été allongée ou raccourcie par son bord bas. */
+  onResizeTask?: (task: TodoTask, minutes: number) => void;
+  /** Retirer l'heure : la tâche retourne sous son jour. */
+  onUnplaceTask?: (task: TodoTask) => void;
   /** Durée du créneau qui sera posé — celle du fantôme, pour qu'il ne saute pas. */
   pendingMinutes?: number;
   /** Le pointeur a été relâché sur la grille : on pose le créneau. */
@@ -147,8 +175,15 @@ export const PlanningGrid = ({
   onEditTime,
   onReorganizeDay,
   onResize,
-  pendingItem = null,
+  pendingGhost = null,
   pendingMinutes = 60,
+  pendingTaskId = null,
+  todoConnected = false,
+  onToggleTask,
+  onPickTask,
+  onMoveTask,
+  onResizeTask,
+  onUnplaceTask,
   onExternalDrop,
   onExternalCancel,
   runningEntryId = null,
@@ -326,6 +361,65 @@ export const PlanningGrid = ({
   };
 
   /**
+   * Les tâches Todo posées dans la journée se déplacent et s'allongent comme un créneau.
+   *
+   * Elles réutilisent **les mêmes états de geste**, et donc les mêmes repères : heure dans
+   * la gouttière, trait de visée, colonne éclairée. Leur clé est préfixée (`todo:`) —
+   * aucun identifiant de créneau ne la porte, les deux familles ne se confondent pas.
+   */
+  const taskKey = (task: TodoTask) => `todo:${task.id}`;
+
+  const startTaskDrag = (event: React.PointerEvent, task: TodoTask, date: string) => {
+    if (!task.placement) return;
+    const container = columnsRef.current?.getBoundingClientRect();
+    if (!container) return;
+
+    const block = event.currentTarget as HTMLElement;
+    block.setPointerCapture(event.pointerId);
+    const rect = block.getBoundingClientRect();
+    const index = days.findIndex((day) => day.date === date);
+
+    setDrag({
+      slotId: taskKey(task),
+      grabOffset: event.clientY - rect.top,
+      originIndex: index,
+      targetIndex: index,
+      columnWidth: container.width / Math.max(1, days.length),
+      startMinutes: toMinutes(task.placement.startTime),
+      durationMinutes: task.placement.minutes,
+    });
+  };
+
+  const endTaskDrag = (task: TodoTask, date: string) => {
+    if (!drag || drag.slotId !== taskKey(task) || !task.placement) return;
+    const target = days[drag.targetIndex]?.date ?? date;
+    if (target !== date || drag.startMinutes !== toMinutes(task.placement.startTime)) {
+      onMoveTask?.(task, target, drag.startMinutes);
+    }
+    setDrag(null);
+  };
+
+  const startTaskResize = (event: React.PointerEvent, task: TodoTask) => {
+    if (!task.placement) return;
+    // Même raison que pour un créneau : sans lui, le geste déplacerait aussi le bloc.
+    event.stopPropagation();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    const start = toMinutes(task.placement.startTime);
+    setResize({
+      slotId: taskKey(task),
+      startMinutes: start,
+      endMinutes: start + task.placement.minutes,
+    });
+  };
+
+  const endTaskResize = (task: TodoTask) => {
+    if (!resize || resize.slotId !== taskKey(task) || !task.placement) return;
+    const minutes = resize.endMinutes - resize.startMinutes;
+    if (minutes !== task.placement.minutes) onResizeTask?.(task, minutes);
+    setResize(null);
+  };
+
+  /**
    * Le dépôt d'une tâche venue de la pile.
    *
    * Les écouteurs sont sur `window` et non sur la grille : le geste a commencé dans un
@@ -336,7 +430,7 @@ export const PlanningGrid = ({
    * rien poser, et c'est plus clair que de rabattre le bloc sur le bord le plus proche.
    */
   useEffect(() => {
-    if (!pendingItem) return;
+    if (!pendingGhost) return;
 
     const resolve = (clientX: number, clientY: number): GhostState | null => {
       const container = columnsRef.current?.getBoundingClientRect();
@@ -386,7 +480,7 @@ export const PlanningGrid = ({
       window.removeEventListener('pointercancel', onPointerUp);
     };
   }, [
-    pendingItem,
+    pendingGhost,
     days,
     bounds.start,
     bounds.end,
@@ -402,7 +496,7 @@ export const PlanningGrid = ({
    * reviendrait à écrire un état pendant un effet, ce que la règle `set-state-in-effect`
    * du projet refuse. Le lire à travers `pendingItem` revient au même et ne coûte rien.
    */
-  const activeGhost = pendingItem ? ghost : null;
+  const activeGhost = pendingGhost ? ghost : null;
 
   return (
     /**
@@ -613,6 +707,86 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                       ))}
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Les tâches de l'app Todo encore sans heure, sous leur jour.
+
+              Elles se lisent comme une liste de courses de la journée : cochées ici, elles
+              le sont dans Todo. On en attrape une pour la glisser dans la grille quand on
+              veut lui réserver un moment — mais rien ne l'impose : « appeler le comptable »
+              n'a souvent pas besoin d'une heure. La hauteur est bornée et défile : trente
+              tâches sur un lundi ne doivent pas pousser la grille horaire hors de l'écran. */}
+          {todoConnected && (
+            <div className="flex border-b border-border">
+              <div
+                className="sticky left-0 z-10 flex w-14 shrink-0 items-start justify-center bg-card pt-1.5 text-muted-foreground"
+                title="Tâches Todo sans heure"
+              >
+                <ListTodo className="h-4 w-4" aria-hidden />
+                <span className="sr-only">Todo</span>
+              </div>
+              <div className="flex flex-1">
+                {days.map((day) => {
+                  const loose = day.tasks.filter((task) => task.placement === null);
+                  return (
+                    <div
+                      key={day.date}
+                      className={cn(
+                        'min-w-0 flex-1 border-l border-border px-1 py-1',
+                        day.date === today && 'bg-[var(--today)]/10',
+                      )}
+                    >
+                      <div className="max-h-28 space-y-0.5 overflow-y-auto">
+                        {loose.map((task) => (
+                          <div
+                            key={task.id}
+                            // Toute la pastille est la poignée, comme une ligne de la pile.
+                            // Une tâche faite ne se place plus : il n'y a plus rien à caler.
+                            onPointerDown={() => {
+                              if (!task.done) onPickTask?.(task);
+                            }}
+                            className={cn(
+                              'flex min-w-0 items-center gap-1 rounded border-l-2 bg-muted/40 px-1 py-0.5 text-[11px]',
+                              task.done ? 'opacity-50' : 'cursor-grab active:cursor-grabbing',
+                              pendingTaskId === task.id && 'opacity-40',
+                            )}
+                            style={{ borderLeftColor: todoColor(task) }}
+                            title={`${task.title}${
+                              task.overdue
+                                ? ` — en retard, prévue le ${task.dueDate.slice(8, 10)}/${task.dueDate.slice(5, 7)}`
+                                : ''
+                            }${task.done ? '' : '\nGlisser dans la journée pour lui donner une heure'}`}
+                          >
+                            <Checkbox
+                              className="h-3.5 w-3.5"
+                              checked={task.done}
+                              // Sans ça, cocher démarrerait un glissement.
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onCheckedChange={(value) => onToggleTask?.(task, value === true)}
+                              aria-label={`Terminer « ${task.title} »`}
+                            />
+                            <span
+                              className={cn(
+                                'min-w-0 flex-1 truncate',
+                                task.done && 'text-muted-foreground line-through',
+                                task.overdue && 'text-[var(--negative)]',
+                              )}
+                            >
+                              {task.title}
+                            </span>
+                            {task.duration !== null && !task.done && (
+                              <span className="shrink-0 text-[10px] text-muted-foreground">
+                                {formatMinutes(task.duration)}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -953,17 +1127,109 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                       );
                     })}
 
-                  {/* Le fantôme de la tâche qu'on est en train de déposer. En pointillés
-                      et sans action : ce n'est pas encore un créneau, il n'existera qu'au
-                      relâchement. */}
-                  {activeGhost !== null && activeGhost.dayIndex === dayIndex && pendingItem && (
+                  {/* Les tâches Todo auxquelles on a donné une heure. Elles se distinguent
+                      des créneaux de production par leur fond plein et leur liseré de tag :
+                      ce n'est pas du temps de vidéo, et le compteur d'une fiche n'en saura
+                      rien. Elles se cochent sur place, se déplacent, s'allongent, et
+                      retournent sous leur jour d'un clic. */}
+                  {day.tasks
+                    .filter((task) => task.placement !== null)
+                    .map((task) => {
+                      const key = taskKey(task);
+                      const moving = drag?.slotId === key;
+                      const stretching = resize?.slotId === key;
+                      const placement = task.placement!;
+                      const start = moving ? drag.startMinutes : toMinutes(placement.startTime);
+                      const minutes = stretching
+                        ? resize.endMinutes - resize.startMinutes
+                        : placement.minutes;
+                      const offsetX = moving
+                        ? (drag.targetIndex - drag.originIndex) * drag.columnWidth
+                        : 0;
+                      const color = todoColor(task);
+
+                      return (
+                        <div
+                          key={key}
+                          onPointerDown={(event) => startTaskDrag(event, task, day.date)}
+                          onPointerMove={moveDrag}
+                          onPointerUp={() => endTaskDrag(task, day.date)}
+                          onPointerCancel={() => setDrag(null)}
+                          className={cn(
+                            'group absolute inset-x-0.5 z-10 cursor-grab overflow-hidden rounded-md border border-l-4 bg-card px-1.5 py-1 shadow-sm active:cursor-grabbing',
+                            moving && 'z-30 opacity-90 shadow-lg',
+                            task.done && 'opacity-60',
+                          )}
+                          style={{
+                            top: yOf(start),
+                            height: Math.max(20, (minutes / 60) * HOUR_HEIGHT),
+                            transform: offsetX === 0 ? undefined : `translateX(${offsetX}px)`,
+                            borderColor: `${color}66`,
+                            borderLeftColor: color,
+                          }}
+                          title={`${task.title}\n${toTime(start)} – ${toTime(start + minutes)} · Todo`}
+                        >
+                          <div className="flex min-w-0 items-center gap-1">
+                            <Checkbox
+                              className="h-3.5 w-3.5"
+                              checked={task.done}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onCheckedChange={(value) => onToggleTask?.(task, value === true)}
+                              aria-label={`Terminer « ${task.title} »`}
+                            />
+                            <span
+                              className={cn(
+                                'truncate text-[11px] font-medium leading-tight',
+                                task.done && 'line-through',
+                              )}
+                            >
+                              {moving
+                                ? `${toTime(drag.startMinutes)} – ${toTime(drag.startMinutes + minutes)}`
+                                : stretching
+                                  ? `${toTime(start)} – ${toTime(start + minutes)} · ${formatMinutes(minutes)}`
+                                  : task.title}
+                            </span>
+                          </div>
+
+                          <div className="absolute right-0.5 top-0.5 hidden gap-0.5 group-focus-within:flex group-hover:flex">
+                            <button
+                              type="button"
+                              className="rounded bg-background/90 p-0.5 hover:bg-background"
+                              title="Retirer l’heure : la tâche retourne sous son jour"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={() => onUnplaceTask?.(task)}
+                            >
+                              <X className="h-3 w-3 text-muted-foreground" />
+                              <span className="sr-only">Retirer l’heure</span>
+                            </button>
+                          </div>
+
+                          <div
+                            onPointerDown={(event) => startTaskResize(event, task)}
+                            onPointerMove={moveResize}
+                            onPointerUp={() => endTaskResize(task)}
+                            onPointerCancel={() => setResize(null)}
+                            className={cn(
+                              'absolute inset-x-0 bottom-0 h-2 cursor-ns-resize',
+                              'after:absolute after:inset-x-3 after:bottom-0.5 after:h-0.5 after:rounded-full after:bg-current after:opacity-0 group-hover:after:opacity-40',
+                              stretching && 'after:opacity-70',
+                            )}
+                            title="Tirer pour allonger ou raccourcir"
+                          />
+                        </div>
+                      );
+                    })}
+
+                  {/* Le fantôme de ce qu'on est en train de déposer. En pointillés et sans
+                      action : il n'existera qu'au relâchement. */}
+                  {activeGhost !== null && activeGhost.dayIndex === dayIndex && pendingGhost && (
                     <div
                       className="pointer-events-none absolute inset-x-0.5 z-20 overflow-hidden rounded-md border-2 border-dashed px-1.5 py-1 opacity-90 shadow-lg"
                       style={{
                         top: yOf(activeGhost.startMinutes),
                         height: Math.max(20, (pendingMinutes / 60) * HOUR_HEIGHT),
-                        borderColor: pendingItem.stepColor ?? pendingItem.channelColor ?? '#64748b',
-                        backgroundColor: `${pendingItem.stepColor ?? pendingItem.channelColor ?? '#64748b'}33`,
+                        borderColor: pendingGhost.color,
+                        backgroundColor: `${pendingGhost.color}33`,
                       }}
                     >
                       <p className="truncate text-[11px] font-medium leading-tight">
@@ -971,7 +1237,7 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                         {toTime(activeGhost.startMinutes + pendingMinutes)}
                       </p>
                       <p className="truncate text-[10px] leading-tight opacity-80">
-                        {pendingItem.label}
+                        {pendingGhost.label}
                       </p>
                     </div>
                   )}

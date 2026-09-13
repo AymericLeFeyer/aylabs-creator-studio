@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -14,11 +14,14 @@ import {
   localToday,
   shiftDate,
   usePlaceItem,
+  usePlaceTodoTask,
   usePlanningBoard,
   usePlanningSettings,
   useReplan,
   useStartSlotTimer,
+  useToggleTodoTask,
   useUnapproveSlot,
+  useUnplaceTodoTask,
 } from '../../application/planning/usecases/usePlanning.ts';
 import {
   useDeleteSlot,
@@ -29,8 +32,11 @@ import type { ProductionSlot } from '../../domain/production/entities/Production
 import {
   defaultSlotMinutes,
   formatMinutes,
+  todoColor,
+  todoMinutes,
   toTime,
   type PlanningItem,
+  type TodoTask,
 } from '../../domain/planning/entities/Planning.ts';
 import { PlanningGrid } from '../components/planning/PlanningGrid.tsx';
 import { PlanningQueue } from '../components/planning/PlanningQueue.tsx';
@@ -114,6 +120,9 @@ export const PlanningPage = () => {
   const deleteSlot = useDeleteSlot();
   const unapprove = useUnapproveSlot();
   const startTimer = useStartSlotTimer();
+  const toggleTodo = useToggleTodoTask();
+  const placeTodo = usePlaceTodoTask();
+  const unplaceTodo = useUnplaceTodoTask();
   const { data: running } = useRunningTimer();
 
   const [addOpen, setAddOpen] = useState(false);
@@ -171,28 +180,63 @@ export const PlanningPage = () => {
   const pendingMinutes =
     pending && settings ? defaultSlotMinutes(pending, settings) : (settings?.minBlockMinutes ?? 60);
 
+  /**
+   * La tâche Todo attrapée sous son jour, le temps du glissement. Même mécanique que la
+   * ligne de pile : l'écran dit ce qu'on tient, la grille dit où on le lâche.
+   */
+  const [pendingTask, setPendingTask] = useState<TodoTask | null>(null);
+
+  /** Ce que le fantôme affiche. Mémorisé : la grille le prend en dépendance de son écouteur. */
+  const pendingGhost = useMemo(
+    () =>
+      pending
+        ? { label: pending.label, color: pending.stepColor ?? pending.channelColor ?? '#64748b' }
+        : pendingTask
+          ? { label: pendingTask.title, color: todoColor(pendingTask) }
+          : null,
+    [pending, pendingTask],
+  );
+  const ghostMinutes = pendingTask ? todoMinutes(pendingTask) : pendingMinutes;
+
   // Mémorisés : la grille les prend en dépendance de l'écouteur global qu'elle installe
   // pendant le glissement, et deux fonctions neuves à chaque rendu le feraient
   // réattacher à chaque mouvement de souris.
   const place = placeItem.mutate;
+  const placeTask = placeTodo.mutate;
   const dropPending = useCallback(
     (date: string, startMinutes: number) => {
-      if (!pending) return;
-      place({
-        itemId: pending.id,
-        date,
-        startTime: toTime(startMinutes),
-        // La durée voyage avec la demande : l'API la recalculerait à l'identique, mais
-        // entre le début du geste et le lâcher, un autre créneau a pu changer le reste à
-        // couvrir — et le bloc posé ne ferait alors plus la taille du fantôme.
-        minutes: pendingMinutes,
-      });
-      setPending(null);
+      if (pending) {
+        place({
+          itemId: pending.id,
+          date,
+          startTime: toTime(startMinutes),
+          // La durée voyage avec la demande : l'API la recalculerait à l'identique, mais
+          // entre le début du geste et le lâcher, un autre créneau a pu changer le reste à
+          // couvrir — et le bloc posé ne ferait alors plus la taille du fantôme.
+          minutes: pendingMinutes,
+        });
+        setPending(null);
+        return;
+      }
+      if (pendingTask) {
+        placeTask({
+          id: pendingTask.id,
+          date,
+          startTime: toTime(startMinutes),
+          minutes: todoMinutes(pendingTask),
+          // Son échéance actuelle : lâchée sur un autre jour, elle suit dans Todo.
+          dueDate: pendingTask.dueDate,
+        });
+        setPendingTask(null);
+      }
     },
-    [pending, pendingMinutes, place],
+    [pending, pendingTask, pendingMinutes, place, placeTask],
   );
 
-  const cancelPending = useCallback(() => setPending(null), []);
+  const cancelPending = useCallback(() => {
+    setPending(null);
+    setPendingTask(null);
+  }, []);
 
   const totals = (board?.days ?? []).reduce(
     (sum, day) => ({
@@ -208,7 +252,9 @@ export const PlanningPage = () => {
     deleteSlot.isPending ||
     unapprove.isPending ||
     startTimer.isPending ||
-    placeItem.isPending;
+    placeItem.isPending ||
+    placeTodo.isPending ||
+    unplaceTodo.isPending;
 
   /**
    * Les réglages d'affichage de la grille : quelle fenêtre, et large ou non.
@@ -380,6 +426,15 @@ export const PlanningPage = () => {
         </Card>
       )}
 
+      {board?.todo.error && (
+        <Card className="flex items-center gap-3 border-[var(--negative)]/40 p-3">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--negative)]" />
+          <p className="min-w-0 flex-1 text-sm">
+            Todo illisible : {board.todo.error}. Tes tâches n’apparaissent pas sous les jours.
+          </p>
+        </Card>
+      )}
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         {/* Sur mobile la grille **sort du conteneur** et va d'un bord à l'autre :
             c'est un tableau à sept colonnes, et lui laisser les marges de la page
@@ -429,10 +484,34 @@ export const PlanningPage = () => {
                   input: { endTime: toTime(endMinutes), origin: 'manual' },
                 })
               }
-              pendingItem={pending}
-              pendingMinutes={pendingMinutes}
+              pendingGhost={pendingGhost}
+              pendingMinutes={ghostMinutes}
               onExternalDrop={dropPending}
               onExternalCancel={cancelPending}
+              todoConnected={board.todo.connected}
+              pendingTaskId={pendingTask?.id ?? null}
+              onPickTask={setPendingTask}
+              onToggleTask={(task, done) => toggleTodo.mutate({ id: task.id, done })}
+              onMoveTask={(task, date, startMinutes) =>
+                placeTodo.mutate({
+                  id: task.id,
+                  date,
+                  startTime: toTime(startMinutes),
+                  minutes: todoMinutes(task),
+                  dueDate: task.dueDate,
+                })
+              }
+              onResizeTask={(task, minutes) =>
+                task.placement &&
+                placeTodo.mutate({
+                  id: task.id,
+                  date: task.dueDate,
+                  startTime: task.placement.startTime,
+                  minutes,
+                  dueDate: task.dueDate,
+                })
+              }
+              onUnplaceTask={(task) => unplaceTodo.mutate(task.id)}
             />
           )}
         </Card>
