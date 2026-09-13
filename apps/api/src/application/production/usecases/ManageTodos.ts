@@ -68,8 +68,15 @@ export class ManageTodos {
     );
     if (list.length === 0) return;
 
-    if (list.every((item) => item.checked)) this.productions.checkStep(productionId, stepId);
-    else this.productions.uncheckStep(productionId, stepId);
+    // La ligne de pile d'une étape planifiée en bloc suit l'étape : cocher sa dernière
+    // tâche depuis une fiche doit la retirer de la pile, comme `toggleStep`.
+    if (list.every((item) => item.checked)) {
+      this.productions.checkStep(productionId, stepId);
+      this.planningItems.closeForStep(productionId, stepId);
+    } else {
+      this.productions.uncheckStep(productionId, stepId);
+      this.planningItems.reopenForStep(productionId, stepId);
+    }
   }
 
   /**

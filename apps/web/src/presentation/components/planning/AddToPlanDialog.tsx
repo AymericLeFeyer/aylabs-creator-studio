@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronLeft, Clock } from 'lucide-react';
+import { ChevronDown, ChevronLeft, Clock } from 'lucide-react';
 import {
   useProductionOverview,
   useProduction,
@@ -38,10 +38,16 @@ export interface AddToPlanDialogProps {
  * « Ajouter une vidéo au planning », en deux temps.
  *
  * D'abord la vidéo, prise dans la file d'attente — c'est la question à laquelle on sait
- * répondre en arrivant. Puis **sur quoi** travailler : les étapes, chacune dépliée en
- * ses tâches. Cocher une étape coche ses tâches ; en décocher une laisse l'étape
- * partiellement retenue, ce qui est le cas normal (« je fais l'écriture, mais pas le
- * repérage »).
+ * répondre en arrivant. Puis **sur quoi** travailler, à la maille qu'on veut :
+ *
+ * - **cocher une étape la retient en bloc** — une seule ligne de pile, dont la durée est
+ *   la somme de ses tâches ouvertes. On sait qu'on veut « faire le montage » bien avant
+ *   de savoir par quelle sous-étape commencer ;
+ * - **« Détailler »** déplie ses tâches pour n'en retenir que certaines (« je fais
+ *   l'écriture, mais pas le repérage »), chacune devenant sa propre ligne. Décocher une
+ *   tâche d'une étape prise en bloc bascule l'étape dans ce mode.
+ *
+ * Les étapes sont **repliées par défaut** : le détail est un choix, pas un passage obligé.
  *
  * Tout ce qui est **déjà coché sur la vidéo** est affiché grisé et non sélectionnable :
  * planifier du travail terminé remplirait l'agenda de séances sans objet.
@@ -56,8 +62,12 @@ export const AddToPlanDialog = ({ open, onOpenChange }: AddToPlanDialogProps) =>
   const { data: production } = useProduction(productionId ?? undefined);
   const add = useAddPlanTargets();
 
-  const [selectedSteps, setSelectedSteps] = useState<Set<string>>(new Set());
+  /** Étapes retenues **en bloc** : une seule ligne de pile, sans détail des tâches. */
+  const [wholeSteps, setWholeSteps] = useState<Set<string>>(new Set());
+  /** Tâches retenues une à une, dans les étapes qu'on a choisi de détailler. */
   const [selectedTodos, setSelectedTodos] = useState<Set<string>>(new Set());
+  /** Étapes dépliées. Repliées par défaut : le détail est un choix, pas un passage obligé. */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   const queue = overview?.queue ?? [];
@@ -65,8 +75,9 @@ export const AddToPlanDialog = ({ open, onOpenChange }: AddToPlanDialogProps) =>
 
   const reset = () => {
     setProductionId(null);
-    setSelectedSteps(new Set());
+    setWholeSteps(new Set());
     setSelectedTodos(new Set());
+    setExpanded(new Set());
     setError(null);
   };
 
@@ -81,43 +92,73 @@ export const AddToPlanDialog = ({ open, onOpenChange }: AddToPlanDialogProps) =>
     return todo?.defaultMinutes ?? step?.defaultMinutes ?? FALLBACK_MINUTES;
   };
 
-  /** Cocher une étape entraîne ses tâches non faites : c'est le geste attendu. */
+  const openTodosOf = (stepId: string) =>
+    todosOfStep(todos, stepId).filter((todo) => !todo.checked);
+
+  /** Durée d'une étape prise en bloc : ses tâches ouvertes, ou sa propre durée. Même règle que l'API. */
+  const minutesOfStep = (stepId: string): number => {
+    const open = openTodosOf(stepId);
+    if (open.length > 0) {
+      return open.reduce((sum, todo) => sum + minutesOfTodo(stepId, todo.id), 0);
+    }
+    const step = steps.find((candidate) => candidate.id === stepId);
+    return step?.defaultMinutes ?? FALLBACK_MINUTES;
+  };
+
+  const withoutTodosOf = (current: Set<string>, stepId: string) => {
+    const next = new Set(current);
+    for (const todo of todosOfStep(todos, stepId)) next.delete(todo.id);
+    return next;
+  };
+
+  /** Cocher une étape la retient en bloc ; le détail éventuel de ses tâches s'efface. */
   const toggleStep = (stepId: string, checked: boolean) => {
-    setSelectedSteps((current) => {
+    setWholeSteps((current) => {
       const next = new Set(current);
       if (checked) next.add(stepId);
       else next.delete(stepId);
       return next;
     });
-    setSelectedTodos((current) => {
-      const next = new Set(current);
-      for (const todo of todosOfStep(todos, stepId)) {
-        if (todo.checked) continue;
-        if (checked) next.add(todo.id);
-        else next.delete(todo.id);
-      }
-      return next;
-    });
+    setSelectedTodos((current) => withoutTodosOf(current, stepId));
   };
 
-  const toggleTodo = (todoId: string, checked: boolean) => {
+  /**
+   * Toucher une tâche d'une étape prise en bloc la fait passer au détail : ses tâches
+   * ouvertes deviennent sélectionnées une à une, puis on applique le geste. Sans ça,
+   * retirer une tâche d'une étape entière demanderait de tout décocher et de tout recocher.
+   */
+  const toggleTodo = (stepId: string, todoId: string, checked: boolean) => {
+    const fromWhole = wholeSteps.has(stepId);
+    if (fromWhole) {
+      setWholeSteps((current) => {
+        const next = new Set(current);
+        next.delete(stepId);
+        return next;
+      });
+    }
     setSelectedTodos((current) => {
       const next = new Set(current);
+      if (fromWhole) for (const todo of openTodosOf(stepId)) next.add(todo.id);
       if (checked) next.add(todoId);
       else next.delete(todoId);
       return next;
     });
   };
 
+  const toggleExpanded = (stepId: string) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(stepId)) next.delete(stepId);
+      else next.add(stepId);
+      return next;
+    });
+
   /** Le total attendu : la somme des durées de ce qui est coché. */
   const totalMinutes = steps.reduce((sum, step) => {
-    const stepTodos = todosOfStep(todos, step.id).filter((todo) => !todo.checked);
-    if (stepTodos.length === 0) {
-      return selectedSteps.has(step.id) ? sum + (step.defaultMinutes ?? FALLBACK_MINUTES) : sum;
-    }
+    if (wholeSteps.has(step.id)) return sum + minutesOfStep(step.id);
     return (
       sum +
-      stepTodos
+      openTodosOf(step.id)
         .filter((todo) => selectedTodos.has(todo.id))
         .reduce((inner, todo) => inner + minutesOfTodo(step.id, todo.id), 0)
     );
@@ -129,7 +170,7 @@ export const AddToPlanDialog = ({ open, onOpenChange }: AddToPlanDialogProps) =>
     try {
       await add.mutateAsync({
         productionId,
-        stepIds: [...selectedSteps],
+        stepIds: [...wholeSteps],
         todoIds: [...selectedTodos],
         from: localToday(),
         nowMinutes: nowMinutes(),
@@ -208,6 +249,9 @@ export const AddToPlanDialog = ({ open, onOpenChange }: AddToPlanDialogProps) =>
                 const stepTodos = todosOfStep(todos, step.id);
                 const open = stepTodos.filter((todo) => !todo.checked);
                 const allDone = stepTodos.length > 0 && open.length === 0;
+                const whole = wholeSteps.has(step.id);
+                const picked = open.filter((todo) => selectedTodos.has(todo.id)).length;
+                const isExpanded = expanded.has(step.id) && !allDone;
 
                 return (
                   <div
@@ -218,11 +262,7 @@ export const AddToPlanDialog = ({ open, onOpenChange }: AddToPlanDialogProps) =>
                       <Checkbox
                         id={`plan-step-${step.id}`}
                         disabled={allDone}
-                        checked={
-                          stepTodos.length === 0
-                            ? selectedSteps.has(step.id)
-                            : open.length > 0 && open.every((todo) => selectedTodos.has(todo.id))
-                        }
+                        checked={whole}
                         onCheckedChange={(value) => toggleStep(step.id, value === true)}
                       />
                       <span
@@ -236,23 +276,43 @@ export const AddToPlanDialog = ({ open, onOpenChange }: AddToPlanDialogProps) =>
                       >
                         {step.name}
                       </label>
-                      {step.defaultMinutes !== null && stepTodos.length === 0 && (
+                      {!allDone && (stepTodos.length > 0 || step.defaultMinutes !== null) && (
                         <span className="shrink-0 text-xs text-muted-foreground">
-                          {formatMinutes(step.defaultMinutes)}
+                          {formatMinutes(minutesOfStep(step.id))}
                         </span>
+                      )}
+                      {open.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(step.id)}
+                          aria-expanded={isExpanded}
+                          className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          {picked > 0
+                            ? `${picked}/${open.length} tâches`
+                            : `Détailler (${open.length})`}
+                          <ChevronDown
+                            className={cn(
+                              'h-3 w-3 transition-transform',
+                              isExpanded && 'rotate-180',
+                            )}
+                          />
+                        </button>
                       )}
                       {allDone && <Badge variant="outline">Terminée</Badge>}
                     </div>
 
-                    {stepTodos.length > 0 && (
+                    {isExpanded && (
                       <div className="mt-1.5 space-y-1 border-t border-border pt-1.5 pl-6">
                         {stepTodos.map((todo) => (
                           <div key={todo.id} className="flex items-center gap-2">
                             <Checkbox
                               id={`plan-todo-${todo.id}`}
                               disabled={todo.checked}
-                              checked={selectedTodos.has(todo.id)}
-                              onCheckedChange={(value) => toggleTodo(todo.id, value === true)}
+                              checked={!todo.checked && (whole || selectedTodos.has(todo.id))}
+                              onCheckedChange={(value) =>
+                                toggleTodo(step.id, todo.id, value === true)
+                              }
                             />
                             <label
                               htmlFor={`plan-todo-${todo.id}`}

@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-12
+> Dernière mise à jour : 2026-09-13
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -879,10 +879,15 @@ sort jamais de l'API** : `PlanningSettingsView` le remplace par `hasToken`, et s
 chaînes, pour la même raison.
 
 `PlanningItem { id, productionId, stepId, todoId, label, plannedMinutes, sequence, status }`
-— table `planning_items`. **La pile de ce qui est en cours.** Ajouter une vidéo au planning
-en cochant « Écriture » y dépose **une ligne par tâche non cochée** de cette étape — c'est
-ce qui donne les cinq créneaux attendus plutôt qu'un bloc opaque de trois heures. Une
-étape **sans aucune tâche** entre entière : il n'y a rien de plus fin à viser. `todo_id`
+— table `planning_items`. **La pile de ce qui est en cours.** Une étape s'y ajoute à
+**deux mailles, au choix** : **en bloc** (`stepIds` → une seule ligne, `todo_id NULL`,
+durée = somme de ses tâches ouvertes) ou **tâche par tâche** (`todoIds` → une ligne
+chacune). On sait qu'on veut « faire le montage cette semaine » bien avant de savoir par
+quelle sous-étape commencer : imposer le détail faisait renoncer à planifier. Pour une
+même étape **le dernier choix l'emporte** — l'ajouter en bloc retire ses lignes de tâche
+encore en attente, en détailler les tâches retire son bloc — sinon les mêmes heures
+seraient posées deux fois. Le bloc se ferme quand l'étape est cochée, y compris par sa
+**dernière tâche** cochée depuis une fiche (`ManageTodos.syncStep` → `closeForStep`). `todo_id`
 désigne `step_todos` **ou** `production_todos` — aucune clé étrangère n'est possible,
 exactement comme `production_todo_checks`. Index unique sur
 `(production_id, COALESCE(step_id,''), COALESCE(todo_id,''))` : remettre la même tâche
@@ -1518,7 +1523,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/planning/work-hours`                          | Plages travaillables de la semaine type                                                                                                                                                                    |
 | `PUT`    | `/api/planning/work-hours`                          | **Remplacement total** de la grille (`{ ranges }`)                                                                                                                                                         |
 | `GET`    | `/api/planning/items`                               | La pile de ce qui est en cours                                                                                                                                                                             |
-| `POST`   | `/api/planning/items`                               | Ajouter une vidéo : `{ productionId, stepIds, todoIds, from?, nowMinutes? }`. Replanifie dans la foulée                                                                                                    |
+| `POST`   | `/api/planning/items`                               | Ajouter une vidéo : `{ productionId, stepIds, todoIds, from?, nowMinutes? }`. `stepIds` = étapes **en un seul bloc**, `todoIds` = tâches une à une. Replanifie dans la foulée                              |
 | `POST`   | `/api/planning/items/reorder`                       | `{ ids }` → l'ordre de placement, le rang est l'index                                                                                                                                                      |
 | `DELETE` | `/api/planning/items`                               | **Vider la pile** : tout ce qui est encore à faire, et ses créneaux non approuvés. Rend `{ removed }`. Aucune tâche n'est décochée, rien n'est replanifié                                                  |
 | `DELETE` | `/api/planning/items/:id`                           | Retirer de la pile. Les créneaux déjà posés **restent**                                                                                                                                                    |
@@ -1747,8 +1752,10 @@ déplacé à la main hors des horaires doit rester visible, sinon il disparaîtr
 prévenir.
 
 `AddToPlanDialog` se lit en deux temps : la vidéo (prise dans la file d'attente), puis les
-étapes et leurs tâches. Cocher une étape coche ses tâches ; en décocher une laisse l'étape
-partiellement retenue — c'est le cas normal (« je fais l'écriture, mais pas le repérage »).
+étapes. **Cocher une étape la retient en bloc**, sans descendre dans ses tâches ; elles
+sont **repliées par défaut** derrière « Détailler (N) », qui permet de n'en retenir que
+certaines (« je fais l'écriture, mais pas le repérage »). Décocher une tâche d'une étape
+prise en bloc bascule l'étape au détail, ses autres tâches restant retenues.
 Ce qui est **déjà coché sur la vidéo** est grisé et non sélectionnable. Le total attendu
 s'affiche en continu, pour qu'on sache qu'on vient de demander onze heures **avant** de
 cliquer.

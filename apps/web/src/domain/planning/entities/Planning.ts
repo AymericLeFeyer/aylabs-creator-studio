@@ -164,7 +164,9 @@ export interface PlanningBoard {
 
 export interface PlanTargetsInput {
   productionId: string;
+  /** Étapes planifiées en un seul bloc, sans descendre dans leurs tâches. */
   stepIds: string[];
+  /** Tâches choisies une à une, pour les étapes qu'on détaille. */
   todoIds: string[];
   from?: string;
   /** Voir `planningNow` : le jour et l'heure d'ici, sans lesquels l'API planifie en UTC. */

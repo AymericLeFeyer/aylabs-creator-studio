@@ -67,9 +67,9 @@ export interface CompletableWork {
 /** Ce que la sélection de l'écran « ajouter une vidéo » envoie. */
 export interface PlanTargetInput {
   productionId: string;
-  /** Étapes entières à planifier : chacune amène ses tâches non cochées. */
+  /** Étapes planifiées **en un seul bloc**, sans descendre dans leurs tâches. */
   stepIds: string[];
-  /** Tâches choisies une à une, en plus ou à la place des étapes. */
+  /** Tâches choisies une à une, pour les étapes qu'on veut détailler. */
   todoIds: string[];
 }
 
@@ -193,10 +193,19 @@ export class ManagePlanning {
   /**
    * Met des étapes et des tâches dans la pile, puis replanifie.
    *
-   * Cocher « Écriture » dépose **une ligne par tâche non cochée** de cette étape, et non
-   * une ligne pour l'étape : c'est ce qui donne les cinq créneaux attendus plutôt qu'un
-   * bloc opaque de trois heures. Une étape sans aucune tâche, elle, entre entière — il
-   * n'y a rien de plus fin à viser.
+   * Deux mailles, au choix de l'utilisateur, étape par étape :
+   *
+   * - **l'étape entière** (`stepIds`) entre en **une seule ligne** (`todoId: null`), dont
+   *   la durée est la somme de ses tâches encore ouvertes. On sait qu'on veut « faire le
+   *   montage cette semaine » bien avant de savoir dans quel ordre on en attaquera les
+   *   sous-étapes, et obliger à les cocher une à une faisait renoncer à planifier.
+   *   La ligne se ferme quand l'étape est cochée — à la main, par sa dernière tâche, ou
+   *   par la réponse « Terminé » d'une approbation ;
+   * - **les tâches** (`todoIds`) entrent chacune en leur ligne, pour qui veut détailler.
+   *
+   * **Le dernier choix l'emporte** pour une même étape : la planifier en bloc retire ses
+   * lignes de tâche encore en attente, et en détailler les tâches retire son bloc. Garder
+   * les deux ferait poser deux fois les mêmes heures.
    *
    * Ce qui est **déjà coché** n'entre pas : replanifier du travail terminé remplirait
    * l'agenda de séances sans objet.
@@ -218,14 +227,48 @@ export class ManagePlanning {
     }
 
     let sequence = this.items.nextSequence();
+    const pending = this.items.findAll({
+      productionIds: [input.productionId],
+      statuses: ['pending'],
+    });
 
     // L'ordre d'insertion suit celui des étapes, puis celui des tâches : c'est l'ordre
     // dans lequel le travail se fait, et le moteur le respectera à la lettre.
     for (const step of steps) {
       const stepTodos = todos.filter((todo) => todo.stepId === step.id);
-      const selected = stepTodos.filter(
-        (todo) => !todo.checked && (wantedSteps.has(step.id) || wantedTodos.has(todo.id)),
-      );
+      const open = stepTodos.filter((todo) => !todo.checked);
+
+      if (wantedSteps.has(step.id)) {
+        // Toutes les tâches cochées : l'étape est terminée, il n'y a rien à poser.
+        if (stepTodos.length > 0 && open.length === 0) continue;
+
+        for (const item of pending) {
+          if (item.stepId === step.id && item.todoId !== null) this.removeItem(item.id);
+        }
+        this.items.create({
+          productionId: input.productionId,
+          stepId: step.id,
+          todoId: null,
+          label: step.name,
+          plannedMinutes:
+            open.length > 0
+              ? open.reduce(
+                  (sum, todo) =>
+                    sum + (todo.defaultMinutes ?? step.defaultMinutes ?? FALLBACK_MINUTES),
+                  0,
+                )
+              : (step.defaultMinutes ?? FALLBACK_MINUTES),
+          sequence: sequence++,
+        });
+        continue;
+      }
+
+      const selected = open.filter((todo) => wantedTodos.has(todo.id));
+      if (selected.length > 0) {
+        for (const item of pending) {
+          if (item.stepId === step.id && item.todoId === null) this.removeItem(item.id);
+        }
+      }
 
       for (const todo of selected) {
         this.items.create({
@@ -234,18 +277,6 @@ export class ManagePlanning {
           todoId: todo.id,
           label: `${step.name} · ${todo.label}`,
           plannedMinutes: todo.defaultMinutes ?? step.defaultMinutes ?? FALLBACK_MINUTES,
-          sequence: sequence++,
-        });
-      }
-
-      // Une étape sans tâche se planifie entière : il n'y a rien de plus fin à viser.
-      if (wantedSteps.has(step.id) && stepTodos.length === 0) {
-        this.items.create({
-          productionId: input.productionId,
-          stepId: step.id,
-          todoId: null,
-          label: step.name,
-          plannedMinutes: step.defaultMinutes ?? FALLBACK_MINUTES,
           sequence: sequence++,
         });
       }
