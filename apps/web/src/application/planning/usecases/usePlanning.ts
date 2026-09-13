@@ -176,6 +176,24 @@ export const useClearPlanningItems = () => usePlanningMutation(() => planningApi
 export const useReplan = () =>
   usePlanningMutation((input: ReplanInput) => planningApi.replan({ ...planningNow(), ...input }));
 
+/**
+ * « Continuer le travail » depuis un créneau : une heure de plus sur la même tâche,
+ * **maintenant**.
+ *
+ * Le début est ramené au quart d'heure entamé — la grille se lit au quart d'heure, et un
+ * créneau à 14 h 07 tomberait entre deux traits. Il est borné à minuit : un bloc qui
+ * déborderait sur le lendemain ne se dessinerait nulle part.
+ */
+export const useContinueSlot = () =>
+  usePlanningMutation((slotId: string) => {
+    const start = Math.floor(nowMinutes() / 15) * 15;
+    return planningApi.continueSlot(slotId, {
+      date: localToday(),
+      startTime: toTime(start),
+      minutes: Math.min(60, 24 * 60 - start),
+    });
+  });
+
 export const useApproveSlot = () =>
   usePlanningMutation((input: { slotId: string } & ApproveSlotInput) => {
     const { slotId, ...rest } = input;

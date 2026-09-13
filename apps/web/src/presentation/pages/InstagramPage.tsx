@@ -64,12 +64,18 @@ export const InstagramPage = () => {
             que pendant 24 heures. Chaque jour sans collecte est perdu — plus tôt le compte est
             connecté, plus l’historique sera complet.
           </p>
-          <Button asChild size="sm">
-            <Link to="/parametres?onglet=instagram">
-              <Settings className="h-4 w-4" />
-              Connecter un compte
-            </Link>
-          </Button>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button asChild size="sm">
+              <Link to="/parametres?onglet=instagram">
+                <Settings className="h-4 w-4" />
+                Connecter un compte
+              </Link>
+            </Button>
+            {/* La voie sans compte Meta : trois compteurs par jour, lus sur le profil public. */}
+            <Button asChild size="sm" variant="outline">
+              <Link to="/parametres?onglet=api">Suivre le profil public</Link>
+            </Button>
+          </div>
         </Card>
       </div>
     );

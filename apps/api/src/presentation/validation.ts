@@ -904,6 +904,20 @@ export const placeSlotSchema = z.object({
     .optional(),
 });
 
+/**
+ * « Continuer le travail » depuis un créneau. Le jour et l'heure viennent du navigateur :
+ * le serveur tourne en UTC, et « maintenant » y serait deux heures trop tôt en été.
+ */
+export const continueSlotSchema = z.object({
+  date: isoDate,
+  startTime: clockTime,
+  minutes: z
+    .number()
+    .int()
+    .min(5)
+    .max(24 * 60),
+});
+
 export const approveSlotSchema = z.object({
   finished: z.boolean(),
   /**

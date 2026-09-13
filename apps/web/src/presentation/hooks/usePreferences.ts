@@ -14,11 +14,18 @@ export interface AppPreferences {
   sidebarCollapsed: boolean;
   /** File d'attente en cartes compactes : une ligne par vidéo au lieu d'un bloc. */
   compactQueue: boolean;
+  /** Rangée des tâches Todo du planning repliée sur un compteur par jour. */
+  planningTodosCollapsed: boolean;
+  /** Cran de zoom de la grille du planning, indice dans `ZOOM_LEVELS`. */
+  planningZoom: number;
 }
 
 const DEFAULTS: AppPreferences = {
   sidebarCollapsed: false,
   compactQueue: false,
+  planningTodosCollapsed: false,
+  // `DEFAULT_ZOOM` : le cran qui reproduit l'ancienne hauteur fixe de 56 px par heure.
+  planningZoom: 3,
 };
 
 export const usePreferences = () => {

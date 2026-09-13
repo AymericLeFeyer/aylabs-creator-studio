@@ -76,7 +76,9 @@ export const startCollectScheduler = (container: Container): void => {
       try {
         // En dernier : Amazon et Domadoo ouvrent un navigateur et prennent chacun une
         // vingtaine de secondes, ils n'ont pas à retarder ce qui alimente les écrans.
-        // YouTube et Instagram n'y figurent pas — l'export les relit depuis la base.
+        // YouTube n'y figure pas — l'export le relit depuis la base. Instagram y figure pour
+        // son seul profil public, relevé une fois par jour (le premier passage réussi du
+        // jour ; les suivants sont sautés).
         const integrations = await container.collectIntegrations.collectAll();
         for (const result of integrations) {
           if (result.status === 'ok') console.log(`[cron]   export ${result.provider} à jour`);

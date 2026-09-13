@@ -36,6 +36,12 @@ export interface ProviderDefinition {
   kind: IntegrationKind;
   /** Collecte par un navigateur sans interface : lente, et dépendante du DOM du site. */
   requiresBrowser: boolean;
+  /**
+   * Un collecteur existe dans `CollectIntegrations`. Vrai pour toutes les sources
+   * distantes, et pour **Instagram** bien qu'il soit `local` : son export se lit toujours
+   * en base, mais le relevé du profil public (sans compte Meta) y écrit.
+   */
+  collectable: boolean;
   fields: CredentialField[];
 }
 
@@ -47,15 +53,35 @@ export const PROVIDERS: ProviderDefinition[] = [
       'Abonnés, vues, heures vues, AdSense sur le mois et les 30 derniers jours, dernière vidéo. Toutes les chaînes actives cumulées.',
     kind: 'local',
     requiresBrowser: false,
+    collectable: false,
     fields: [],
   },
   {
     id: 'instagram',
     label: 'Instagram',
-    description: 'Abonnés, abonnements et publications des comptes connectés.',
+    description:
+      'Abonnés, abonnements et publications des comptes suivis. Sans compte Meta connecté, le profil public ci-dessous est relevé une fois par jour.',
     kind: 'local',
     requiresBrowser: false,
-    fields: [],
+    collectable: true,
+    fields: [
+      {
+        key: 'profile',
+        label: 'Compte à suivre',
+        secret: false,
+        envVar: 'INSTAGRAM_USERNAME',
+        optional: false,
+        hint: 'Adresse du profil ou @pseudo. Lecture du profil public, sans jeton : abonnés, abonnements et nombre de publications — ni stories, ni statistiques.',
+      },
+      {
+        key: 'searchApiKey',
+        label: 'Clé SearchAPI',
+        secret: true,
+        envVar: 'SEARCH_API_APIKEY',
+        optional: true,
+        hint: 'Facultatif. Tentée quand Instagram refuse la lecture directe (429) ; sans elle, les compteurs sont lus sur la page du profil, arrondis au-delà de 10 000.',
+      },
+    ],
   },
   {
     id: 'amazon',
@@ -64,6 +90,7 @@ export const PROVIDERS: ProviderDefinition[] = [
       'Clics, articles commandés et expédiés, taux de conversion et gains du mois, paiements en attente.',
     kind: 'remote',
     requiresBrowser: true,
+    collectable: true,
     fields: [
       {
         key: 'login',
@@ -98,6 +125,7 @@ export const PROVIDERS: ProviderDefinition[] = [
       'Clics, ventes en attente et validées, gains sur 30 jours et depuis toujours, solde et paiements.',
     kind: 'remote',
     requiresBrowser: true,
+    collectable: true,
     fields: [
       {
         key: 'login',
@@ -123,6 +151,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     description: 'Nombre de membres et de membres en ligne d’un serveur.',
     kind: 'remote',
     requiresBrowser: false,
+    collectable: true,
     fields: [
       {
         key: 'inviteCode',
@@ -173,6 +202,7 @@ export interface IntegrationView {
   description: string;
   kind: IntegrationKind;
   requiresBrowser: boolean;
+  collectable: boolean;
   /** Décoché, la source n'apparaît plus dans l'export et n'est plus collectée. */
   enabled: boolean;
   /** Tous les champs obligatoires ont une valeur (local : la base a quelque chose à dire). */

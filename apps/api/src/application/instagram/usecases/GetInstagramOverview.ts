@@ -53,6 +53,14 @@ export class GetInstagramOverview {
     const mediaByDate = this.data.countMediaByDate(filter);
     const metrics = this.data.findDailyMetrics(filter);
     const snapshots = this.data.findSnapshots(filter);
+    const accounts = this.accounts.findAll();
+    // Relevés par leur seul profil public : aucune publication n'est archivée pour eux.
+    const profileOnly = new Set(
+      this.accounts
+        .findAll(true)
+        .filter((account) => !account.hasToken)
+        .map((account) => account.id),
+    );
 
     const series = this.buildSeries({
       from,
@@ -62,6 +70,8 @@ export class GetInstagramOverview {
       mediaByDate,
       metrics,
       snapshots,
+      snapshotsBefore: this.data.findSnapshotBefore(accountIds, from),
+      profileOnly,
       accountIds,
     });
 
@@ -83,6 +93,8 @@ export class GetInstagramOverview {
         mediaByDate: this.data.countMediaByDate(previousFilter),
         metrics: this.data.findDailyMetrics(previousFilter),
         snapshots: this.data.findSnapshots(previousFilter),
+        snapshotsBefore: this.data.findSnapshotBefore(accountIds, previousFrom),
+        profileOnly,
         accountIds,
       }),
       previousFrom,
@@ -95,7 +107,7 @@ export class GetInstagramOverview {
       from,
       to,
       granularity,
-      accounts: this.accounts.findAll(),
+      accounts,
       series,
       totals,
       previousTotals,
@@ -114,6 +126,8 @@ export class GetInstagramOverview {
     mediaByDate: Map<IsoDate, number>;
     metrics: ReturnType<InstagramDataRepository['findDailyMetrics']>;
     snapshots: ReturnType<InstagramDataRepository['findSnapshots']>;
+    snapshotsBefore: ReturnType<InstagramDataRepository['findSnapshotBefore']>;
+    profileOnly: Set<string>;
     accountIds: string[];
   }): InstagramSeriesPoint[] {
     const buckets = enumerateBuckets(input.from, input.to, input.granularity);
@@ -141,6 +155,24 @@ export class GetInstagramOverview {
     for (const [date, count] of input.mediaByDate) {
       const point = byBucket.get(bucketStart(date, input.granularity));
       if (point) point.posts += count;
+    }
+
+    // Un compte relevé par son seul profil public n'a aucune publication archivée : ses
+    // parutions se lisent dans la progression de son compteur, d'un relevé au suivant —
+    // CUMUL ramené en FLUX, comme `video_stat_snapshots`. Planché à zéro : une publication
+    // supprimée ne fait pas une parution négative. Le premier relevé connu ne compte rien,
+    // faute de point de départ (les relevés arrivent triés par date).
+    const lastMediaCount = new Map<string, number>();
+    for (const snapshot of input.snapshotsBefore) {
+      if (snapshot.mediaCount !== null) lastMediaCount.set(snapshot.accountId, snapshot.mediaCount);
+    }
+    for (const snapshot of input.snapshots) {
+      if (!input.profileOnly.has(snapshot.accountId) || snapshot.mediaCount === null) continue;
+      const previous = lastMediaCount.get(snapshot.accountId);
+      lastMediaCount.set(snapshot.accountId, snapshot.mediaCount);
+      if (previous === undefined) continue;
+      const point = byBucket.get(bucketStart(snapshot.date, input.granularity));
+      if (point) point.posts += Math.max(0, snapshot.mediaCount - previous);
     }
 
     for (const metric of input.metrics) {

@@ -31,6 +31,9 @@ services:
       DOMADOO_LOGIN: ${DOMADOO_LOGIN:-}
       DOMADOO_PASSWORD: ${DOMADOO_PASSWORD:-}
       DISCORD_SERVER_CODE: ${DISCORD_SERVER_CODE:-}
+      # Profil Instagram public relevé une fois par jour (@pseudo ou URL), sans compte Meta.
+      INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME:-}
+      SEARCH_API_APIKEY: ${SEARCH_API_APIKEY:-}
     volumes:
       - creator-studio-data:/app/data
     # Pas de ports exposés : seul nginx parle à l'API, sur le réseau interne.

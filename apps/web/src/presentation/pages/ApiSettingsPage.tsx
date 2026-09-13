@@ -73,8 +73,9 @@ const LOCAL_SOURCE_HINTS: Partial<Record<IntegrationProvider, { ok: string; empt
     empty: 'Aucune chaîne suivie : ajoute-en une dans l’onglet Chaînes.',
   },
   instagram: {
-    ok: 'Alimentée par la collecte Instagram, rien à configurer ici.',
-    empty: 'Aucun compte connecté : ajoute-en un dans l’onglet Instagram.',
+    ok: 'Alimentée par les comptes de l’onglet Instagram et, sans compte Meta, par le profil public ci-dessous, relevé une fois par jour.',
+    empty:
+      'Aucun compte suivi : renseigne le profil public ci-dessous, ou connecte un compte Meta dans l’onglet Instagram.',
   },
 };
 
@@ -485,9 +486,10 @@ const ProviderCard = ({
           </p>
         )}
 
-        {integration.kind === 'remote' && (
+        {integration.collectable && (
           <div className="space-y-1 text-sm">
-            {integration.lastUpdate && (
+            {/* Une source locale annonce déjà son dernier relevé dans son texte d'aide. */}
+            {integration.kind === 'remote' && integration.lastUpdate && (
               <p className="text-muted-foreground">
                 Dernière collecte réussie {relative(integration.lastUpdate)}
                 {integration.durationMs !== null && status === 'ok' && (
@@ -520,12 +522,17 @@ const ProviderCard = ({
               </Button>
             </>
           )}
-          {integration.kind === 'remote' && (
+          {integration.collectable && (
             <Button
               variant="outline"
               size="sm"
+              // L'interrupteur d'Instagram ne coupe que la publication : son relevé alimente
+              // aussi l'écran Instagram, et continue sans elle.
               disabled={
-                !integration.configured || !integration.enabled || dirty || collect.isPending
+                !integration.configured ||
+                (integration.kind === 'remote' && !integration.enabled) ||
+                dirty ||
+                collect.isPending
               }
               onClick={() => collect.mutate(integration.id)}
               title={dirty ? 'Enregistre d’abord les identifiants' : undefined}

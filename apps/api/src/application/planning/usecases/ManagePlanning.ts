@@ -377,6 +377,52 @@ export class ManagePlanning {
   }
 
   /**
+   * « Continuer le travail » : le clic droit sur un créneau.
+   *
+   * Un nouveau créneau sur **la même vidéo, la même étape, le même libellé**, au moment
+   * envoyé par le navigateur — maintenant, pour une heure. C'est le geste qu'on fait en
+   * fin de séance quand on n'a pas fini : il enchaîne une séance de plus sans passer par
+   * la pile.
+   *
+   * Il naît **non approuvé** — c'est une intention, qui s'approuve ou se chronomètre comme
+   * les autres — mais **`manual`** et non `planner` : le prochain « Repositionner »
+   * l'éloignerait sinon de l'instant même où on l'a demandé. Comme tout créneau manuel
+   * resté dans le passé sans être approuvé, un replan complet finira par le reprendre
+   * (`clearElapsed`).
+   *
+   * Il reste rattaché à la ligne de pile du créneau d'origine **tant qu'elle est ouverte**,
+   * pour compter comme couverture. Une ligne close — tâche cochée, pile vidée — ne
+   * reçoit rien : on continue alors sur la vidéo et l'étape, hors pile.
+   *
+   * **Rien n'est replanifié**, comme pour tout placement à la main.
+   */
+  continueSlot(
+    slotId: string,
+    input: { date: IsoDate; startTime: string; minutes: number },
+  ): ProductionSlotView {
+    const source = this.slots.findById(slotId);
+    if (!source) throw notFound('Créneau');
+
+    const item = source.itemId ? this.items.findById(source.itemId) : null;
+    const start = toMinutes(input.startTime);
+
+    const slot = this.slots.create({
+      productionId: source.productionId,
+      stepId: source.stepId,
+      date: input.date,
+      startTime: input.startTime,
+      endTime: toTime(Math.min(24 * 60, start + input.minutes)),
+      label: source.label,
+      origin: 'manual',
+      itemId: item?.status === 'pending' ? item.id : null,
+    });
+
+    return this.slots
+      .findAll({ range: { from: slot.date, to: slot.date } })
+      .find((row) => row.id === slot.id)!;
+  }
+
+  /**
    * Vide la pile : toutes les lignes encore en cours partent, et leurs créneaux non
    * approuvés avec elles.
    *

@@ -80,6 +80,16 @@ export const planningApi = {
   placeItem: (input: { itemId: string; date: string; startTime: string; minutes?: number }) =>
     request<ProductionSlot>('/api/planning/slots', { method: 'POST', body: input }),
 
+  /**
+   * « Continuer le travail » : un nouveau créneau sur la même tâche que `slotId`, au jour
+   * et à l'heure donnés — ceux du navigateur, le serveur tournant en UTC.
+   */
+  continueSlot: (slotId: string, input: { date: string; startTime: string; minutes: number }) =>
+    request<ProductionSlot>(`/api/planning/slots/${slotId}/continue`, {
+      method: 'POST',
+      body: input,
+    }),
+
   replan: (input: ReplanInput = {}) =>
     request<{ placed: number; unplacedMinutes: number }>('/api/planning/replan', {
       method: 'POST',

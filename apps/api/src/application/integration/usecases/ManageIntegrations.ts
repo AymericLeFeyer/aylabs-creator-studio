@@ -76,19 +76,24 @@ export class ManageIntegrations {
       description: definition.description,
       kind: definition.kind,
       requiresBrowser: definition.requiresBrowser,
+      collectable: definition.collectable,
       enabled: this.repo.isEnabled(provider),
       fields: this.fieldViews(provider),
     };
 
     if (definition.kind === 'local') {
       const data = this.localData(provider);
+      // Instagram se lit en base, mais le relevé du profil public y écrit : ses tentatives
+      // et ses échecs vivent dans l'instantané, sa dernière réussite dans la base.
+      const snapshot = definition.collectable ? this.repo.snapshot(provider) : null;
       return {
         ...base,
-        configured: data !== null,
+        configured:
+          data !== null || (definition.collectable && this.resolve(provider).missing.length === 0),
         lastUpdate: data?.lastUpdate ?? null,
-        lastAttemptAt: null,
-        lastError: null,
-        durationMs: null,
+        lastAttemptAt: snapshot?.lastAttemptAt ?? null,
+        lastError: snapshot?.lastError ?? null,
+        durationMs: snapshot?.durationMs ?? null,
         data,
       };
     }

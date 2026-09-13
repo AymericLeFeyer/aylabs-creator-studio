@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Container } from '../../container.ts';
 import {
   approveSlotSchema,
+  continueSlotSchema,
   placeSlotSchema,
   slotFromTimeEntrySchema,
   startSlotTimerSchema,
@@ -139,6 +140,15 @@ export const planningRouter = (container: Container): Router => {
         minutes: body.minutes,
       }),
     );
+  });
+
+  /**
+   * « Continuer le travail » : le clic droit sur un créneau. Un nouveau créneau à
+   * approuver, sur la même tâche, à l'heure envoyée par le navigateur. Rien n'est replanifié.
+   */
+  router.post('/slots/:id/continue', (req, res) => {
+    const body = continueSlotSchema.parse(req.body);
+    res.status(201).json(container.managePlanning.continueSlot(param(req, 'id'), body));
   });
 
   /**

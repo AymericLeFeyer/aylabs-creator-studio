@@ -4,7 +4,7 @@ import type {
   IntegrationProvider,
   IntegrationUpdateInput,
 } from '../../../domain/integration/entities/Integration.ts';
-import { queryKeys } from '../../queryKeys.ts';
+import { INSTAGRAM_ROOTS, queryKeys } from '../../queryKeys.ts';
 
 /**
  * Les sources de l'export et leurs réglages.
@@ -36,8 +36,23 @@ export const useUpdateIntegration = () =>
       integrationApi.update(provider, input),
   );
 
-export const useCollectIntegration = () =>
-  useIntegrationMutation((provider: IntegrationProvider) => integrationApi.collect(provider));
+/**
+ * Seule exception à la règle du dessus : le relevé du profil Instagram **écrit dans le
+ * module Instagram** (compte et relevé du jour), ses écrans doivent donc repartir aussi.
+ */
+export const useCollectIntegration = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: IntegrationProvider) => integrationApi.collect(provider),
+    onSuccess: (_result, provider) => {
+      void queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      if (provider !== 'instagram') return;
+      for (const root of INSTAGRAM_ROOTS) {
+        void queryClient.invalidateQueries({ queryKey: [root] });
+      }
+    },
+  });
+};
 
 export const useExportKeys = () =>
   useQuery({

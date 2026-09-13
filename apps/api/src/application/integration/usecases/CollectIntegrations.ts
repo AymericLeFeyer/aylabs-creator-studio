@@ -9,13 +9,30 @@ import type {
   DomadooSale,
 } from '../../../domain/integration/entities/ExportData.ts';
 import type { IntegrationRepository } from '../../../domain/integration/repositories/IntegrationRepository.ts';
-import type { IntegrationCollectors } from '../../../domain/integration/repositories/IntegrationCollectors.ts';
+import type {
+  IntegrationCollectors,
+  InstagramProfileSink,
+} from '../../../domain/integration/repositories/IntegrationCollectors.ts';
 import { round2 } from '../../../domain/integration/services/localeNumber.ts';
 import { badRequest, conflict } from '../../../shared/errors.ts';
+import { today } from '../../../shared/dates.ts';
 import type { ManageIntegrations } from './ManageIntegrations.ts';
 
-/** Discord d'abord : un appel HTTP d'une demi-seconde, qui n'a pas à attendre deux navigateurs. */
-const REMOTE_PROVIDERS: IntegrationProvider[] = ['discord', 'amazon', 'domadoo'];
+/**
+ * Les appels HTTP d'abord (Discord, le profil Instagram : une demi-seconde chacun), qui
+ * n'ont pas à attendre deux navigateurs.
+ */
+const COLLECTED_PROVIDERS: IntegrationProvider[] = ['discord', 'instagram', 'amazon', 'domadoo'];
+
+/** Ce que garde l'instantané d'un relevé de profil Instagram, pour l'écran des sources. */
+export interface InstagramProfileResult {
+  username: string;
+  followers: number | null;
+  following: number | null;
+  posts: number | null;
+  source: 'api' | 'searchapi' | 'page';
+  approximate: boolean;
+}
 
 /** L'instantané des ventes Domadoo en attente, relevé une fois par jour. */
 export const DOMADOO_SALES_KEY = 'domadoo:sales';
@@ -36,23 +53,26 @@ export class CollectIntegrations {
   private readonly repo: IntegrationRepository;
   private readonly manage: ManageIntegrations;
   private readonly collectors: IntegrationCollectors;
+  private readonly instagram: InstagramProfileSink;
   private readonly running = new Set<string>();
 
   constructor(
     repo: IntegrationRepository,
     manage: ManageIntegrations,
     collectors: IntegrationCollectors,
+    instagram: InstagramProfileSink,
   ) {
     this.repo = repo;
     this.manage = manage;
     this.collectors = collectors;
+    this.instagram = instagram;
   }
 
   /** Toutes les sources actives et configurées, l'une après l'autre. */
   async collectAll(): Promise<CollectIntegrationResult[]> {
     const results: CollectIntegrationResult[] = [];
-    for (const provider of REMOTE_PROVIDERS) {
-      if (!this.repo.isEnabled(provider) || this.manage.resolve(provider).missing.length > 0) {
+    for (const provider of COLLECTED_PROVIDERS) {
+      if (this.shouldSkip(provider)) {
         results.push({ provider, status: 'skipped', message: null, durationMs: 0 });
         continue;
       }
@@ -71,9 +91,25 @@ export class CollectIntegrations {
     return results;
   }
 
+  /**
+   * Ce que le passage horaire saute.
+   *
+   * **Instagram obéit à deux règles à part.** Son interrupteur ne dit que « publier dans
+   * l'export » : le relevé alimente aussi l'écran Instagram, et couper la publication ne
+   * doit pas arrêter l'historique. Et il ne tourne qu'**une fois par jour** — un relevé
+   * quotidien suffit à une courbe d'abonnés, et Instagram bloque vite une adresse qui lit
+   * un profil toutes les heures. Un échec, lui, est retenté au passage suivant : c'est la
+   * dernière *réussite* du jour qui fait foi.
+   */
+  private shouldSkip(provider: IntegrationProvider): boolean {
+    if (this.manage.resolve(provider).missing.length > 0) return true;
+    if (provider !== 'instagram') return !this.repo.isEnabled(provider);
+    return this.repo.snapshot(provider)?.fetchedAt?.slice(0, 10) === today();
+  }
+
   async collectOne(provider: IntegrationProvider): Promise<CollectIntegrationResult> {
     const definition = providerDefinition(provider);
-    if (definition.kind === 'local') {
+    if (!definition.collectable) {
       throw badRequest(
         `${definition.label} est alimenté par la collecte du studio : il n’y a rien à collecter ici.`,
       );
@@ -95,6 +131,8 @@ export class CollectIntegrations {
           return this.collectDomadoo({ login: values.login!, password: values.password! });
         case 'discord':
           return this.collectors.discord.fetch(values.inviteCode!);
+        case 'instagram':
+          return this.collectInstagram(values.profile!, values.searchApiKey ?? null);
         default:
           throw badRequest(`Aucun collecteur pour ${definition.label}`);
       }
@@ -115,6 +153,28 @@ export class CollectIntegrations {
     return this.run(DOMADOO_SALES_KEY, 'domadoo', () =>
       this.collectors.domadoo.waitingSales({ login: values.login!, password: values.password! }),
     );
+  }
+
+  /**
+   * Le relevé du profil public : il est **écrit dans le module Instagram** (compte + relevé
+   * du jour), d'où l'export le relit comme n'importe quel compte. L'instantané n'en garde
+   * qu'un résumé, pour que l'écran des sources dise d'où vient le chiffre et s'il est
+   * arrondi.
+   */
+  private async collectInstagram(
+    profile: string,
+    searchApiKey: string | null,
+  ): Promise<InstagramProfileResult> {
+    const fetched = await this.collectors.instagram.fetch(profile, searchApiKey);
+    const { username } = this.instagram.recordPublicProfile(fetched);
+    return {
+      username,
+      followers: fetched.followers,
+      following: fetched.following,
+      posts: fetched.posts,
+      source: fetched.source,
+      approximate: fetched.approximate,
+    };
   }
 
   private async collectDomadoo(credentials: {

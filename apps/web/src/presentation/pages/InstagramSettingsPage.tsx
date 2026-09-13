@@ -145,7 +145,8 @@ export const InstagramSettingsPage = () => {
 
               {!account.hasToken && (
                 <p className="rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">
-                  Aucun jeton enregistré : rien ne sera collecté.
+                  Aucun jeton : seul le relevé quotidien du profil public (Paramètres → API)
+                  l’alimente — abonnés et publications, sans stories ni statistiques.
                 </p>
               )}
 

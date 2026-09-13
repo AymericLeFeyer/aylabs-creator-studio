@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
   Check,
+  ChevronDown,
   Clock,
   ExternalLink,
   ListTodo,
@@ -16,8 +18,9 @@ import {
 import { FormatIcon } from '../production/FormatIcon.tsx';
 import type { ProductionSlot } from '../../../domain/production/entities/ProductionSlot.ts';
 import {
-  dayBounds,
+  DAY_BOUNDS,
   formatMinutes,
+  layoutLanes,
   toMinutes,
   toTime,
   WEEKDAY_SHORT,
@@ -32,8 +35,11 @@ import { Checkbox } from '../ui/checkbox.tsx';
 import { cn } from '../../../shared/cn.ts';
 import { readableTextColor } from '../../../shared/contrast.ts';
 
-/** Hauteur d'une heure de grille, en pixels. */
-const HOUR_HEIGHT = 56;
+/**
+ * Ce qui reste sous la grille, au large : le `padding-bottom` de `main` (`lg:pb-6`) et les
+ * deux bords de la carte. La grille s'arrête là, au ras du bas de l'écran.
+ */
+const BOTTOM_GAP = 26;
 
 /** Pas de déplacement au drag : on ne cale pas un créneau à la minute près. */
 const DRAG_STEP = 15;
@@ -91,6 +97,16 @@ export interface PlanningGridProps {
   onResizeTask?: (task: TodoTask, minutes: number) => void;
   /** Retirer l'heure : la tâche retourne sous son jour. */
   onUnplaceTask?: (task: TodoTask) => void;
+  /** Hauteur d'une heure, en pixels : c'est le zoom. */
+  hourHeight?: number;
+  /** Rangée des tâches Todo repliée sur un compteur par jour. */
+  todosCollapsed?: boolean;
+  onToggleTodos?: () => void;
+  /**
+   * Clic droit « Continuer le travail » : un nouveau créneau d'une heure, maintenant, sur
+   * la même tâche. Sans ce gestionnaire, le clic droit garde le menu du navigateur.
+   */
+  onContinue?: (slot: ProductionSlot) => void;
   /** Durée du créneau qui sera posé — celle du fantôme, pour qu'il ne saute pas. */
   pendingMinutes?: number;
   /** Le pointeur a été relâché sur la grille : on pose le créneau. */
@@ -188,11 +204,120 @@ export const PlanningGrid = ({
   onExternalCancel,
   runningEntryId = null,
   busy = false,
+  hourHeight = 56,
+  todosCollapsed = false,
+  onToggleTodos,
+  onContinue,
 }: PlanningGridProps) => {
-  const bounds = dayBounds(days);
+  const bounds = DAY_BOUNDS;
   const totalMinutes = bounds.end - bounds.start;
-  const height = (totalMinutes / 60) * HOUR_HEIGHT;
+  const height = (totalMinutes / 60) * hourHeight;
   const columnsRef = useRef<HTMLDivElement>(null);
+  /** Le conteneur qui défile, et l'en-tête collant qui en masque le haut. */
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Au large, la grille descend **jusqu'au bas de l'écran**.
+   *
+   * Sa hauteur se mesure plutôt qu'elle ne se devine : au-dessus d'elle, l'en-tête de la
+   * page, un ou deux bandeaux (agenda, Todo, horaires) apparaissent ou non, et une
+   * constante écrite à la main laissait soit un vide sous la grille, soit une page qui
+   * défile en plus de la grille. La hauteur est **posée sur le style de l'élément**, sans
+   * état React — comme `--app-header` : un rendu par redimensionnement pour une valeur que
+   * seul le CSS consomme serait du gaspillage, et la règle `set-state-in-effect` le refuse.
+   *
+   * Observer `document.body` suffit à suivre l'apparition d'un bandeau : il change la
+   * hauteur du document. Poser la hauteur de la grille la change aussi, mais la valeur
+   * recalculée est identique et la boucle s'arrête d'elle-même.
+   *
+   * Sur mobile, la hauteur reste celle du CSS (`100dvh` moins les barres), déjà exacte.
+   */
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const large = window.matchMedia('(min-width: 1024px)');
+
+    const apply = () => {
+      if (!large.matches) {
+        element.style.height = '';
+        return;
+      }
+      const top = element.getBoundingClientRect().top + window.scrollY;
+      element.style.height = `${Math.max(320, window.innerHeight - top - BOTTOM_GAP)}px`;
+    };
+
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(document.body);
+    window.addEventListener('resize', apply);
+    large.addEventListener('change', apply);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', apply);
+      large.removeEventListener('change', apply);
+    };
+  }, []);
+
+  /**
+   * Le défilement vertical, à l'arrivée et au zoom.
+   *
+   * **À l'arrivée**, la grille se cale sur l'heure qu'il est, au premier tiers de la zone
+   * visible : la journée entière est dessinée (minuit à minuit), et s'ouvrir sur 0 h
+   * obligerait à descendre chercher le présent à chaque visite. Le tiers plutôt que le
+   * centre : ce qui vient compte plus que ce qui vient de passer.
+   *
+   * **Au zoom**, le moment au centre de l'écran reste au centre. Sans ça, zoomer depuis
+   * 16 h ramènerait la vue vers le matin, puisque tout s'étire à partir de minuit.
+   *
+   * Le cran précédent est gardé dans une ref : c'est lui qui dit quelle minute était au
+   * centre avant l'étirement. Déclaré **après** l'effet de hauteur, qui doit avoir posé la
+   * hauteur visible avant qu'on s'en serve.
+   */
+  const shownHourHeight = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const previous = shownHourHeight.current;
+    shownHourHeight.current = hourHeight;
+    const visible = element.clientHeight - (headerRef.current?.offsetHeight ?? 0);
+
+    if (previous === null) {
+      element.scrollTop = Math.max(0, (currentMinutes() / 60) * hourHeight - visible / 3);
+      return;
+    }
+    if (previous === hourHeight) return;
+    const centerMinutes = ((element.scrollTop + visible / 2) / previous) * 60;
+    element.scrollTop = Math.max(0, (centerMinutes / 60) * hourHeight - visible / 2);
+  }, [hourHeight]);
+
+  /**
+   * Le menu du clic droit sur un créneau.
+   *
+   * Écrit à la main, en portail vers `body` : un seul élément de menu, et la grille défile
+   * dans un conteneur qui rognerait un panneau positionné en absolu. Il se referme au
+   * moindre clic ailleurs, à `Échap`, au défilement et au redimensionnement — un menu
+   * qui reste accroché à un endroit qui a bougé désigne autre chose que ce qu'on croit.
+   */
+  const [menu, setMenu] = useState<{ slot: ProductionSlot; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+    const scroller = scrollRef.current;
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', close);
+    scroller?.addEventListener('scroll', close);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', close);
+      scroller?.removeEventListener('scroll', close);
+    };
+  }, [menu]);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [resize, setResize] = useState<ResizeState | null>(null);
   const [ghost, setGhost] = useState<GhostState | null>(null);
@@ -213,8 +338,8 @@ export const PlanningGrid = ({
     return () => window.clearInterval(id);
   }, []);
 
-  const yOf = (minutes: number) => ((minutes - bounds.start) / 60) * HOUR_HEIGHT;
-  const minutesOf = (y: number) => bounds.start + (y / HOUR_HEIGHT) * 60;
+  const yOf = (minutes: number) => ((minutes - bounds.start) / 60) * hourHeight;
+  const minutesOf = (y: number) => bounds.start + (y / hourHeight) * 60;
 
   /** Les traits horaires, une ligne par heure pleine. */
   const hourMarks: number[] = [];
@@ -272,7 +397,8 @@ export const PlanningGrid = ({
    * quart d'heure.
    */
   const startDrag = (event: React.PointerEvent, slot: ProductionSlot, duration: number) => {
-    if (slot.done) return;
+    // Le clic droit ouvre le menu « Continuer » : il ne doit pas démarrer un glissement.
+    if (slot.done || event.button !== 0) return;
     const container = columnsRef.current?.getBoundingClientRect();
     if (!container) return;
 
@@ -332,7 +458,7 @@ export const PlanningGrid = ({
    * geste doit survivre à la sortie de cette bande.
    */
   const startResize = (event: React.PointerEvent, slot: ProductionSlot) => {
-    if (slot.done || !slot.startTime || !slot.endTime) return;
+    if (slot.done || !slot.startTime || !slot.endTime || event.button !== 0) return;
     event.stopPropagation();
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
     setResize({
@@ -370,7 +496,7 @@ export const PlanningGrid = ({
   const taskKey = (task: TodoTask) => `todo:${task.id}`;
 
   const startTaskDrag = (event: React.PointerEvent, task: TodoTask, date: string) => {
-    if (!task.placement) return;
+    if (!task.placement || event.button !== 0) return;
     const container = columnsRef.current?.getBoundingClientRect();
     if (!container) return;
 
@@ -400,7 +526,7 @@ export const PlanningGrid = ({
   };
 
   const startTaskResize = (event: React.PointerEvent, task: TodoTask) => {
-    if (!task.placement) return;
+    if (!task.placement || event.button !== 0) return;
     // Même raison que pour un créneau : sans lui, le geste déplacerait aussi le bloc.
     event.stopPropagation();
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
@@ -449,7 +575,7 @@ export const PlanningGrid = ({
         days.length - 1,
         Math.max(0, Math.floor((clientX - container.left) / columnWidth)),
       );
-      const raw = bounds.start + ((clientY - container.top) / HOUR_HEIGHT) * 60;
+      const raw = bounds.start + ((clientY - container.top) / hourHeight) * 60;
       const snapped = Math.round(raw / DRAG_STEP) * DRAG_STEP;
       return {
         dayIndex,
@@ -484,6 +610,7 @@ export const PlanningGrid = ({
     days,
     bounds.start,
     bounds.end,
+    hourHeight,
     pendingMinutes,
     onExternalDrop,
     onExternalCancel,
@@ -520,10 +647,12 @@ export const PlanningGrid = ({
      * ne montre pas une journée.
      */
     <div
+      ref={scrollRef}
       className={cn(
         'overflow-auto',
         'max-h-[calc(100dvh-var(--app-header)-var(--bottom-nav)-1rem)] min-h-[16rem]',
-        'lg:max-h-[calc(100vh-13rem)] lg:min-h-[20rem]',
+        // Au large, la hauteur est mesurée jusqu'au bas de l'écran (voir l'effet plus haut).
+        'lg:max-h-none lg:min-h-[20rem]',
         busy && 'pointer-events-none opacity-60',
       )}
     >
@@ -531,7 +660,7 @@ export const PlanningGrid = ({
         {/* Tout ce qui étiquette les colonnes tient dans un seul bloc collant : les
             empiler séparément demanderait un `top` par bande, recalculé à chaque fois
             qu'une swimlane apparaît ou disparaît. */}
-        <div className="sticky top-0 z-40 bg-card">
+        <div ref={headerRef} className="sticky top-0 z-40 bg-card">
           {/* En-têtes : le jour, sa charge, et son bouton de réorganisation. */}
           <div className="flex border-b border-border">
             <div className="sticky left-0 z-10 w-14 shrink-0 bg-card" />
@@ -720,16 +849,33 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
               tâches sur un lundi ne doivent pas pousser la grille horaire hors de l'écran. */}
           {todoConnected && (
             <div className="flex border-b border-border">
-              <div
-                className="sticky left-0 z-10 flex w-14 shrink-0 items-start justify-center bg-card pt-1.5 text-muted-foreground"
-                title="Tâches Todo sans heure"
+              {/* L'icône est le bouton de repli : dépliée, la rangée peut prendre sept lignes
+                  sur un lundi chargé, et c'est autant de grille horaire en moins. Repliée,
+                  elle ne garde qu'un compteur par jour — assez pour savoir qu'il reste
+                  quelque chose, et où. */}
+              <button
+                type="button"
+                onClick={onToggleTodos}
+                aria-expanded={!todosCollapsed}
+                className="sticky left-0 z-10 flex w-14 shrink-0 items-start justify-center gap-0.5 bg-card pt-1.5 text-muted-foreground hover:text-foreground"
+                title={
+                  todosCollapsed ? 'Déplier les tâches Todo' : 'Replier les tâches Todo sans heure'
+                }
               >
                 <ListTodo className="h-4 w-4" aria-hidden />
-                <span className="sr-only">Todo</span>
-              </div>
+                <ChevronDown
+                  className={cn('h-3 w-3 transition-transform', todosCollapsed && '-rotate-90')}
+                  aria-hidden
+                />
+                <span className="sr-only">
+                  {todosCollapsed ? 'Déplier les tâches Todo' : 'Replier les tâches Todo'}
+                </span>
+              </button>
               <div className="flex flex-1">
                 {days.map((day) => {
                   const loose = day.tasks.filter((task) => task.placement === null);
+                  const open = loose.filter((task) => !task.done);
+                  const late = open.filter((task) => task.overdue).length;
                   return (
                     <div
                       key={day.date}
@@ -738,7 +884,24 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                         day.date === today && 'bg-[var(--today)]/10',
                       )}
                     >
-                      <div className="max-h-28 space-y-0.5 overflow-y-auto">
+                      {todosCollapsed && (
+                        <p
+                          className={cn(
+                            'truncate text-[11px] leading-5',
+                            late > 0 ? 'text-[var(--negative)]' : 'text-muted-foreground',
+                          )}
+                        >
+                          {open.length === 0
+                            ? '—'
+                            : `${open.length} à faire${late > 0 ? ` · ${late} en retard` : ''}`}
+                        </p>
+                      )}
+                      <div
+                        className={cn(
+                          'max-h-28 space-y-0.5 overflow-y-auto',
+                          todosCollapsed && 'hidden',
+                        )}
+                      >
                         {loose.map((task) => (
                           <div
                             key={task.id}
@@ -863,6 +1026,41 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
 
             {days.map((day, dayIndex) => {
               const isToday = day.date === today;
+
+              // Ce qui se chevauche se range côte à côte, créneaux et tâches Todo confondus :
+              // les deux occupent la même journée. La fin est la fin **visuelle** — un bloc
+              // de cinq minutes s'affiche sur 20 px, et c'est cette hauteur qui en recouvre
+              // un autre à l'écran.
+              const minVisible = (20 / hourHeight) * 60;
+              const lanesOf = layoutLanes([
+                ...day.slots
+                  .filter((slot) => slot.startTime && slot.endTime)
+                  .map((slot) => {
+                    const start = toMinutes(slot.startTime!);
+                    return {
+                      key: slot.id,
+                      start,
+                      end: Math.max(toMinutes(slot.endTime!), start + minVisible),
+                    };
+                  }),
+                ...day.tasks
+                  .filter((task) => task.placement !== null)
+                  .map((task) => {
+                    const start = toMinutes(task.placement!.startTime);
+                    return {
+                      key: taskKey(task),
+                      start,
+                      end: start + Math.max(task.placement!.minutes, minVisible),
+                    };
+                  }),
+              ]);
+              const laneStyle = (key: string) => {
+                const place = lanesOf.get(key) ?? { lane: 0, lanes: 1 };
+                return {
+                  left: `calc(${(place.lane * 100) / place.lanes}% + 2px)`,
+                  width: `calc(${100 / place.lanes}% - 4px)`,
+                };
+              };
               const isTarget =
                 (drag !== null && drag.targetIndex === dayIndex) ||
                 (activeGhost !== null && activeGhost.dayIndex === dayIndex);
@@ -956,8 +1154,16 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                           onPointerMove={moveDrag}
                           onPointerUp={() => endDrag(slot)}
                           onPointerCancel={() => setDrag(null)}
+                          // Le clic droit remplace le menu du navigateur par « Continuer le
+                          // travail » — approuvé ou non : c'est justement après avoir fini une
+                          // séance qu'on veut en enchaîner une autre sur la même tâche.
+                          onContextMenu={(event) => {
+                            if (!onContinue) return;
+                            event.preventDefault();
+                            setMenu({ slot, x: event.clientX, y: event.clientY });
+                          }}
                           className={cn(
-                            'group absolute inset-x-0.5 overflow-hidden rounded-md px-1.5 py-1 shadow-sm',
+                            'group absolute overflow-hidden rounded-md px-1.5 py-1 shadow-sm',
                             slot.done ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
                             dragging && 'z-30 opacity-90 shadow-lg',
                             ticking && 'ring-2 ring-[var(--positive)]',
@@ -965,8 +1171,9 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                             !slot.done && 'border-2 border-dashed',
                           )}
                           style={{
+                            ...laneStyle(slot.id),
                             top: yOf(shown),
-                            height: Math.max(20, (duration / 60) * HOUR_HEIGHT),
+                            height: Math.max(20, (duration / 60) * hourHeight),
                             transform: offsetX === 0 ? undefined : `translateX(${offsetX}px)`,
                             backgroundColor: slot.done ? color : `${color}33`,
                             borderColor: color,
@@ -1156,13 +1363,14 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                           onPointerUp={() => endTaskDrag(task, day.date)}
                           onPointerCancel={() => setDrag(null)}
                           className={cn(
-                            'group absolute inset-x-0.5 z-10 cursor-grab overflow-hidden rounded-md border border-l-4 bg-card px-1.5 py-1 shadow-sm active:cursor-grabbing',
+                            'group absolute z-10 cursor-grab overflow-hidden rounded-md border border-l-4 bg-card px-1.5 py-1 shadow-sm active:cursor-grabbing',
                             moving && 'z-30 opacity-90 shadow-lg',
                             task.done && 'opacity-60',
                           )}
                           style={{
+                            ...laneStyle(key),
                             top: yOf(start),
-                            height: Math.max(20, (minutes / 60) * HOUR_HEIGHT),
+                            height: Math.max(20, (minutes / 60) * hourHeight),
                             transform: offsetX === 0 ? undefined : `translateX(${offsetX}px)`,
                             borderColor: `${color}66`,
                             borderLeftColor: color,
@@ -1227,7 +1435,7 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                       className="pointer-events-none absolute inset-x-0.5 z-20 overflow-hidden rounded-md border-2 border-dashed px-1.5 py-1 opacity-90 shadow-lg"
                       style={{
                         top: yOf(activeGhost.startMinutes),
-                        height: Math.max(20, (pendingMinutes / 60) * HOUR_HEIGHT),
+                        height: Math.max(20, (pendingMinutes / 60) * hourHeight),
                         borderColor: pendingGhost.color,
                         backgroundColor: `${pendingGhost.color}33`,
                       }}
@@ -1274,6 +1482,41 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
           </div>
         </div>
       </div>
+
+      {menu &&
+        createPortal(
+          <div
+            role="menu"
+            className="fixed z-50 min-w-56 rounded-md border border-border bg-popover p-1 text-sm text-popover-foreground shadow-md"
+            // Borné à l'écran : ouvert près du bord droit ou du bas, il sortirait du cadre.
+            style={{
+              left: Math.min(menu.x, window.innerWidth - 240),
+              top: Math.min(menu.y, window.innerHeight - 64),
+            }}
+            // Sans ça, le clic sur l'entrée fermerait le menu avant d'arriver.
+            onPointerDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <p className="truncate px-2 py-1 text-xs text-muted-foreground">
+              {menu.slot.label || menu.slot.stepName || menu.slot.productionTitle}
+            </p>
+            <button
+              type="button"
+              role="menuitem"
+              autoFocus
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-accent focus:bg-accent focus:outline-none"
+              onClick={() => {
+                onContinue?.(menu.slot);
+                setMenu(null);
+              }}
+            >
+              <Play className="h-3.5 w-3.5 shrink-0" />
+              <span className="flex-1">Continuer le travail</span>
+              <span className="text-xs text-muted-foreground">1 h, maintenant</span>
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

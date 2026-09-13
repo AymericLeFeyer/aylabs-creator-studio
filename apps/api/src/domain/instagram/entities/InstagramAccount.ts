@@ -92,6 +92,29 @@ export interface InstagramDailyMetric {
   profileLinksTaps: number | null;
 }
 
+/**
+ * Ce que dit le **profil public** d'un compte, lu sans jeton ni compte Meta.
+ *
+ * C'est la voie de l'ancien YouTube-Money-Exporter, reprise par Paramètres → API : trois
+ * compteurs et rien d'autre — ni stories, ni portée, ni statistiques de publication. Elle
+ * sert tant que la connexion par l'API Graph n'est pas possible.
+ *
+ * `approximate` : Instagram arrondit les compteurs de sa page (« 12,3 K ») au-delà de dix
+ * mille. Seul le dernier repli, la page HTML, y est exposé.
+ */
+export interface InstagramPublicProfile {
+  /** Identifiant public du compte (`pk`), `null` si la source ne le donne pas. */
+  igId: string | null;
+  username: string;
+  fullName: string | null;
+  profilePicture: string | null;
+  followers: number | null;
+  following: number | null;
+  posts: number | null;
+  source: 'api' | 'searchapi' | 'page';
+  approximate: boolean;
+}
+
 /** Couleurs attribuées en rotation à la création, comme pour les chaînes et les marques. */
 export const DEFAULT_IG_COLORS = [
   '#e1306c',

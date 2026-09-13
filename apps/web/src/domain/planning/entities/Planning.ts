@@ -290,41 +290,75 @@ export const formatMinutes = (minutes: number): string => {
 };
 
 /**
- * Les bornes horaires à afficher pour une journée.
+ * La journée affichée : **de minuit à minuit**, toujours.
  *
- * La grille ne commence pas à minuit : elle s'ouvre sur la première plage travaillable
- * et se ferme sur la dernière, élargies par ce qui déborde — un créneau déplacé à la
- * main hors des horaires doit rester visible, sinon il disparaîtrait sans prévenir.
+ * La grille s'ouvrait autrefois sur la première plage travaillable et se fermait sur la
+ * dernière. Elle se lisait d'un bloc, mais tout ce qui tombait hors des horaires — une
+ * tâche Todo à 7 h, un rendez-vous à 21 h, un créneau glissé tard le soir — n'avait nulle
+ * part où être posé. La journée entière est là ; c'est le **défilement à l'ouverture**,
+ * calé sur l'heure qu'il est, qui remplace le cadrage. Les heures hors plage restent
+ * teintées, ce sont les plages qui s'éclairent.
  */
-export const dayBounds = (days: PlanningDay[]): Interval => {
-  let start = 24 * 60;
-  let end = 0;
+export const DAY_BOUNDS: Interval = { start: 0, end: 24 * 60 };
 
-  for (const day of days) {
-    for (const window of day.windows) {
-      start = Math.min(start, window.start);
-      end = Math.max(end, window.end);
+/**
+ * Hauteur d'une heure selon le cran de zoom, en pixels.
+ *
+ * Des crans et non un curseur libre : on dézoome pour voir la journée entière, on zoome
+ * pour caler un quart d'heure — deux usages, pas un continuum. Le cran `DEFAULT_ZOOM`
+ * reproduit l'ancienne hauteur fixe.
+ */
+export const ZOOM_LEVELS = [24, 32, 44, 56, 76, 104, 140] as const;
+export const DEFAULT_ZOOM = 3;
+
+export interface LaneInput {
+  key: string;
+  /** Minutes depuis minuit. */
+  start: number;
+  /** Fin **visuelle** : un bloc de 5 min s'affiche plus haut que sa durée, et c'est ce qu'il occupe à l'écran. */
+  end: number;
+}
+
+/**
+ * Range côte à côte les blocs d'une journée qui se chevauchent.
+ *
+ * Empilés, deux créneaux au même moment n'en montraient qu'un — celui du dessus cachait
+ * l'autre, ses boutons compris. L'algorithme est celui de tous les agendas : les blocs
+ * sont groupés par **grappes** qui se chevauchent de proche en proche, chacun prend la
+ * première colonne libre de sa grappe, et toute la grappe se partage la largeur en autant
+ * de colonnes qu'elle en a ouvert. Un bloc seul garde toute la largeur ; deux blocs qui
+ * se touchent sans se recouvrir (10 h-11 h puis 11 h-12 h) ne se gênent pas.
+ */
+export const layoutLanes = (entries: LaneInput[]): Map<string, { lane: number; lanes: number }> => {
+  const result = new Map<string, { lane: number; lanes: number }>();
+  const sorted = [...entries].sort((a, b) => a.start - b.start || b.end - a.end);
+
+  let cluster: Array<{ key: string; lane: number }> = [];
+  let laneEnds: number[] = [];
+  let clusterEnd = -1;
+
+  const flush = () => {
+    for (const entry of cluster) {
+      result.set(entry.key, { lane: entry.lane, lanes: laneEnds.length });
     }
-    for (const slot of day.slots) {
-      if (!slot.startTime || !slot.endTime) continue;
-      start = Math.min(start, toMinutes(slot.startTime));
-      end = Math.max(end, toMinutes(slot.endTime));
+    cluster = [];
+    laneEnds = [];
+  };
+
+  for (const entry of sorted) {
+    if (entry.start >= clusterEnd) flush();
+
+    let lane = laneEnds.findIndex((end) => end <= entry.start);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(entry.end);
+    } else {
+      laneEnds[lane] = entry.end;
     }
-    for (const event of day.events) {
-      if (event.allDay || event.start === null || event.end === null) continue;
-      start = Math.min(start, event.start);
-      end = Math.max(end, event.end);
-    }
-    for (const task of day.tasks) {
-      if (!task.placement) continue;
-      const taskStart = toMinutes(task.placement.startTime);
-      start = Math.min(start, taskStart);
-      end = Math.max(end, taskStart + task.placement.minutes);
-    }
+    cluster.push({ key: entry.key, lane });
+    clusterEnd = Math.max(clusterEnd, entry.end);
   }
+  flush();
 
-  // Aucune plage, aucun créneau : une journée de bureau plutôt qu'une grille vide de
-  // hauteur nulle, sur laquelle rien ne pourrait être déposé.
-  if (end <= start) return { start: 8 * 60, end: 20 * 60 };
-  return { start: Math.max(0, start - 30), end: Math.min(24 * 60, end + 30) };
+  return result;
 };

@@ -58,6 +58,7 @@ import { SecretBox } from './infrastructure/integration/secrets/SecretBox.ts';
 import { AmazonScraper } from './infrastructure/integration/api/AmazonScraper.ts';
 import { DomadooScraper } from './infrastructure/integration/api/DomadooScraper.ts';
 import { DiscordClient } from './infrastructure/integration/api/DiscordClient.ts';
+import { InstagramProfileClient } from './infrastructure/integration/api/InstagramProfileClient.ts';
 import { ManageIntegrations } from './application/integration/usecases/ManageIntegrations.ts';
 import { CollectIntegrations } from './application/integration/usecases/CollectIntegrations.ts';
 import { GetExport } from './application/integration/usecases/GetExport.ts';
@@ -159,7 +160,7 @@ export interface Container {
    * un secret est chiffré ou déchiffré.
    */
   manageIntegrations: ManageIntegrations;
-  /** Amazon, Domadoo, Discord. YouTube et Instagram n'ont rien à collecter en plus. */
+  /** Amazon, Domadoo, Discord, et le profil public Instagram. YouTube n'a rien à collecter en plus. */
   collectIntegrations: CollectIntegrations;
   /** Ce que lit Home Assistant sur `/api/export`. Ne collecte jamais rien. */
   getExport: GetExport;
@@ -234,6 +235,12 @@ export const buildContainer = (config: Config): Container => {
     secrets,
     config.integrationEnv,
   );
+
+  // Partagé : la collecte des sources de l'export y écrit le relevé du profil public.
+  const collectInstagram = new CollectInstagram(instagramAccounts, instagramData, {
+    appId: config.metaAppId,
+    appSecret: config.metaAppSecret,
+  });
 
   const manageTodoTasks = new ManageTodoTasks(
     new SqliteTodoPlacementRepository(db),
@@ -320,10 +327,7 @@ export const buildContainer = (config: Config): Container => {
       gcpClientId: config.gcpClientId,
       gcpClientSecret: config.gcpClientSecret,
     }),
-    collectInstagram: new CollectInstagram(instagramAccounts, instagramData, {
-      appId: config.metaAppId,
-      appSecret: config.metaAppSecret,
-    }),
+    collectInstagram,
     getInstagramOverview: new GetInstagramOverview(instagramAccounts, instagramData),
     getPreviousPublication: new GetPreviousPublication(productions, videos, channels, {
       youtubeApiKey: config.youtubeApiKey,
@@ -333,11 +337,17 @@ export const buildContainer = (config: Config): Container => {
     getAnalytics: new GetAnalytics(channels, metrics, revenues, categories, expenses, videos),
     youtubeData: config.youtubeApiKey ? new YouTubeDataClient(config.youtubeApiKey) : null,
     manageIntegrations,
-    collectIntegrations: new CollectIntegrations(integrations, manageIntegrations, {
-      amazon: new AmazonScraper(),
-      domadoo: new DomadooScraper(),
-      discord: new DiscordClient(),
-    }),
+    collectIntegrations: new CollectIntegrations(
+      integrations,
+      manageIntegrations,
+      {
+        amazon: new AmazonScraper(),
+        domadoo: new DomadooScraper(),
+        discord: new DiscordClient(),
+        instagram: new InstagramProfileClient(),
+      },
+      collectInstagram,
+    ),
     getExport: new GetExport(integrations, manageIntegrations),
     manageTodoTasks,
   };

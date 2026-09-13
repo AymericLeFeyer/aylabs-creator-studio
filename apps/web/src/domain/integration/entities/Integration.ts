@@ -29,6 +29,11 @@ export interface IntegrationView {
   description: string;
   kind: IntegrationKind;
   requiresBrowser: boolean;
+  /**
+   * Un bouton « Collecter » a un sens. Toutes les sources distantes, et Instagram — lu en
+   * base, mais dont le profil public se relève d'ici quand aucun compte Meta n'est connecté.
+   */
+  collectable: boolean;
   enabled: boolean;
   configured: boolean;
   fields: CredentialFieldView[];

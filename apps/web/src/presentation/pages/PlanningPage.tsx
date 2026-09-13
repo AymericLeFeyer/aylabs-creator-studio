@@ -9,10 +9,13 @@ import {
   RotateCw,
   Settings,
   SlidersHorizontal,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import {
   localToday,
   shiftDate,
+  useContinueSlot,
   usePlaceItem,
   usePlaceTodoTask,
   usePlanningBoard,
@@ -30,11 +33,13 @@ import {
 } from '../../application/production/usecases/useProductions.ts';
 import type { ProductionSlot } from '../../domain/production/entities/ProductionSlot.ts';
 import {
+  DEFAULT_ZOOM,
   defaultSlotMinutes,
   formatMinutes,
   todoColor,
   todoMinutes,
   toTime,
+  ZOOM_LEVELS,
   type PlanningItem,
   type TodoTask,
 } from '../../domain/planning/entities/Planning.ts';
@@ -54,6 +59,7 @@ import {
 } from '../components/ui/dropdown-menu.tsx';
 import { Fab } from '../components/Fab.tsx';
 import { AppBarActions } from '../hooks/useAppBar.tsx';
+import { usePreferences } from '../hooks/usePreferences.ts';
 import { cn } from '../../shared/cn.ts';
 
 type Span = 'day' | 'week';
@@ -123,7 +129,17 @@ export const PlanningPage = () => {
   const toggleTodo = useToggleTodoTask();
   const placeTodo = usePlaceTodoTask();
   const unplaceTodo = useUnplaceTodoTask();
+  const continueSlot = useContinueSlot();
   const { data: running } = useRunningTimer();
+
+  /**
+   * Le zoom et le repli des todos sont des **préférences**, pas des filtres : on les règle
+   * une fois pour son écran et on veut les retrouver le lendemain.
+   */
+  const { preferences, set: setPreferences } = usePreferences();
+  const zoom = Math.min(ZOOM_LEVELS.length - 1, Math.max(0, preferences.planningZoom));
+  const hourHeight = ZOOM_LEVELS[zoom] ?? 56;
+  const setZoom = (value: number) => setPreferences({ planningZoom: value });
 
   const [addOpen, setAddOpen] = useState(false);
   const [approving, setApproving] = useState<ProductionSlot | null>(null);
@@ -254,7 +270,8 @@ export const PlanningPage = () => {
     startTimer.isPending ||
     placeItem.isPending ||
     placeTodo.isPending ||
-    unplaceTodo.isPending;
+    unplaceTodo.isPending ||
+    continueSlot.isPending;
 
   /**
    * Les réglages d'affichage de la grille : quelle fenêtre, et large ou non.
@@ -312,6 +329,41 @@ export const PlanningPage = () => {
             {value === 'day' ? 'Jour' : '7 jours'}
           </button>
         ))}
+      </div>
+
+      {/* Le zoom : la hauteur d'une heure. Dézoomé, la journée entière tient à l'écran ;
+          zoomé, on cale un quart d'heure. Le pourcentage ramène au cran par défaut. */}
+      <div className="flex items-center rounded-md border border-border">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-r-none"
+          disabled={zoom <= 0}
+          onClick={() => setZoom(zoom - 1)}
+          title="Dézoomer"
+        >
+          <ZoomOut className="h-4 w-4" />
+          <span className="sr-only">Dézoomer</span>
+        </Button>
+        <button
+          type="button"
+          onClick={() => setZoom(DEFAULT_ZOOM)}
+          className="h-8 min-w-14 border-x border-border px-2 text-xs font-medium tabular-nums hover:bg-accent"
+          title="Revenir au zoom par défaut"
+        >
+          {Math.round((hourHeight / (ZOOM_LEVELS[DEFAULT_ZOOM] ?? 56)) * 100)} %
+        </button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-l-none"
+          disabled={zoom >= ZOOM_LEVELS.length - 1}
+          onClick={() => setZoom(zoom + 1)}
+          title="Zoomer"
+        >
+          <ZoomIn className="h-4 w-4" />
+          <span className="sr-only">Zoomer</span>
+        </Button>
       </div>
     </>
   );
@@ -512,6 +564,12 @@ export const PlanningPage = () => {
                 })
               }
               onUnplaceTask={(task) => unplaceTodo.mutate(task.id)}
+              hourHeight={hourHeight}
+              todosCollapsed={preferences.planningTodosCollapsed}
+              onToggleTodos={() =>
+                setPreferences({ planningTodosCollapsed: !preferences.planningTodosCollapsed })
+              }
+              onContinue={(slot) => continueSlot.mutate(slot.id)}
             />
           )}
         </Card>
