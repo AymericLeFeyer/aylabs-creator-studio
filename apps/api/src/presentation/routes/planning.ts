@@ -12,6 +12,7 @@ import {
   replaceWorkHoursSchema,
   replanSchema,
   todoPlacementSchema,
+  todayTodosQuerySchema,
 } from '../validation.ts';
 import { param } from '../helpers.ts';
 
@@ -202,6 +203,15 @@ export const planningRouter = (container: Container): Router => {
   // --- Les tâches de l'app Todo ---------------------------------------------
 
   /** Cocher : l'écriture part dans Todo, qui reste la source de vérité. */
+  /**
+   * Les tâches Todo **ouvertes** du jour, en retard comprises : la pastille de l'entrée de
+   * menu Todo. Déclaré avant `/todo-tasks/:id/…`. Le jour vient du navigateur.
+   */
+  router.get('/todo-tasks/today', async (req, res) => {
+    const { today } = todayTodosQuerySchema.parse(req.query);
+    res.json(await container.manageTodoTasks.today(today));
+  });
+
   router.post('/todo-tasks/:id/complete', async (req, res) => {
     await container.manageTodoTasks.setDone(param(req, 'id'), true);
     res.status(204).end();

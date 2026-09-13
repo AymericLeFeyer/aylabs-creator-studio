@@ -148,7 +148,7 @@ export class ManageTodoTasks {
     const client = this.client();
     if (!client) {
       throw badRequest(
-        'Todo n’est pas connecté : renseigne son adresse dans Paramètres → Planning.',
+        'Todo n’est pas connecté : renseigne son adresse dans Paramètres → Applications externes.',
       );
     }
     return client;
@@ -235,6 +235,27 @@ export class ManageTodoTasks {
     }
 
     return { byDate, connected: true, error: null };
+  }
+
+  /**
+   * Ce qu'il reste à faire aujourd'hui : les tâches **ouvertes** du jour, en retard
+   * comprises — la pastille du menu et le rappel du planning.
+   *
+   * Même lecture que la grille bornée à un seul jour, pour que les deux ne puissent pas
+   * compter différemment. Une Todo injoignable ne fait pas échouer la réponse : la
+   * pastille disparaît plutôt que d'afficher un menu en erreur.
+   */
+  async today(todayDate: IsoDate): Promise<{
+    connected: boolean;
+    error: string | null;
+    tasks: TodoTaskView[];
+  }> {
+    const board = await this.forBoard(todayDate, todayDate, todayDate);
+    return {
+      connected: board.connected,
+      error: board.error,
+      tasks: (board.byDate.get(todayDate) ?? []).filter((task) => !task.done),
+    };
   }
 
   /**

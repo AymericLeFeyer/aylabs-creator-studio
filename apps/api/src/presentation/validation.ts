@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { addDays, today } from '../shared/dates.ts';
+import {
+  EXTERNAL_APP_ICONS,
+  EXTERNAL_APP_SECTIONS,
+} from '../domain/externalApp/entities/ExternalApp.ts';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date attendue au format AAAA-MM-JJ');
 
@@ -513,6 +517,46 @@ export const createLegalBookmarkSchema = z.object({
 export const updateLegalBookmarkSchema = createLegalBookmarkSchema.partial().extend({
   isArchived: z.boolean().optional(),
 });
+
+// ---------------------------------------------------------------------------
+// Applications externes (iframe)
+// ---------------------------------------------------------------------------
+
+const externalAppUrl = z
+  .string()
+  .trim()
+  .url('Adresse attendue, par exemple https://todo.mondomaine.fr')
+  .max(500)
+  .nullable()
+  .optional();
+
+const externalAppFields = {
+  name: z.string().trim().min(1, 'Le nom est obligatoire').max(40),
+  url: externalAppUrl,
+  icon: z.enum(EXTERNAL_APP_ICONS).optional(),
+  section: z.enum(EXTERNAL_APP_SECTIONS).optional(),
+  enabled: z.boolean().optional(),
+};
+
+/**
+ * Une app `link` sans adresse n'ouvrirait rien : l'adresse n'est facultative que pour
+ * `todo`, qui reprend alors celle de sa connexion.
+ */
+export const createExternalAppSchema = z
+  .object({ kind: z.enum(['todo', 'link']), ...externalAppFields })
+  .refine((input) => input.kind === 'todo' || Boolean(input.url), {
+    message: 'L’adresse est obligatoire',
+    path: ['url'],
+  });
+
+export const updateExternalAppSchema = z.object({
+  ...externalAppFields,
+  name: externalAppFields.name.optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+/** Le jour local du navigateur : c'est lui qui dit quelles tâches Todo sont en retard. */
+export const todayTodosQuerySchema = z.object({ today: isoDate });
 
 // ---------------------------------------------------------------------------
 // Tâches d'étape, suivi du temps, dépenses récurrentes

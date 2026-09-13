@@ -30,6 +30,7 @@ import { affiliatePlatformsRouter } from './routes/affiliatePlatforms.ts';
 import { planningRouter } from './routes/planning.ts';
 import { instagramRouter } from './routes/instagram.ts';
 import { integrationsRouter } from './routes/integrations.ts';
+import { externalAppsRouter } from './routes/externalApps.ts';
 import { exportRouter } from './routes/export.ts';
 
 export const createServer = (container: Container): express.Express => {
@@ -76,6 +77,7 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/planning', planningRouter(container));
   app.use('/api/instagram', instagramRouter(container));
   app.use('/api/integrations', integrationsRouter(container));
+  app.use('/api/external-apps', externalAppsRouter(container));
   // La seule route protégée par une clé : elle est faite pour être lue depuis une autre
   // machine (Home Assistant), et porte des montants.
   app.use('/api/export', exportRouter(container));

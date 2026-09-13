@@ -55,6 +55,11 @@ export const queryKeys = {
   // l'extérieur ne change ni un chiffre, ni une alerte, ni une file.
   integrations: () => ['integrations'] as const,
   exportKeys: () => ['exportKeys'] as const,
+
+  // Applications externes (iframe). `todoToday` porte la pastille de l'entrée Todo : le
+  // jour local fait partie de la clé, passé minuit la liste change.
+  externalApps: () => ['externalApps'] as const,
+  todoToday: (today: string) => ['todoToday', today] as const,
 };
 
 /** Racines à invalider après une écriture qui change les chiffres agrégés. */

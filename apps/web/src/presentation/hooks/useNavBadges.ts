@@ -1,6 +1,11 @@
 import { useMemo } from 'react';
 import { useProductionOverview } from '../../application/production/usecases/useProductions.ts';
 import { useLegalOverview } from '../../application/legal/usecases/useLegal.ts';
+import {
+  useExternalApps,
+  useTodayTodos,
+} from '../../application/externalApp/usecases/useExternalApps.ts';
+import { externalAppPath } from '../../domain/externalApp/entities/ExternalApp.ts';
 import { buildNavBadges, type NavBadge } from '../navBadges.ts';
 
 /**
@@ -10,9 +15,27 @@ import { buildNavBadges, type NavBadge } from '../navBadges.ts';
  * toute la file — et l'aperçu légal. Ce sont les mêmes clés de cache que le dashboard et
  * les écrans concernés : le menu et l'écran ouvert ne peuvent pas se contredire, et
  * cocher une case ou changer un statut fait bouger la pastille dans la foulée.
+ *
+ * S'y ajoute l'entrée **Todo** quand elle est au menu : le nombre de tâches encore
+ * ouvertes aujourd'hui, en orange s'il y en a en retard. C'est un compte, pas une alerte —
+ * elle ne porte aucune raison, et l'écran ouvert est l'app elle-même.
  */
 export const useNavBadges = (): Record<string, NavBadge> => {
   const { data: overview } = useProductionOverview();
   const { data: legal } = useLegalOverview();
-  return useMemo(() => buildNavBadges(overview, legal?.alerts), [overview, legal]);
+  const { data: apps } = useExternalApps();
+  const todoApp = apps?.find((app) => app.kind === 'todo' && app.enabled) ?? null;
+  const { data: today } = useTodayTodos(todoApp !== null);
+
+  return useMemo(() => {
+    const badges = buildNavBadges(overview, legal?.alerts);
+    if (todoApp && today?.connected && !today.error) {
+      badges[externalAppPath(todoApp)] = {
+        count: today.tasks.length,
+        tone: today.tasks.some((task) => task.overdue) ? 'warning' : 'neutral',
+        reasons: [],
+      };
+    }
+    return badges;
+  }, [overview, legal, todoApp, today]);
 };

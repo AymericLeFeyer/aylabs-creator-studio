@@ -103,7 +103,7 @@ Les deux applications suivent la même découpe.
 apps/api/src/
 ├── domain/          channel, metrics, category, revenue, expense, video, analytics,
 │                    brand, production, product, sponsorship, idea, legal, integration,
-│                    todoApp
+│                    todoApp, externalApp
 │   └── <domaine>/{entities,repositories,services}    # repositories = interfaces seules
 ├── application/<domaine>/usecases/
 ├── infrastructure/
@@ -1218,6 +1218,16 @@ visée). Le dépôt venu de la rangée passe par le même mécanisme que la pile
 ligne de pile **ou** une tâche Todo. Allonger un bloc ne change que `minutes` dans le studio :
 Todo ne connaît que 15/30/60.
 
+**« À faire aujourd'hui »** (`TodayTodos`, sous la pile « En cours ») rappelle les tâches
+Todo du jour **non faites**, en retard comprises : retard d'abord (le plus ancien en tête),
+puis celles qui ont une heure, dans l'ordre de la journée, puis celles « à caler ». Cocher
+coche dans Todo et fait sortir la ligne — c'est un rappel, pas un journal. La ligne se
+glisse sur la grille comme depuis la rangée Todo (`onPickTask`, même `pendingTask`), la
+case neutralisant son `pointerdown`. Le panneau **ne dépend pas de la fenêtre affichée** :
+tant qu'elle contient aujourd'hui, il lit le board ; sinon `usePlanningBoard(today, today,
+{ enabled })` fait une seconde lecture bornée au jour même, désactivée le reste du temps.
+Absent quand Todo n'est pas connecté.
+
 ### `instagram` — le rythme de publication
 
 Un domaine **à part** et non une `channel` de plus. Une chaîne YouTube et un compte
@@ -1381,6 +1391,39 @@ Elle tourne dans le même passage que la collecte des métriques et **après** e
 vidéos doivent être connues pour que le rattachement se pose du premier coup). Son échec
 est **avalé** : les métriques sont déjà écrites, et les commentaires se rattrapent au
 passage suivant.
+
+### `externalApp` — des applications ouvertes dans le studio
+
+`ExternalApp { id, kind, name, url, icon, section, enabled, sortOrder }` — table
+`external_apps` (migration 29). `ExternalAppView` y ajoute `frameUrl`.
+
+Le besoin : piloter l'app Todo (et d'autres) **sans quitter le studio**, depuis une entrée
+du menu qui ouvre `/apps/:id` — une **iframe pleine hauteur, sans `sandbox`** : on s'y
+connecte, on coche, on glisse comme d'habitude. Le studio n'y lit ni n'y écrit rien.
+
+- `kind` : `todo` (au plus une, index unique partiel) ou `link` (adresse obligatoire).
+- `section` : la **famille du menu** (`production | audience | revenus | entreprise`).
+  `withExternalApps` (`navigation.ts`) ajoute l'entrée **après** les écrans du studio de
+  cette famille, retrouvée par son libellé (`EXTERNAL_APP_SECTIONS`). `NAV_SECTIONS` reste
+  statique ; `AppLayout` monte la version augmentée et prend le nom de l'app pour titre.
+- `icon` : clé d'un jeu fermé (`EXTERNAL_APP_ICONS`, `presentation/externalAppIcons.ts`).
+- `url` `null` sur une app Todo = **l'adresse de la connexion Todo**, résolue dans
+  `ManageExternalApps.toView` (seul endroit). Elle peut devoir différer : l'API joint Todo
+  par le réseau Docker, le navigateur par l'adresse publique.
+
+**La pastille** de l'entrée Todo : `GET /api/planning/todo-tasks/today` →
+`ManageTodoTasks.today()`, qui est `forBoard(today, today, today)` filtré sur les ouvertes
+— la même lecture que la grille, pour ne pas compter autrement. Orange s'il y a du retard,
+neutre sinon, aucune raison listée. `useTodayTodos` se **relit chaque minute** : ce qu'on
+coche dans l'iframe ne passe par aucune mutation du studio. Les mutations Todo du planning
+invalident aussi `todoToday`.
+
+**Limites de l'iframe, à connaître** : un site peut refuser le cadre (`X-Frame-Options`,
+`frame-ancestors`) ; un studio en `https` ne peut pas afficher une app en `http` (contenu
+mixte) ; et le cookie de session de Todo est en `SameSite=Lax` — **sur deux domaines
+différents, se connecter à Todo dans l'iframe échoue** (le cookie n'est pas envoyé dans un
+cadre inter-sites). Sans `APP_PASSWORD` côté Todo, ou sur des sous-domaines d'un même
+domaine, aucun problème. Le bouton « Nouvel onglet » est le repli dans tous ces cas.
 
 ### `integration` — l'export pour Home Assistant (ex YouTube-Money-Exporter)
 
@@ -1596,6 +1639,11 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/planning/replan`                              | Repositionner. `onlyDate` = une seule colonne, sinon tout l'horizon                                                                                                                                                                                      |
 | `POST`   | `/api/planning/slots/:id/approve`                   | `{ finished, minutes?, startTime? }` — `startTime` pour un créneau posé sans horaire. `finished` **obligatoire**. Crée la session, fige et redimensionne le créneau, publie dans l'agenda ; renvoie `{ next }`, le créneau reposé si le travail continue |
 | `POST`   | `/api/planning/slots/:id/unapprove`                 | Défaire : la session part, le créneau redevient mobile                                                                                                                                                                                                   |
+| `GET`    | `/api/planning/todo-tasks/today`                    | `?today=` (jour local). `{ connected, error, tasks }` : tâches Todo **ouvertes** du jour, retard compris — la pastille de l'entrée Todo. Déclaré avant `/todo-tasks/:id/…`                                                                               |
+| `GET`    | `/api/external-apps`                                | Applications externes du menu, avec `frameUrl` (adresse réellement ouverte)                                                                                                                                                                              |
+| `POST`   | `/api/external-apps`                                | `{ kind: 'todo' \| 'link', name, url?, icon?, section?, enabled? }`. `url` obligatoire pour `link`. 409 sur une seconde app `todo`                                                                                                                       |
+| `PATCH`  | `/api/external-apps/:id`                            | Modifier (nom, adresse, icône, famille, `enabled`, `sortOrder`). Vider l'adresse d'une app `link` → 400                                                                                                                                                  |
+| `DELETE` | `/api/external-apps/:id`                            | Retirer du menu (l'app elle-même n'est pas touchée)                                                                                                                                                                                                      |
 | `POST`   | `/api/planning/todo-tasks/:id/complete`             | Coche la tâche **dans Todo**. `/uncomplete` la décoche. 204                                                                                                                                                                                              |
 | `PUT`    | `/api/planning/todo-tasks/:id/placement`            | `{ date, startTime, minutes, dueDate? }` → donne une heure. `dueDate` ≠ `date` déplace l'échéance dans Todo. Ne replanifie rien                                                                                                                          |
 | `DELETE` | `/api/planning/todo-tasks/:id/placement`            | Retire l'heure : la tâche retourne sous son jour. Rien n'est écrit dans Todo                                                                                                                                                                             |
@@ -1629,22 +1677,30 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 
 ## Routes front
 
-| Route               | Page                   | Contenu                                                                                                                                                                                                                                                                                                     |
-| ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, puis **les deux graphiques seulement** (argent, audience). Plus d'alertes : elles sont en pastilles                                                                                                                                              |
-| `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                                      |
-| `/instagram`        | `InstagramPage`        | 6 cartes, graphique à 3 onglets, puis calendrier des stories / tableau des publications                                                                                                                                                                                                                     |
-| `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                               |
-| `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
-| `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                     |
-| `/shorts`           | `ProductionPage`       | `format="short"`, titré **« Shorts & Réels »**. Exactement le même écran, borné aux formats courts                                                                                                                                                                                                          |
-| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / Notes                                                                                                                                                                      |
-| `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                  |
-| `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                              |
-| `/plateformes`      | `PlatformsPage`        | 4 cartes (Total affiliations, Sans plateforme, En tête, Plateformes suivies), puis `PlatformsPanel`                                                                                                                                                                                                         |
-| `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                                                                                                                                                                       |
-| `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                                                                                                                                                            |
-| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en onglets (`?onglet=`) : Application, Chaînes, **Instagram**, Catégories, Abonnements, Marques, Étapes, **Script**, **Planning**, Société, **API** (`ApiSettingsPage` : clés d'accès, secrets, une carte par source de l'export). L'onglet Application porte la **Confidentialité** |
+| Route               | Page                   | Contenu                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, puis **les deux graphiques seulement** (argent, audience). Plus d'alertes : elles sont en pastilles                                                                                                                                                                                                                |
+| `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                                                                                                        |
+| `/instagram`        | `InstagramPage`        | 6 cartes, graphique à 3 onglets, puis calendrier des stories / tableau des publications                                                                                                                                                                                                                                                                                       |
+| `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
+| `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
+| `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
+| `/shorts`           | `ProductionPage`       | `format="short"`, titré **« Shorts & Réels »**. Exactement le même écran, borné aux formats courts                                                                                                                                                                                                                                                                            |
+| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / Notes                                                                                                                                                                                                                                        |
+| `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                    |
+| `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                                                                                                |
+| `/plateformes`      | `PlatformsPage`        | 4 cartes (Total affiliations, Sans plateforme, En tête, Plateformes suivies), puis `PlatformsPanel`                                                                                                                                                                                                                                                                           |
+| `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                                                                                                                                                                                                                                         |
+| `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                                                                                                                                                                                                                              |
+| `/apps/:id`         | `ExternalAppPage`      | Une **application externe** en iframe, pleine hauteur (Recharger, Nouvel onglet). L'entrée vit dans la famille de menu choisie                                                                                                                                                                                                                                                |
+| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en **liste verticale groupée comme le menu** (`?onglet=`) : Général (`general`), Production (`planning`, `script`, `etapes`), Audience (`youtube`, `instagram`), Revenus (`chiffre-affaires` = catégories + abonnements, `marques`), Entreprise (`societe`), API (`api`), Applications externes (`applications`). Sur mobile, un seul bouton déroulant |
+
+**Les réglages sont rangés dans les familles du menu, en liste verticale** et non en
+onglets : onze onglets passaient à la ligne dans un ordre qui ne disait rien. `GROUPS`
+(`SettingsPage`) porte groupes et entrées ; les anciens identifiants restent valides par
+`ALIASES` (`app` → `general`, `chaines` → `youtube`, `categories` et `abonnements` →
+`chiffre-affaires`). La connexion Todo (`TodoConnectionCard`) a quitté Planning pour
+**Applications externes**, à côté de l'entrée de menu qu'elle alimente.
 
 `/chaines`, `/categories`, `/marques`, `/etapes`, `/societe` et `/abonnements`
 **redirigent** vers `/parametres` sur le bon onglet : c'étaient six entrées d'un menu
@@ -2115,7 +2171,7 @@ arrêt fait depuis un autre onglet sans marteler l'API pour animer un compteur.
 La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait
 partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/parametres`,
 `/commentaires`, `/planning`, `/production`, `/shorts`, `/produits`, `/sponsors`,
-`/plateformes`, `/legal`).
+`/plateformes`, `/legal`, `/apps`).
 
 **`/produits`, `/sponsors` et `/plateformes` montent le `PeriodPicker` seul, dans leur
 en-tête** (ce qui suit parlait d'un seul écran `/partenariats`, désormais coupé en trois ;
@@ -2272,6 +2328,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useScriptPresets`, `useShotAngles`, `useProductionShotAngles`, `useCreateScriptPreset`, `useUpdateScriptPreset`, `useDeleteScriptPreset`, `useReorderScriptPresets`, `useCreateShotAngle`, `useUpdateShotAngle`, `useDeleteShotAngle`, `useReorderShotAngles`, `useCreateProductionShotAngle`, `useDeleteProductionShotAngle` | `application/script/usecases/useScript.ts`            | Gabarits et angles de vue (cache 5 min)                                                                                                             |
 | `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`         | Commentaires archivés, leur tri et leur collecte                                                                                                    |
 | `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                                                                                                                                                         | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                                                                            |
+| `useExternalApps`, `useCreateExternalApp`, `useUpdateExternalApp`, `useDeleteExternalApp`, `useTodayTodos`                                                                                                                                                                                                                     | `application/externalApp/usecases/useExternalApps.ts` | Applications externes du menu ; tâches Todo du jour (pastille, **relue chaque minute** : ce qu'on coche dans l'iframe ne passe pas par le studio)   |
 | `useIntegrations`, `useUpdateIntegration`, `useCollectIntegration`, `useExportKeys`, `useCreateExportKey`, `useDeleteExportKey`                                                                                                                                                                                                | `application/integration/usecases/useIntegrations.ts` | Paramètres → API : sources de l'export, identifiants, clés d'accès                                                                                  |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
@@ -2344,6 +2401,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   contredire.
 - **Migration 26** ajoute `ideas.format` (`'video'` par défaut, même `CHECK`) : le carnet
   d'idées suit le menu où on le lit, et toutes les idées déjà notées deviennent des vidéos.
+- **Migration 29** ajoute `external_apps` (une ligne par app, `CHECK` sur `kind` et
+  `section`) et un index unique partiel `WHERE kind = 'todo'` : une seule app Todo.
 - **Migration 28** ajoute `planning_settings.todo_base_url`, `todo_api_key` (chiffrée),
   `todo_tags`, et la table `todo_placements` (l'heure donnée à une tâche Todo, sans clé
   étrangère : la tâche vit dans une autre base).

@@ -45,6 +45,7 @@ import {
 } from '../../domain/planning/entities/Planning.ts';
 import { PlanningGrid } from '../components/planning/PlanningGrid.tsx';
 import { PlanningQueue } from '../components/planning/PlanningQueue.tsx';
+import { TodayTodos } from '../components/planning/TodayTodos.tsx';
 import { AddToPlanDialog } from '../components/planning/AddToPlanDialog.tsx';
 import { ApproveSlotDialog } from '../components/planning/ApproveSlotDialog.tsx';
 import { SlotTimeDialog } from '../components/planning/SlotTimeDialog.tsx';
@@ -117,6 +118,15 @@ export const PlanningPage = () => {
   const to = span === 'day' ? anchor : shiftDate(from, 6);
 
   const { data: board, isLoading } = usePlanningBoard(from, to);
+  /**
+   * « À faire aujourd'hui » ne dépend pas de la fenêtre regardée. Tant qu'elle contient
+   * aujourd'hui, le board suffit ; sinon une seconde lecture bornée à aujourd'hui prend le
+   * relais — sans elle, le rappel disparaîtrait dès qu'on avance de deux jours.
+   */
+  const todayInWindow = from <= today && today <= to;
+  const { data: todayBoard } = usePlanningBoard(today, today, { enabled: !todayInWindow });
+  const todayTasks =
+    (todayInWindow ? board : todayBoard)?.days.find((day) => day.date === today)?.tasks ?? [];
   // Les bornes de forme d'un créneau : c'est d'elles que se déduit la durée d'un bloc
   // posé à la main. Requête partagée avec l'écran de réglages (cache 5 min).
   const { data: settings } = usePlanningSettings();
@@ -580,6 +590,15 @@ export const PlanningPage = () => {
             onPickUp={setPending}
             pendingId={pending?.id ?? null}
           />
+
+          {board?.todo.connected && (
+            <TodayTodos
+              tasks={todayTasks}
+              onToggle={(task, done) => toggleTodo.mutate({ id: task.id, done })}
+              onPickTask={setPendingTask}
+              pendingTaskId={pendingTask?.id ?? null}
+            />
+          )}
 
           {board && !board.calendarConnected && (
             <Card className="p-4">

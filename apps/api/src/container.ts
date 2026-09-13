@@ -59,6 +59,8 @@ import { AmazonScraper } from './infrastructure/integration/api/AmazonScraper.ts
 import { DomadooScraper } from './infrastructure/integration/api/DomadooScraper.ts';
 import { DiscordClient } from './infrastructure/integration/api/DiscordClient.ts';
 import { InstagramProfileClient } from './infrastructure/integration/api/InstagramProfileClient.ts';
+import { SqliteExternalAppRepository } from './infrastructure/externalApp/repositories/SqliteExternalAppRepository.ts';
+import { ManageExternalApps } from './application/externalApp/usecases/ManageExternalApps.ts';
 import { ManageIntegrations } from './application/integration/usecases/ManageIntegrations.ts';
 import { CollectIntegrations } from './application/integration/usecases/CollectIntegrations.ts';
 import { GetExport } from './application/integration/usecases/GetExport.ts';
@@ -104,6 +106,8 @@ export interface Container {
   legalBookmarks: SqliteLegalBookmarkRepository;
   /** Plateformes d'affiliation, avec leurs marques et ce qu'elles rapportent. */
   affiliatePlatforms: SqliteAffiliatePlatformRepository;
+  /** Applications externes ouvertes en iframe depuis le menu (l'app Todo, entre autres). */
+  manageExternalApps: ManageExternalApps;
   /** Comptes Instagram suivis. Le jeton ne sort jamais de ce dépôt. */
   instagramAccounts: SqliteInstagramAccountRepository;
   /** Stories, publications et relevés archivés d'Instagram. */
@@ -350,5 +354,11 @@ export const buildContainer = (config: Config): Container => {
     ),
     getExport: new GetExport(integrations, manageIntegrations),
     manageTodoTasks,
+    // L'adresse de l'app Todo retombe sur celle de sa connexion : relue à chaque appel,
+    // pour qu'un changement de connexion se voie dans le menu sans redémarrer.
+    manageExternalApps: new ManageExternalApps(
+      new SqliteExternalAppRepository(db),
+      () => manageTodoTasks.view().baseUrl,
+    ),
   };
 };

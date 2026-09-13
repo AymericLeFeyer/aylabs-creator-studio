@@ -33,13 +33,14 @@ const usePlanningMutation = <TVariables, TData>(
 };
 
 /** La grille, ses occupations et la pile de travail, en une requête. */
-export const usePlanningBoard = (from: string, to: string) => {
+export const usePlanningBoard = (from: string, to: string, options: { enabled?: boolean } = {}) => {
   // Le jour d'ici fait partie de la clé : passé minuit, les tâches Todo d'hier non faites
   // deviennent « en retard » et changent de colonne.
   const today = localToday();
   return useQuery({
     queryKey: queryKeys.planningBoard({ from, to, today }),
     queryFn: () => planningApi.board(from, to, today),
+    enabled: options.enabled ?? true,
     // Le planning se lit à côté d'un agenda ouvert ailleurs : une donnée d'une minute
     // est déjà trop vieille pour décider quoi faire maintenant.
     staleTime: 30_000,
@@ -69,7 +70,11 @@ const useTodoMutation = <TVariables, TData>(
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn,
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['planningBoard'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['planningBoard'] });
+      // La pastille de l'entrée Todo du menu compte les mêmes tâches.
+      void queryClient.invalidateQueries({ queryKey: ['todoToday'] });
+    },
   });
 };
 

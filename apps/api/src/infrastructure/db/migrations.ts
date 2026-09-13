@@ -1300,6 +1300,33 @@ const migrations: Migration[] = [
       CREATE INDEX idx_todo_placements_date ON todo_placements (date);
     `,
   },
+  {
+    version: 29,
+    name: 'external_apps',
+    // Les applications externes ouvertes dans le studio (iframe), rangees dans une
+    // famille du menu. Une ligne par app, pas une colonne par app : en ajouter une ne
+    // demande aucune migration.
+    //
+    // "url" est nullable pour la seule sorte "todo" : l'adresse retombe alors sur celle
+    // de la connexion Todo du planning. L'index unique partiel interdit une seconde app
+    // "todo" - deux entrees Taches porteraient la meme pastille.
+    up: `
+      CREATE TABLE external_apps (
+        id         TEXT PRIMARY KEY,
+        kind       TEXT NOT NULL CHECK (kind IN ('todo', 'link')),
+        name       TEXT NOT NULL,
+        url        TEXT,
+        icon       TEXT NOT NULL DEFAULT 'app-window',
+        section    TEXT NOT NULL DEFAULT 'production'
+                   CHECK (section IN ('production', 'audience', 'revenus', 'entreprise')),
+        enabled    INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX idx_external_apps_todo ON external_apps (kind) WHERE kind = 'todo';
+    `,
+  },
 ];
 
 /**

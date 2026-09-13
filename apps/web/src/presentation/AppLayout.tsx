@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
 import { Menu, Moon, PanelLeftClose, PanelLeftOpen, Settings, Sun, X } from 'lucide-react';
-import { MOBILE_NAV, NAV_SECTIONS, pageTitle, type NavItem } from './navigation.ts';
+import { MOBILE_NAV, pageTitle, withExternalApps, type NavItem } from './navigation.ts';
+import { useExternalApps } from '../application/externalApp/usecases/useExternalApps.ts';
 import { useTheme } from './hooks/useTheme.ts';
 import { usePreferences } from './hooks/usePreferences.ts';
 import { Button } from './components/ui/button.tsx';
@@ -34,6 +35,9 @@ const ROUTES_WITHOUT_FILTERS = [
   '/sponsors',
   '/plateformes',
   '/legal',
+  // Une app embarquée a sa propre interface : une barre de période au-dessus d'elle ne
+  // piloterait rien.
+  '/apps',
 ];
 
 /** Largeurs de la barre latérale. Repliée, elle ne montre que les icônes. */
@@ -139,8 +143,18 @@ export const AppLayout = () => {
   const isItemActive = (to: string, isActive: boolean): boolean =>
     detailRoute && (to === '/production' || to === '/shorts') ? to === detailRoute : isActive;
 
+  /**
+   * Le menu du studio, plus les applications externes activées, chacune dans sa famille.
+   * Le titre de la barre d'application est alors le nom de l'app ouverte, que l'adresse
+   * (`/apps/<id>`) ne porte pas.
+   */
+  const { data: externalApps = [] } = useExternalApps();
+  const navSections = useMemo(() => withExternalApps(externalApps), [externalApps]);
+  const openAppId = matchPath('/apps/:id', location.pathname)?.params.id;
+
   const collapsed = preferences.sidebarCollapsed;
-  const title = pageTitle(location.pathname);
+  const title =
+    externalApps.find((app) => app.id === openAppId)?.name ?? pageTitle(location.pathname);
   const showFilters = !ROUTES_WITHOUT_FILTERS.some((route) => location.pathname.startsWith(route));
 
   // Naviguer referme le tiroir : sur mobile, il recouvre le contenu qu'on vient
@@ -188,7 +202,7 @@ export const AppLayout = () => {
       </div>
 
       <nav aria-label="Navigation principale" className="flex flex-1 flex-col overflow-y-auto">
-        {NAV_SECTIONS.map((section) => (
+        {navSections.map((section) => (
           <div key={section.label ?? 'top'} className="flex flex-col gap-0.5">
             {/* Repliée, la barre n'a pas la largeur d'un intitulé : le titre de famille
                 devient un simple filet, qui suffit à dire « on change de sujet ». */}

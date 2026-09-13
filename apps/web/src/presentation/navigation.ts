@@ -12,6 +12,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { FORMAT_ICONS } from './components/production/formatIcons.ts';
+import {
+  EXTERNAL_APP_SECTIONS,
+  externalAppPath,
+  type ExternalApp,
+} from '../domain/externalApp/entities/ExternalApp.ts';
+import { externalAppIcon } from './externalAppIcons.ts';
 
 export interface NavItem {
   /** L'adresse, et **l'identifiant** de l'entrée. */
@@ -124,6 +130,28 @@ export const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+/**
+ * Le menu, augmenté des **applications externes** activées : chacune rejoint la famille
+ * choisie dans ses réglages, après les écrans du studio — une app embarquée n'a pas à
+ * passer devant ce que le studio fait lui-même.
+ *
+ * La famille est retrouvée par son **libellé** (`EXTERNAL_APP_SECTIONS`) : le dashboard,
+ * sans famille, n'en reçoit jamais.
+ */
+export const withExternalApps = (apps: ExternalApp[]): NavSection[] =>
+  NAV_SECTIONS.map((section) => {
+    const sectionId = EXTERNAL_APP_SECTIONS.find((entry) => entry.label === section.label)?.id;
+    const extra: NavItem[] = apps
+      .filter((app) => app.enabled && sectionId !== undefined && app.section === sectionId)
+      .map((app) => ({
+        to: externalAppPath(app),
+        label: app.name,
+        icon: externalAppIcon(app.icon),
+        end: false,
+      }));
+    return extra.length > 0 ? { ...section, items: [...section.items, ...extra] } : section;
+  });
+
 /** Toutes les entrées à plat, dans l'ordre d'affichage. */
 export const NAV: NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);
 
@@ -168,6 +196,8 @@ const TITLES: Array<[string, string]> = [
   ['/chiffre-affaires', "Chiffre d'affaires"],
   ['/legal', 'Légal'],
   ['/parametres', 'Paramètres'],
+  // Repli seulement : `AppLayout` affiche le nom de l'app ouverte.
+  ['/apps/', 'Application'],
 ];
 
 export const pageTitle = (pathname: string): string =>

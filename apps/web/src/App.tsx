@@ -16,6 +16,7 @@ import { ProductsPage } from './presentation/pages/ProductsPage.tsx';
 import { SponsorsPage } from './presentation/pages/SponsorsPage.tsx';
 import { PlatformsPage } from './presentation/pages/PlatformsPage.tsx';
 import { CommentsPage } from './presentation/pages/CommentsPage.tsx';
+import { ExternalAppPage } from './presentation/pages/ExternalAppPage.tsx';
 
 /** `/partenariats?onglet=…` → l'écran qui a remplacé l'onglet. */
 const LegacyPartnersRedirect = () => {
@@ -66,6 +67,7 @@ export const App = () => (
               <Route path="partenariats" element={<LegacyPartnersRedirect />} />
               <Route path="chiffre-affaires" element={<TurnoverPage />} />
               <Route path="legal" element={<LegalPage />} />
+              <Route path="apps/:id" element={<ExternalAppPage />} />
               {/* Revenus et dépenses sont désormais deux onglets du chiffre d'affaires.
                 Les anciennes adresses mènent au bon onglet, pour les signets. */}
               <Route
@@ -85,11 +87,11 @@ export const App = () => (
               <Route path="parametres" element={<SettingsPage />} />
               <Route
                 path="chaines"
-                element={<Navigate to="/parametres?onglet=chaines" replace />}
+                element={<Navigate to="/parametres?onglet=youtube" replace />}
               />
               <Route
                 path="categories"
-                element={<Navigate to="/parametres?onglet=categories" replace />}
+                element={<Navigate to="/parametres?onglet=chiffre-affaires" replace />}
               />
               <Route
                 path="marques"
@@ -102,7 +104,7 @@ export const App = () => (
               />
               <Route
                 path="abonnements"
-                element={<Navigate to="/parametres?onglet=abonnements" replace />}
+                element={<Navigate to="/parametres?onglet=chiffre-affaires" replace />}
               />
               <Route
                 path="horaires"

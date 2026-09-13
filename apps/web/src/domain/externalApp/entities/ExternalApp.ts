@@ -1,0 +1,59 @@
+import type { TodoTask } from '../../planning/entities/Planning.ts';
+
+/**
+ * Les applications externes ouvertes dans le studio (iframe). Duplique le contrat de
+ * l'API — toute évolution doit être répercutée des deux côtés.
+ */
+export type ExternalAppKind = 'todo' | 'link';
+
+export type ExternalAppSection = 'production' | 'audience' | 'revenus' | 'entreprise';
+
+/**
+ * Les familles du menu où une app peut se ranger. Les libellés sont **exactement** ceux
+ * de `NAV_SECTIONS` : c'est par eux que l'entrée rejoint sa famille.
+ */
+export const EXTERNAL_APP_SECTIONS: Array<{ id: ExternalAppSection; label: string }> = [
+  { id: 'production', label: 'Production' },
+  { id: 'audience', label: 'Audience' },
+  { id: 'revenus', label: 'Revenus' },
+  { id: 'entreprise', label: 'Entreprise' },
+];
+
+export type ExternalAppIcon =
+  'list-checks' | 'app-window' | 'globe' | 'notebook' | 'calendar' | 'chart';
+
+export interface ExternalApp {
+  id: string;
+  kind: ExternalAppKind;
+  name: string;
+  /** Adresse propre. `null` pour une app Todo = celle de la connexion Todo. */
+  url: string | null;
+  icon: ExternalAppIcon;
+  section: ExternalAppSection;
+  enabled: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  /** L'adresse réellement chargée, repli résolu par l'API. `null` = rien à ouvrir. */
+  frameUrl: string | null;
+}
+
+export interface ExternalAppInput {
+  kind: ExternalAppKind;
+  name: string;
+  url?: string | null;
+  icon?: ExternalAppIcon;
+  section?: ExternalAppSection;
+  enabled?: boolean;
+}
+
+/** L'adresse de l'écran qui ouvre une app : c'est aussi la clé de sa pastille. */
+export const externalAppPath = (app: Pick<ExternalApp, 'id'>): string => `/apps/${app.id}`;
+
+/** Ce qui reste à faire aujourd'hui dans Todo : la pastille de l'entrée Todo. */
+export interface TodayTodos {
+  connected: boolean;
+  error: string | null;
+  /** Tâches ouvertes du jour, en retard comprises. */
+  tasks: TodoTask[];
+}
