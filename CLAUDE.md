@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-13
+> Dernière mise à jour : 2026-09-14
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -2457,6 +2457,15 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 
 ## Points d'attention
 
+- **Jamais `onCreated?.(await create.mutateAsync(payload))`.** Un appel optionnel
+  court-circuite **aussi l'évaluation de ses arguments** : quand `onCreated` n'est pas
+  passé, la mutation n'est jamais lancée, aucune requête ne part, et le code enchaîne sur
+  `onOpenChange(false)` — le dialogue se referme sans erreur comme si tout s'était bien
+  passé. C'est ce qui a rendu impossible, du 2 au 14 septembre 2026, la création d'un
+  produit depuis `/produits` (`ProductDialog`) et d'une vidéo depuis l'écran vide de
+  `/production` (`ProductionDialog`) : seuls les chemins qui passaient un `onCreated`
+  (documenter un revenu en nature, promouvoir une idée) fonctionnaient. Toujours en deux
+  temps : `const created = await create.mutateAsync(payload); onCreated?.(created);`.
 - **L'image web n'installe que son propre workspace** (`npm ci --workspace=@acs/web`). Tout ce dont `vite.config.ts` a besoin doit donc être déclaré dans `apps/web/package.json` — dont `@types/node`, sans quoi le `tsc -b` du Dockerfile échoue sur `node:url` et `process` alors que le build local passe (la racine, elle, a les types via l'API).
 - **Une seule instance de l'API par fichier SQLite.** Un second process échoue au démarrage sur `database is locked` (`PRAGMA journal_mode = WAL`). Bien arrêter le `npm run dev` précédent.
 - **`subscriberCount` public est arrondi** à 3 chiffres significatifs au-delà de 1000. C'est pourquoi le mode `public` ne dérive **que** les vues (exactes) en `daily_metrics`, jamais les abonnés — leurs deltas seraient de faux escaliers. Seul le mode OAuth donne le compte exact.

@@ -188,7 +188,11 @@ export const ProductDialog = ({
       if (product) {
         await update.mutateAsync({ id: product.id, input: payload });
       } else {
-        onCreated?.(await create.mutateAsync(payload));
+        // Deux temps, jamais `onCreated?.(await create.mutateAsync(…))` : un appel optionnel
+        // court-circuite AUSSI ses arguments. Sans `onCreated` (l'écran Produits), la
+        // création n'était jamais lancée et le dialogue se refermait comme si de rien n'était.
+        const created = await create.mutateAsync(payload);
+        onCreated?.(created);
       }
       onOpenChange(false);
     } catch (mutationError) {

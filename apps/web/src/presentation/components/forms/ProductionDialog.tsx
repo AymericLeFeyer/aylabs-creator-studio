@@ -118,7 +118,10 @@ export const ProductionDialog = ({
       if (production) {
         await update.mutateAsync({ id: production.id, input: payload });
       } else {
-        onCreated?.(await create.mutateAsync(payload));
+        // Deux temps, jamais `onCreated?.(await create.mutateAsync(…))` : un appel optionnel
+        // court-circuite AUSSI ses arguments, et sans `onCreated` rien n'était créé.
+        const created = await create.mutateAsync(payload);
+        onCreated?.(created);
       }
       onOpenChange(false);
     } catch (mutationError) {
