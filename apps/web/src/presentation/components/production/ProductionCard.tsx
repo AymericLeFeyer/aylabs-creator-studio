@@ -5,10 +5,10 @@ import {
   CalendarClock,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   Gift,
   Handshake,
   Pause,
+  Pencil,
   Play,
   Radio,
   Timer,
@@ -41,9 +41,8 @@ interface ProductionCardProps {
   onOpenStep: (step: ProductionStep) => void;
   /** Lance le chronomètre sur cette vidéo (l'étape est demandée dans la foulée). */
   onStartTimer: () => void;
-  /** `null` quand la carte est en tête ou en queue : le bouton disparaît. */
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
+  /** Ouvre le formulaire de la vidéo sans quitter la file. */
+  onEdit: () => void;
   /** Mise en avant de la prochaine vidéo à travailler. */
   /** La prochaine à travailler : un anneau la désigne, sans lui donner un fond de plus. */
   highlighted?: boolean;
@@ -140,8 +139,7 @@ export const ProductionCard = ({
   steps,
   onOpenStep,
   onStartTimer,
-  onMoveUp,
-  onMoveDown,
+  onEdit,
   highlighted,
   timerRunning,
   urgent,
@@ -193,6 +191,27 @@ export const ProductionCard = ({
     >
       {timerRunning ? <Timer className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
       <span className="sr-only">Démarrer le chronomètre</span>
+    </Button>
+  );
+
+  /**
+   * Titre, chaîne, dates, statut : ce qu'on corrige le plus souvent sur une vidéo, et qui
+   * ne justifie pas d'ouvrir la fiche — on la quittait ensuite pour revenir à la file.
+   */
+  const editButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-7 w-7 shrink-0"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onEdit();
+      }}
+      title="Modifier la vidéo"
+    >
+      <Pencil className="h-3.5 w-3.5" />
+      <span className="sr-only">Modifier la vidéo</span>
     </Button>
   );
 
@@ -252,6 +271,7 @@ export const ProductionCard = ({
 
         <ProductionStatusMenu production={production} className="hidden lg:inline-flex" />
 
+        {editButton}
         {timerButton}
 
         {/* Le chevron est au même endroit dans les deux vues — dernier à droite.
@@ -272,33 +292,8 @@ export const ProductionCard = ({
   }
 
   return (
+    // L'ordre de la file ne se règle plus ici : il suit la sortie visée (côté API).
     <Card className={cn('flex gap-3 p-4 transition-colors', tone, ring)}>
-      {/* L'ordre de la file est entièrement manuel : deux flèches, pas de tri déduit. */}
-      <div className="flex flex-col justify-center gap-0.5">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          disabled={!onMoveUp}
-          onClick={onMoveUp}
-          title="Remonter dans la file"
-        >
-          <ChevronUp className="h-3.5 w-3.5" />
-          <span className="sr-only">Remonter</span>
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          disabled={!onMoveDown}
-          onClick={onMoveDown}
-          title="Descendre dans la file"
-        >
-          <ChevronDown className="h-3.5 w-3.5" />
-          <span className="sr-only">Descendre</span>
-        </Button>
-      </div>
-
       <div className="min-w-0 flex-1 space-y-2.5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
@@ -339,6 +334,7 @@ export const ProductionCard = ({
 
           <div className="flex shrink-0 items-center gap-1">
             <ProductionStatusMenu production={production} />
+            {editButton}
             {timerButton}
             {onToggleCompact && (
               <Button

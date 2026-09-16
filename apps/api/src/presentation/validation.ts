@@ -295,14 +295,6 @@ export const productionOverviewQuerySchema = z.object({
 });
 
 /**
- * L'ordre de la file, dans l'ordre reçu. Peut n'en être qu'une partie (un seul format) :
- * le dépôt la réordonne alors entre ses propres places.
- */
-export const reorderProductionsSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1, 'Aucune production à réordonner'),
-});
-
-/**
  * L'ordre complet d'un référentiel (étapes, tâches), dans l'ordre reçu.
  *
  * Le tableau porte **tous** les identifiants et non les deux à échanger : les rangs en

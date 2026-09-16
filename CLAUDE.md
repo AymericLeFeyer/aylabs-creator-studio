@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-14
+> Dernière mise à jour : 2026-09-16
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -285,12 +285,14 @@ travail — et seule l'icône les distingue (`FORMAT_ICONS`, `FormatIcon` :
 porté par `ProductionSlotView`, `PlanningItemView` et `PlanningProductionSpan.format`.
 Changer le format d'une fiche la déplace d'un menu à l'autre sans rien perdre.
 
-**L'ordre de la file reste global**, et c'est lui que suit le planning. Chaque écran ne
-réordonne pourtant que son format : `SqliteProductionRepository.reorder(ids)` accepte une
-**partie** de la file, relit l'ordre complet (`sort_order, created_at`), remet les
-identifiants reçus **dans les places qu'ils occupaient** et réécrit `1..N` sur tout. Écrire
-`1..n` sur le seul sous-ensemble aurait fait entrer ses rangs en collision avec ceux de
-l'autre format.
+**L'ordre de la file se déduit de la sortie visée, et ne se règle plus.**
+`SqliteProductionRepository.findAll` trie par `planned_date IS NULL, planned_date,
+sort_order, created_at` : l'échéance la plus proche en tête, les vidéos sans date à la fin.
+Le réordonnancement manuel (deux flèches par carte, `POST /api/productions/reorder`,
+`useReorderProductions`, `reorder(ids)` du dépôt) a été **supprimé** : il laissait la file
+contredire le Gantt juste au-dessus. `sort_order` ne sert plus qu'à départager deux sorties
+le même jour. L'ordre reste global, et le planning le suit (même tri dans
+`SqlitePlanningItemRepository.findAll`).
 
 `GetProductionOverview` porte aussi `stepAverages` (temps moyen **vécu** par étape,
 `StepTimeAverage`) et `averageVideoMinutes` (temps total moyen d'une vidéo **publiée**),
@@ -321,7 +323,7 @@ urgente — la même carte ne doit pas crier deux fois. La carte correspondante 
 réécrire la règle. Aucun montant dans le texte d'une alerte : le masquage de
 confidentialité ne s'applique pas à une phrase.
 
-`sortOrder` porte l'ordre de la file, **entièrement manuel** — l'outil ne déduit aucune priorité. `POST /api/productions/reorder` le réécrit en une transaction : un classement à moitié appliqué afficherait deux rangs identiques.
+`sortOrder` n'est plus qu'un départage à date de sortie égale (posé en fin de file à la création) : l'ordre de la file suit `plannedDate`.
 
 `ProductionView` embarque tout ce qu'une carte de file affiche (chaîne, vidéo, étapes cochées, prochain créneau, produits et sponsos rattachés) en **une** requête. Elle porte les **listes** et non des compteurs : « 2 produits » ne dit pas lesquels, et c'est précisément ce qu'on veut savoir au survol. Compteurs et montants en attente se dérivent côté front (`partnerCounts`) — une seule source, rien à resynchroniser. Produits et sponsos sont chargés par deux requêtes pour tout le lot (`loadPartners`), comme les étapes cochées : les joindre à la ligne de production produirait un produit cartésien, trois produits face à deux sponsos donnant six lignes à dédupliquer.
 
@@ -902,7 +904,8 @@ décochée (retirer de la pile n'a jamais voulu dire « ce n'est plus à faire �
 « pas dans ce planning »), et **rien n'est replanifié**.
 
 **L'ordre de travail se déduit, il ne se règle pas dans la pile** :
-`productions.sort_order` (la file d'attente) d'abord, puis `production_steps.sort_order`,
+l'ordre de la file d'attente d'abord (`productions.planned_date`, sans date en dernier, puis
+`productions.sort_order`), puis `production_steps.sort_order`,
 puis `sequence` — posé dans l'ordre des tâches au moment de l'ajout. On finit une vidéo
 avant d'attaquer la suivante, et le tournage avant le montage. Le tri vit dans le seul
 `ORDER BY` de `SqlitePlanningItemRepository.findAll`.
@@ -1566,7 +1569,6 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/productions/overview`                         | File d'attente + alertes + créneaux + charge de la semaine. Param `format` : borne file, chiffres et créneaux ; **les alertes restent complètes**. **Déclaré avant `/:id`**                                                                              |
 | `GET`    | `/api/productions/:id`                              | Une production (`ProductionView`)                                                                                                                                                                                                                        |
 | `POST`   | `/api/productions`                                  | Créer (entre en **fin** de file)                                                                                                                                                                                                                         |
-| `POST`   | `/api/productions/reorder`                          | `{ ids }` → l'ordre manuel de la file. Peut n'en être qu'**une partie** (un format) : réordonnée entre ses propres places, le reste ne bouge pas                                                                                                         |
 | `PATCH`  | `/api/productions/:id`                              | Modifier (dont `script`)                                                                                                                                                                                                                                 |
 | `DELETE` | `/api/productions/:id`                              | Supprimer ; produits et sponsos sont **détachés**, pas supprimés                                                                                                                                                                                         |
 | `GET`    | `/api/productions/:id/previous-publication`         | Titre, description et tags de la **sortie précédente** de la même chaîne, lus en direct sur YouTube. `null` si la chaîne n'en a pas d'autre ; 400 sans chaîne renseignée                                                                                 |
@@ -2304,7 +2306,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useExpenses`, `useCreateExpense`, …                                                                                                                                                                                                                                                                                           | `application/expense/usecases/useExpenses.ts`         | Dépenses                                                                                                                                            |
 | `useTheme`, `useLocalStorage`                                                                                                                                                                                                                                                                                                  | `presentation/hooks/`                                 | Thème clair/sombre, stockage protégé                                                                                                                |
 | `useBrands`, `useBrandStats`, `useCreateBrand`, …                                                                                                                                                                                                                                                                              | `application/brand/usecases/useBrands.ts`             | Marques + classements du dashboard                                                                                                                  |
-| `useProductions`, `useProduction`, `useProductionOverview`, `useCreateProduction`, `useUpdateProduction`, `useDeleteProduction`, `useReorderProductions`, `usePublishProduction`, `useToggleStep`                                                                                                                              | `application/production/usecases/useProductions.ts`   | Vidéos en préparation. `useProductionOverview(format?)` : sans format = tout (dashboard, pastilles) ; clé `['productionOverview', format ?? 'all']` |
+| `useProductions`, `useProduction`, `useProductionOverview`, `useCreateProduction`, `useUpdateProduction`, `useDeleteProduction`, `usePublishProduction`, `useToggleStep`                                                                                                                                                       | `application/production/usecases/useProductions.ts`   | Vidéos en préparation. `useProductionOverview(format?)` : sans format = tout (dashboard, pastilles) ; clé `['productionOverview', format ?? 'all']` |
 | `useNavBadges`                                                                                                                                                                                                                                                                                                                 | `presentation/hooks/useNavBadges.ts`                  | Pastilles du menu et leurs raisons (`buildNavBadges`, `presentation/navBadges.ts`)                                                                  |
 | `useProductionSteps`, `useCreateStep`, `useUpdateStep`, `useDeleteStep`                                                                                                                                                                                                                                                        | idem                                                  | Référentiel des étapes (cache 5 min)                                                                                                                |
 | `useProductionSlots`, `useCreateSlot`, `useUpdateSlot`, `useDeleteSlot`                                                                                                                                                                                                                                                        | idem                                                  | Créneaux de travail                                                                                                                                 |
@@ -2676,7 +2678,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   sous-chemins (`@tiptap/pm/state`…) et rollup échoue à résoudre sa racine avec un
   `Missing "." specifier`. Ce sont les paquets `prosemirror-*` eux-mêmes qu'on nomme.
 - **Le Gantt est une grille CSS maison**, sans bibliothèque : une barre par production, une colonne par jour, rien d'autre que des jours à compter. Sans `startDate`, la barre occupe le seul jour visé — une vidéo qu'on n'a pas commencé à planifier ne doit pas paraître étalée sur trois semaines.
-- **Dans le Gantt, la couleur dit la chaîne et le contenu dit l'avancement** : une icône `$` s'il y a une sponso, une icône de carton s'il y a un produit, l'état, et le pourcentage d'étapes cochées. Écrire le nom de la chaîne serait redondant avec sa couleur ; ces quatre-là ne se lisent nulle part ailleurs sur cette vue. **L'ordre suit ce qui doit survivre au rognage** : icônes et pourcentage sont `shrink-0`, c'est le libellé d'état qui se tronque en premier — sur une barre d'un jour, savoir qu'il y a une sponso vaut mieux que lire « En cours ». L'infobulle (`barTitle`) reprend tout ce que le rognage a pu manger. La barre entière est un lien vers la fiche : c'est la cible la plus large de la ligne. Le texte prend sa couleur de `readableTextColor(fond)`.
+- **Dans le Gantt, la couleur dit l'état et le logo dit la chaîne** (`STATUS_COLORS`, légende sous le titre ; `ChannelAvatar` de 14 px en tête de barre, miniature lue dans `useChannels`, repli sur l'initiale). Puis une icône `$` s'il y a une sponso, une icône de carton s'il y a un produit, l'état, et le **vrai** pourcentage (`stepProgress`, étapes **et** tâches — le même que la carte de file ; le Gantt ne comptait autrefois que les étapes et affichait 0 % sur une vidéo bien avancée). **L'ordre suit ce qui doit survivre au rognage** : icônes et pourcentage sont `shrink-0`, c'est le libellé d'état qui se tronque en premier — sur une barre d'un jour, savoir qu'il y a une sponso vaut mieux que lire « En cours ». L'infobulle (`barTitle`) reprend tout ce que le rognage a pu manger. La barre entière est un lien vers la fiche : c'est la cible la plus large de la ligne. Le texte est en encre fixe (`BAR_INK`) : les couleurs de statut sont des variables `oklch` que `readableTextColor` ne sait pas lire, et l'encre sombre y contraste dans les deux thèmes. **Au survol, toute la ligne s'éclaire** (`group` + `hover:bg-muted`, colonne des titres collante comprise — fond opaque, les barres défilent dessous) et la barre prend un contour : sur une barre posée loin à droite, c'est ce qui la relie à son titre.
 - **Le planning est affiché en permanence sur `/production`, pas dans un onglet** : « qu'est-ce qui sort quand » est la première question de la page. Il se replie à `COLLAPSED_ROWS` (5) lignes pour ne pas repousser la file d'attente sous le pli. **L'ordre est chronologique (sortie visée, ou début à défaut), et seules les vidéos terminées dont l'échéance est passée sont renvoyées en bas.** Une vidéo terminée avant sa date garde sa place dans le calendrier, grisée : elle occupe toujours ce créneau de sortie, et la reléguer en bas faisait croire que la semaine était vide.
 - **Le carnet d'idées vit à côté de la file d'attente**, sous les prochains créneaux : une idée se note pendant qu'on regarde ce qu'on est en train de faire, pas dans un écran à part. Champ + Entrée, et c'est noté ; le champ se vide aussitôt parce qu'on note souvent trois idées d'affilée. Le texte s'édite sur place, **validé à la sortie du champ** (même piège que `StepsPage` : une mutation par frappe partirait à chaque lettre).
 - **Les classements de partenaires sont des barres, pas des anneaux.** Sur un top-N ordonné, ce qui se lit est le rang et l'écart au premier : une longueur le donne, un angle non. Les barres sont proportionnelles au **maximum** de la liste et non au total — un classement n'est pas une répartition, et rapporter au total écraserait tout le bas de liste.
@@ -3115,10 +3117,13 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   chiffres et les créneaux, mais les pastilles de **tous** les menus lisent les alertes de
   la même réponse. Les borner ferait disparaître la pastille des shorts dès qu'on ouvre
   l'écran des vidéos. Chaque écran garde les siennes par `productionFormat`.
-- **Réordonner une file ne doit envoyer que ses propres identifiants**, et c'est le dépôt
-  qui les remet à leurs places dans l'ordre global. Revenir à un `1..n` écrit sur le
-  sous-ensemble ferait entrer en collision les rangs des vidéos et des shorts, et le
-  planning — qui suit cet ordre — travaillerait dans un ordre imprévisible.
+- **La file ne se réordonne plus à la main : elle suit la sortie visée.** Ne pas
+  réintroduire de flèches sans rebrancher aussi un ordre manuel côté API — le tri vit dans
+  les deux `ORDER BY` (file de production et pile du planning), qui doivent rester
+  identiques, sinon le planning travaillerait dans un autre ordre que celui affiché.
+- **Le crayon d'une carte de file ouvre `ProductionDialog` sur place** (titre, format,
+  chaîne, statut, dates, notes), dans les deux vues. `ProductionPage` garde l'**identifiant**
+  édité et relit la vidéo dans la file rechargée, comme `StepTodosDialog`.
 - **Un short se reconnaît à son icône, partout, et la même partout** (`FORMAT_ICONS`).
   Le planning mélange volontairement les deux formats : c'est la seule chose qui les y
   distingue. Ne pas inventer un second pictogramme pour un écran.

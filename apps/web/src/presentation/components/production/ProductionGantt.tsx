@@ -4,13 +4,19 @@ import { ChevronDown, ChevronUp, DollarSign, Package } from 'lucide-react';
 import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Production } from '../../../domain/production/entities/Production.ts';
-import { STATUS_LABELS } from '../../../domain/production/entities/Production.ts';
+import {
+  PRODUCTION_STATUSES,
+  STATUS_COLORS,
+  STATUS_LABELS,
+  stepProgress,
+} from '../../../domain/production/entities/Production.ts';
+import { useChannels } from '../../../application/channel/usecases/useChannels.ts';
 import { PRODUCT_STATUS_LABELS } from '../../../domain/product/entities/Product.ts';
 import { SPONSORSHIP_STATUS_LABELS } from '../../../domain/sponsorship/entities/Sponsorship.ts';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import type { ProductionStep } from '../../../domain/production/entities/ProductionStep.ts';
 import { toIsoDate } from '../../../shared/format.ts';
-import { readableTextColor } from '../../../shared/contrast.ts';
+import { ChannelAvatar } from '../filters/ChannelAvatar.tsx';
 import { Button } from '../ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
 import { cn } from '../../../shared/cn.ts';
@@ -44,12 +50,22 @@ const TITLE_WIDTH = 224;
 /** Au-delà, le planning prend toute la page avant même qu'on ait vu la file d'attente. */
 const COLLAPSED_ROWS = 5;
 
-/** Couleur de repli quand la vidéo n'a pas encore de chaîne : neutre, jamais transparente. */
-const NO_CHANNEL_COLOR = '#64748b';
+/**
+ * Encre du texte des barres.
+ *
+ * Les couleurs de statut sont des variables du thème (`oklch`), que `readableTextColor` ne
+ * sait pas lire. Elles sont toutes à mi-clarté dans les deux thèmes, et l'encre sombre y
+ * contraste au moins autant que le blanc — mieux sur le vert et l'orange.
+ */
+const BAR_INK = '#0f172a';
 
-/** Part d'étapes cochées, en pourcentage entier. */
-const progressPercent = (production: Production, total: number): number =>
-  total === 0 ? 0 : Math.round((production.steps.length / total) * 100);
+/**
+ * L'avancement **réel** de la vidéo : étapes ET tâches, la même règle que la carte de la
+ * file (`stepProgress`). Le Gantt ne comptait que les étapes cochées, si bien qu'une vidéo
+ * à 18 tâches sur 30 y affichait 0 % tant qu'aucune étape n'était entièrement close.
+ */
+const progressPercent = (production: Production, totalSteps: number): number =>
+  Math.round(stepProgress(production, totalSteps) * 100);
 
 /** Infobulle de la barre : tout ce que le rognage a pu manger. */
 const barTitle = (production: Production, total: number): string =>
@@ -57,7 +73,9 @@ const barTitle = (production: Production, total: number): string =>
     production.title,
     STATUS_LABELS[production.status],
     production.channelName,
-    total > 0 ? `${progressPercent(production, total)} % d'avancement` : null,
+    total + production.todos.length > 0
+      ? `${progressPercent(production, total)} % d'avancement`
+      : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -109,16 +127,16 @@ interface ProductionGanttProps {
  * occupe le seul jour visé : une vidéo qu'on n'a pas encore commencé à planifier ne
  * doit pas paraître étalée sur trois semaines.
  *
- * **La couleur dit la chaîne, le contenu dit l'avancement.** Répéter le nom de la chaîne
- * dans la barre serait redondant avec sa couleur ; l'état, les pastilles d'argent et le
- * pourcentage, eux, ne se lisent nulle part ailleurs sur cette vue.
+ * **La couleur dit l'état, la miniature dit la chaîne.** L'état est ce qu'on balaie du
+ * regard sur un calendrier (qu'est-ce qui est bloqué, qu'est-ce qui n'a pas commencé) ;
+ * la chaîne se reconnaît à son logo en tête de barre, sans prendre la couleur pour elle.
  *
  * L'ordre dans la barre suit ce qui doit survivre au rognage : les icônes et le
  * pourcentage sont `shrink-0`, c'est le libellé d'état qui se tronque en premier — sur
  * une barre d'un jour, savoir qu'il y a une sponso vaut mieux que lire « En cours ».
  *
- * La couleur du texte est calculée pour chaque fond (`readableTextColor`) : du blanc sur
- * un vert clair ne se lit pas.
+ * Au survol, toute la ligne s'éclaire et la barre prend un contour : c'est ce qui relie
+ * une barre lointaine à son titre, collé à gauche.
  */
 export const ProductionGantt = ({ productions, steps }: ProductionGanttProps) => {
   const privacy = usePrivacy();
@@ -126,6 +144,7 @@ export const ProductionGantt = ({ productions, steps }: ProductionGanttProps) =>
   const productMoney = (cents: number) => privacy.money(cents, 'inKind');
   const [zoom, setZoom] = useState<Zoom>('month');
   const [expanded, setExpanded] = useState(false);
+  const { data: channels = [] } = useChannels();
   const scrollRef = useRef<HTMLDivElement>(null);
   /** Le coin de l'en-tête : il porte la largeur réelle de la colonne des titres. */
   const titleRef = useRef<HTMLDivElement>(null);
@@ -209,8 +228,21 @@ export const ProductionGantt = ({ productions, steps }: ProductionGanttProps) =>
         <div>
           <CardTitle>Planning</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Du début du travail à la date de sortie visée. La couleur est la chaîne.
+            Du début du travail à la date de sortie visée. La couleur est l'état, le logo la chaîne.
           </p>
+          {/* Légende : la couleur ne se devine pas, et elle a changé de sens. */}
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            {PRODUCTION_STATUSES.map((status) => (
+              <span key={status} className="flex items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className="h-2.5 w-2.5 rounded-sm"
+                  style={{ backgroundColor: STATUS_COLORS[status] }}
+                />
+                {STATUS_LABELS[status]}
+              </span>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-muted p-1 text-sm">
           {(Object.keys(ZOOM) as Zoom[]).map((key) => (
@@ -289,11 +321,29 @@ export const ProductionGantt = ({ productions, steps }: ProductionGanttProps) =>
                     const from = columnOf(start);
                     const to = columnOf(end);
                     const span = Math.max(1, to - from + 1);
-                    const color = production.channelColor ?? NO_CHANNEL_COLOR;
+                    const color = STATUS_COLORS[production.status];
                     const done = production.status === 'done';
+                    // Le référentiel porte la miniature ; la vue de production n'a que le nom
+                    // et la couleur, qui suffisent au repli (initiale sur la couleur).
+                    const channel = production.channelId
+                      ? (channels.find((item) => item.id === production.channelId) ??
+                        (production.channelName
+                          ? {
+                              name: production.channelName,
+                              color: production.channelColor ?? '#64748b',
+                              thumbnailUrl: null,
+                            }
+                          : null))
+                      : null;
 
                     return (
-                      <div key={production.id} className="flex items-center">
+                      // La ligne entière s'éclaire au survol, colonne des titres comprise :
+                      // sur une barre posée loin à droite, c'est la seule façon de voir de
+                      // quelle vidéo il s'agit sans suivre la ligne des yeux.
+                      <div
+                        key={production.id}
+                        className="group flex items-center rounded-sm transition-colors hover:bg-muted"
+                      >
                         {/* Collée à gauche : en défilant vers le futur, on doit continuer
                             de savoir de quelle vidéo est la barre qu'on regarde. */}
                         <Link
@@ -307,6 +357,9 @@ export const ProductionGantt = ({ productions, steps }: ProductionGanttProps) =>
                             // où elle s'arrête et où le calendrier commence.
                             'sticky left-0 z-30 flex w-36 shrink-0 items-center self-stretch',
                             'border-r border-border bg-card pr-3 text-sm hover:underline lg:w-56',
+                            // Opaque, comme le fond de ligne : la colonne est collante et
+                            // les barres défilent dessous.
+                            'transition-colors group-hover:bg-muted group-hover:font-medium',
                             done && 'text-muted-foreground',
                           )}
                           title={production.title}
@@ -328,15 +381,24 @@ export const ProductionGantt = ({ productions, steps }: ProductionGanttProps) =>
                               de la ligne, et celle qu'on vise naturellement. */}
                           <Link
                             to={`/production/${production.id}`}
-                            className="z-10 flex h-5 items-center gap-1 overflow-hidden rounded px-1.5 text-[11px] font-medium transition-opacity hover:opacity-80"
+                            className="z-10 flex h-5 items-center gap-1 overflow-hidden rounded px-1 text-[11px] font-medium transition-shadow group-hover:shadow-[0_0_0_2px_var(--foreground)]"
                             style={{
                               gridColumn: `${from + 1} / span ${span}`,
                               backgroundColor: color,
-                              color: readableTextColor(color),
+                              color: BAR_INK,
                               opacity: done ? 0.55 : 1,
                             }}
                             title={barTitle(production, steps.length)}
                           >
+                            {/* En tête, et `shrink-0` : sur une barre d'un jour, c'est la
+                                dernière chose à disparaître avec les pastilles d'argent. */}
+                            {channel && (
+                              <ChannelAvatar
+                                channel={channel}
+                                size={14}
+                                className="ring-1 ring-black/10"
+                              />
+                            )}
                             {production.sponsorships.length > 0 && (
                               <span
                                 className="shrink-0"
@@ -360,7 +422,7 @@ export const ProductionGantt = ({ productions, steps }: ProductionGanttProps) =>
                               </span>
                             )}
                             <span className="truncate">{STATUS_LABELS[production.status]}</span>
-                            {steps.length > 0 && (
+                            {steps.length + production.todos.length > 0 && (
                               <span className="ml-auto shrink-0 tabular">
                                 {progressPercent(production, steps.length)} %
                               </span>

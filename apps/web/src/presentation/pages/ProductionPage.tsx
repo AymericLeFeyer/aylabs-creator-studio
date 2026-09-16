@@ -17,7 +17,6 @@ import {
   useProductionOverview,
   useProductions,
   useProductionSteps,
-  useReorderProductions,
 } from '../../application/production/usecases/useProductions.ts';
 import { useDeleteIdea } from '../../application/idea/usecases/useIdeas.ts';
 import type { Idea } from '../../domain/idea/entities/Idea.ts';
@@ -112,7 +111,6 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
     [overview],
   );
 
-  const reorder = useReorderProductions();
   const deleteIdea = useDeleteIdea();
   const { preferences, set } = usePreferences();
 
@@ -124,6 +122,8 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
     null,
   );
   const [timerFor, setTimerFor] = useState<Production | null>(null);
+  /** La vidéo dont on corrige la fiche depuis la file, sans l'ouvrir. */
+  const [editingId, setEditingId] = useState<string | null>(null);
   /**
    * Les cartes dépliées à contre-courant du réglage global : on veut souvent une file
    * compacte *sauf* la vidéo sur laquelle on travaille.
@@ -172,17 +172,9 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
     setDialogOpen(true);
   };
 
-  /** Déplace une carte d'un cran et réécrit l'ordre complet de la file. */
-  const move = (index: number, direction: -1 | 1) => {
-    const next = [...queue];
-    const target = index + direction;
-    const current = next[index];
-    const other = next[target];
-    if (!current || !other) return;
-    next[index] = other;
-    next[target] = current;
-    reorder.mutate(next.map((production) => production.id));
-  };
+  // Relue dans la file rechargée et non figée au clic : le formulaire se rouvre sur la
+  // dernière version connue, et se referme de lui-même si la vidéo quitte la file.
+  const editing = queue.find((production) => production.id === editingId) ?? null;
 
   if (!isLoading && queue.length === 0 && done.length === 0) {
     return (
@@ -305,7 +297,9 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
               largeur fixe de `20rem`. */}
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
             <div className="min-w-0 space-y-2.5">
-              {queue.map((production, index) => (
+              {/* Triée par sortie visée côté API : l'échéance la plus proche en tête,
+                  sans ordre manuel qui pourrait contredire le planning au-dessus. */}
+              {queue.map((production) => (
                 <ProductionCard
                   key={production.id}
                   production={production}
@@ -317,8 +311,7 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
                   onToggleCompact={() => toggleException(production.id)}
                   onOpenStep={(step) => setOpenStep({ production, step })}
                   onStartTimer={() => setTimerFor(production)}
-                  onMoveUp={index > 0 ? () => move(index, -1) : undefined}
-                  onMoveDown={index < queue.length - 1 ? () => move(index, 1) : undefined}
+                  onEdit={() => setEditingId(production.id)}
                 />
               ))}
               {queue.length === 0 && (
@@ -463,6 +456,12 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
       />
 
       <Fab label={copy.create} icon={Plus} onClick={openCreate} />
+
+      <ProductionDialog
+        open={editing !== null}
+        onOpenChange={(value) => !value && setEditingId(null)}
+        production={editing}
+      />
 
       <ProductionDialog
         open={dialogOpen}

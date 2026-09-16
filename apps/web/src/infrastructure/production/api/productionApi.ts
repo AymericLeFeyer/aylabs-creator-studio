@@ -72,10 +72,6 @@ export const productionApi = {
 
   remove: (id: string) => request<void>(`/api/productions/${id}`, { method: 'DELETE' }),
 
-  /** L'ordre complet de la file : le rang est la position dans le tableau envoyé. */
-  reorder: (ids: string[]) =>
-    request<void>('/api/productions/reorder', { method: 'POST', body: { ids } }),
-
   /**
    * La fiche de mise en ligne de la sortie précédente de la même chaîne.
    *

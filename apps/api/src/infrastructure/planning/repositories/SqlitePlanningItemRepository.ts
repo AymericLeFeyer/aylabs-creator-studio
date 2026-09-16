@@ -120,14 +120,16 @@ export class SqlitePlanningItemRepository implements PlanningItemRepository {
            LEFT JOIN production_steps st ON st.id = i.step_id
            ${clause}
           -- L'ordre de travail **se déduit**, il ne se règle pas séparément : la file
-          -- d'attente des vidéos d'abord, puis l'ordre des étapes, puis celui des tâches
-          -- (sequence, posé dans cet ordre à l'ajout). On finit une vidéo avant
+          -- d'attente des vidéos d'abord (sortie visée la plus proche, sans date en
+          -- dernier : le même ordre que l'écran de production), puis l'ordre des
+          -- étapes, puis celui des tâches (sequence, posé dans cet ordre à l'ajout). On finit une vidéo avant
           -- d'attaquer la suivante, et le tournage avant le montage.
           --
           -- Un rang propre à la pile existait avant, réglable à la main : il pouvait
           -- contredire la file de production, et deux ordres concurrents pour la même
           -- question finissent toujours par se répondre différemment.
-          ORDER BY production_order, step_order, i.sequence, i.created_at`,
+          ORDER BY planned_date IS NULL, planned_date, production_order,
+                   step_order, i.sequence, i.created_at`,
       )
       .all(...(params as never[])) as unknown as ViewRow[];
 

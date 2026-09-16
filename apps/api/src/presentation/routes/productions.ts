@@ -11,7 +11,6 @@ import {
   productionOverviewQuerySchema,
   productionQuerySchema,
   publishProductionSchema,
-  reorderProductionsSchema,
   reorderSchema,
   slotQuerySchema,
   updateProductionSchema,
@@ -53,13 +52,6 @@ export const productionsRouter = (container: Container): Router => {
     res
       .status(201)
       .json(container.manageProductions.create(createProductionSchema.parse(req.body)));
-  });
-
-  /** Réordonne toute la file d'un coup : le rang est la position dans le tableau reçu. */
-  router.post('/reorder', (req, res) => {
-    const { ids } = reorderProductionsSchema.parse(req.body);
-    container.productions.reorder(ids);
-    res.status(204).end();
   });
 
   router.patch('/:id', (req, res) => {

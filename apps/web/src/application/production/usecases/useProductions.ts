@@ -89,9 +89,6 @@ export const useUpdateProduction = () =>
 export const useDeleteProduction = () =>
   useProductionMutation((id: string) => productionApi.remove(id), true);
 
-export const useReorderProductions = () =>
-  useProductionMutation((ids: string[]) => productionApi.reorder(ids));
-
 /**
  * Va chercher la fiche de mise en ligne de la sortie précédente, **sur demande**.
  *

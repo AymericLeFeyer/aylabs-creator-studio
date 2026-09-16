@@ -309,8 +309,16 @@ export class SqliteProductionRepository implements ProductionRepository {
 
     // `today()` alimente la sous-requête « prochain créneau » : elle est dans le SELECT,
     // donc son paramètre passe AVANT ceux du WHERE.
+    //
+    // L'ordre de la file **se déduit de la sortie visée**, il ne se règle plus à la main :
+    // l'échéance la plus proche d'abord, les vidéos sans date à la fin. Deux flèches par
+    // carte laissaient la file contredire le calendrier juste au-dessus. `sort_order` ne
+    // fait plus que départager deux sorties le même jour.
     const rows = this.db
-      .prepare(`SELECT ${VIEW_COLUMNS} ${VIEW_JOINS} ${clause} ORDER BY p.sort_order, p.created_at`)
+      .prepare(
+        `SELECT ${VIEW_COLUMNS} ${VIEW_JOINS} ${clause}
+          ORDER BY p.planned_date IS NULL, p.planned_date, p.sort_order, p.created_at`,
+      )
       .all(today(), ...(params as never[])) as unknown as ProductionViewRow[];
 
     const ids = rows.map((row) => row.id);
@@ -460,41 +468,6 @@ export class SqliteProductionRepository implements ProductionRepository {
   delete(id: string): void {
     const result = this.db.prepare('DELETE FROM productions WHERE id = ?').run(id);
     if (result.changes === 0) throw notFound('Production');
-  }
-
-  /**
-   * Réécrit l'ordre de la file en une transaction : un classement à moitié appliqué
-   * afficherait deux fois le même rang et une file dans un ordre imprévisible.
-   *
-   * `ids` n'est souvent qu'**une partie** de la file — l'écran des vidéos ne réordonne
-   * que les vidéos, celui des shorts que les shorts. Écrire `1..n` sur ce seul morceau le
-   * ferait entrer en collision avec les rangs de l'autre format, et le planning, qui suit
-   * cet ordre global, travaillerait dans un ordre imprévisible. On relit donc l'ordre
-   * **complet** (celui de l'affichage : rang puis date de création), on remet les
-   * identifiants reçus dans les places qu'ils occupaient, puis on réécrit `1..N` sur tout.
-   * Le reste de la file ne bouge pas d'un cran, et les rangs redeviennent distincts.
-   */
-  reorder(ids: string[]): void {
-    if (ids.length === 0) return;
-    const stmt = this.db.prepare('UPDATE productions SET sort_order = ? WHERE id = ?');
-
-    const all = (
-      this.db.prepare('SELECT id FROM productions ORDER BY sort_order, created_at').all() as Array<{
-        id: string;
-      }>
-    ).map((row) => row.id);
-    const moved = new Set(ids);
-    const queue = ids.filter((id) => all.includes(id));
-    const order = all.map((id) => (moved.has(id) ? queue.shift()! : id));
-
-    this.db.exec('BEGIN');
-    try {
-      order.forEach((id, index) => stmt.run(index + 1, id));
-      this.db.exec('COMMIT');
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
   }
 
   checkStep(productionId: string, stepId: string): void {
