@@ -1346,6 +1346,21 @@ const migrations: Migration[] = [
       CREATE INDEX idx_post_drafts_planned ON post_drafts (planned_date);
     `,
   },
+  {
+    version: 31,
+    name: 'post_draft_steps',
+    // Les cases d'une publication (montage, sous-titres, miniature, puis YouTube,
+    // Instagram, TikTok) et son archivage. Les cases sont une liste fermee de six : une
+    // colonne texte (cles separees par des virgules) suffit, une table de coches par
+    // brouillon serait un referentiel pour six valeurs qui ne bougent pas.
+    // "archived_at" pose = sortie de la liste ; toutes cases cochees = publication
+    // validee, celle qui compte pour la pastille du menu.
+    up: `
+      ALTER TABLE post_drafts ADD COLUMN steps TEXT NOT NULL DEFAULT '';
+      ALTER TABLE post_drafts ADD COLUMN archived_at TEXT;
+      CREATE INDEX idx_post_drafts_archived ON post_drafts (archived_at);
+    `,
+  },
 ];
 
 /**

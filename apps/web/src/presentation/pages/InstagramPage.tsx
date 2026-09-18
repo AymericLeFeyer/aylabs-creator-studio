@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Instagram, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Instagram, Plus, RefreshCw } from 'lucide-react';
 import {
+  useAddInstagramPost,
   useCollectInstagram,
   useInstagramOverview,
 } from '../../application/instagram/usecases/useInstagram.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
-import { formatCount, variation } from '../../domain/instagram/entities/Instagram.ts';
+import { formatCount } from '../../domain/instagram/entities/Instagram.ts';
+import { Input } from '../components/ui/input.tsx';
 import { InstagramChart } from '../components/instagram/InstagramChart.tsx';
+import { PostsCalendar } from '../components/instagram/PostsCalendar.tsx';
 import { InstagramMediaTable } from '../components/instagram/InstagramMediaTable.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
@@ -36,14 +40,21 @@ export const InstagramPage = () => {
   const { data, isLoading } = useInstagramOverview({
     from: filters.from,
     to: filters.to,
-    granularity: filters.effectiveGranularity,
+    // Toujours au jour, quelle que soit la maille de la barre de filtres : le calendrier
+    // compte une case par jour, et le gain d'abonnés se lit jour par jour.
+    granularity: 'day',
   });
   const collect = useCollectInstagram();
+  const addPost = useAddInstagramPost();
+  const [postUrl, setPostUrl] = useState('');
 
   const accounts = data?.accounts ?? [];
   const totals = data?.totals;
-  const previous = data?.previousTotals ?? null;
   const media = data?.media ?? [];
+  const reading = data?.publicReading ?? null;
+  // La voie `page` ne liste aucune publication : sans ce bandeau, un tableau vide et des
+  // j'aime à « — » se liraient comme une panne de collecte.
+  const listBlocked = reading?.source === 'page';
 
   // Le nombre de publications affiché sur le profil, hors période : c'est lui qu'on
   // connaît même quand aucune publication n'a encore pu être datée.
@@ -119,15 +130,12 @@ export const InstagramPage = () => {
                 : `${totals.followersGained >= 0 ? '+' : ''}${totals.followersGained} sur la période`
           }
         />
+        {/* Le total du profil en grand : c'est le chiffre qu'on connaît toujours. Le nombre
+            de parutions de la période ne se compte qu'à partir des publications datées. */}
         <StatCard
           label="Publications"
-          value={formatCount(totals?.posts ?? null)}
-          hint={
-            profilePosts === null
-              ? 'Posts, carrousels et reels parus sur la période'
-              : `Parues sur la période · ${formatCount(profilePosts)} sur le profil`
-          }
-          change={variation(totals?.posts ?? null, previous?.posts ?? null)}
+          value={formatCount(profilePosts ?? totals?.posts ?? null)}
+          hint={`${formatCount(totals?.posts ?? 0)} parue(s) sur la période`}
         />
         <StatCard
           label="J’aime"
@@ -149,12 +157,78 @@ export const InstagramPage = () => {
         />
       </div>
 
-      <Card className="p-4">
-        <InstagramChart series={data?.series ?? []} granularity={filters.effectiveGranularity} />
+      <Card className="space-y-2 p-4">
+        <h2 className="text-sm font-semibold">Publications</h2>
+        <PostsCalendar
+          series={data?.series ?? []}
+          media={media}
+          from={filters.from}
+          to={filters.to}
+        />
       </Card>
 
+      {/* Deux graphiques côte à côte plutôt qu'un seul à deux axes : un total de quelques
+          centaines et un gain de quelques unités n'ont pas la même échelle. */}
+      <div className="grid gap-3 xl:grid-cols-2">
+        <Card className="space-y-2 p-4">
+          <h2 className="text-sm font-semibold">Abonnés</h2>
+          <InstagramChart series={data?.series ?? []} kind="followers" />
+        </Card>
+        <Card className="space-y-2 p-4">
+          <h2 className="text-sm font-semibold">Gain d’abonnés par jour</h2>
+          <InstagramChart series={data?.series ?? []} kind="gained" />
+        </Card>
+      </div>
+
+      {listBlocked && (
+        <Card className="flex items-start gap-3 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+            Instagram refuse au serveur la liste des publications (lecture limitée par adresse IP) :
+            seuls les abonnés et le nombre de publications sont relevés. Colle ci-dessous le lien
+            d’une publication pour la suivre — ses j’aime et commentaires seront relus à chaque
+            relevé
+            {reading.postsRefreshed > 0 && ` (${reading.postsRefreshed} relue(s) au dernier)`}. Une
+            clé SearchAPI dans{' '}
+            <Link to="/parametres?onglet=api" className="underline underline-offset-2">
+              Paramètres → API
+            </Link>{' '}
+            rend la liste automatique.
+          </p>
+        </Card>
+      )}
+
       <div className="space-y-2">
-        <h2 className="text-sm font-semibold">Publications ({media.length})</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Publications ({media.length})</h2>
+          <form
+            className="flex w-full gap-2 sm:w-auto"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const url = postUrl.trim();
+              if (!url) return;
+              addPost.mutate(url, { onSuccess: () => setPostUrl('') });
+            }}
+          >
+            <Input
+              value={postUrl}
+              onChange={(event) => setPostUrl(event.target.value)}
+              placeholder="Lien d’une publication"
+              className="h-8 sm:w-72"
+              aria-label="Lien d’une publication Instagram à suivre"
+            />
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              disabled={addPost.isPending || !postUrl.trim()}
+            >
+              <Plus className="h-4 w-4" />
+              {addPost.isPending ? 'Lecture…' : 'Suivre'}
+            </Button>
+          </form>
+        </div>
+        {addPost.error && <p className="text-sm text-destructive">{addPost.error.message}</p>}
         <InstagramMediaTable media={media} />
       </div>
     </div>

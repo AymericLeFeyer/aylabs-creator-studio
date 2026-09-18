@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import type { Container } from '../../container.ts';
-import { createPostDraftSchema, updatePostDraftSchema } from '../validation.ts';
+import {
+  createPostDraftSchema,
+  postDraftQuerySchema,
+  updatePostDraftSchema,
+} from '../validation.ts';
 import { param } from '../helpers.ts';
 
 /**
@@ -11,8 +15,14 @@ import { param } from '../helpers.ts';
 export const postDraftsRouter = (container: Container): Router => {
   const router = Router();
 
-  router.get('/', (_req, res) => {
-    res.json(container.postDrafts.findAll());
+  // `?archived=true` : les archives. Absent, la liste en cours.
+  router.get('/', (req, res) => {
+    res.json(container.postDrafts.findAll(postDraftQuerySchema.parse(req.query)));
+  });
+
+  /** Ce que lit la pastille du menu : dernière publication validée, et reste à faire. */
+  router.get('/summary', (_req, res) => {
+    res.json(container.postDrafts.summary());
   });
 
   router.post('/', (req, res) => {

@@ -62,6 +62,9 @@ export const useDeleteInstagramAccount = () =>
  */
 export const useCollectInstagram = () => useInstagramMutation(() => instagramApi.collectAll());
 
+export const useAddInstagramPost = () =>
+  useInstagramMutation((url: string) => instagramApi.addPost(url));
+
 export const useCollectInstagramAccount = () =>
   useInstagramMutation((id: string) => instagramApi.collectOne(id));
 

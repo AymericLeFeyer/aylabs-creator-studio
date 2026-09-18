@@ -4,7 +4,11 @@ import type {
   DomadooSale,
   DomadooSummary,
 } from '../entities/ExportData.ts';
-import type { InstagramPublicProfile } from '../../instagram/entities/InstagramAccount.ts';
+import type {
+  InstagramPublicPostPage,
+  InstagramPublicProfile,
+} from '../../instagram/entities/InstagramAccount.ts';
+import type { InstagramMedia } from '../../instagram/entities/InstagramStory.ts';
 
 /** Les collecteurs distants, vus du use case : il ne sait pas qu'un navigateur tourne derrière. */
 export interface IntegrationCollectors {
@@ -25,6 +29,8 @@ export interface IntegrationCollectors {
   instagram: {
     /** `profile` : adresse du profil ou @pseudo, tel que saisi. */
     fetch(profile: string, searchApiKey: string | null): Promise<InstagramPublicProfile>;
+    /** Une publication lue sur sa propre page : la voie que le blocage par IP laisse passer. */
+    fetchPost(url: string): Promise<InstagramPublicPostPage>;
   };
 }
 
@@ -36,4 +42,12 @@ export interface IntegrationCollectors {
  */
 export interface InstagramProfileSink {
   recordPublicProfile(profile: InstagramPublicProfile): { accountId: string; username: string };
+  /**
+   * Les publications déjà archivées d'un compte suivi par son profil public, à relire une
+   * à une sur leur page. Vide pour un compte à jeton : l'API Graph s'en charge.
+   */
+  postsToRefresh(accountId: string, limit: number): Array<{ id: string; permalink: string }>;
+  recordPostStats(mediaId: string, post: InstagramPublicPostPage): void;
+  /** Une publication ajoutée par son lien, rangée sous le compte de son auteur. */
+  recordPublicPost(post: InstagramPublicPostPage): InstagramMedia;
 }

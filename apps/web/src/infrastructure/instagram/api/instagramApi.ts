@@ -3,6 +3,7 @@ import type {
   InstagramAccount,
   InstagramAccountInput,
   InstagramCollectResult,
+  InstagramMedia,
   InstagramOverview,
 } from '../../../domain/instagram/entities/Instagram.ts';
 
@@ -26,6 +27,10 @@ export const instagramApi = {
         accountIds: csv(params.accountIds),
       },
     }),
+
+  /** Suivre une publication par son lien : elle est lue sur sa page, puis relue à chaque relevé. */
+  addPost: (url: string) =>
+    request<InstagramMedia>('/api/instagram/media', { method: 'POST', body: { url } }),
 
   accounts: (includeArchived = false) =>
     request<InstagramAccount[]>('/api/instagram/accounts', { query: { includeArchived } }),

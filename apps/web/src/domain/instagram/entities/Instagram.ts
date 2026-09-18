@@ -117,6 +117,20 @@ export interface InstagramDailyMetric {
   profileLinksTaps: number | null;
 }
 
+/**
+ * Ce que le dernier relevé du profil public a pu lire. La voie `page` — celle qui reste
+ * quand Instagram bloque l'adresse du serveur — ne liste aucune publication : c'est ce
+ * qui explique un tableau vide, et l'écran doit le dire.
+ */
+export interface InstagramPublicReading {
+  source: 'api' | 'searchapi' | 'page' | null;
+  postsListed: number;
+  /** Publications déjà suivies relues une à une sur leur page. */
+  postsRefreshed: number;
+  at: string | null;
+  error: string | null;
+}
+
 export interface InstagramOverview {
   from: string;
   to: string;
@@ -133,6 +147,8 @@ export interface InstagramOverview {
    */
   firstStoryDate: string | null;
   dailyMetrics: InstagramDailyMetric[];
+  /** `null` tant que le profil public n'a jamais été relevé. */
+  publicReading: InstagramPublicReading | null;
 }
 
 export interface InstagramCollectResult {

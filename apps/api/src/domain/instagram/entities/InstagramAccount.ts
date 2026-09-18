@@ -123,7 +123,10 @@ export interface InstagramPublicProfile {
 
 /** Une publication lue sur le profil public : ce que n'importe quel visiteur en voit. */
 export interface InstagramPublicPost {
-  /** Identifiant public de la publication — pas celui de l'API Graph, qui diffère. */
+  /**
+   * Le **code court** de la publication (`/p/<code>/`), pas l'identifiant de l'API Graph :
+   * c'est la seule clé commune à toutes les voies de lecture, lien collé à la main compris.
+   */
   id: string;
   mediaType: string | null;
   caption: string | null;
@@ -135,6 +138,43 @@ export interface InstagramPublicPost {
   comments: number | null;
   /** Lectures d'une vidéo ou d'un reel, `null` pour une photo. */
   views: number | null;
+}
+
+/**
+ * Une publication lue sur **sa propre page** (balises Open Graph) : la seule lecture que
+ * n'arrête pas le blocage par adresse IP. J'aime et commentaires y sont arrondis au-delà
+ * de dix mille, la date n'a que le jour, et les vues n'y figurent pas.
+ */
+export interface InstagramPublicPostPage extends InstagramPublicPost {
+  /** L'auteur, lu dans la description : c'est lui qui désigne le compte suivi. */
+  username: string | null;
+}
+
+/**
+ * Le code court d'une publication, quel que soit le lien collé : `/p/<code>/`,
+ * `/reel/<code>/`, `/<pseudo>/p/<code>/`, avec ou sans `?igsh=…`. `null` sinon.
+ */
+export const instagramShortcode = (url: string): string | null =>
+  /instagram\.com\/(?:[A-Za-z0-9._]+\/)?(?:p|reels?|tv)\/([A-Za-z0-9_-]{5,})/i.exec(url)?.[1] ??
+  null;
+
+/**
+ * L'adresse **canonique** d'une publication. Toutes les voies l'écrivent sous cette forme
+ * — un reel s'ouvre aussi par `/p/` —, si bien qu'elle sert de clé pour retrouver une
+ * publication déjà archivée sous un autre identifiant.
+ */
+export const instagramPermalink = (shortcode: string): string =>
+  `https://www.instagram.com/p/${shortcode}/`;
+
+/** Ce que le dernier relevé du profil public a pu lire, pour que l'écran le dise. */
+export interface InstagramPublicReading {
+  source: 'api' | 'searchapi' | 'page' | null;
+  /** Publications listées par le relevé du profil (0 par la voie `page`). */
+  postsListed: number;
+  /** Publications déjà connues relues une à une sur leur page. */
+  postsRefreshed: number;
+  at: string | null;
+  error: string | null;
 }
 
 /** Couleurs attribuées en rotation à la création, comme pour les chaînes et les marques. */

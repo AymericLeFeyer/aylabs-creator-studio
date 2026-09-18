@@ -62,7 +62,8 @@ export const InstagramMediaTable = ({ media }: InstagramMediaTableProps) => {
   if (media.length === 0) {
     return (
       <Card className="p-6 text-center text-sm text-muted-foreground">
-        Aucune publication sur cette période.
+        Aucune publication parue sur cette période. Les publications suivies plus anciennes
+        apparaissent en élargissant la période.
       </Card>
     );
   }

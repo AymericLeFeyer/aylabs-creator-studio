@@ -4,6 +4,7 @@ import {
   Clock,
   Gift,
   Handshake,
+  Images,
   ListChecks,
   Pause,
   Wallet,
@@ -17,6 +18,11 @@ import type {
 import { FORMAT_ROUTES, PRODUCTION_FORMATS } from '../domain/production/entities/Production.ts';
 import type { LegalAlert } from '../domain/legal/entities/Legal.ts';
 import { formatMonth } from '../domain/legal/entities/Legal.ts';
+import {
+  daysUntil,
+  localDateOf,
+  type PostDraftSummary,
+} from '../domain/postDraft/entities/PostDraft.ts';
 
 /**
  * Les pastilles du menu : ce qui remplace les bandeaux d'alertes du dashboard.
@@ -60,6 +66,8 @@ export interface BadgeReason {
 export interface NavBadge {
   /** Le nombre affiché. À zéro, la pastille devient un point s'il reste des raisons. */
   count: number;
+  /** Affiché à la place du nombre quand il n'est pas un compte (« -3 » jours). */
+  text?: string;
   tone: BadgeTone;
   reasons: BadgeReason[];
 }
@@ -166,4 +174,61 @@ export const buildNavBadges = (
   }
 
   return badges;
+};
+
+/**
+ * La pastille de Production → Publications : **depuis combien de jours rien n'a été
+ * publié**. « -3 » = dernière publication validée il y a trois jours.
+ *
+ * Validée = archivée avec toutes ses cases (`PostDraftSummary.lastPublishedAt`). Rien ce
+ * jour-là suffit à allumer la pastille : le rythme se tient au quotidien, et attendre deux
+ * jours pour prévenir reviendrait à prévenir trop tard. Orange à partir de deux jours
+ * sans rien, neutre la veille. Aucune publication jamais validée : un point, et la raison
+ * le dit.
+ *
+ * Le jour vient du **navigateur** (`today`) et l'archivage est ramené au jour local :
+ * une publication validée à 0 h 30 compte pour ce jour-là, pas pour la veille en UTC.
+ */
+export const publicationBadge = (summary: PostDraftSummary, today: string): NavBadge | null => {
+  if (!summary.lastPublishedAt) {
+    return {
+      count: 0,
+      tone: 'neutral',
+      reasons: [
+        {
+          key: 'publications-none',
+          severity: 'warning',
+          title: 'Aucune publication validée pour l’instant',
+          detail: 'Coche les six cases d’une publication puis archive-la.',
+          date: null,
+          to: '/publications',
+          icon: Images,
+        },
+      ],
+    };
+  }
+
+  const lastDay = localDateOf(summary.lastPublishedAt);
+  const days = daysUntil(today, lastDay);
+  if (days <= 0) return null;
+
+  return {
+    count: days,
+    text: `-${days}`,
+    tone: days >= 2 ? 'warning' : 'neutral',
+    reasons: [
+      {
+        key: 'publications-idle',
+        severity: 'warning',
+        title: 'Aucune publication validée aujourd’hui',
+        detail:
+          days === 1
+            ? 'Dernière publication validée hier.'
+            : `Dernière publication validée il y a ${days} jours.`,
+        date: lastDay,
+        to: '/publications',
+        icon: Images,
+      },
+    ],
+  };
 };

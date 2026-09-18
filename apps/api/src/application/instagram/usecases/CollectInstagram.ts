@@ -1,4 +1,9 @@
-import type { InstagramPublicProfile } from '../../../domain/instagram/entities/InstagramAccount.ts';
+import type {
+  InstagramPublicPost,
+  InstagramPublicPostPage,
+  InstagramPublicProfile,
+} from '../../../domain/instagram/entities/InstagramAccount.ts';
+import type { InstagramMedia } from '../../../domain/instagram/entities/InstagramStory.ts';
 import type { InstagramProfileSink } from '../../../domain/integration/repositories/IntegrationCollectors.ts';
 import type {
   InstagramAccountRepository,
@@ -134,28 +139,7 @@ export class CollectInstagram implements InstagramProfileSink {
     // identifiant, et les écrire ici les compterait deux fois.
     const hasToken = 'hasToken' in account ? account.hasToken : account.accessToken !== null;
     if (!hasToken) {
-      for (const post of profile.recentPosts) {
-        const row = this.data.upsertMedia({
-          accountId: account.id,
-          igMediaId: post.id,
-          mediaType: post.mediaType,
-          caption: post.caption,
-          permalink: post.permalink,
-          thumbnailUrl: post.thumbnailUrl,
-          postedAt: post.postedAt,
-          date: localDateOf(post.postedAt),
-        });
-        // Seuls les compteurs publics existent ici : portée, enregistrements et partages
-        // restent à `null`, le COALESCE du dépôt ne les écrase pas.
-        this.data.setMediaInsights(row.id, {
-          views: post.views,
-          reach: null,
-          likes: post.likes,
-          comments: post.comments,
-          saved: null,
-          shares: null,
-        });
-      }
+      for (const post of profile.recentPosts) this.upsertPublicPost(account.id, post);
     }
 
     this.accounts.update(account.id, {
@@ -166,6 +150,94 @@ export class CollectInstagram implements InstagramProfileSink {
     });
 
     return { accountId: account.id, username: profile.username };
+  }
+
+  /**
+   * Les publications à relire une à une sur leur page, les plus récentes d'abord — ce
+   * sont celles dont les compteurs bougent encore. Rien pour un compte à jeton.
+   */
+  postsToRefresh(accountId: string, limit: number): Array<{ id: string; permalink: string }> {
+    const account = this.accounts.findById(accountId);
+    if (!account || account.accessToken) return [];
+    return this.data
+      .findMedia({ accountIds: [accountId], limit })
+      .flatMap((media) => (media.permalink ? [{ id: media.id, permalink: media.permalink }] : []));
+  }
+
+  /** Les j'aime et commentaires relus sur la page ; `null` (j'aime masqués) ne touche à rien. */
+  recordPostStats(mediaId: string, post: InstagramPublicPostPage): void {
+    this.data.setMediaInsights(mediaId, {
+      views: null,
+      reach: null,
+      likes: post.likes,
+      comments: post.comments,
+      saved: null,
+      shares: null,
+    });
+  }
+
+  /**
+   * Une publication ajoutée **par son lien**, quand le relevé du profil ne sait pas lister
+   * les publications (voie `page`). Elle est rangée sous le compte de son auteur, qui doit
+   * être un profil déjà suivi sans jeton : suivre un compte se décide dans Paramètres → API,
+   * pas en collant le lien d'un post.
+   */
+  recordPublicPost(post: InstagramPublicPostPage): InstagramMedia {
+    const candidates = this.accounts
+      .findAll()
+      .filter((account) => !account.hasToken && !account.isArchived);
+    const account = post.username
+      ? candidates.find((entry) => entry.username.toLowerCase() === post.username!.toLowerCase())
+      : candidates.length === 1
+        ? candidates[0]
+        : undefined;
+    if (!account) {
+      const followed = candidates.map((entry) => `@${entry.username}`).join(', ') || 'aucun';
+      throw badRequest(
+        `Cette publication est de @${post.username ?? '?'}, qui n’est pas un profil suivi (${followed}).`,
+      );
+    }
+    return this.upsertPublicPost(account.id, post);
+  }
+
+  /**
+   * Archive une publication lue publiquement, avec ses compteurs.
+   *
+   * Elle est retrouvée **par son adresse** avant tout : un premier relevé a pu l'écrire
+   * sous son identifiant numérique, les suivants l'écrivent sous son code court — sans
+   * ça, la même publication compterait deux fois. Seuls les compteurs publics existent
+   * ici : portée, enregistrements et partages restent à `null`, et le COALESCE du dépôt
+   * ne les écrase pas. La date d'une publication déjà connue n'est jamais réécrite : une
+   * page ne donne que le jour, le relevé du profil donnait l'heure.
+   */
+  private upsertPublicPost(accountId: string, post: InstagramPublicPost): InstagramMedia {
+    const known = post.permalink
+      ? this.data
+          .findMedia({ accountIds: [accountId] })
+          .find((media) => media.permalink === post.permalink)
+      : undefined;
+    const row = this.data.upsertMedia({
+      accountId,
+      igMediaId: known?.igMediaId ?? post.id,
+      mediaType: post.mediaType,
+      caption: post.caption,
+      permalink: post.permalink,
+      thumbnailUrl: post.thumbnailUrl,
+      postedAt: post.postedAt,
+      date: localDateOf(post.postedAt),
+    });
+    this.data.setMediaInsights(row.id, {
+      views: post.views,
+      reach: null,
+      likes: post.likes,
+      comments: post.comments,
+      saved: null,
+      shares: null,
+    });
+    // Relue après la mesure : la ligne rendue par l'upsert n'a pas encore ses compteurs.
+    return (
+      this.data.findMedia({ accountIds: [accountId] }).find((media) => media.id === row.id) ?? row
+    );
   }
 
   async collectOne(accountId: string): Promise<InstagramCollectResult> {

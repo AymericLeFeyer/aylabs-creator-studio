@@ -4,6 +4,7 @@ import {
   EXTERNAL_APP_ICONS,
   EXTERNAL_APP_SECTIONS,
 } from '../domain/externalApp/entities/ExternalApp.ts';
+import { POST_DRAFT_STEPS } from '../domain/postDraft/entities/PostDraft.ts';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date attendue au format AAAA-MM-JJ');
 
@@ -432,7 +433,18 @@ export const createPostDraftSchema = z.object({
   plannedDate: isoDate.nullable().optional(),
 });
 
-export const updatePostDraftSchema = createPostDraftSchema.partial();
+export const updatePostDraftSchema = createPostDraftSchema.partial().extend({
+  /** La liste complète des cases cochées : elle remplace l'ancienne. */
+  steps: z.array(z.enum(POST_DRAFT_STEPS)).optional(),
+  archived: z.boolean().optional(),
+});
+
+export const postDraftQuerySchema = z.object({
+  archived: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+});
 
 /** `format` absent = les idées des deux carnets. */
 export const ideaQuerySchema = z.object({
@@ -792,6 +804,10 @@ export const updateInstagramAccountSchema = createInstagramAccountSchema.partial
  * `accountIds` vide = vue cumulée sur tous les comptes, même convention que `channelIds`
  * sur l'analytics.
  */
+export const addInstagramPostSchema = z.object({
+  url: z.string().trim().min(1, 'Le lien est obligatoire').max(500),
+});
+
 export const instagramQuerySchema = z.object({
   from: isoDate,
   to: isoDate,

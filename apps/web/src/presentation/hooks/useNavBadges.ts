@@ -6,7 +6,9 @@ import {
   useTodayTodos,
 } from '../../application/externalApp/usecases/useExternalApps.ts';
 import { externalAppPath } from '../../domain/externalApp/entities/ExternalApp.ts';
-import { buildNavBadges, type NavBadge } from '../navBadges.ts';
+import { usePostDraftSummary } from '../../application/postDraft/usecases/usePostDrafts.ts';
+import { localToday } from '../../application/planning/usecases/usePlanning.ts';
+import { buildNavBadges, publicationBadge, type NavBadge } from '../navBadges.ts';
 
 /**
  * Les pastilles du menu, et les raisons qui les expliquent.
@@ -26,9 +28,14 @@ export const useNavBadges = (): Record<string, NavBadge> => {
   const { data: apps } = useExternalApps();
   const todoApp = apps?.find((app) => app.kind === 'todo' && app.enabled) ?? null;
   const { data: today } = useTodayTodos(todoApp !== null);
+  const { data: publications } = usePostDraftSummary();
+  // Le jour local, relu à chaque rendu : la pastille doit basculer à minuit sans recharger.
+  const localDay = localToday();
 
   return useMemo(() => {
     const badges = buildNavBadges(overview, legal?.alerts);
+    const publicationsBadge = publications ? publicationBadge(publications, localDay) : null;
+    if (publicationsBadge) badges['/publications'] = publicationsBadge;
     if (todoApp && today?.connected && !today.error) {
       badges[externalAppPath(todoApp)] = {
         count: today.tasks.length,
@@ -37,5 +44,5 @@ export const useNavBadges = (): Record<string, NavBadge> => {
       };
     }
     return badges;
-  }, [overview, legal, todoApp, today]);
+  }, [overview, legal, todoApp, today, publications, localDay]);
 };

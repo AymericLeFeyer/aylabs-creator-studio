@@ -30,9 +30,11 @@ export const NavBadgePill = ({
   if (!badge || (badge.count === 0 && badge.reasons.length === 0)) return null;
 
   const label =
-    badge.reasons.length > 0
-      ? `${badge.reasons.length} point(s) à traiter`
-      : `${badge.count} en cours`;
+    badge.reasons.length === 1
+      ? badge.reasons[0]!.title
+      : badge.reasons.length > 0
+        ? `${badge.reasons.length} point(s) à traiter`
+        : `${badge.count} en cours`;
 
   if (dot || badge.count === 0) {
     return (
@@ -58,7 +60,7 @@ export const NavBadgePill = ({
       title={label}
       aria-label={label}
     >
-      {badge.count > 99 ? '99+' : badge.count}
+      {badge.text ?? (badge.count > 99 ? '99+' : badge.count)}
     </span>
   );
 };

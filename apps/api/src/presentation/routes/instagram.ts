@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Container } from '../../container.ts';
 import type { Granularity } from '../../shared/dates.ts';
 import {
+  addInstagramPostSchema,
   createInstagramAccountSchema,
   instagramQuerySchema,
   updateInstagramAccountSchema,
@@ -23,14 +24,26 @@ export const instagramRouter = (container: Container): Router => {
   /** Séries, totaux, stories et publications de la période, en une requête. */
   router.get('/overview', (req, res) => {
     const query = instagramQuerySchema.parse(req.query);
-    res.json(
-      container.getInstagramOverview.execute({
+    res.json({
+      ...container.getInstagramOverview.execute({
         from: query.from,
         to: query.to,
         granularity: query.granularity as Granularity,
         accountIds: query.accountIds,
       }),
-    );
+      // Par quelle voie le profil public a été lu : c'est ce qui explique à l'écran un
+      // tableau de publications vide.
+      publicReading: container.collectIntegrations.instagramReading(),
+    });
+  });
+
+  /**
+   * Suivre une publication par son lien (`{ url }`) : lue sur sa propre page, la seule que
+   * le blocage par adresse IP laisse passer, puis relue à chaque relevé du profil.
+   */
+  router.post('/media', async (req, res) => {
+    const { url } = addInstagramPostSchema.parse(req.body);
+    res.status(201).json(await container.collectIntegrations.addInstagramPost(url));
   });
 
   router.get('/accounts', (req, res) => {

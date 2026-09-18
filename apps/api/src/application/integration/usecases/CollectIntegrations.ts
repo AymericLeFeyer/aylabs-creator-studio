@@ -14,6 +14,8 @@ import type {
   InstagramProfileSink,
 } from '../../../domain/integration/repositories/IntegrationCollectors.ts';
 import { round2 } from '../../../domain/integration/services/localeNumber.ts';
+import type { InstagramPublicReading } from '../../../domain/instagram/entities/InstagramAccount.ts';
+import type { InstagramMedia } from '../../../domain/instagram/entities/InstagramStory.ts';
 import { badRequest, conflict } from '../../../shared/errors.ts';
 import { today } from '../../../shared/dates.ts';
 import type { ManageIntegrations } from './ManageIntegrations.ts';
@@ -32,7 +34,18 @@ export interface InstagramProfileResult {
   posts: number | null;
   source: 'api' | 'searchapi' | 'page';
   approximate: boolean;
+  /** Publications listées par le relevé du profil — 0 par la voie `page`. */
+  postsListed: number;
+  /** Publications déjà connues relues une à une sur leur page, faute de liste. */
+  postsRefreshed: number;
 }
+
+/**
+ * Publications relues une à une quand le profil ne les liste pas. Une requête chacune :
+ * au-delà d'une douzaine, on s'expose au blocage qu'on cherche justement à contourner,
+ * et les compteurs des publications plus anciennes ne bougent plus guère.
+ */
+const POST_REFRESH_LIMIT = 12;
 
 /** L'instantané des ventes Domadoo en attente, relevé une fois par jour. */
 export const DOMADOO_SALES_KEY = 'domadoo:sales';
@@ -166,7 +179,27 @@ export class CollectIntegrations {
     searchApiKey: string | null,
   ): Promise<InstagramProfileResult> {
     const fetched = await this.collectors.instagram.fetch(profile, searchApiKey);
-    const { username } = this.instagram.recordPublicProfile(fetched);
+    const { accountId, username } = this.instagram.recordPublicProfile(fetched);
+
+    // La voie `page` ne liste aucune publication : sans ce second temps, les j'aime et
+    // commentaires restaient figés à la dernière lecture réussie de la liste. La page de
+    // chaque publication, elle, reste lisible quand l'adresse du serveur est bloquée.
+    let postsRefreshed = 0;
+    if (fetched.recentPosts.length === 0) {
+      for (const media of this.instagram.postsToRefresh(accountId, POST_REFRESH_LIMIT)) {
+        try {
+          this.instagram.recordPostStats(
+            media.id,
+            await this.collectors.instagram.fetchPost(media.permalink),
+          );
+          postsRefreshed += 1;
+        } catch (error) {
+          // Une publication supprimée ou illisible ne doit pas faire échouer le relevé.
+          console.warn(`[instagram] ${media.permalink} :`, error);
+        }
+      }
+    }
+
     return {
       username,
       followers: fetched.followers,
@@ -174,6 +207,35 @@ export class CollectIntegrations {
       posts: fetched.posts,
       source: fetched.source,
       approximate: fetched.approximate,
+      postsListed: fetched.recentPosts.length,
+      postsRefreshed,
+    };
+  }
+
+  /**
+   * Suivre une publication par son lien : lue sur sa page, rangée sous le compte de son
+   * auteur. C'est ce qui remplit le tableau quand le relevé du profil ne liste rien — elle
+   * est ensuite relue à chaque relevé comme les autres.
+   */
+  async addInstagramPost(url: string): Promise<InstagramMedia> {
+    return this.instagram.recordPublicPost(await this.collectors.instagram.fetchPost(url));
+  }
+
+  /**
+   * Ce que le dernier relevé du profil public a pu lire. C'est la seule façon de savoir,
+   * depuis l'écran Instagram, pourquoi le tableau des publications est vide : un relevé
+   * par la voie `page` ne liste rien, et rien d'autre ne le dit.
+   */
+  instagramReading(): InstagramPublicReading | null {
+    const snapshot = this.repo.snapshot('instagram');
+    if (!snapshot) return null;
+    const data = snapshot.data as Partial<InstagramProfileResult> | null;
+    return {
+      source: data?.source ?? null,
+      postsListed: data?.postsListed ?? 0,
+      postsRefreshed: data?.postsRefreshed ?? 0,
+      at: snapshot.fetchedAt,
+      error: snapshot.lastError,
     };
   }
 

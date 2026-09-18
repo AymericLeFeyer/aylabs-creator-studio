@@ -650,23 +650,46 @@ de production d'alors : elles sont devenues des vidéos. La clé de cache est
 
 Volontairement pauvre : un texte, et rien d'autre. Lui donner une chaîne, une date ou un statut en ferait une production au rabais — or c'est justement l'absence de champs qui permet de noter une idée en trois secondes, et une idée qu'on ne note pas est une idée perdue. Le bouton « en faire une vidéo » la promeut en `Production` (son texte devient le titre de travail) et la retire du carnet. La promotion est faite **côté front en deux appels** : créer la production, puis supprimer l'idée — un endpoint dédié n'apporterait qu'une transaction sur deux écritures indépendantes, et l'idée ne doit disparaître que si la vidéo est réellement créée.
 
-### `postDraft` — les brouillons de publication
+### `postDraft` — les publications à venir
 
-`PostDraft { id, title, description, plannedDate, createdAt, updatedAt }` — table
-`post_drafts` (migration 30). Écran **Production → Publications** (`/publications`).
+`PostDraft { id, title, description, plannedDate, steps, archivedAt, createdAt, updatedAt }`
+— table `post_drafts` (migration 30, `steps` / `archived_at` en migration 31). Écran
+**Production → Publications** (`/publications`), **en liste triée par date**.
 
-Une publication Instagram **avant** sa parution : un titre, une description (la légende,
-2 200 caractères max — la limite d'Instagram, vérifiée par zod et par le compteur du
-formulaire), une date prévue **facultative**. Volontairement pauvre, comme une idée : c'est
-un outil d'organisation, pas une production — ni script, ni créneaux, ni étapes. **Aucun
-lien avec `ig_media`** : ce qui est paru se lit dans Audience → Instagram, le brouillon se
-supprime. Les deux écrans ne se mélangent pas.
+Une publication **avant** sa parution : un titre, une description (la légende, 2 200
+caractères max — la limite d'Instagram, vérifiée par zod et par le compteur du
+formulaire), une date prévue **facultative**, et **six cases** (`POST_DRAFT_STEPS`, liste
+fermée dupliquée des deux côtés) : `montage`, `sous_titres`, `miniature`, puis `youtube`,
+`instagram`, `tiktok`. Pas de script, pas de créneaux : c'est un outil d'organisation, pas
+une production. **Aucun lien avec `ig_media`** : ce qui est paru se lit dans Audience →
+Instagram.
 
-`description` n'est jamais `null` (même règle que `script`). Tri du dépôt : `planned_date
-IS NULL, planned_date, created_at` — une date dépassée remonte donc d'elle-même en tête,
-en rouge. La description se **copie** d'un clic (elle est écrite pour être collée dans
-Instagram). CRUD nu sans use case, comme `ideas` : aucun effet de bord, la mutation
-n'invalide que `['postDrafts']`.
+- `steps` est une colonne **texte** (clés séparées par des virgules), lue et écrite dans
+  l'ordre canonique et filtrée sur la liste connue. Six valeurs fixes ne justifient pas une
+  table de coches. `PATCH { steps }` **remplace** la liste entière.
+- **Archiver** (`PATCH { archived: true }`) pose `archived_at` et sort la ligne de la liste ;
+  `false` la restaure. Le bouton est toujours cliquable (on archive aussi un abandon), mais
+  il ne passe **au vert** que quand tout est coché. **Aucune confirmation** : c'est le geste
+  qu'on répète à chaque publication, et il se défait depuis les archives. Supprimer vit
+  dans la modale d'édition, avec confirmation.
+- **Une publication validée = archivée avec ses six cases.** `summary()` rend
+  `lastPublishedAt` (le plus récent de ces archivages) et `pending`. Un archivage
+  incomplet est un abandon : il ne remet pas le compteur à zéro.
+- **Pastille `-X`** sur l'entrée de menu (`publicationBadge`, `navBadges.ts`) : X = jours
+  **locaux** écoulés depuis `lastPublishedAt` (ramené au jour du navigateur par
+  `localDateOf`). Rien si une publication a été validée aujourd'hui ; neutre à -1, orange
+  dès -2 ; un point si rien n'a jamais été validé. `NavBadge.text` a été ajouté pour
+  afficher « -3 » à la place d'un compte. La raison se relit en tête de `/publications`
+  (`PageAlerts`).
+- Les cases se cochent en rafale : `useUpdatePostDraft` écrit **d'abord dans le cache**
+  (`onMutate`) et ne relit la liste qu'après la **dernière** écriture en vol
+  (`isMutating`). Sans ça, le deuxième clic partait de l'état d'avant le premier et le
+  décochait.
+
+`description` n'est jamais `null`. Tri de la liste : `planned_date IS NULL, planned_date,
+created_at` ; des archives : `archived_at DESC`. La description se **copie** d'un clic.
+CRUD nu sans use case, comme `ideas` : toutes les mutations invalident `['postDrafts']`
+(liste, archives et résumé), rien d'autre.
 
 ### `script` — les gabarits et les angles de vue
 
@@ -1256,11 +1279,16 @@ Absent quand Todo n'est pas connecté.
 > cartes stories / portée, le calendrier des stories, les colonnes Portée / Enregistrements
 > et l'alerte de jeton ont été **retirés du front**. Tout le code de collecte Graph décrit
 > ci-dessous existe toujours côté API (routes, `CollectInstagram.collectOne`, tables) : le
-> rebrancher ne demande que de remonter l'UI. `/instagram` affiche : Abonnés (+ gain),
-> Publications (période, et total du profil en sous-titre), J'aime et Commentaires (somme et
-> moyenne des publications de la période), un graphique Abonnés / Publications, et la table
-> des publications (Vues, J'aime, Commentaires). Paramètres → Instagram ne sert plus qu'à
-> archiver ou supprimer un profil ; le pseudo se règle dans Paramètres → API.
+> rebrancher ne demande que de remonter l'UI. `/instagram` demande toujours l'aperçu **au
+> jour** (quelle que soit la maille des filtres) et affiche : Abonnés (+ gain), Publications
+> (**total du profil** en grand, parutions de la période en sous-titre), J'aime et
+> Commentaires (somme et moyenne des publications de la période), un **calendrier des
+> publications façon contributions GitHub** (`PostsCalendar` : une colonne par semaine,
+> lundi en haut, clic sur une case = ses publications), **deux graphiques séparés** —
+> abonnés totaux (ligne, domaine calculé sur les valeurs) et gain d'abonnés par jour
+> (barres, rouges si négatif) —, puis la table des publications (Vues, J'aime,
+> Commentaires) avec un champ **« Suivre » par lien**. Paramètres → Instagram ne sert plus
+> qu'à archiver ou supprimer un profil ; le pseudo se règle dans Paramètres → API.
 >
 > **Les stories ne sont pas lisibles en public** : `web_profile_info` sans session ne les
 > expose pas, SearchAPI non plus. Seules voies : l'API Graph, ou une session connectée
@@ -1503,7 +1531,32 @@ les 12 de `web_profile_info` — `edge_owner_to_timeline_media.edges`, types ram
 défensivement, **rien** par la voie `page`) dans `ig_media`, avec j'aime, commentaires et
 vues via `setMediaInsights` (portée, enregistrements, partages à `null`). Jamais sur un
 compte **à jeton** : ses publications arrivent par Graph sous un autre identifiant et
-seraient comptées deux fois. L'instantané `instagram` ne garde
+seraient comptées deux fois.
+
+**Le serveur est presque toujours bloqué** (429 sur `web_profile_info`, Instagram limite
+par IP) : le relevé retombe alors sur la voie `page`, qui ne liste **aucune** publication.
+C'est ce qui laissait le tableau vide et les j'aime figés. Deux parades, toutes deux sur
+**la page d'une publication** (`InstagramProfileClient.fetchPost`), qui reste servie au
+robot d'aperçu : `og:description` y porte « 12 likes, 3 comments - pseudo on September 1,
+2026: "légende" » (compteurs arrondis au-delà de 10 000, jour sans heure, pas de vues ;
+j'aime absents si l'auteur les masque → `null`, que le COALESCE ignore) :
+
+- **relecture** : quand le relevé n'a rien listé, `CollectIntegrations.collectInstagram`
+  relit une à une les **12 dernières** publications déjà archivées (`postsToRefresh` /
+  `recordPostStats`). Plus serait s'exposer au blocage qu'on contourne ;
+- **ajout par lien** : `POST /api/instagram/media { url }` (`addInstagramPost` →
+  `recordPublicPost`) range la publication sous le compte de son **auteur**, qui doit être
+  un profil suivi sans jeton (400 sinon). Elle est ensuite relue comme les autres.
+
+**Clé d'une publication publique = son code court** (`/p/<code>/`, `instagramShortcode`,
+`instagramPermalink`), commun à toutes les voies et au lien collé. `upsertPublicPost`
+retrouve d'abord une ligne **par son adresse** : un premier relevé a pu l'écrire sous
+l'identifiant numérique. La date d'une publication connue n'est jamais réécrite (la page
+ne donne que le jour).
+
+L'aperçu porte `publicReading` (`InstagramPublicReading`, ajouté par la **route** depuis
+l'instantané : `source`, `postsListed`, `postsRefreshed`, `at`, `error`) : par la voie
+`page`, l'écran l'annonce au-dessus du tableau au lieu de laisser lire une panne. L'instantané `instagram` ne garde
 qu'un résumé et les échecs (`ManageIntegrations.view` les fusionne à la vue locale).
 **Une fois par jour** : `shouldSkip` saute Instagram si une réussite date d'aujourd'hui
 (UTC) ; un échec est retenté à l'heure suivante. Son interrupteur ne coupe **que la
@@ -1648,9 +1701,10 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/productions/:id/shot-angles`                  | Créer un angle **ponctuel**. Rend la liste complète, comme les tâches                                                                                                                                                                                    |
 | `PATCH`  | `/api/productions/:id/shot-angles/:angleId`         | Modifier un angle ponctuel                                                                                                                                                                                                                               |
 | `DELETE` | `/api/productions/:id/shot-angles/:angleId`         | Retirer un angle ponctuel                                                                                                                                                                                                                                |
-| `GET`    | `/api/post-drafts`                                  | Brouillons de publication, date prévue la plus proche en tête, sans date à la fin                                                                                                                                                                        |
+| `GET`    | `/api/post-drafts`                                  | La liste, date prévue la plus proche en tête. `?archived=true` : les archives, plus récentes d'abord                                                                                                                                                     |
+| `GET`    | `/api/post-drafts/summary`                          | `{ lastPublishedAt, pending }` — la pastille « -X » du menu. **Déclaré avant `/:id`**                                                                                                                                                                    |
 | `POST`   | `/api/post-drafts`                                  | `{ title, description?, plannedDate? }`. `description` ≤ 2 200 caractères                                                                                                                                                                                |
-| `PATCH`  | `/api/post-drafts/:id`                              | Modifier. `plannedDate: null` efface la date, absent la conserve                                                                                                                                                                                         |
+| `PATCH`  | `/api/post-drafts/:id`                              | Modifier. `steps` remplace toutes les cases, `archived: true/false` archive ou restaure, `plannedDate: null` efface la date                                                                                                                              |
 | `DELETE` | `/api/post-drafts/:id`                              | Supprimer                                                                                                                                                                                                                                                |
 | `GET`    | `/api/legal/overview`                               | Société, obligations, tableau mensuel et alertes en une requête                                                                                                                                                                                          |
 | `GET`    | `/api/legal/company`                                | Fiche société (ligne unique)                                                                                                                                                                                                                             |
@@ -1698,13 +1752,14 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/production-time`                              | Saisie manuelle `{ productionId, startedAt, minutes, stepId?, todoId?, notes?, date?, startTime? }`. `date`/`startTime` **locaux** posent le créneau approuvé dans le planning et l'agenda                                                               |
 | `PATCH`  | `/api/production-time/:id`                          | Corrige la session **et recale son créneau** (mêmes champs, tous facultatifs). Une session sans créneau en reçoit un si `date`/`startTime` sont fournis                                                                                                  |
 | `DELETE` | `/api/production-time/:id`                          | Supprime la session **et son créneau approuvé** ; un créneau encore en cours redevient prévu                                                                                                                                                             |
-| `GET`    | `/api/instagram/overview`                           | Séries, totaux, stories et publications. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                                                                                 |
+| `GET`    | `/api/instagram/overview`                           | Séries, totaux, stories, publications et `publicReading`. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                                                                |
 | `GET`    | `/api/instagram/accounts`                           | Comptes suivis. **Le jeton n'en sort jamais**, remplacé par `hasToken` et `tokenDaysLeft`                                                                                                                                                                |
 | `POST`   | `/api/instagram/accounts`                           | Connecter un compte. 409 si l'`igUserId` est déjà suivi                                                                                                                                                                                                  |
 | `PATCH`  | `/api/instagram/accounts/:id`                       | Modifier / archiver. `accessToken: ""` efface, absent conserve                                                                                                                                                                                           |
 | `DELETE` | `/api/instagram/accounts/:id`                       | Supprimer **et tout l'historique** (cascade). Irrécupérable : les stories ne se recollectent pas                                                                                                                                                         |
 | `POST`   | `/api/instagram/collect`                            | Collecte immédiate de tous les comptes **à jeton**, puis du profil public s'il est renseigné                                                                                                                                                             |
 | `POST`   | `/api/instagram/accounts/:id/collect`               | Collecter ce compte                                                                                                                                                                                                                                      |
+| `POST`   | `/api/instagram/media`                              | `{ url }` → suit une publication par son lien (lue sur sa page). 400 si l'auteur n'est pas un profil suivi sans jeton                                                                                                                                    |
 | `POST`   | `/api/instagram/accounts/:id/refresh-token`         | Échange le jeton contre un neuf (60 j de plus). Demande `META_APP_ID` / `META_APP_SECRET`                                                                                                                                                                |
 | `GET`    | `/api/comments`                                     | Commentaires archivés. Params `statuses` (CSV), `channelIds`, `from`/`to`, `search`, `limit` (500). Période **facultative** : on trie sa file en entier                                                                                                  |
 | `GET`    | `/api/comments/stats`                               | Compte par statut, pour les pastilles des onglets. Param `channelIds`. **Déclaré avant `/:id`**                                                                                                                                                          |
@@ -1727,12 +1782,12 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, puis **les deux graphiques seulement** (argent, audience). Plus d'alertes : elles sont en pastilles                                                                                                                                                                                                                |
 | `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                                                                                                        |
-| `/instagram`        | `InstagramPage`        | **Profil public seulement** : 4 cartes (Abonnés, Publications, J'aime, Commentaires), graphique à 2 onglets (Abonnés, Publications), tableau des publications                                                                                                                                                                                                                 |
+| `/instagram`        | `InstagramPage`        | **Profil public seulement**, toujours au jour : 4 cartes, calendrier des publications (contributions), graphiques Abonnés et Gain par jour, tableau des publications + « Suivre » par lien                                                                                                                                                                                    |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
 | `/shorts`           | `ProductionPage`       | `format="short"`, titré **« Shorts & Réels »**. Exactement le même écran, borné aux formats courts                                                                                                                                                                                                                                                                            |
-| `/publications`     | `PublicationsPage`     | Brouillons de publication Instagram (titre, description, date prévue), en cartes triées par date. Copier la légende d'un clic. Bouton flottant sur mobile                                                                                                                                                                                                                     |
+| `/publications`     | `PublicationsPage`     | Liste triée par date : 6 cases (Montage, Sous-titres, Miniature, YouTube, Insta, TikTok), archivage sans confirmation (vert quand tout est coché), vue Archives. Pastille « -X jours »                                                                                                                                                                                        |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / Notes                                                                                                                                                                                                                                        |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                    |
 | `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                                                                                                |
@@ -1788,12 +1843,13 @@ désormais **rangées dans le menu qui permet de les traiter** (`presentation/na
 `buildNavBadges`), et l'écran ouvert redit **en tête** pourquoi (`PageAlerts`, avant les
 cartes). Le calcul reste côté API ; le front ne fait que ranger.
 
-| Menu            | Chiffre                              | Raisons listées                                             |
-| --------------- | ------------------------------------ | ----------------------------------------------------------- |
-| Vidéos / Shorts | vidéos pas encore publiées du format | `production_urgent`, `_stalled`, `_incomplete` de ce format |
-| Produits        | alertes `product_late`               | idem                                                        |
-| Sponsors        | **paiements en attente**             | `sponsorship_due`, `_undelivered`, `_awaiting_payment`      |
-| Légal           | alertes légales                      | `late` et `due_soon` de `GetLegalOverview`                  |
+| Menu            | Chiffre                               | Raisons listées                                                 |
+| --------------- | ------------------------------------- | --------------------------------------------------------------- |
+| Vidéos / Shorts | vidéos pas encore publiées du format  | `production_urgent`, `_stalled`, `_incomplete` de ce format     |
+| Produits        | alertes `product_late`                | idem                                                            |
+| Sponsors        | **paiements en attente**              | `sponsorship_due`, `_undelivered`, `_awaiting_payment`          |
+| Légal           | alertes légales                       | `late` et `due_soon` de `GetLegalOverview`                      |
+| Publications    | `-X` : jours sans publication validée | « Aucune publication validée aujourd'hui » (`publicationBadge`) |
 
 **Le chiffre et la couleur ne disent pas la même chose** : la couleur est celle de la pire
 raison (rouge `danger`, orange `warning`), et sans aucune raison la pastille reste
@@ -2370,13 +2426,13 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useRemovePlanningItem`, `useClearPlanningItems`, `usePlaceItem`, `useContinueSlot`                                                                                                                            | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                                                                  |
 | `useToggleTodoTask`, `usePlaceTodoTask`, `useUnplaceTodoTask`                                                                                                                                                                                                                                                                  | `application/planning/usecases/usePlanning.ts`        | Tâches Todo du planning. N'invalident **que** `planningBoard` : une coche Todo ne touche ni la pile ni la file                                      |
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                                                                                                                                                      | idem                                                  | Horaires de travail et connexion à l'agenda                                                                                                         |
-| `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                                                                                       | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                                                                               |
+| `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useAddInstagramPost`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                                                                | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                                                                               |
 | `useSlotFromTimeEntry`                                                                                                                                                                                                                                                                                                         | idem                                                  | Transforme une session de travail en créneau approuvé                                                                                               |
 | `useScriptPresets`, `useShotAngles`, `useProductionShotAngles`, `useCreateScriptPreset`, `useUpdateScriptPreset`, `useDeleteScriptPreset`, `useReorderScriptPresets`, `useCreateShotAngle`, `useUpdateShotAngle`, `useDeleteShotAngle`, `useReorderShotAngles`, `useCreateProductionShotAngle`, `useDeleteProductionShotAngle` | `application/script/usecases/useScript.ts`            | Gabarits et angles de vue (cache 5 min)                                                                                                             |
 | `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`         | Commentaires archivés, leur tri et leur collecte                                                                                                    |
 | `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                                                                                                                                                         | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                                                                            |
 | `useExternalApps`, `useCreateExternalApp`, `useUpdateExternalApp`, `useDeleteExternalApp`, `useTodayTodos`                                                                                                                                                                                                                     | `application/externalApp/usecases/useExternalApps.ts` | Applications externes du menu ; tâches Todo du jour (pastille, **relue chaque minute** : ce qu'on coche dans l'iframe ne passe pas par le studio)   |
-| `usePostDrafts`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                                                              | `application/postDraft/usecases/usePostDrafts.ts`     | Brouillons de publication. N'invalident que `['postDrafts']`                                                                                        |
+| `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`     | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
 | `useIntegrations`, `useUpdateIntegration`, `useCollectIntegration`, `useExportKeys`, `useCreateExportKey`, `useDeleteExportKey`                                                                                                                                                                                                | `application/integration/usecases/useIntegrations.ts` | Paramètres → API : sources de l'export, identifiants, clés d'accès                                                                                  |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
@@ -2449,6 +2505,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   contredire.
 - **Migration 26** ajoute `ideas.format` (`'video'` par défaut, même `CHECK`) : le carnet
   d'idées suit le menu où on le lit, et toutes les idées déjà notées deviennent des vidéos.
+- **Migration 31** ajoute `post_drafts.steps` (texte, `''` par défaut) et
+  `post_drafts.archived_at` (+ index).
 - **Migration 30** ajoute `post_drafts` (brouillons de publication : titre, description
   `NOT NULL DEFAULT ''`, `planned_date` nullable). Aucune clé vers `ig_media`.
 - **Migration 29** ajoute `external_apps` (une ligne par app, `CHECK` sur `kind` et

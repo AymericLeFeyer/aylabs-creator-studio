@@ -1,6 +1,9 @@
-import type {
-  InstagramPublicPost,
-  InstagramPublicProfile,
+import {
+  instagramPermalink,
+  instagramShortcode,
+  type InstagramPublicPost,
+  type InstagramPublicPostPage,
+  type InstagramPublicProfile,
 } from '../../../domain/instagram/entities/InstagramAccount.ts';
 import { badRequest, upstream } from '../../../shared/errors.ts';
 
@@ -150,6 +153,61 @@ export class InstagramProfileClient {
     throw upstream(`Profil Instagram @${username} illisible (${failures.join(' ; ')})`);
   }
 
+  /**
+   * Une publication lue sur **sa propre page**, comme le robot d'aperçu de Facebook.
+   *
+   * C'est la seule lecture qui passe quand Instagram bloque l'adresse du serveur (429 sur
+   * `web_profile_info`) : la page d'une publication porte « 12 likes, 3 comments -
+   * pseudo on September 1, 2026: "légende" » dans sa balise `og:description`. Pas de
+   * vues, un jour sans heure, des compteurs arrondis au-delà de dix mille — mais les
+   * j'aime et commentaires d'un petit compte y sont exacts.
+   *
+   * Les j'aime sont absents quand l'auteur les a masqués : `likes` vaut alors `null`.
+   */
+  async fetchPost(url: string): Promise<InstagramPublicPostPage> {
+    const shortcode = instagramShortcode(url);
+    if (!shortcode) {
+      throw badRequest(`« ${url} » n’est pas le lien d’une publication Instagram.`);
+    }
+    const response = await fetch(instagramPermalink(shortcode), {
+      headers: { 'User-Agent': PREVIEW_UA, 'Accept-Language': 'en-US,en;q=0.9' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (response.status === 404) throw upstream('Publication introuvable (supprimée ?)');
+    if (!response.ok) throw upstream(`Publication illisible (réponse ${response.status})`);
+
+    const html = await response.text();
+    const description = decodeEntities(metaContent(html, 'og:description') ?? '');
+    // « 60M likes, 4M comments - world_record_egg on January 4, 2019: "Let's…" »
+    const match =
+      /^(?:([\d.,]+[KMB]?) likes?, )?([\d.,]+[KMB]?) comments? - ([A-Za-z0-9._]+) on ([A-Za-z]+) (\d{1,2}), (\d{4})(?::\s*([\s\S]*))?$/i.exec(
+        description.trim(),
+      );
+    if (!match) {
+      throw upstream('Compteurs absents de la page (publication privée, ou page modifiée)');
+    }
+    const [, likes, comments, username, monthName, day, year, caption] = match;
+    const month = MONTHS.indexOf(monthName!.slice(0, 3).toLowerCase());
+    if (month < 0) throw upstream(`Date illisible : « ${monthName} ${day}, ${year} »`);
+
+    const pageUrl = metaContent(html, 'og:url') ?? '';
+    return {
+      id: shortcode,
+      username: username ?? null,
+      mediaType: /\/reels?\//i.test(pageUrl) ? 'REELS' : null,
+      // La légende est entre guillemets droits dans la description.
+      caption: caption?.trim().replace(/^"|"\.?$/g, '') || null,
+      permalink: instagramPermalink(shortcode),
+      thumbnailUrl: decodeEntities(metaContent(html, 'og:image') ?? '') || null,
+      // Le jour seul est connu : midi UTC le garde le même jour sous tous les fuseaux
+      // proches, là où minuit le ferait basculer la veille.
+      postedAt: new Date(Date.UTC(Number(year), month, Number(day), 12)).toISOString(),
+      likes: likes ? parseCount(likes).value : null,
+      comments: parseCount(comments!).value,
+      views: null,
+    };
+  }
+
   private async fromApi(username: string): Promise<InstagramPublicProfile> {
     const response = await fetch(
       `https://i.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
@@ -176,13 +234,14 @@ export class InstagramProfileClient {
         .map((edge) => edge.node)
         .filter((node): node is WebProfilePost => node !== undefined)
         .flatMap((node): InstagramPublicPost[] => {
-          if (!node.id || !node.taken_at_timestamp) return [];
+          const code = node.shortcode ?? node.id;
+          if (!code || !node.taken_at_timestamp) return [];
           return [
             {
-              id: node.id,
+              id: code,
               mediaType: webMediaType(node),
               caption: node.edge_media_to_caption?.edges?.[0]?.node?.text ?? null,
-              permalink: node.shortcode ? `https://www.instagram.com/p/${node.shortcode}/` : null,
+              permalink: node.shortcode ? instagramPermalink(node.shortcode) : null,
               thumbnailUrl: node.thumbnail_src ?? node.display_url ?? null,
               postedAt: new Date(node.taken_at_timestamp * 1000).toISOString(),
               likes: node.edge_liked_by?.count ?? node.edge_media_preview_like?.count ?? null,
@@ -219,7 +278,9 @@ export class InstagramProfileClient {
       source: 'searchapi',
       approximate: false,
       recentPosts: (body.posts ?? []).flatMap((post): InstagramPublicPost[] => {
-        const id = post.id ?? post.shortcode;
+        const code =
+          post.shortcode ?? instagramShortcode(post.link ?? post.permalink ?? '') ?? undefined;
+        const id = code ?? post.id;
         const postedAt = searchApiDate(post);
         if (!id || !postedAt) return [];
         return [
@@ -227,10 +288,7 @@ export class InstagramProfileClient {
             id,
             mediaType: searchApiMediaType(post.type),
             caption: post.caption ?? post.text ?? null,
-            permalink:
-              post.link ??
-              post.permalink ??
-              (post.shortcode ? `https://www.instagram.com/p/${post.shortcode}/` : null),
+            permalink: code ? instagramPermalink(code) : (post.link ?? post.permalink ?? null),
             thumbnailUrl: post.thumbnail ?? post.image ?? null,
             postedAt,
             likes: post.likes ?? null,
@@ -311,12 +369,18 @@ const metaContent = (html: string, property: string): string | null =>
 
 const decodeEntities = (text: string): string =>
   text
-    .replace(/&#(\d+);/g, (_match, code: string) => String.fromCharCode(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) => String.fromCharCode(parseInt(code, 16)))
+    // `fromCodePoint` et non `fromCharCode` : un émoji (&#x1f95a;) sort du plan de base.
+    .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) =>
+      String.fromCodePoint(parseInt(code, 16)),
+    )
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, '&');
 
 const SUFFIXES: Record<string, number> = { K: 1e3, M: 1e6, B: 1e9 };
+
+/** Les mois de la description Open Graph, servie en anglais (`Accept-Language`). */
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 /** « 8,584 » → 8584 exact ; « 12.3K » → 12 300, arrondi. */
 const parseCount = (raw: string): { value: number; approximate: boolean } => {

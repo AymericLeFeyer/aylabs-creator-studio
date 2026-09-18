@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import {
   useCreatePostDraft,
+  useDeletePostDraft,
   useUpdatePostDraft,
 } from '../../../application/postDraft/usecases/usePostDrafts.ts';
 import {
@@ -37,6 +39,7 @@ const EMPTY = { title: '', description: '', plannedDate: '' };
 export const PostDraftDialog = ({ open, onOpenChange, draft }: PostDraftDialogProps) => {
   const create = useCreatePostDraft();
   const update = useUpdatePostDraft();
+  const remove = useDeletePostDraft();
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY);
 
@@ -140,6 +143,28 @@ export const PostDraftDialog = ({ open, onOpenChange, draft }: PostDraftDialogPr
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <DialogFooter>
+            {/* Supprimer vit ici et non sur la ligne : on archive une publication faite, on
+                ne supprime qu'une idée abandonnée — rare, et irréversible. */}
+            {draft && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="mr-auto text-destructive"
+                disabled={remove.isPending}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      `Supprimer « ${draft.title} » ? Rien ne permet de la retrouver.`,
+                    )
+                  )
+                    return;
+                  remove.mutate(draft.id, { onSuccess: () => onOpenChange(false) });
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Supprimer
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Annuler
             </Button>

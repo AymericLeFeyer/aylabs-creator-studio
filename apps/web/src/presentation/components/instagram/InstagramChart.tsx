@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Bar,
+  BarChart,
   CartesianGrid,
-  ComposedChart,
+  Cell,
   Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -13,169 +15,141 @@ import type { InstagramSeriesPoint } from '../../../domain/instagram/entities/In
 import { formatCount } from '../../../domain/instagram/entities/Instagram.ts';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { formatDate } from '../../../shared/format.ts';
-import { cn } from '../../../shared/cn.ts';
-
-type Metric = 'followers' | 'posts';
-
-/**
- * Deux lectures seulement : ce que le profil public laisse voir. La portée, les
- * interactions et les stories ne s'obtiennent que par l'API Graph, retirée de l'écran
- * tant que la connexion Meta n'est pas en place.
- */
-const METRICS: Array<{ id: Metric; label: string; hint: string }> = [
-  { id: 'followers', label: 'Abonnés', hint: 'Total et gain par période' },
-  { id: 'posts', label: 'Publications', hint: 'Posts, carrousels et reels par période' },
-];
 
 export interface InstagramChartProps {
+  /** Une série **au jour** : l'écran Instagram la demande toujours à cette maille. */
   series: InstagramSeriesPoint[];
-  granularity: 'day' | 'week' | 'month';
+  /**
+   * `followers` : le total, en ligne — un cumul se suit. `gained` : le gain de chaque jour,
+   * en barres — un flux se compte. Deux graphiques et non deux onglets : on lit l'un à
+   * côté de l'autre, et une journée à +12 se retrouve d'un coup d'œil sur la courbe.
+   */
+  kind: 'followers' | 'gained';
 }
 
-/**
- * Les lectures d'un compte Instagram, en onglets plutôt qu'en axes superposés.
- *
- * Des publications (quelques unités) et un total d'abonnés (quelques dizaines de milliers)
- * n'ont pas la même échelle : les empiler sur deux axes ferait lire des corrélations
- * inventées. Même parti pris que le graphique de performance par vidéo.
- *
- * Les **publications sont des barres et les abonnés une ligne** : un flux se compte par
- * période, un cumul se suit. Confondre les deux ferait additionner des abonnés d'un jour
- * sur l'autre.
- */
-export const InstagramChart = ({ series, granularity }: InstagramChartProps) => {
-  const privacy = usePrivacy();
-  const [metric, setMetric] = useState<Metric>('followers');
+const COLOR = '#833ab4';
 
-  /**
-   * Les abonnés tombent à **zéro** quand ils sont masqués, ils ne disparaissent pas : une
-   * courbe qui s'arrête et un axe qui se rétrécit disent déjà l'ordre de grandeur de ce
-   * qu'on vient de retirer. Le rythme de publication, lui, n'est pas un chiffre d'audience
-   * et reste lisible.
-   */
+/**
+ * Un graphique d'abonnés Instagram.
+ *
+ * Masqués par la confidentialité, les abonnés tombent à **zéro**, ils ne disparaissent
+ * pas : une courbe qui s'arrête et un axe qui se rétrécit disent déjà l'ordre de grandeur
+ * de ce qu'on vient de retirer.
+ */
+export const InstagramChart = ({ series, kind }: InstagramChartProps) => {
+  const privacy = usePrivacy();
+  const masked = privacy.isMasked('subscribers');
+
   const rows = useMemo(
     () =>
       series.map((point) => ({
-        ...point,
-        followers: privacy.isMasked('subscribers') ? 0 : point.followers,
-        followersGained: privacy.isMasked('subscribers') ? 0 : point.followersGained,
+        date: point.date,
+        followers: masked ? 0 : point.followers,
+        gained: masked ? 0 : point.followersGained,
       })),
-    [series, privacy],
+    [series, masked],
   );
 
-  // Vide se juge à l'onglet affiché : un compte relevé par son profil public a une courbe
-  // d'abonnés sans aucune publication datée, et l'inverse arrive aussi.
+  // Le domaine de la courbe se CALCULE sur les valeurs connues : partir de zéro écraserait
+  // une progression de 264 à 270 en trait plat, et un domaine en texte (« dataMin - 5 »)
+  // part en NaN dès qu'un jour vaut `null` (voir « Points d'attention »).
+  const domain = useMemo((): [number, number] => {
+    const values = rows.map((row) => row.followers).filter((value) => value !== null);
+    if (values.length === 0) return [0, 1];
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const pad = Math.max(1, Math.round((max - min) * 0.1));
+    return [Math.max(0, min - pad), max + pad];
+  }, [rows]);
+
   const empty =
-    metric === 'posts'
-      ? series.every((point) => point.posts === 0)
-      : series.every((point) => point.followers === null);
+    kind === 'followers'
+      ? rows.every((row) => row.followers === null)
+      : rows.every((row) => row.gained === null);
+
+  if (empty) {
+    return (
+      <p className="py-12 text-center text-sm text-muted-foreground">
+        {kind === 'followers'
+          ? 'Aucun relevé d’abonnés sur cette période.'
+          : 'Il faut deux relevés pour mesurer un gain.'}
+      </p>
+    );
+  }
+
+  const axes = (
+    <>
+      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+      <XAxis
+        dataKey="date"
+        tickFormatter={(value: string) => formatDate(value)}
+        tick={{ fontSize: 11 }}
+        stroke="var(--muted-foreground)"
+        minTickGap={24}
+      />
+      {/* Contenu écrit à la main plutôt que `formatter` : c'est le pattern des autres
+          graphiques du projet. */}
+      <Tooltip
+        cursor={{ fill: 'var(--muted)', opacity: 0.4 }}
+        content={({ active, payload, label }) => {
+          if (!active || !payload?.length) return null;
+          const value = payload[0]?.value;
+          return (
+            <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
+              <p className="mb-1 text-[11px] text-muted-foreground">{formatDate(String(label))}</p>
+              <p className="font-semibold tabular text-popover-foreground">
+                {typeof value !== 'number'
+                  ? '—'
+                  : kind === 'gained'
+                    ? `${value > 0 ? '+' : ''}${formatCount(value)} abonné(s)`
+                    : `${formatCount(value)} abonnés`}
+              </p>
+            </div>
+          );
+        }}
+      />
+    </>
+  );
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center rounded-md border border-border p-0.5">
-          {METRICS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              onClick={() => setMetric(entry.id)}
-              title={entry.hint}
-              className={cn(
-                'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                metric === entry.id
-                  ? 'bg-secondary text-secondary-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {entry.label}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {METRICS.find((entry) => entry.id === metric)?.hint}
-        </p>
-      </div>
-
-      {empty ? (
-        <p className="py-12 text-center text-sm text-muted-foreground">
-          Rien de collecté sur cette période.
-        </p>
+    <ResponsiveContainer width="100%" height={220}>
+      {kind === 'followers' ? (
+        <LineChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          {axes}
+          <YAxis
+            domain={domain}
+            allowDecimals={false}
+            tick={{ fontSize: 11 }}
+            stroke="var(--muted-foreground)"
+            width={48}
+          />
+          {/* `connectNulls` : un jour sans relevé ne doit pas briser la courbe. */}
+          <Line
+            type="monotone"
+            dataKey="followers"
+            stroke={COLOR}
+            strokeWidth={2}
+            dot={false}
+            connectNulls
+          />
+        </LineChart>
       ) : (
-        <ResponsiveContainer width="100%" height={260}>
-          <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-            <XAxis
-              dataKey="date"
-              tickFormatter={(value: string) => formatDate(value)}
-              tick={{ fontSize: 11 }}
-              stroke="var(--muted-foreground)"
-            />
-            <YAxis tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={48} />
-            {/* Contenu écrit à la main plutôt que `formatter` : c'est le pattern des
-                autres graphiques du projet, et les types de Recharts pour les formatters
-                admettent `undefined` là où on veut un nombre. */}
-            <Tooltip
-              content={({ active, payload, label }) => {
-                if (!active || !payload?.length) return null;
-                const prefix =
-                  granularity === 'month'
-                    ? 'Mois du '
-                    : granularity === 'week'
-                      ? 'Semaine du '
-                      : '';
-                return (
-                  <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
-                    <p className="mb-1 text-[11px] text-muted-foreground">
-                      {prefix}
-                      {formatDate(String(label))}
-                    </p>
-                    {payload.map((entry) => (
-                      <p key={String(entry.name)} className="flex items-center gap-2">
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ backgroundColor: entry.color }}
-                          aria-hidden
-                        />
-                        <span className="text-muted-foreground">{entry.name}</span>
-                        <span className="ml-auto font-semibold tabular text-popover-foreground">
-                          {typeof entry.value === 'number' ? formatCount(entry.value) : '—'}
-                        </span>
-                      </p>
-                    ))}
-                  </div>
-                );
-              }}
-            />
-
-            {metric === 'posts' && (
-              <Bar dataKey="posts" name="Publications" fill="#833ab4" radius={[3, 3, 0, 0]} />
-            )}
-
-            {metric === 'followers' && (
-              <>
-                <Bar
-                  dataKey="followersGained"
-                  name="Gain d’abonnés"
-                  fill="#e1306c"
-                  radius={[3, 3, 0, 0]}
-                />
-                {/* La ligne des abonnés est un CUMUL : `connectNulls` la fait traverser les
-                    périodes sans relevé, sinon elle se briserait au premier trou de
-                    collecte. */}
-                <Line
-                  type="monotone"
-                  dataKey="followers"
-                  name="Abonnés"
-                  stroke="#833ab4"
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls
-                />
-              </>
-            )}
-          </ComposedChart>
-        </ResponsiveContainer>
+        <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          {axes}
+          <YAxis
+            allowDecimals={false}
+            tick={{ fontSize: 11 }}
+            stroke="var(--muted-foreground)"
+            width={48}
+          />
+          <Bar dataKey="gained" radius={[3, 3, 0, 0]}>
+            {/* Une perte d'abonnés se lit en rouge : c'est l'information du jour. */}
+            {rows.map((row) => (
+              <Cell key={row.date} fill={(row.gained ?? 0) < 0 ? 'var(--negative)' : '#e1306c'} />
+            ))}
+          </Bar>
+        </BarChart>
       )}
-    </div>
+    </ResponsiveContainer>
   );
 };
