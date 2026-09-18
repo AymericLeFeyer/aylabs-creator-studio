@@ -26,6 +26,8 @@ interface PostDraftDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   draft?: PostDraft | null;
+  /** Date pré-remplie d'une création : celle du jour sur lequel on a cliqué « + ». */
+  defaultDate?: string | null;
 }
 
 const EMPTY = { title: '', description: '', plannedDate: '' };
@@ -36,7 +38,12 @@ const EMPTY = { title: '', description: '', plannedDate: '' };
  * Seul le titre est obligatoire : on note souvent une publication avant d'en avoir écrit
  * la légende ou choisi le jour, et exiger les trois ferait renoncer à la noter.
  */
-export const PostDraftDialog = ({ open, onOpenChange, draft }: PostDraftDialogProps) => {
+export const PostDraftDialog = ({
+  open,
+  onOpenChange,
+  draft,
+  defaultDate,
+}: PostDraftDialogProps) => {
   const create = useCreatePostDraft();
   const update = useUpdatePostDraft();
   const remove = useDeletePostDraft();
@@ -46,7 +53,7 @@ export const PostDraftDialog = ({ open, onOpenChange, draft }: PostDraftDialogPr
   // Réinitialisé pendant le rendu à chaque ouverture, comme les autres formulaires du
   // projet : un effet ferait un rendu de plus et la règle `set-state-in-effect` le refuse.
   const [lastKey, setLastKey] = useState<string | null>(null);
-  const key = `${open}-${draft?.id ?? 'new'}`;
+  const key = `${open}-${draft?.id ?? 'new'}-${defaultDate ?? ''}`;
   if (open && key !== lastKey) {
     setLastKey(key);
     setError(null);
@@ -57,7 +64,7 @@ export const PostDraftDialog = ({ open, onOpenChange, draft }: PostDraftDialogPr
             description: draft.description,
             plannedDate: draft.plannedDate ?? '',
           }
-        : EMPTY,
+        : { ...EMPTY, plannedDate: defaultDate ?? '' },
     );
   }
 

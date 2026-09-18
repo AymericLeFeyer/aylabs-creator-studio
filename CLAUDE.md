@@ -654,7 +654,7 @@ Volontairement pauvre : un texte, et rien d'autre. Lui donner une chaîne, une d
 
 `PostDraft { id, title, description, plannedDate, steps, archivedAt, createdAt, updatedAt }`
 — table `post_drafts` (migration 30, `steps` / `archived_at` en migration 31). Écran
-**Production → Publications** (`/publications`), **en liste triée par date**.
+**Production → Publications** (`/publications`), **un couloir par jour**.
 
 Une publication **avant** sa parution : un titre, une description (la légende, 2 200
 caractères max — la limite d'Instagram, vérifiée par zod et par le compteur du
@@ -667,11 +667,22 @@ Instagram.
 - `steps` est une colonne **texte** (clés séparées par des virgules), lue et écrite dans
   l'ordre canonique et filtrée sur la liste connue. Six valeurs fixes ne justifient pas une
   table de coches. `PATCH { steps }` **remplace** la liste entière.
-- **Archiver** (`PATCH { archived: true }`) pose `archived_at` et sort la ligne de la liste ;
-  `false` la restaure. Le bouton est toujours cliquable (on archive aussi un abandon), mais
-  il ne passe **au vert** que quand tout est coché. **Aucune confirmation** : c'est le geste
-  qu'on répète à chaque publication, et il se défait depuis les archives. Supprimer vit
-  dans la modale d'édition, avec confirmation.
+- **Couloirs par jour** (`PublicationsPage`) : la question de l'écran est « quels jours
+  n'ont rien ? », et une liste triée cache un trou de trois jours. **Chaque jour a sa ligne,
+  vide comprise** : à venir sans rien = « Rien de prévu » en orange, passé sans rien = en
+  creux. Ordre du calendrier (passé en haut, à venir en bas), au moins 30 jours avant et
+  60 après, élargis jusqu'à la publication la plus lointaine (365 j max de chaque côté).
+  Le défilement est **propre aux couloirs** (carte en `max-h` + `overflow-y-auto`) et
+  **s'ouvre sur aujourd'hui**, une seule fois, une fois les deux listes chargées ; le bouton
+  « Aujourd'hui » y revient. Un « + » par couloir crée une publication à ce jour
+  (`PostDraftDialog.defaultDate`). Les publications **sans date** attendent dans une carte
+  au-dessus des couloirs.
+- **Archiver** (`PATCH { archived: true }`) pose `archived_at` ; `false` restaure. Les
+  archivées **restent visibles** à leur jour (date prévue, sinon jour local de
+  l'archivage), grisées, barrées, cases figées, avec « Restaurer » — c'est ce qui dit qu'un
+  jour passé a eu sa publication. Plus de vue « Archives » séparée. Le bouton est toujours
+  cliquable (on archive aussi un abandon), vert seulement quand tout est coché, **sans
+  confirmation**. Supprimer vit dans la modale d'édition, avec confirmation.
 - **Une publication validée = archivée avec ses six cases.** `summary()` rend
   `lastPublishedAt` (le plus récent de ces archivages) et `pending`. Un archivage
   incomplet est un abandon : il ne remet pas le compteur à zéro.
@@ -682,7 +693,8 @@ Instagram.
   afficher « -3 » à la place d'un compte. La raison se relit en tête de `/publications`
   (`PageAlerts`).
 - Les cases se cochent en rafale : `useUpdatePostDraft` écrit **d'abord dans le cache**
-  (`onMutate`) et ne relit la liste qu'après la **dernière** écriture en vol
+  (`onMutate`, dans les **deux** listes — une ligne archivée à l'instant reste affichée au
+  lieu de disparaître le temps de l'aller-retour ; l'écran dédoublonne par identifiant) et ne relit la liste qu'après la **dernière** écriture en vol
   (`isMutating`). Sans ça, le deuxième clic partait de l'état d'avant le premier et le
   décochait.
 
@@ -1280,14 +1292,14 @@ Absent quand Todo n'est pas connecté.
 > et l'alerte de jeton ont été **retirés du front**. Tout le code de collecte Graph décrit
 > ci-dessous existe toujours côté API (routes, `CollectInstagram.collectOne`, tables) : le
 > rebrancher ne demande que de remonter l'UI. `/instagram` demande toujours l'aperçu **au
-> jour** (quelle que soit la maille des filtres) et affiche : Abonnés (+ gain), Publications
-> (**total du profil** en grand, parutions de la période en sous-titre), J'aime et
-> Commentaires (somme et moyenne des publications de la période), un **calendrier des
-> publications façon contributions GitHub** (`PostsCalendar` : une colonne par semaine,
-> lundi en haut, clic sur une case = ses publications), **deux graphiques séparés** —
-> abonnés totaux (ligne, domaine calculé sur les valeurs) et gain d'abonnés par jour
-> (barres, rouges si négatif) —, puis la table des publications (Vues, J'aime,
-> Commentaires) avec un champ **« Suivre » par lien**. Paramètres → Instagram ne sert plus
+> jour** (quelle que soit la maille des filtres) et se lit en trois étages : **saisie des
+> stories et chiffres clés sur la même ligne** (`StoryCounter`, Stories, Abonnés + gain,
+> Publications — total du profil en grand, parutions de la période en sous-titre) ; **tous
+> les graphiques ensemble, en onglets** (`InstagramChart` : Activité, Abonnés, Gain par
+> jour) ; puis le **calendrier des publications façon contributions GitHub**
+> (`PostsCalendar` : une colonne par semaine, lundi en haut, clic sur une case = ses
+> publications). Ni j'aime ni commentaires à l'écran, plus de tableau des publications, et
+> **pas d'ajout de publication par lien** (retiré : sans intérêt). Paramètres → Instagram ne sert plus
 > qu'à archiver ou supprimer un profil ; le pseudo se règle dans Paramètres → API.
 >
 > **Les stories ne sont pas lisibles en public** : `web_profile_info` sans session ne les
@@ -1300,7 +1312,7 @@ Absent quand Todo n'est pas connecté.
 Table `ig_story_log` (migration 32) : `date` (clé), `count > 0`. **Aucun compte** : on ne
 suit qu'un profil. Pas de ligne = zéro, et écrire `0` supprime la ligne.
 
-- **Saisie** : `StoryCounter`, en tête de `/instagram` à côté du graphique d'activité. « J'ai
+- **Saisie** : `StoryCounter`, en tête de `/instagram`, sur la ligne des chiffres clés. « J'ai
   fait une story » = +1, « − » corrige, **enregistré au clic** (`PUT /stories/:date`).
   Bascule « Hier » pour rattraper un oubli du soir. Mise à jour **optimiste**
   (`useSetStoryCount`) : trois « + » d'affilée envoient 1, 2, 3 et non 1, 1, 1 ; le reste
@@ -1313,10 +1325,10 @@ suit qu'un profil. Pas de ligne = zéro, et écrire `0` supprime la ligne.
 - **Pastille** sur l'entrée Instagram (`storyBadge`, `navBadges.ts`) : un **point orange**
   tant que la saisie du jour vaut zéro, seulement si un profil est suivi. Elle s'éteint au
   premier « + ».
-- **Graphique d'activité** (`ActivityChart`, premier de l'écran) : stories et publications
-  en barres, abonnés gagnés en ligne, **un seul axe** — exception assumée à la règle des
-  onglets : trois comptes par jour du même ordre de grandeur, qu'on veut lire ensemble
-  (« publier fait-il venir du monde ? »).
+- **Graphique d'activité** (`ActivityChart`, **premier onglet** d'`InstagramChart`) :
+  stories et publications en barres, abonnés gagnés en ligne, **un seul axe** — trois
+  comptes par jour du même ordre de grandeur, qu'on veut lire ensemble (« publier fait-il
+  venir du monde ? »). Le total d'abonnés, d'une autre échelle, a son propre onglet.
 
 Un domaine **à part** et non une `channel` de plus. Une chaîne YouTube et un compte
 Instagram ne mesurent pas les mêmes choses : `daily_metrics` porte des minutes vues, une
@@ -1559,28 +1571,24 @@ seraient comptées deux fois.
 
 **Le serveur est presque toujours bloqué** (429 sur `web_profile_info`, Instagram limite
 par IP) : le relevé retombe alors sur la voie `page`, qui ne liste **aucune** publication.
-C'est ce qui laissait le tableau vide et les j'aime figés. Deux parades, toutes deux sur
-**la page d'une publication** (`InstagramProfileClient.fetchPost`), qui reste servie au
+C'est ce qui laissait les publications à zéro et les j'aime figés. Parade : **la page d'une
+publication** (`InstagramProfileClient.fetchPost`), qui reste servie au
 robot d'aperçu : `og:description` y porte « 12 likes, 3 comments - pseudo on September 1,
 2026: "légende" » (compteurs arrondis au-delà de 10 000, jour sans heure, pas de vues ;
-j'aime absents si l'auteur les masque → `null`, que le COALESCE ignore) :
-
-- **relecture** : quand le relevé n'a rien listé, `CollectIntegrations.collectInstagram`
-  relit une à une les **12 dernières** publications déjà archivées (`postsToRefresh` /
-  `recordPostStats`). Plus serait s'exposer au blocage qu'on contourne ;
-- **ajout par lien** : `POST /api/instagram/media { url }` (`addInstagramPost` →
-  `recordPublicPost`) range la publication sous le compte de son **auteur**, qui doit être
-  un profil suivi sans jeton (400 sinon). Elle est ensuite relue comme les autres.
+j'aime absents si l'auteur les masque → `null`, que le COALESCE ignore). Quand le relevé
+n'a rien listé, `CollectIntegrations.collectInstagram` relit une à une les **12 dernières**
+publications déjà archivées (`postsToRefresh` / `recordPostStats`) — plus serait s'exposer
+au blocage qu'on contourne. L'ajout d'une publication par son lien a existé puis a été
+**retiré** (route `POST /media`, `recordPublicPost`) : ne pas le réintroduire sans demande.
 
 **Clé d'une publication publique = son code court** (`/p/<code>/`, `instagramShortcode`,
-`instagramPermalink`), commun à toutes les voies et au lien collé. `upsertPublicPost`
+`instagramPermalink`), commun à toutes les voies. `upsertPublicPost`
 retrouve d'abord une ligne **par son adresse** : un premier relevé a pu l'écrire sous
 l'identifiant numérique. La date d'une publication connue n'est jamais réécrite (la page
 ne donne que le jour).
 
-L'aperçu porte `publicReading` (`InstagramPublicReading`, ajouté par la **route** depuis
-l'instantané : `source`, `postsListed`, `postsRefreshed`, `at`, `error`) : par la voie
-`page`, l'écran l'annonce au-dessus du tableau au lieu de laisser lire une panne. L'instantané `instagram` ne garde
+L'instantané du relevé garde `source`, `postsListed` et `postsRefreshed` pour le diagnostic
+(aucun écran ne les lit). L'instantané `instagram` ne garde
 qu'un résumé et les échecs (`ManageIntegrations.view` les fusionne à la vue locale).
 **Une fois par jour** : `shouldSkip` saute Instagram si une réussite date d'aujourd'hui
 (UTC) ; un échec est retenté à l'heure suivante. Son interrupteur ne coupe **que la
@@ -1778,14 +1786,13 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `DELETE` | `/api/production-time/:id`                          | Supprime la session **et son créneau approuvé** ; un créneau encore en cours redevient prévu                                                                                                                                                             |
 | `GET`    | `/api/instagram/stories/:date`                      | Stories déclarées ce jour (`AAAA-MM-JJ`, jour **local**). `{ date, count }`, 0 sans saisie                                                                                                                                                               |
 | `PUT`    | `/api/instagram/stories/:date`                      | `{ count }` (0 à 200) remplace la saisie du jour ; `0` l'efface                                                                                                                                                                                          |
-| `GET`    | `/api/instagram/overview`                           | Séries, totaux, stories, publications et `publicReading`. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                                                                |
+| `GET`    | `/api/instagram/overview`                           | Séries, totaux, stories et publications. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                                                                                 |
 | `GET`    | `/api/instagram/accounts`                           | Comptes suivis. **Le jeton n'en sort jamais**, remplacé par `hasToken` et `tokenDaysLeft`                                                                                                                                                                |
 | `POST`   | `/api/instagram/accounts`                           | Connecter un compte. 409 si l'`igUserId` est déjà suivi                                                                                                                                                                                                  |
 | `PATCH`  | `/api/instagram/accounts/:id`                       | Modifier / archiver. `accessToken: ""` efface, absent conserve                                                                                                                                                                                           |
 | `DELETE` | `/api/instagram/accounts/:id`                       | Supprimer **et tout l'historique** (cascade). Irrécupérable : les stories ne se recollectent pas                                                                                                                                                         |
 | `POST`   | `/api/instagram/collect`                            | Collecte immédiate de tous les comptes **à jeton**, puis du profil public s'il est renseigné                                                                                                                                                             |
 | `POST`   | `/api/instagram/accounts/:id/collect`               | Collecter ce compte                                                                                                                                                                                                                                      |
-| `POST`   | `/api/instagram/media`                              | `{ url }` → suit une publication par son lien (lue sur sa page). 400 si l'auteur n'est pas un profil suivi sans jeton                                                                                                                                    |
 | `POST`   | `/api/instagram/accounts/:id/refresh-token`         | Échange le jeton contre un neuf (60 j de plus). Demande `META_APP_ID` / `META_APP_SECRET`                                                                                                                                                                |
 | `GET`    | `/api/comments`                                     | Commentaires archivés. Params `statuses` (CSV), `channelIds`, `from`/`to`, `search`, `limit` (500). Période **facultative** : on trie sa file en entier                                                                                                  |
 | `GET`    | `/api/comments/stats`                               | Compte par statut, pour les pastilles des onglets. Param `channelIds`. **Déclaré avant `/:id`**                                                                                                                                                          |
@@ -1808,12 +1815,12 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, puis **les deux graphiques seulement** (argent, audience). Plus d'alertes : elles sont en pastilles                                                                                                                                                                                                                |
 | `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                                                                                                        |
-| `/instagram`        | `InstagramPage`        | **Profil public seulement**, toujours au jour : saisie des stories + graphique d'activité (stories / publications / abonnés gagnés) en tête, 5 cartes, calendrier des publications, graphiques Abonnés et Gain par jour, tableau des publications + « Suivre » par lien                                                                                                       |
+| `/instagram`        | `InstagramPage`        | **Profil public seulement**, toujours au jour : saisie des stories + 3 chiffres clés sur une ligne, graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications                                                                                                                                                                                     |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
 | `/shorts`           | `ProductionPage`       | `format="short"`, titré **« Shorts & Réels »**. Exactement le même écran, borné aux formats courts                                                                                                                                                                                                                                                                            |
-| `/publications`     | `PublicationsPage`     | Liste triée par date : 6 cases (Montage, Sous-titres, Miniature, YouTube, Insta, TikTok), archivage sans confirmation (vert quand tout est coché), vue Archives. Pastille « -X jours »                                                                                                                                                                                        |
+| `/publications`     | `PublicationsPage`     | **Un couloir par jour** (vides compris, ouvert sur aujourd'hui), 6 cases par publication, archivage sans confirmation (vert quand tout est coché), archivées visibles grisées, « + » par jour. Pastille « -X jours »                                                                                                                                                          |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / Notes                                                                                                                                                                                                                                        |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                    |
 | `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                                                                                                |
@@ -2453,7 +2460,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useRemovePlanningItem`, `useClearPlanningItems`, `usePlaceItem`, `useContinueSlot`                                                                                                                            | `application/planning/usecases/usePlanning.ts`        | La grille, la pile et le placement                                                                                                                  |
 | `useToggleTodoTask`, `usePlaceTodoTask`, `useUnplaceTodoTask`                                                                                                                                                                                                                                                                  | `application/planning/usecases/usePlanning.ts`        | Tâches Todo du planning. N'invalident **que** `planningBoard` : une coche Todo ne touche ni la pile ni la file                                      |
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                                                                                                                                                      | idem                                                  | Horaires de travail et connexion à l'agenda                                                                                                         |
-| `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useAddInstagramPost`, `useStoryCount`, `useSetStoryCount`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                           | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                                                                               |
+| `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useStoryCount`, `useSetStoryCount`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                                                  | `application/instagram/usecases/useInstagram.ts`      | Comptes Instagram, séries et collecte                                                                                                               |
 | `useSlotFromTimeEntry`                                                                                                                                                                                                                                                                                                         | idem                                                  | Transforme une session de travail en créneau approuvé                                                                                               |
 | `useScriptPresets`, `useShotAngles`, `useProductionShotAngles`, `useCreateScriptPreset`, `useUpdateScriptPreset`, `useDeleteScriptPreset`, `useReorderScriptPresets`, `useCreateShotAngle`, `useUpdateShotAngle`, `useDeleteShotAngle`, `useReorderShotAngles`, `useCreateProductionShotAngle`, `useDeleteProductionShotAngle` | `application/script/usecases/useScript.ts`            | Gabarits et angles de vue (cache 5 min)                                                                                                             |
 | `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`         | Commentaires archivés, leur tri et leur collecte                                                                                                    |

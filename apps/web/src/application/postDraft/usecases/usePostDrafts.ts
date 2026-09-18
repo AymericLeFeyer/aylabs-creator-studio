@@ -60,13 +60,14 @@ export const useUpdatePostDraft = () => {
     mutationFn: ({ id, input }: { id: string; input: PostDraftUpdate }) =>
       postDraftApi.update(id, input),
     onMutate: async ({ id, input }) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.postDrafts(false) });
-      queryClient.setQueryData<PostDraft[]>(queryKeys.postDrafts(false), (drafts) =>
-        drafts
-          ?.map((draft) => (draft.id === id ? { ...draft, ...pickDisplayed(input) } : draft))
-          // Archivée : elle quitte la liste sur-le-champ, sans attendre le réseau.
-          .filter((draft) => !(draft.id === id && input.archived === true)),
-      );
+      await queryClient.cancelQueries({ queryKey: ['postDrafts'] });
+      // Les deux listes : une publication archivée **reste affichée** (grisée, à son jour),
+      // elle ne doit pas disparaître le temps que le réseau réponde.
+      for (const archived of [false, true]) {
+        queryClient.setQueryData<PostDraft[]>(queryKeys.postDrafts(archived), (drafts) =>
+          drafts?.map((draft) => (draft.id === id ? applyUpdate(draft, input) : draft)),
+        );
+      }
     },
     onSettled: () => {
       if (queryClient.isMutating({ mutationKey: UPDATE_KEY }) > 1) return;
@@ -75,10 +76,19 @@ export const useUpdatePostDraft = () => {
   });
 };
 
-/** Les champs d'une écriture qui se lisent tels quels dans la liste. */
-const pickDisplayed = (input: PostDraftUpdate): Partial<PostDraft> => {
-  const { archived: _archived, ...fields } = input;
-  return fields;
+/** Ce que l'écriture fera de la ligne, calculé d'avance pour l'affichage optimiste. */
+const applyUpdate = (draft: PostDraft, input: PostDraftUpdate): PostDraft => {
+  const { archived, ...fields } = input;
+  return {
+    ...draft,
+    ...fields,
+    archivedAt:
+      archived === undefined
+        ? draft.archivedAt
+        : archived
+          ? (draft.archivedAt ?? new Date().toISOString())
+          : null,
+  };
 };
 
 export const useDeletePostDraft = () =>
