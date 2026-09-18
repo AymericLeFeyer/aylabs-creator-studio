@@ -15,12 +15,16 @@ import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { formatDate } from '../../../shared/format.ts';
 import { cn } from '../../../shared/cn.ts';
 
-type Metric = 'stories' | 'reach' | 'followers';
+type Metric = 'followers' | 'posts';
 
+/**
+ * Deux lectures seulement : ce que le profil public laisse voir. La portée, les
+ * interactions et les stories ne s'obtiennent que par l'API Graph, retirée de l'écran
+ * tant que la connexion Meta n'est pas en place.
+ */
 const METRICS: Array<{ id: Metric; label: string; hint: string }> = [
-  { id: 'stories', label: 'Publications', hint: 'Stories et publications par période' },
-  { id: 'reach', label: 'Portée', hint: 'Comptes uniques touchés' },
   { id: 'followers', label: 'Abonnés', hint: 'Total et gain par période' },
+  { id: 'posts', label: 'Publications', hint: 'Posts, carrousels et reels par période' },
 ];
 
 export interface InstagramChartProps {
@@ -29,43 +33,42 @@ export interface InstagramChartProps {
 }
 
 /**
- * Les trois lectures d'un compte Instagram, en onglets plutôt qu'en axes superposés.
+ * Les lectures d'un compte Instagram, en onglets plutôt qu'en axes superposés.
  *
- * Des stories (quelques unités), une portée (quelques milliers) et un total d'abonnés
- * (quelques dizaines de milliers) n'ont pas la même échelle : les empiler sur deux axes
- * ferait lire des corrélations inventées. Même parti pris que le graphique de performance
- * par vidéo.
+ * Des publications (quelques unités) et un total d'abonnés (quelques dizaines de milliers)
+ * n'ont pas la même échelle : les empiler sur deux axes ferait lire des corrélations
+ * inventées. Même parti pris que le graphique de performance par vidéo.
  *
- * Les **stories sont des barres et les abonnés une ligne** : un flux se compte par
+ * Les **publications sont des barres et les abonnés une ligne** : un flux se compte par
  * période, un cumul se suit. Confondre les deux ferait additionner des abonnés d'un jour
  * sur l'autre.
  */
 export const InstagramChart = ({ series, granularity }: InstagramChartProps) => {
   const privacy = usePrivacy();
-  const [metric, setMetric] = useState<Metric>('stories');
+  const [metric, setMetric] = useState<Metric>('followers');
 
   /**
-   * Portée et abonnés tombent à **zéro** quand ils sont masqués, ils ne disparaissent
-   * pas : une courbe qui s'arrête et un axe qui se rétrécit disent déjà l'ordre de
-   * grandeur de ce qu'on vient de retirer. Le rythme de publication, lui, n'est pas un
-   * chiffre d'audience et reste lisible.
+   * Les abonnés tombent à **zéro** quand ils sont masqués, ils ne disparaissent pas : une
+   * courbe qui s'arrête et un axe qui se rétrécit disent déjà l'ordre de grandeur de ce
+   * qu'on vient de retirer. Le rythme de publication, lui, n'est pas un chiffre d'audience
+   * et reste lisible.
    */
   const rows = useMemo(
     () =>
       series.map((point) => ({
         ...point,
-        reach: privacy.isMasked('views') ? 0 : point.reach,
-        views: privacy.isMasked('views') ? 0 : point.views,
-        totalInteractions: privacy.isMasked('views') ? 0 : point.totalInteractions,
         followers: privacy.isMasked('subscribers') ? 0 : point.followers,
         followersGained: privacy.isMasked('subscribers') ? 0 : point.followersGained,
       })),
     [series, privacy],
   );
 
-  const empty = series.every(
-    (point) => point.stories === 0 && point.posts === 0 && point.reach === null,
-  );
+  // Vide se juge à l'onglet affiché : un compte relevé par son profil public a une courbe
+  // d'abonnés sans aucune publication datée, et l'inverse arrive aussi.
+  const empty =
+    metric === 'posts'
+      ? series.every((point) => point.posts === 0)
+      : series.every((point) => point.followers === null);
 
   return (
     <div className="space-y-3">
@@ -144,23 +147,8 @@ export const InstagramChart = ({ series, granularity }: InstagramChartProps) => 
               }}
             />
 
-            {metric === 'stories' && (
-              <>
-                <Bar dataKey="stories" name="Stories" fill="#e1306c" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="posts" name="Publications" fill="#833ab4" radius={[3, 3, 0, 0]} />
-              </>
-            )}
-
-            {metric === 'reach' && (
-              <>
-                <Bar dataKey="reach" name="Portée" fill="#405de6" radius={[3, 3, 0, 0]} />
-                <Bar
-                  dataKey="totalInteractions"
-                  name="Interactions"
-                  fill="#f77737"
-                  radius={[3, 3, 0, 0]}
-                />
-              </>
+            {metric === 'posts' && (
+              <Bar dataKey="posts" name="Publications" fill="#833ab4" radius={[3, 3, 0, 0]} />
             )}
 
             {metric === 'followers' && (

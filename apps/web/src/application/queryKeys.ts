@@ -31,6 +31,7 @@ export const queryKeys = {
   products: (params: unknown) => ['products', params] as const,
   sponsorships: (params: unknown) => ['sponsorships', params] as const,
   ideas: (format?: string) => ['ideas', format ?? 'all'] as const,
+  postDrafts: () => ['postDrafts'] as const,
   scriptPresets: (includeArchived: boolean) => ['scriptPresets', includeArchived] as const,
   shotAngles: (includeArchived: boolean) => ['shotAngles', includeArchived] as const,
   productionShotAngles: (id: string) => ['productionShotAngles', id] as const,

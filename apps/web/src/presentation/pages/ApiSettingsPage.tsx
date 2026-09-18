@@ -73,9 +73,8 @@ const LOCAL_SOURCE_HINTS: Partial<Record<IntegrationProvider, { ok: string; empt
     empty: 'Aucune chaîne suivie : ajoute-en une dans l’onglet Chaînes.',
   },
   instagram: {
-    ok: 'Alimentée par les comptes de l’onglet Instagram et, sans compte Meta, par le profil public ci-dessous, relevé une fois par jour.',
-    empty:
-      'Aucun compte suivi : renseigne le profil public ci-dessous, ou connecte un compte Meta dans l’onglet Instagram.',
+    ok: 'Alimentée par le profil public ci-dessous, relevé une fois par jour : abonnés et dernières publications.',
+    empty: 'Aucun profil suivi : renseigne le nom d’utilisateur ci-dessous.',
   },
 };
 

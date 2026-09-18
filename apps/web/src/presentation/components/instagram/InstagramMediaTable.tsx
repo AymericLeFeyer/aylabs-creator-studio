@@ -9,15 +9,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { formatDate } from '../../../shared/format.ts';
 import { cn } from '../../../shared/cn.ts';
 
-type Column = 'date' | 'views' | 'reach' | 'likes' | 'comments' | 'saved';
+type Column = 'date' | 'views' | 'likes' | 'comments';
 
+/**
+ * Les seuls compteurs qu'un visiteur voit sur une publication. Portée et enregistrements
+ * n'existent que par l'API Graph, retirée tant que la connexion Meta n'est pas en place.
+ * Les vues ne concernent que les vidéos et les reels : « — » sur une photo.
+ */
 const COLUMNS: Array<{ id: Column; label: string; numeric: boolean }> = [
   { id: 'date', label: 'Date', numeric: false },
   { id: 'views', label: 'Vues', numeric: true },
-  { id: 'reach', label: 'Portée', numeric: true },
   { id: 'likes', label: 'J’aime', numeric: true },
   { id: 'comments', label: 'Commentaires', numeric: true },
-  { id: 'saved', label: 'Enregistrements', numeric: true },
 ];
 
 export interface InstagramMediaTableProps {
@@ -125,10 +128,8 @@ export const InstagramMediaTable = ({ media }: InstagramMediaTableProps) => {
 
               <TableCell className="whitespace-nowrap text-sm">{formatDate(item.date)}</TableCell>
               <TableCell className="text-right tabular">{count(item.views)}</TableCell>
-              <TableCell className="text-right tabular">{count(item.reach)}</TableCell>
               <TableCell className="text-right tabular">{count(item.likes)}</TableCell>
               <TableCell className="text-right tabular">{count(item.comments)}</TableCell>
-              <TableCell className="text-right tabular">{count(item.saved)}</TableCell>
 
               <TableCell>
                 {item.permalink && (

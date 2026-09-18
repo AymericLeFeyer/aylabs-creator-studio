@@ -17,6 +17,7 @@ import { SponsorsPage } from './presentation/pages/SponsorsPage.tsx';
 import { PlatformsPage } from './presentation/pages/PlatformsPage.tsx';
 import { CommentsPage } from './presentation/pages/CommentsPage.tsx';
 import { ExternalAppPage } from './presentation/pages/ExternalAppPage.tsx';
+import { PublicationsPage } from './presentation/pages/PublicationsPage.tsx';
 
 /** `/partenariats?onglet=…` → l'écran qui a remplacé l'onglet. */
 const LegacyPartnersRedirect = () => {
@@ -58,6 +59,7 @@ export const App = () => (
                   cartes dépliées ou un formulaire ouvert passeraient d'un format à l'autre. */}
               <Route path="production" element={<ProductionPage key="video" format="video" />} />
               <Route path="shorts" element={<ProductionPage key="short" format="short" />} />
+              <Route path="publications" element={<PublicationsPage />} />
               <Route path="production/:id" element={<ProductionDetailPage />} />
               <Route path="produits" element={<ProductsPage />} />
               <Route path="sponsors" element={<SponsorsPage />} />

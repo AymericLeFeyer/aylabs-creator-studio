@@ -128,6 +128,36 @@ export class CollectInstagram implements InstagramProfileSink {
       followsCount: profile.following,
       mediaCount: profile.posts,
     });
+    // Les publications visibles sur le profil sont archivées comme celles de l'API Graph :
+    // c'est ce qui date chaque parution au jour près et remplit l'onglet Publications. Pas
+    // sur un compte à jeton — ses publications arrivent déjà par Graph, sous un autre
+    // identifiant, et les écrire ici les compterait deux fois.
+    const hasToken = 'hasToken' in account ? account.hasToken : account.accessToken !== null;
+    if (!hasToken) {
+      for (const post of profile.recentPosts) {
+        const row = this.data.upsertMedia({
+          accountId: account.id,
+          igMediaId: post.id,
+          mediaType: post.mediaType,
+          caption: post.caption,
+          permalink: post.permalink,
+          thumbnailUrl: post.thumbnailUrl,
+          postedAt: post.postedAt,
+          date: localDateOf(post.postedAt),
+        });
+        // Seuls les compteurs publics existent ici : portée, enregistrements et partages
+        // restent à `null`, le COALESCE du dépôt ne les écrase pas.
+        this.data.setMediaInsights(row.id, {
+          views: post.views,
+          reach: null,
+          likes: post.likes,
+          comments: post.comments,
+          saved: null,
+          shares: null,
+        });
+      }
+    }
+
     this.accounts.update(account.id, {
       username: profile.username,
       name: profile.fullName ?? account.name,

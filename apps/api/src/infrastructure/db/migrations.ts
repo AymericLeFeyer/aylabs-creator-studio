@@ -1327,6 +1327,25 @@ const migrations: Migration[] = [
       CREATE UNIQUE INDEX idx_external_apps_todo ON external_apps (kind) WHERE kind = 'todo';
     `,
   },
+  {
+    version: 30,
+    name: 'post_drafts',
+    // Les brouillons de publication (Instagram) : un titre, une description, une date
+    // prevue. Rien d'autre, volontairement - c'est un outil d'organisation, pas une
+    // production : pas de script, pas de creneaux, pas d'etapes. Aucune cle vers
+    // "ig_media" : une publication parue se lit dans Audience, le brouillon se supprime.
+    up: `
+      CREATE TABLE post_drafts (
+        id           TEXT PRIMARY KEY,
+        title        TEXT NOT NULL,
+        description  TEXT NOT NULL DEFAULT '',
+        planned_date TEXT,
+        created_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL
+      );
+      CREATE INDEX idx_post_drafts_planned ON post_drafts (planned_date);
+    `,
+  },
 ];
 
 /**

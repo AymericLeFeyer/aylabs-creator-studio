@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-16
+> Dernière mise à jour : 2026-09-18
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -102,7 +102,7 @@ Les deux applications suivent la même découpe.
 ```
 apps/api/src/
 ├── domain/          channel, metrics, category, revenue, expense, video, analytics,
-│                    brand, production, product, sponsorship, idea, legal, integration,
+│                    brand, production, product, sponsorship, idea, postDraft, legal, integration,
 │                    todoApp, externalApp
 │   └── <domaine>/{entities,repositories,services}    # repositories = interfaces seules
 ├── application/<domaine>/usecases/
@@ -649,6 +649,24 @@ de production d'alors : elles sont devenues des vidéos. La clé de cache est
 `['ideas', format ?? 'all']`, si bien qu'une écriture invalide les deux carnets.
 
 Volontairement pauvre : un texte, et rien d'autre. Lui donner une chaîne, une date ou un statut en ferait une production au rabais — or c'est justement l'absence de champs qui permet de noter une idée en trois secondes, et une idée qu'on ne note pas est une idée perdue. Le bouton « en faire une vidéo » la promeut en `Production` (son texte devient le titre de travail) et la retire du carnet. La promotion est faite **côté front en deux appels** : créer la production, puis supprimer l'idée — un endpoint dédié n'apporterait qu'une transaction sur deux écritures indépendantes, et l'idée ne doit disparaître que si la vidéo est réellement créée.
+
+### `postDraft` — les brouillons de publication
+
+`PostDraft { id, title, description, plannedDate, createdAt, updatedAt }` — table
+`post_drafts` (migration 30). Écran **Production → Publications** (`/publications`).
+
+Une publication Instagram **avant** sa parution : un titre, une description (la légende,
+2 200 caractères max — la limite d'Instagram, vérifiée par zod et par le compteur du
+formulaire), une date prévue **facultative**. Volontairement pauvre, comme une idée : c'est
+un outil d'organisation, pas une production — ni script, ni créneaux, ni étapes. **Aucun
+lien avec `ig_media`** : ce qui est paru se lit dans Audience → Instagram, le brouillon se
+supprime. Les deux écrans ne se mélangent pas.
+
+`description` n'est jamais `null` (même règle que `script`). Tri du dépôt : `planned_date
+IS NULL, planned_date, created_at` — une date dépassée remonte donc d'elle-même en tête,
+en rouge. La description se **copie** d'un clic (elle est écrite pour être collée dans
+Instagram). CRUD nu sans use case, comme `ideas` : aucun effet de bord, la mutation
+n'invalide que `['postDrafts']`.
 
 ### `script` — les gabarits et les angles de vue
 
@@ -1233,6 +1251,21 @@ Absent quand Todo n'est pas connecté.
 
 ### `instagram` — le rythme de publication
 
+> **État au 2026-09-18 : l'écran ne montre que le profil public.** La connexion par l'API
+> Graph (compte Meta, identifiant 178414…, jeton) ne fonctionnait pas : son formulaire, les
+> cartes stories / portée, le calendrier des stories, les colonnes Portée / Enregistrements
+> et l'alerte de jeton ont été **retirés du front**. Tout le code de collecte Graph décrit
+> ci-dessous existe toujours côté API (routes, `CollectInstagram.collectOne`, tables) : le
+> rebrancher ne demande que de remonter l'UI. `/instagram` affiche : Abonnés (+ gain),
+> Publications (période, et total du profil en sous-titre), J'aime et Commentaires (somme et
+> moyenne des publications de la période), un graphique Abonnés / Publications, et la table
+> des publications (Vues, J'aime, Commentaires). Paramètres → Instagram ne sert plus qu'à
+> archiver ou supprimer un profil ; le pseudo se règle dans Paramètres → API.
+>
+> **Les stories ne sont pas lisibles en public** : `web_profile_info` sans session ne les
+> expose pas, SearchAPI non plus. Seules voies : l'API Graph, ou une session connectée
+> (cookie) — fragile et contraire aux conditions d'Instagram.
+
 Un domaine **à part** et non une `channel` de plus. Une chaîne YouTube et un compte
 Instagram ne mesurent pas les mêmes choses : `daily_metrics` porte des minutes vues, une
 durée moyenne de visionnage et des revenus AdSense, dont aucun n'a de sens ici ; `videos`
@@ -1463,7 +1496,14 @@ poste de dev), SearchAPI.io si la clé existe, puis la page du profil lue en
 `CollectInstagram.recordPublicProfile` (port `InstagramProfileSink`) crée ou retrouve le
 compte — **par pseudo d'abord**, un compte Graph du même nom a un `ig_user_id` différent
 (178414…) — et écrit le relevé du jour dans `ig_account_snapshots`. D'où la courbe
-d'abonnés de `/instagram` et l'export, sans rien de plus. L'instantané `instagram` ne garde
+d'abonnés de `/instagram` et l'export, sans rien de plus.
+**Les dernières publications du profil sont archivées aussi** (`InstagramPublicProfile.recentPosts` :
+les 12 de `web_profile_info` — `edge_owner_to_timeline_media.edges`, types ramenés à
+`IMAGE | VIDEO | CAROUSEL_ALBUM | REELS` —, la liste `posts` de SearchAPI lue
+défensivement, **rien** par la voie `page`) dans `ig_media`, avec j'aime, commentaires et
+vues via `setMediaInsights` (portée, enregistrements, partages à `null`). Jamais sur un
+compte **à jeton** : ses publications arrivent par Graph sous un autre identifiant et
+seraient comptées deux fois. L'instantané `instagram` ne garde
 qu'un résumé et les échecs (`ManageIntegrations.view` les fusionne à la vue locale).
 **Une fois par jour** : `shouldSkip` saute Instagram si une réussite date d'aujourd'hui
 (UTC) ; un échec est retenté à l'heure suivante. Son interrupteur ne coupe **que la
@@ -1608,6 +1648,10 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/productions/:id/shot-angles`                  | Créer un angle **ponctuel**. Rend la liste complète, comme les tâches                                                                                                                                                                                    |
 | `PATCH`  | `/api/productions/:id/shot-angles/:angleId`         | Modifier un angle ponctuel                                                                                                                                                                                                                               |
 | `DELETE` | `/api/productions/:id/shot-angles/:angleId`         | Retirer un angle ponctuel                                                                                                                                                                                                                                |
+| `GET`    | `/api/post-drafts`                                  | Brouillons de publication, date prévue la plus proche en tête, sans date à la fin                                                                                                                                                                        |
+| `POST`   | `/api/post-drafts`                                  | `{ title, description?, plannedDate? }`. `description` ≤ 2 200 caractères                                                                                                                                                                                |
+| `PATCH`  | `/api/post-drafts/:id`                              | Modifier. `plannedDate: null` efface la date, absent la conserve                                                                                                                                                                                         |
+| `DELETE` | `/api/post-drafts/:id`                              | Supprimer                                                                                                                                                                                                                                                |
 | `GET`    | `/api/legal/overview`                               | Société, obligations, tableau mensuel et alertes en une requête                                                                                                                                                                                          |
 | `GET`    | `/api/legal/company`                                | Fiche société (ligne unique)                                                                                                                                                                                                                             |
 | `PATCH`  | `/api/legal/company`                                | Modifier. `foundedOn` décide du premier mois du tableau                                                                                                                                                                                                  |
@@ -1683,11 +1727,12 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, puis **les deux graphiques seulement** (argent, audience). Plus d'alertes : elles sont en pastilles                                                                                                                                                                                                                |
 | `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                                                                                                        |
-| `/instagram`        | `InstagramPage`        | 6 cartes, graphique à 3 onglets, puis calendrier des stories / tableau des publications                                                                                                                                                                                                                                                                                       |
+| `/instagram`        | `InstagramPage`        | **Profil public seulement** : 4 cartes (Abonnés, Publications, J'aime, Commentaires), graphique à 2 onglets (Abonnés, Publications), tableau des publications                                                                                                                                                                                                                 |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
 | `/shorts`           | `ProductionPage`       | `format="short"`, titré **« Shorts & Réels »**. Exactement le même écran, borné aux formats courts                                                                                                                                                                                                                                                                            |
+| `/publications`     | `PublicationsPage`     | Brouillons de publication Instagram (titre, description, date prévue), en cartes triées par date. Copier la légende d'un clic. Bouton flottant sur mobile                                                                                                                                                                                                                     |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / Notes                                                                                                                                                                                                                                        |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                    |
 | `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                                                                                                |
@@ -2018,7 +2063,7 @@ horizontalement.
 
 **Les écrans sont groupés par famille** (`NAV_SECTIONS`, `presentation/navigation.ts`) :
 le dashboard **hors famille** en tête, puis **Production** (Planning, Vidéos, Shorts &
-Réels), **Audience** (YouTube, Instagram, Commentaires), **Revenus** (Produits, Sponsors,
+Réels, Publications), **Audience** (YouTube, Instagram, Commentaires), **Revenus** (Produits, Sponsors,
 Plateformes, Chiffre
 d'affaires) et **Entreprise** (Légal). À neuf entrées, une liste à plat obligeait à lire
 tous les libellés pour en trouver un — rien ne disait que « Contenu » et « Instagram »
@@ -2172,7 +2217,7 @@ arrêt fait depuis un autre onglet sans marteler l'API pour animer un compteur.
 
 La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait
 partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/parametres`,
-`/commentaires`, `/planning`, `/production`, `/shorts`, `/produits`, `/sponsors`,
+`/commentaires`, `/planning`, `/production`, `/shorts`, `/publications`, `/produits`, `/sponsors`,
 `/plateformes`, `/legal`, `/apps`).
 
 **`/produits`, `/sponsors` et `/plateformes` montent le `PeriodPicker` seul, dans leur
@@ -2331,6 +2376,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`         | Commentaires archivés, leur tri et leur collecte                                                                                                    |
 | `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                                                                                                                                                         | idem                                                  | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                                                                            |
 | `useExternalApps`, `useCreateExternalApp`, `useUpdateExternalApp`, `useDeleteExternalApp`, `useTodayTodos`                                                                                                                                                                                                                     | `application/externalApp/usecases/useExternalApps.ts` | Applications externes du menu ; tâches Todo du jour (pastille, **relue chaque minute** : ce qu'on coche dans l'iframe ne passe pas par le studio)   |
+| `usePostDrafts`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                                                              | `application/postDraft/usecases/usePostDrafts.ts`     | Brouillons de publication. N'invalident que `['postDrafts']`                                                                                        |
 | `useIntegrations`, `useUpdateIntegration`, `useCollectIntegration`, `useExportKeys`, `useCreateExportKey`, `useDeleteExportKey`                                                                                                                                                                                                | `application/integration/usecases/useIntegrations.ts` | Paramètres → API : sources de l'export, identifiants, clés d'accès                                                                                  |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
@@ -2403,6 +2449,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   contredire.
 - **Migration 26** ajoute `ideas.format` (`'video'` par défaut, même `CHECK`) : le carnet
   d'idées suit le menu où on le lit, et toutes les idées déjà notées deviennent des vidéos.
+- **Migration 30** ajoute `post_drafts` (brouillons de publication : titre, description
+  `NOT NULL DEFAULT ''`, `planned_date` nullable). Aucune clé vers `ig_media`.
 - **Migration 29** ajoute `external_apps` (une ligne par app, `CHECK` sur `kind` et
   `section`) et un index unique partiel `WHERE kind = 'todo'` : une seule app Todo.
 - **Migration 28** ajoute `planning_settings.todo_base_url`, `todo_api_key` (chiffrée),
@@ -3148,8 +3196,10 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
 - **Un compte Instagram sans jeton est un compte « profil public ».** `CollectInstagram.collectAll`
   le **saute** (sinon `collectOne` lèverait et couperait la boucle avant les comptes à
   stories), `GetInstagramOverview` dérive ses **publications** de la progression de
-  `media_count` d'un relevé au suivant (planché à zéro, le premier relevé ne compte rien) —
-  il n'a aucune ligne `ig_media`. Ni stories, ni portée : l'écran reste à zéro là-dessus,
+  `media_count` d'un relevé au suivant (planché à zéro, le premier relevé ne compte rien)
+  **tant qu'il n'a aucune ligne `ig_media`** — dès qu'une publication est archivée (voies
+  `api` / `searchapi`), ce sont les lignes qui comptent, sinon chaque post compterait deux
+  fois. C'était le « Publications reste à 0 » : un seul relevé, donc aucune différence. Ni stories, ni portée : l'écran reste à zéro là-dessus,
   c'est attendu. Au-delà de 10 000 abonnés, le repli par la page donne des chiffres
   arrondis : la courbe monte alors par paliers.
 - **`?key=` finit dans les journaux de nginx.** Il existe pour les clients qui ne savent pas

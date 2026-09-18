@@ -1,4 +1,7 @@
-import type { InstagramPublicProfile } from '../../../domain/instagram/entities/InstagramAccount.ts';
+import type {
+  InstagramPublicPost,
+  InstagramPublicProfile,
+} from '../../../domain/instagram/entities/InstagramAccount.ts';
 import { badRequest, upstream } from '../../../shared/errors.ts';
 
 /** Le client web d'Instagram : sans cet en-tête, l'endpoint JSON répond 400. */
@@ -41,9 +44,52 @@ interface WebProfileInfo {
       profile_pic_url?: string;
       edge_followed_by?: { count?: number };
       edge_follow?: { count?: number };
-      edge_owner_to_timeline_media?: { count?: number };
+      edge_owner_to_timeline_media?: {
+        count?: number;
+        edges?: Array<{ node?: WebProfilePost }>;
+      };
     } | null;
   };
+}
+
+interface WebProfilePost {
+  id?: string;
+  shortcode?: string;
+  __typename?: string;
+  is_video?: boolean;
+  product_type?: string;
+  taken_at_timestamp?: number;
+  display_url?: string;
+  thumbnail_src?: string;
+  video_view_count?: number;
+  edge_media_to_caption?: { edges?: Array<{ node?: { text?: string } }> };
+  edge_liked_by?: { count?: number };
+  edge_media_preview_like?: { count?: number };
+  edge_media_to_comment?: { count?: number };
+}
+
+/**
+ * Une publication telle que SearchAPI la décrit. Le format n'est pas documenté champ par
+ * champ : les noms alternatifs sont lus tous, et une publication sans identifiant ni date
+ * est ignorée plutôt que d'être datée au hasard.
+ */
+interface SearchApiPost {
+  id?: string;
+  shortcode?: string;
+  link?: string;
+  permalink?: string;
+  type?: string;
+  caption?: string;
+  text?: string;
+  thumbnail?: string;
+  image?: string;
+  likes?: number;
+  comments?: number;
+  views?: number;
+  video_views?: number;
+  iso_date?: string;
+  date?: string;
+  timestamp?: number;
 }
 
 interface SearchApiProfile {
@@ -58,6 +104,7 @@ interface SearchApiProfile {
     following?: number;
     posts?: number;
   };
+  posts?: SearchApiPost[];
   error?: string;
 }
 
@@ -125,6 +172,25 @@ export class InstagramProfileClient {
       posts: user.edge_owner_to_timeline_media?.count ?? null,
       source: 'api',
       approximate: false,
+      recentPosts: (user.edge_owner_to_timeline_media?.edges ?? [])
+        .map((edge) => edge.node)
+        .filter((node): node is WebProfilePost => node !== undefined)
+        .flatMap((node): InstagramPublicPost[] => {
+          if (!node.id || !node.taken_at_timestamp) return [];
+          return [
+            {
+              id: node.id,
+              mediaType: webMediaType(node),
+              caption: node.edge_media_to_caption?.edges?.[0]?.node?.text ?? null,
+              permalink: node.shortcode ? `https://www.instagram.com/p/${node.shortcode}/` : null,
+              thumbnailUrl: node.thumbnail_src ?? node.display_url ?? null,
+              postedAt: new Date(node.taken_at_timestamp * 1000).toISOString(),
+              likes: node.edge_liked_by?.count ?? node.edge_media_preview_like?.count ?? null,
+              comments: node.edge_media_to_comment?.count ?? null,
+              views: node.is_video ? (node.video_view_count ?? null) : null,
+            },
+          ];
+        }),
     };
   }
 
@@ -152,6 +218,27 @@ export class InstagramProfileClient {
       posts: profile.posts ?? null,
       source: 'searchapi',
       approximate: false,
+      recentPosts: (body.posts ?? []).flatMap((post): InstagramPublicPost[] => {
+        const id = post.id ?? post.shortcode;
+        const postedAt = searchApiDate(post);
+        if (!id || !postedAt) return [];
+        return [
+          {
+            id,
+            mediaType: searchApiMediaType(post.type),
+            caption: post.caption ?? post.text ?? null,
+            permalink:
+              post.link ??
+              post.permalink ??
+              (post.shortcode ? `https://www.instagram.com/p/${post.shortcode}/` : null),
+            thumbnailUrl: post.thumbnail ?? post.image ?? null,
+            postedAt,
+            likes: post.likes ?? null,
+            comments: post.comments ?? null,
+            views: post.views ?? post.video_views ?? null,
+          },
+        ];
+      }),
     };
   }
 
@@ -187,9 +274,37 @@ export class InstagramProfileClient {
       posts: posts!.value,
       source: 'page',
       approximate: [followers, following, posts].some((count) => count!.approximate),
+      // Les balises Open Graph ne décrivent que le profil, aucune publication.
+      recentPosts: [],
     };
   }
 }
+
+/** Ramène le type du site aux libellés de l'API Graph, ceux que connaît l'écran. */
+const webMediaType = (node: WebProfilePost): string | null => {
+  if (node.product_type === 'clips') return 'REELS';
+  if (node.__typename === 'GraphSidecar') return 'CAROUSEL_ALBUM';
+  if (node.__typename === 'GraphVideo' || node.is_video) return 'VIDEO';
+  if (node.__typename === 'GraphImage') return 'IMAGE';
+  return null;
+};
+
+const searchApiMediaType = (type: string | undefined): string | null => {
+  const normalized = type?.toLowerCase() ?? '';
+  if (/reel|clip/.test(normalized)) return 'REELS';
+  if (/carousel|sidecar|album/.test(normalized)) return 'CAROUSEL_ALBUM';
+  if (/video/.test(normalized)) return 'VIDEO';
+  if (/image|photo/.test(normalized)) return 'IMAGE';
+  return null;
+};
+
+const searchApiDate = (post: SearchApiPost): string | null => {
+  if (post.timestamp) return new Date(post.timestamp * 1000).toISOString();
+  const raw = post.iso_date ?? post.date;
+  if (!raw) return null;
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
+};
 
 const metaContent = (html: string, property: string): string | null =>
   new RegExp(`<meta[^>]+property="${property}"[^>]+content="([^"]*)"`, 'i').exec(html)?.[1] ?? null;

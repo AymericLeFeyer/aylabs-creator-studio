@@ -31,6 +31,7 @@ const ROUTES_WITHOUT_FILTERS = [
   '/planning',
   '/production',
   '/shorts',
+  '/publications',
   '/produits',
   '/sponsors',
   '/plateformes',

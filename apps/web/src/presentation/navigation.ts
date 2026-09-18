@@ -3,6 +3,7 @@ import {
   CalendarClock,
   Gift,
   Handshake,
+  Images,
   Instagram,
   Link2,
   MessagesSquare,
@@ -86,6 +87,9 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: FORMAT_ICONS.short,
         end: false,
       },
+      // Les brouillons de publication Instagram : de la préparation, donc ici, et non
+      // sous Audience → Instagram qui ne montre que ce qui est réellement paru.
+      { to: '/publications', label: 'Publications', icon: Images, end: false },
     ],
   },
   {
@@ -186,6 +190,7 @@ const TITLES: Array<[string, string]> = [
   ['/production/', 'Fiche'],
   ['/production', 'Vidéos'],
   ['/shorts', 'Shorts & Réels'],
+  ['/publications', 'Publications'],
   ['/planning', 'Planning'],
   ['/youtube', 'YouTube'],
   ['/instagram', 'Instagram'],

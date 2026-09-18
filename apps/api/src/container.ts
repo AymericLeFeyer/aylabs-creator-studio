@@ -17,6 +17,7 @@ import { SqliteRecurringExpenseRepository } from './infrastructure/expense/repos
 import { SqliteProductRepository } from './infrastructure/product/repositories/SqliteProductRepository.ts';
 import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/repositories/SqliteSponsorshipRepository.ts';
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
+import { SqlitePostDraftRepository } from './infrastructure/postDraft/repositories/SqlitePostDraftRepository.ts';
 import { SqliteScriptPresetRepository } from './infrastructure/script/repositories/SqliteScriptPresetRepository.ts';
 import { SqliteShotAngleRepository } from './infrastructure/script/repositories/SqliteShotAngleRepository.ts';
 import { SqliteCommentRepository } from './infrastructure/comment/repositories/SqliteCommentRepository.ts';
@@ -91,6 +92,7 @@ export interface Container {
   products: SqliteProductRepository;
   sponsorships: SqliteSponsorshipRepository;
   ideas: SqliteIdeaRepository;
+  postDrafts: SqlitePostDraftRepository;
   /** Les gabarits insérables dans un script. Aucun effet de bord : ils sont copiés, pas liés. */
   scriptPresets: SqliteScriptPresetRepository;
   /** Le référentiel des angles de vue, et les angles ponctuels d'une vidéo. */
@@ -200,6 +202,7 @@ export const buildContainer = (config: Config): Container => {
   const products = new SqliteProductRepository(db);
   const sponsorships = new SqliteSponsorshipRepository(db);
   const ideas = new SqliteIdeaRepository(db);
+  const postDrafts = new SqlitePostDraftRepository(db);
   const scriptPresets = new SqliteScriptPresetRepository(db);
   const shotAngles = new SqliteShotAngleRepository(db);
   const comments = new SqliteCommentRepository(db);
@@ -273,6 +276,7 @@ export const buildContainer = (config: Config): Container => {
     products,
     sponsorships,
     ideas,
+    postDrafts,
     scriptPresets,
     shotAngles,
     comments,

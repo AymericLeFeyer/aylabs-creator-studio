@@ -424,6 +424,16 @@ export const createIdeaSchema = z.object({
 
 export const updateIdeaSchema = createIdeaSchema.partial();
 
+/** Un brouillon de publication : le titre seul est obligatoire, on complète ensuite. */
+export const createPostDraftSchema = z.object({
+  title: z.string().trim().min(1, 'Le titre est obligatoire').max(200),
+  // 2 200 caractères : la limite d'une légende Instagram.
+  description: z.string().max(2200).optional(),
+  plannedDate: isoDate.nullable().optional(),
+});
+
+export const updatePostDraftSchema = createPostDraftSchema.partial();
+
 /** `format` absent = les idées des deux carnets. */
 export const ideaQuerySchema = z.object({
   format: z.enum(['video', 'short']).optional(),

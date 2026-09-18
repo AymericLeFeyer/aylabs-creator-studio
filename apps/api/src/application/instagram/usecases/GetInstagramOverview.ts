@@ -54,11 +54,18 @@ export class GetInstagramOverview {
     const metrics = this.data.findDailyMetrics(filter);
     const snapshots = this.data.findSnapshots(filter);
     const accounts = this.accounts.findAll();
-    // Relevés par leur seul profil public : aucune publication n'est archivée pour eux.
+    // Relevés par leur seul profil public ET sans aucune publication archivée — la voie
+    // `page` du relevé ne rend que des compteurs. Pour eux seuls, les parutions se
+    // déduisent du compteur de publications. Dès qu'une publication est archivée, ce sont
+    // les lignes `ig_media` qui comptent : les deux ensemble compteraient chaque post deux
+    // fois.
     const profileOnly = new Set(
       this.accounts
         .findAll(true)
         .filter((account) => !account.hasToken)
+        .filter(
+          (account) => this.data.findMedia({ accountIds: [account.id], limit: 1 }).length === 0,
+        )
         .map((account) => account.id),
     );
 

@@ -113,6 +113,28 @@ export interface InstagramPublicProfile {
   posts: number | null;
   source: 'api' | 'searchapi' | 'page';
   approximate: boolean;
+  /**
+   * Les dernières publications visibles sur le profil (douze au plus pour `api`), avec
+   * leurs compteurs publics. **Vide** pour la voie `page` : les balises Open Graph ne
+   * portent que les trois compteurs du profil.
+   */
+  recentPosts: InstagramPublicPost[];
+}
+
+/** Une publication lue sur le profil public : ce que n'importe quel visiteur en voit. */
+export interface InstagramPublicPost {
+  /** Identifiant public de la publication — pas celui de l'API Graph, qui diffère. */
+  id: string;
+  mediaType: string | null;
+  caption: string | null;
+  permalink: string | null;
+  thumbnailUrl: string | null;
+  /** Instant UTC de parution. */
+  postedAt: string;
+  likes: number | null;
+  comments: number | null;
+  /** Lectures d'une vidéo ou d'un reel, `null` pour une photo. */
+  views: number | null;
 }
 
 /** Couleurs attribuées en rotation à la création, comme pour les chaînes et les marques. */
