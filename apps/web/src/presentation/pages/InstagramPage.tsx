@@ -11,6 +11,8 @@ import { formatCount } from '../../domain/instagram/entities/Instagram.ts';
 import { Input } from '../components/ui/input.tsx';
 import { InstagramChart } from '../components/instagram/InstagramChart.tsx';
 import { PostsCalendar } from '../components/instagram/PostsCalendar.tsx';
+import { ActivityChart } from '../components/instagram/ActivityChart.tsx';
+import { StoryCounter } from '../components/instagram/StoryCounter.tsx';
 import { InstagramMediaTable } from '../components/instagram/InstagramMediaTable.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
@@ -116,7 +118,26 @@ export const InstagramPage = () => {
         </Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* En tête, avant les chiffres : la saisie des stories (un clic après chaque story) et
+          l'activité du jour par jour — ce qu'on fait, et ce que ça rapporte en abonnés. */}
+      <div className="grid gap-3 lg:grid-cols-[20rem_minmax(0,1fr)]">
+        <StoryCounter />
+        <Card className="min-w-0 space-y-2 p-4">
+          <h2 className="text-sm font-semibold">Activité par jour</h2>
+          <ActivityChart series={data?.series ?? []} />
+        </Card>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <StatCard
+          label="Stories"
+          value={formatCount(totals?.stories ?? null)}
+          hint={
+            totals
+              ? `${totals.storiesPerDay} par jour · ${totals.activeDays} jour(s) avec au moins une`
+              : 'Déclarées à la main'
+          }
+        />
         <StatCard
           label="Abonnés"
           value={

@@ -49,7 +49,7 @@ export class GetInstagramOverview {
     const { from, to, granularity, accountIds } = query;
     const filter = { accountIds, range: { from, to } };
 
-    const storiesByDate = this.data.countStoriesByDate(filter);
+    const storiesByDate = this.storiesByDate(filter);
     const mediaByDate = this.data.countMediaByDate(filter);
     const metrics = this.data.findDailyMetrics(filter);
     const snapshots = this.data.findSnapshots(filter);
@@ -89,7 +89,7 @@ export class GetInstagramOverview {
     const previousTo = addDays(from, -1);
     const previousFrom = addDays(previousTo, -(spanDays - 1));
     const previousFilter = { accountIds, range: { from: previousFrom, to: previousTo } };
-    const previousStories = this.data.countStoriesByDate(previousFilter);
+    const previousStories = this.storiesByDate(previousFilter);
 
     const previousTotals = this.buildTotals(
       this.buildSeries({
@@ -123,6 +123,23 @@ export class GetInstagramOverview {
       firstStoryDate: this.data.findFirstStoryDate(accountIds),
       dailyMetrics: metrics,
     };
+  }
+
+  /**
+   * Les stories de chaque jour : celles archivées par l'API Graph **et** celles déclarées
+   * à la main (`ig_story_log`). On garde le **plus grand** des deux par jour, jamais la
+   * somme : le jour où la collecte Graph reviendra, une journée saisie et collectée ne doit
+   * pas compter chaque story deux fois.
+   */
+  private storiesByDate(filter: {
+    accountIds: string[];
+    range: { from: IsoDate; to: IsoDate };
+  }): Map<IsoDate, number> {
+    const merged = this.data.countStoriesByDate(filter);
+    for (const [date, count] of this.data.manualStoriesByDate(filter.range)) {
+      merged.set(date, Math.max(merged.get(date) ?? 0, count));
+    }
+    return merged;
   }
 
   private buildSeries(input: {

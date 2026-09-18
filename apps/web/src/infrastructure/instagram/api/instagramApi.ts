@@ -5,6 +5,7 @@ import type {
   InstagramCollectResult,
   InstagramMedia,
   InstagramOverview,
+  StoryCount,
 } from '../../../domain/instagram/entities/Instagram.ts';
 
 export interface InstagramOverviewParams {
@@ -31,6 +32,12 @@ export const instagramApi = {
   /** Suivre une publication par son lien : elle est lue sur sa page, puis relue à chaque relevé. */
   addPost: (url: string) =>
     request<InstagramMedia>('/api/instagram/media', { method: 'POST', body: { url } }),
+
+  /** Le jour est celui du navigateur : le serveur tourne en UTC. */
+  storyCount: (date: string) => request<StoryCount>(`/api/instagram/stories/${date}`),
+
+  setStoryCount: (date: string, count: number) =>
+    request<StoryCount>(`/api/instagram/stories/${date}`, { method: 'PUT', body: { count } }),
 
   accounts: (includeArchived = false) =>
     request<InstagramAccount[]>('/api/instagram/accounts', { query: { includeArchived } }),

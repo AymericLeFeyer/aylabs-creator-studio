@@ -3,6 +3,8 @@ import type { Container } from '../../container.ts';
 import type { Granularity } from '../../shared/dates.ts';
 import {
   addInstagramPostSchema,
+  storyCountSchema,
+  storyDateSchema,
   createInstagramAccountSchema,
   instagramQuerySchema,
   updateInstagramAccountSchema,
@@ -35,6 +37,24 @@ export const instagramRouter = (container: Container): Router => {
       // tableau de publications vide.
       publicReading: container.collectIntegrations.instagramReading(),
     });
+  });
+
+  /**
+   * Les stories d'un jour, **déclarées à la main** : ni le profil public ni aucune voie
+   * sans jeton ne les expose. Le jour vient du navigateur (`:date`), jamais de l'horloge du
+   * serveur, qui tourne en UTC.
+   */
+  router.get('/stories/:date', (req, res) => {
+    const date = storyDateSchema.parse(param(req, 'date'));
+    res.json({ date, count: container.instagramData.manualStoryCount(date) });
+  });
+
+  /** `{ count }` remplace la saisie du jour ; `0` l'efface. */
+  router.put('/stories/:date', (req, res) => {
+    const date = storyDateSchema.parse(param(req, 'date'));
+    const { count } = storyCountSchema.parse(req.body);
+    container.instagramData.setManualStoryCount(date, count);
+    res.json({ date, count });
   });
 
   /**

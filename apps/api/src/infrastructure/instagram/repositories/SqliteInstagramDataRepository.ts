@@ -14,6 +14,7 @@ import type {
 import type {
   InstagramDataFilter,
   InstagramDataRepository,
+  InstagramRange,
 } from '../../../domain/instagram/repositories/InstagramRepository.ts';
 import { placeholders } from '../../db/filters.ts';
 import type { IsoDate } from '../../../shared/dates.ts';
@@ -358,6 +359,34 @@ export class SqliteInstagramDataRepository implements InstagramDataRepository {
       .prepare(`SELECT MIN(date) AS d FROM ig_stories ${clause}`)
       .get(...(accountIds as never[])) as { d: string | null };
     return row.d;
+  }
+
+  // --- Stories saisies à la main --------------------------------------------
+
+  manualStoriesByDate(range: InstagramRange): Map<IsoDate, number> {
+    const rows = this.db
+      .prepare('SELECT date, count FROM ig_story_log WHERE date BETWEEN ? AND ?')
+      .all(range.from, range.to) as unknown as Array<{ date: string; count: number }>;
+    return new Map(rows.map((row) => [row.date, row.count]));
+  }
+
+  manualStoryCount(date: IsoDate): number {
+    const row = this.db.prepare('SELECT count FROM ig_story_log WHERE date = ?').get(date) as
+      { count: number } | undefined;
+    return row?.count ?? 0;
+  }
+
+  setManualStoryCount(date: IsoDate, count: number): void {
+    if (count <= 0) {
+      this.db.prepare('DELETE FROM ig_story_log WHERE date = ?').run(date);
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO ig_story_log (date, count, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(date) DO UPDATE SET count = excluded.count, updated_at = excluded.updated_at`,
+      )
+      .run(date, count, new Date().toISOString());
   }
 
   // --- Publications ---------------------------------------------------------

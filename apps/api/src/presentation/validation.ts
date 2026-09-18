@@ -804,6 +804,13 @@ export const updateInstagramAccountSchema = createInstagramAccountSchema.partial
  * `accountIds` vide = vue cumulée sur tous les comptes, même convention que `channelIds`
  * sur l'analytics.
  */
+/** Le nombre de stories d'un jour, saisi à la main. 0 efface la saisie. */
+export const storyCountSchema = z.object({
+  count: z.number().int().min(0).max(200),
+});
+
+export const storyDateSchema = isoDate;
+
 export const addInstagramPostSchema = z.object({
   url: z.string().trim().min(1, 'Le lien est obligatoire').max(500),
 });

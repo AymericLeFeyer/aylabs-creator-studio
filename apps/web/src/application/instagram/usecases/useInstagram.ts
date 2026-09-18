@@ -62,6 +62,42 @@ export const useDeleteInstagramAccount = () =>
  */
 export const useCollectInstagram = () => useInstagramMutation(() => instagramApi.collectAll());
 
+/** Les stories déclarées pour un jour (celui du navigateur). */
+export const useStoryCount = (date: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.instagramStories(date),
+    queryFn: () => instagramApi.storyCount(date),
+    staleTime: 60_000,
+    enabled,
+  });
+
+const STORY_KEY = ['instagramStories', 'set'] as const;
+
+/**
+ * Déclarer les stories d'un jour, **en optimiste** : on tape « + » trois fois d'affilée
+ * après trois stories, et chaque requête porte le total. Sans écrire tout de suite dans le
+ * cache, le deuxième clic repartirait de l'ancien compte. Le graphique et la pastille ne
+ * sont relus qu'après la dernière écriture en vol.
+ */
+export const useSetStoryCount = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: STORY_KEY,
+    mutationFn: ({ date, count }: { date: string; count: number }) =>
+      instagramApi.setStoryCount(date, count),
+    onMutate: async ({ date, count }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.instagramStories(date) });
+      queryClient.setQueryData(queryKeys.instagramStories(date), { date, count });
+    },
+    onSettled: () => {
+      if (queryClient.isMutating({ mutationKey: STORY_KEY }) > 1) return;
+      for (const root of INSTAGRAM_ROOTS) {
+        void queryClient.invalidateQueries({ queryKey: [root] });
+      }
+    },
+  });
+};
+
 export const useAddInstagramPost = () =>
   useInstagramMutation((url: string) => instagramApi.addPost(url));
 

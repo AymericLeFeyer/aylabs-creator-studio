@@ -64,6 +64,16 @@ export interface InstagramDataRepository {
   /** Première story archivée : avant elle, un zéro veut dire « pas de collecte ». */
   findFirstStoryDate(accountIds: string[]): IsoDate | null;
 
+  // --- Stories saisies à la main -----------------------------------------------
+  /**
+   * Le nombre de stories déclarées pour chaque jour de la période. **Aucun compte** : la
+   * saisie vaut pour le profil suivi, et un filtre par compte ne la borne pas.
+   */
+  manualStoriesByDate(range: InstagramRange): Map<IsoDate, number>;
+  manualStoryCount(date: IsoDate): number;
+  /** `0` efface la ligne : pas de ligne et zéro disent la même chose. */
+  setManualStoryCount(date: IsoDate, count: number): void;
+
   // --- Publications ---------------------------------------------------------
   upsertMedia(input: UpsertMediaInput): InstagramMedia;
   setMediaInsights(id: string, insights: MediaInsightsInput): void;

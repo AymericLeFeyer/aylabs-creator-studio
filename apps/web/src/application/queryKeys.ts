@@ -52,6 +52,7 @@ export const queryKeys = {
 
   instagramOverview: (params: unknown) => ['instagramOverview', params] as const,
   instagramAccounts: (includeArchived: boolean) => ['instagramAccounts', includeArchived] as const,
+  instagramStories: (date: string) => ['instagramStories', date] as const,
 
   // Paramètres → API. Aucune autre racine ne les croise : ce que le studio publie à
   // l'extérieur ne change ni un chiffre, ni une alerte, ni une file.
@@ -140,7 +141,11 @@ export const PLANNING_ROOTS = [...PRODUCTION_ROOTS, 'planningSettings', 'workHou
  * les comptes, les séries, les stories et les publications d'un coup — d'où deux racines
  * seulement, invalidées ensemble.
  */
-export const INSTAGRAM_ROOTS = ['instagramOverview', 'instagramAccounts'] as const;
+export const INSTAGRAM_ROOTS = [
+  'instagramOverview',
+  'instagramAccounts',
+  'instagramStories',
+] as const;
 
 /**
  * Racines des commentaires.

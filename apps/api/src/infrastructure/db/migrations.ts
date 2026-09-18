@@ -1361,6 +1361,20 @@ const migrations: Migration[] = [
       CREATE INDEX idx_post_drafts_archived ON post_drafts (archived_at);
     `,
   },
+  {
+    version: 32,
+    name: 'ig_story_log',
+    // Le nombre de stories publiees chaque jour, SAISI A LA MAIN : le profil public ne
+    // les expose pas, et l'API Graph n'est plus branchee. Une ligne par jour, sans
+    // compte : on ne suit qu'un profil. Pas de ligne = zero ; ecrire 0 supprime la ligne.
+    up: `
+      CREATE TABLE ig_story_log (
+        date       TEXT PRIMARY KEY,
+        count      INTEGER NOT NULL CHECK (count > 0),
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 /**
