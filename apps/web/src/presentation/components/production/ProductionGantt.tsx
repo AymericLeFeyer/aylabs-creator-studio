@@ -14,7 +14,6 @@ import { useChannels } from '../../../application/channel/usecases/useChannels.t
 import { PRODUCT_STATUS_LABELS } from '../../../domain/product/entities/Product.ts';
 import { SPONSORSHIP_STATUS_LABELS } from '../../../domain/sponsorship/entities/Sponsorship.ts';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
-import type { ProductionStep } from '../../../domain/production/entities/ProductionStep.ts';
 import { toIsoDate } from '../../../shared/format.ts';
 import { ChannelAvatar } from '../filters/ChannelAvatar.tsx';
 import { Button } from '../ui/button.tsx';
@@ -64,17 +63,17 @@ const BAR_INK = '#0f172a';
  * file (`stepProgress`). Le Gantt ne comptait que les étapes cochées, si bien qu'une vidéo
  * à 18 tâches sur 30 y affichait 0 % tant qu'aucune étape n'était entièrement close.
  */
-const progressPercent = (production: Production, totalSteps: number): number =>
-  Math.round(stepProgress(production, totalSteps) * 100);
+const progressPercent = (production: Production): number =>
+  Math.round(stepProgress(production) * 100);
 
 /** Infobulle de la barre : tout ce que le rognage a pu manger. */
-const barTitle = (production: Production, total: number): string =>
+const barTitle = (production: Production): string =>
   [
     production.title,
     STATUS_LABELS[production.status],
     production.channelName,
-    total + production.todos.length > 0
-      ? `${progressPercent(production, total)} % d'avancement`
+    production.stepIds.length + production.todos.length > 0
+      ? `${progressPercent(production)} % d'avancement`
       : null,
   ]
     .filter(Boolean)
@@ -113,8 +112,6 @@ const productsTitle = (production: Production, money: MoneyFormat): string =>
 
 interface ProductionGanttProps {
   productions: Production[];
-  /** Sert à calculer l'avancement : le pourcentage n'a de sens que rapporté au total. */
-  steps: ProductionStep[];
 }
 
 /**
@@ -138,7 +135,7 @@ interface ProductionGanttProps {
  * Au survol, toute la ligne s'éclaire et la barre prend un contour : c'est ce qui relie
  * une barre lointaine à son titre, collé à gauche.
  */
-export const ProductionGantt = ({ productions, steps }: ProductionGanttProps) => {
+export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
   const privacy = usePrivacy();
   const sponsorMoney = (cents: number) => privacy.money(cents, 'sponsorships');
   const productMoney = (cents: number) => privacy.money(cents, 'inKind');
@@ -388,7 +385,7 @@ export const ProductionGantt = ({ productions, steps }: ProductionGanttProps) =>
                               color: BAR_INK,
                               opacity: done ? 0.55 : 1,
                             }}
-                            title={barTitle(production, steps.length)}
+                            title={barTitle(production)}
                           >
                             {/* En tête, et `shrink-0` : sur une barre d'un jour, c'est la
                                 dernière chose à disparaître avec les pastilles d'argent. */}
@@ -422,9 +419,9 @@ export const ProductionGantt = ({ productions, steps }: ProductionGanttProps) =>
                               </span>
                             )}
                             <span className="truncate">{STATUS_LABELS[production.status]}</span>
-                            {steps.length + production.todos.length > 0 && (
+                            {production.stepIds.length + production.todos.length > 0 && (
                               <span className="ml-auto shrink-0 tabular">
-                                {progressPercent(production, steps.length)} %
+                                {progressPercent(production)} %
                               </span>
                             )}
                           </Link>

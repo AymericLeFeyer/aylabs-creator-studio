@@ -25,8 +25,8 @@ import { cn } from '../../../shared/cn.ts';
  * maintenant là où on le lit.
  *
  * **« Terminée » y figure comme les autres**, mais elle ne rattache aucune sortie : c'est
- * `PublishDialog`, depuis la fiche, qui relie la vidéo collectée sur YouTube et coche
- * l'étape de publication. L'infobulle de l'entrée le dit — une vidéo peut légitimement
+ * `PublishDialog`, depuis la fiche, qui relie la vidéo collectée sur YouTube (sans
+ * cocher aucune étape). L'infobulle de l'entrée le dit — une vidéo peut légitimement
  * être terminée sans rattachement, et refuser le raccourci obligerait à passer par la
  * fiche pour une correction de statut qui n'a rien à voir avec une publication.
  *

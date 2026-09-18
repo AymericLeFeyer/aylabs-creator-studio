@@ -153,8 +153,7 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
    * Ce n'est qu'un **défaut** : le chevron rouvre la carte, et le réglage global
    * l'emporte dès qu'on le change.
    */
-  const startedOn = (production: Production): boolean =>
-    progressCounts(production, steps.length).done > 0;
+  const startedOn = (production: Production): boolean => progressCounts(production).done > 0;
 
   const isCompact = (production: Production) => {
     const byDefault = preferences.compactQueue || !startedOn(production);
@@ -260,7 +259,7 @@ export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
 
       {/* Le planning se lit à l'arrivée, pas derrière un onglet : c'est la vue qui
           répond à « qu'est-ce qui sort quand », la première question de la page. */}
-      <ProductionGantt productions={[...queue, ...done]} steps={steps} />
+      <ProductionGantt productions={[...queue, ...done]} />
 
       <Tabs defaultValue="queue">
         <div className="flex flex-wrap items-center justify-between gap-2">

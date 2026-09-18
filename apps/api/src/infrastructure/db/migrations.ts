@@ -1375,6 +1375,55 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 33,
+    name: 'steps_applies_from',
+    // A partir de quand une etape ou une tache du referentiel s'applique aux videos :
+    // seules les videos CREEES a partir de cet instant la portent. NULL = toutes les
+    // videos, et c'est ce que recoit tout l'existant — les taches ont ete semees par la
+    // migration 12, apres une partie des videos, et comparer a "created_at" les ferait
+    // disparaitre des fiches anciennes. Les nouvelles lignes recoivent leur date de
+    // creation.
+    up: `
+      ALTER TABLE production_steps ADD COLUMN applies_from TEXT;
+      ALTER TABLE step_todos       ADD COLUMN applies_from TEXT;
+    `,
+  },
+  {
+    version: 34,
+    name: 'production_notes',
+    // Les notes d'une video, en petits "fichiers" : un titre, un contenu HTML (le meme
+    // editeur que le script), autant qu'on veut. Elles partent avec la video (CASCADE).
+    // Le champ unique "productions.notes" est repris dans une note "Notes" puis n'est
+    // plus lu : la colonne reste, la supprimer imposerait de reconstruire la table.
+    // Le texte brut est converti en HTML ici (echappement, paragraphes, sauts de ligne) :
+    // laisse tel quel, marked fondrait chaque retour a la ligne dans un seul paragraphe.
+    up: `
+      CREATE TABLE production_notes (
+        id            TEXT PRIMARY KEY,
+        production_id TEXT NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+        title         TEXT NOT NULL DEFAULT '',
+        content       TEXT NOT NULL DEFAULT '',
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      );
+      CREATE INDEX idx_production_notes_production ON production_notes (production_id);
+
+      INSERT INTO production_notes (id, production_id, title, content, created_at, updated_at)
+      SELECT
+        lower(hex(randomblob(16))),
+        id,
+        'Notes',
+        '<p>' || replace(replace(
+          replace(replace(replace(replace(trim(notes), char(13), ''),
+            '&', '&amp;'), '<', '&lt;'), '>', '&gt;'),
+          char(10) || char(10), '</p><p>'), char(10), '<br>') || '</p>',
+        updated_at,
+        updated_at
+      FROM productions
+      WHERE notes IS NOT NULL AND trim(notes) <> '';
+    `,
+  },
 ];
 
 /**

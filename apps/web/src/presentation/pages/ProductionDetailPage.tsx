@@ -18,6 +18,7 @@ import {
   useProductionSteps,
   useUpdateProduction,
 } from '../../application/production/usecases/useProductions.ts';
+import { useProductionNotes } from '../../application/production/usecases/useProductionNotes.ts';
 import { useProducts, useUpdateProduct } from '../../application/product/usecases/useProducts.ts';
 import {
   useSponsorships,
@@ -44,6 +45,7 @@ import { StepChips, StepProgress } from '../components/production/StepChips.tsx'
 import { StepTodosDialog } from '../components/production/StepTodosDialog.tsx';
 import { StartTimerDialog } from '../components/production/StartTimerDialog.tsx';
 import { TimeSpentPanel } from '../components/production/TimeSpentPanel.tsx';
+import { ProductionNotesPanel } from '../components/production/ProductionNotesPanel.tsx';
 import { Confetti } from '../components/Confetti.tsx';
 import { ScriptEditor } from '../components/production/ScriptEditor.tsx';
 import { PublicationPanel } from '../components/production/PublicationPanel.tsx';
@@ -64,6 +66,8 @@ export const ProductionDetailPage = () => {
 
   const { data: production, isLoading } = useProduction(id);
   const { data: steps = [] } = useProductionSteps();
+  // Même requête que l'onglet : le compteur de l'onglet ne coûte aucun appel de plus.
+  const { data: notes = [] } = useProductionNotes(id);
   // Toutes les fiches, pas seulement celles de cette vidéo : la même liste sert à
   // afficher les rattachées ET à proposer les autres au rattachement.
   const { data: allProducts = [] } = useProducts();
@@ -224,7 +228,7 @@ export const ProductionDetailPage = () => {
 
         <div className="space-y-2">
           <StepChips production={production} steps={steps} size="md" onOpenStep={setOpenStep} />
-          <StepProgress production={production} steps={steps} />
+          <StepProgress production={production} />
         </div>
       </Card>
 
@@ -241,7 +245,7 @@ export const ProductionDetailPage = () => {
           <TabsTrigger value="money">
             Produits &amp; sponsos ({products.length + sponsorships.length})
           </TabsTrigger>
-          <TabsTrigger value="notes">Notes</TabsTrigger>
+          <TabsTrigger value="notes">Notes{notes.length > 0 && ` (${notes.length})`}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="script">
@@ -417,15 +421,7 @@ export const ProductionDetailPage = () => {
         </TabsContent>
 
         <TabsContent value="notes">
-          <Card className="p-5">
-            {production.notes ? (
-              <p className="whitespace-pre-wrap text-sm leading-relaxed">{production.notes}</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Aucune note. Elles se saisissent dans « Modifier ».
-              </p>
-            )}
-          </Card>
+          <ProductionNotesPanel productionId={production.id} />
         </TabsContent>
       </Tabs>
 

@@ -12,6 +12,11 @@ export interface ProductionStep {
    */
   defaultMinutes: number | null;
   isArchived: boolean;
+  /**
+   * Seules les vidéos créées à partir de cet instant portent cette étape. `null` =
+   * toutes les vidéos (tout ce qui existait avant la règle, ou étendu à la main).
+   */
+  appliesFrom: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,4 +27,6 @@ export interface ProductionStepInput {
   sortOrder?: number;
   defaultMinutes?: number | null;
   isArchived?: boolean;
+  /** Seul `null` est admis : étendre aux vidéos existantes. */
+  appliesFrom?: null;
 }

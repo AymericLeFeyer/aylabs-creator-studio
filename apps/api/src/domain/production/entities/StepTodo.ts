@@ -23,6 +23,8 @@ export interface StepTodo {
   defaultMinutes: number | null;
   sortOrder: number;
   isArchived: boolean;
+  /** Seules les vidéos créées à partir de cet instant portent la tâche. `null` = toutes. */
+  appliesFrom: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -36,6 +38,8 @@ export interface CreateStepTodoInput {
 
 export type UpdateStepTodoInput = Partial<Omit<CreateStepTodoInput, 'stepId'>> & {
   isArchived?: boolean;
+  /** Seul `null` est admis : étendre la tâche à toutes les vidéos, existantes comprises. */
+  appliesFrom?: null;
 };
 
 /** Tâche ajoutée sur une seule vidéo. `stepId` la range sous la bonne étape. */

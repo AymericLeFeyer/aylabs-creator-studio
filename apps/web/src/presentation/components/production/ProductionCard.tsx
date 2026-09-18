@@ -148,7 +148,7 @@ export const ProductionCard = ({
 }: ProductionCardProps) => {
   const privacy = usePrivacy();
   const counts = partnerCounts(production);
-  const progress = progressCounts(production, steps.length);
+  const progress = progressCounts(production);
   const late =
     production.plannedDate !== null &&
     days(production.plannedDate) < 0 &&
@@ -359,7 +359,7 @@ export const ProductionCard = ({
         )}
 
         <StepChips production={production} steps={steps} onOpenStep={onOpenStep} />
-        <StepProgress production={production} steps={steps} />
+        <StepProgress production={production} />
 
         {(counts.products > 0 || counts.sponsorships > 0) && (
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">

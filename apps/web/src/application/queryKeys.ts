@@ -25,6 +25,7 @@ export const queryKeys = {
   productionSlots: (params: unknown) => ['productionSlots', params] as const,
   stepTodos: (includeArchived: boolean) => ['stepTodos', includeArchived] as const,
   productionTodos: (id: string) => ['productionTodos', id] as const,
+  productionNotes: (id: string) => ['productionNotes', id] as const,
   productionTime: (params: unknown) => ['productionTime', params] as const,
   runningTimer: () => ['runningTimer'] as const,
   recurringExpenses: () => ['recurringExpenses'] as const,

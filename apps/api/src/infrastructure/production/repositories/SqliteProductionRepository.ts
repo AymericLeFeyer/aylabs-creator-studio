@@ -16,6 +16,7 @@ import type {
   ProductionRepository,
 } from '../../../domain/production/repositories/ProductionRepository.ts';
 import { SqliteTodoRepository } from './SqliteTodoRepository.ts';
+import { appliesTo, type Applicable } from '../../../domain/production/services/appliesTo.ts';
 import { toSqlBool } from '../../db/database.ts';
 import { placeholders } from '../../db/filters.ts';
 import { newId } from '../../../shared/id.ts';
@@ -38,7 +39,6 @@ interface ProductionRow {
   publish_hashtags: string;
   publish_tags: string;
   paid_promotion: number | null;
-  notes: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -75,7 +75,6 @@ const toDomain = (row: ProductionRow): Production => ({
   // pour se déduire de la présence d'une sponso. `fromSqlBool` écraserait ce troisième
   // état en `false`.
   paidPromotion: row.paid_promotion === null ? null : row.paid_promotion === 1,
-  notes: row.notes,
   sortOrder: row.sort_order,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -278,8 +277,24 @@ export class SqliteProductionRepository implements ProductionRepository {
     return { products, sponsorships };
   }
 
+  /**
+   * Les étapes actives, avec la date à partir de laquelle chacune s'applique. Une seule
+   * lecture par lot : le référentiel se compte en unités.
+   */
+  private loadActiveSteps(): Array<Applicable & { id: string }> {
+    return (
+      this.db
+        .prepare(
+          `SELECT id, applies_from FROM production_steps
+            WHERE is_archived = 0 ORDER BY sort_order, name`,
+        )
+        .all() as unknown as Array<{ id: string; applies_from: string | null }>
+    ).map((row) => ({ id: row.id, appliesFrom: row.applies_from }));
+  }
+
   private toView(
     row: ProductionViewRow,
+    activeSteps: Array<Applicable & { id: string }>,
     checks: ProductionStepCheck[],
     products: ProductionProductRef[],
     sponsorships: ProductionSponsorshipRef[],
@@ -295,6 +310,15 @@ export class SqliteProductionRepository implements ProductionRepository {
       videoExternalId: row.video_external_id,
       videoThumbnailUrl: row.video_thumbnail_url,
       steps: checks,
+      stepIds: activeSteps
+        .filter((step) =>
+          appliesTo(
+            step,
+            row.created_at,
+            checks.some((check) => check.stepId === step.id),
+          ),
+        )
+        .map((step) => step.id),
       nextSlotDate: row.next_slot_date,
       slotsCount: row.slots_count,
       products,
@@ -326,10 +350,12 @@ export class SqliteProductionRepository implements ProductionRepository {
     const partners = this.loadPartners(ids);
     const todos = this.todos.listForProductions(ids);
     const tracked = this.loadTracked(ids);
+    const activeSteps = this.loadActiveSteps();
 
     return rows.map((row) =>
       this.toView(
         row,
+        activeSteps,
         checks.get(row.id) ?? [],
         partners.products.get(row.id) ?? [],
         partners.sponsorships.get(row.id) ?? [],
@@ -353,6 +379,7 @@ export class SqliteProductionRepository implements ProductionRepository {
     const partners = this.loadPartners([id]);
     return this.toView(
       row,
+      this.loadActiveSteps(),
       this.loadChecks([id]).get(id) ?? [],
       partners.products.get(id) ?? [],
       partners.sponsorships.get(id) ?? [],
@@ -379,9 +406,9 @@ export class SqliteProductionRepository implements ProductionRepository {
         `INSERT INTO productions
            (id, channel_id, video_id, title, format, status, paused_reason, paused_at,
             start_date, planned_date, script, publish_title, publish_description,
-            publish_hashtags, publish_tags, paid_promotion, notes, sort_order,
+            publish_hashtags, publish_tags, paid_promotion, sort_order,
             created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -402,7 +429,6 @@ export class SqliteProductionRepository implements ProductionRepository {
         input.paidPromotion === undefined || input.paidPromotion === null
           ? null
           : toSqlBool(input.paidPromotion),
-        input.notes ?? null,
         nextOrder,
         now,
         now,
@@ -440,7 +466,6 @@ export class SqliteProductionRepository implements ProductionRepository {
     if (input.paidPromotion !== undefined) {
       set('paid_promotion', input.paidPromotion === null ? null : toSqlBool(input.paidPromotion));
     }
-    if (input.notes !== undefined) set('notes', input.notes);
     if (input.sortOrder !== undefined) set('sort_order', input.sortOrder);
 
     // `pausedAt` est posé par le passage EN pause, pas par la mise à jour de la raison :

@@ -15,6 +15,7 @@ import {
 } from './routes/productions.ts';
 import { productionTimeRouter } from './routes/productionTime.ts';
 import { productionTodosRouter, stepTodosRouter } from './routes/productionTodos.ts';
+import { productionNotesRouter } from './routes/productionNotes.ts';
 import { recurringExpensesRouter } from './routes/recurringExpenses.ts';
 import { productsRouter } from './routes/products.ts';
 import { sponsorshipsRouter } from './routes/sponsorships.ts';
@@ -61,6 +62,7 @@ export const createServer = (container: Container): express.Express => {
   // premier, sinon c'est le plus court qui capte la requête et répond 404.
   app.use('/api/productions/:id/todos', productionTodosRouter(container));
   app.use('/api/productions/:id/shot-angles', productionShotAnglesRouter(container));
+  app.use('/api/productions/:id/notes', productionNotesRouter(container));
   app.use('/api/productions', productionsRouter(container));
   app.use('/api/production-steps', productionStepsRouter(container));
   app.use('/api/production-slots', productionSlotsRouter(container));

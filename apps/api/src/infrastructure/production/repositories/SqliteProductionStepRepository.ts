@@ -15,6 +15,7 @@ interface StepRow {
   sort_order: number;
   default_minutes: number | null;
   is_archived: number;
+  applies_from: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -26,6 +27,7 @@ const toDomain = (row: StepRow): ProductionStep => ({
   sortOrder: row.sort_order,
   defaultMinutes: row.default_minutes,
   isArchived: row.is_archived === 1,
+  appliesFrom: row.applies_from,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -65,8 +67,9 @@ export class SqliteProductionStepRepository implements ProductionStepRepository 
     this.db
       .prepare(
         `INSERT INTO production_steps
-           (id, name, color, sort_order, default_minutes, is_archived, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+           (id, name, color, sort_order, default_minutes, is_archived, applies_from,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
       )
       .run(
         id,
@@ -74,6 +77,8 @@ export class SqliteProductionStepRepository implements ProductionStepRepository 
         input.color ?? '#64748b',
         nextOrder,
         input.defaultMinutes ?? null,
+        // Une étape créée ne vaut que pour les vidéos à venir (`appliesTo`).
+        now,
         now,
         now,
       );
@@ -97,6 +102,7 @@ export class SqliteProductionStepRepository implements ProductionStepRepository 
     if (input.sortOrder !== undefined) set('sort_order', input.sortOrder);
     if (input.defaultMinutes !== undefined) set('default_minutes', input.defaultMinutes);
     if (input.isArchived !== undefined) set('is_archived', input.isArchived ? 1 : 0);
+    if (input.appliesFrom !== undefined) set('applies_from', input.appliesFrom);
 
     if (fields.length === 0) return existing;
 

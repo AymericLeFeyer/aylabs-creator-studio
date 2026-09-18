@@ -244,6 +244,8 @@ export const createProductionStepSchema = z.object({
 
 export const updateProductionStepSchema = createProductionStepSchema.partial().extend({
   isArchived: z.boolean().optional(),
+  // Seul `null` : étendre l'étape aux vidéos existantes. L'inverse n'a pas de geste.
+  appliesFrom: z.null().optional(),
 });
 
 export const createProductionSchema = z.object({
@@ -272,7 +274,6 @@ export const createProductionSchema = z.object({
    * autorisant l'effacement explicite.
    */
   paidPromotion: z.boolean().nullable().optional(),
-  notes: z.string().nullable().optional(),
 });
 
 export const updateProductionSchema = createProductionSchema.partial();
@@ -424,6 +425,18 @@ export const createIdeaSchema = z.object({
 });
 
 export const updateIdeaSchema = createIdeaSchema.partial();
+
+/**
+ * Une note d'une vidéo. Tout est facultatif : « Nouvelle note » crée une note vide, le
+ * titre et le contenu arrivent ensuite. Le contenu est du HTML (le même éditeur que le
+ * script), d'où la marge large.
+ */
+export const createProductionNoteSchema = z.object({
+  title: z.string().trim().max(200).optional(),
+  content: z.string().max(200_000).optional(),
+});
+
+export const updateProductionNoteSchema = createProductionNoteSchema;
 
 /** Un brouillon de publication : le titre seul est obligatoire, on complète ensuite. */
 export const createPostDraftSchema = z.object({
@@ -589,6 +602,7 @@ export const updateStepTodoSchema = z.object({
   sortOrder: z.number().int().optional(),
   isArchived: z.boolean().optional(),
   defaultMinutes: durationMinutes,
+  appliesFrom: z.null().optional(),
 });
 
 /** Une tâche ponctuelle, posée sur une seule vidéo. */

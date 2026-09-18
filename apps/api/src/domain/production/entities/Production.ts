@@ -75,7 +75,8 @@ export interface Production {
    * ouverture de l'onglet, et une vidéo sponsorisée serait partie sans sa mention.
    */
   paidPromotion: boolean | null;
-  notes: string | null;
+  // Plus de `notes` : elles vivent dans `production_notes` (plusieurs par vidéo). La
+  // colonne existe encore en base mais n'est plus lue (migration 34).
   /** Rang dans la file d'attente. Ordre entièrement manuel. */
   sortOrder: number;
   createdAt: string;
@@ -124,6 +125,13 @@ export interface ProductionView extends Production {
   videoThumbnailUrl: string | null;
   /** Étapes cochées. L'absence d'un identifiant vaut « pas fait ». */
   steps: ProductionStepCheck[];
+  /**
+   * Les étapes actives **qui s'appliquent à cette vidéo**, dans l'ordre d'affichage :
+   * celles qui existaient à sa création, plus celles qui y sont cochées (`appliesTo`).
+   * Le front ne lit jamais le référentiel entier pour une vidéo : ajouter une étape ne
+   * doit pas rouvrir les vidéos déjà faites.
+   */
+  stepIds: string[];
   /** Prochain créneau non fait à venir, `null` s'il n'y en a pas de planifié. */
   nextSlotDate: IsoDate | null;
   slotsCount: number;
@@ -156,7 +164,6 @@ export interface CreateProductionInput {
   publishHashtags?: string;
   publishTags?: string;
   paidPromotion?: boolean | null;
-  notes?: string | null;
 }
 
 export type UpdateProductionInput = Partial<CreateProductionInput> & { sortOrder?: number };

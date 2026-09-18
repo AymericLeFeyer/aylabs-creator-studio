@@ -1,6 +1,10 @@
 import { Check } from 'lucide-react';
 import type { Production } from '../../../domain/production/entities/Production.ts';
-import { isStepChecked, progressCounts } from '../../../domain/production/entities/Production.ts';
+import {
+  isStepChecked,
+  progressCounts,
+  stepsOf,
+} from '../../../domain/production/entities/Production.ts';
 import type { ProductionStep } from '../../../domain/production/entities/ProductionStep.ts';
 import { stepTodoRatio } from '../../../domain/production/entities/StepTodo.ts';
 import { cn } from '../../../shared/cn.ts';
@@ -26,11 +30,13 @@ interface StepChipsProps {
  */
 export const StepChips = ({
   production,
-  steps,
+  steps: referential,
   onOpenStep,
   size = 'sm',
   disabled,
 }: StepChipsProps) => {
+  // Les étapes de CETTE vidéo : une étape ajoutée après sa création ne la concerne pas.
+  const steps = stepsOf(production, referential);
   if (steps.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
@@ -97,14 +103,8 @@ export const StepChips = ({
  * six points. C'est voulu — le travail est dans les tâches, et une barre qui ne
  * compterait que les étapes sauterait de 0 à 20 % sans rien montrer entre les deux.
  */
-export const StepProgress = ({
-  production,
-  steps,
-}: {
-  production: Production;
-  steps: ProductionStep[];
-}) => {
-  const { done, total } = progressCounts(production, steps.length);
+export const StepProgress = ({ production }: { production: Production }) => {
+  const { done, total } = progressCounts(production);
   const ratio = total === 0 ? 0 : done / total;
   const detail = `${done} sur ${total} (étapes et tâches)`;
 

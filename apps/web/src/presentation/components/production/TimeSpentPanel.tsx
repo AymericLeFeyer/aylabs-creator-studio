@@ -664,11 +664,17 @@ export const TimeSpentPanel = ({ production, steps, onStartTimer }: TimeSpentPan
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>Sans étape</SelectItem>
-                  {steps.map((step) => (
-                    <SelectItem key={step.id} value={step.id}>
-                      {step.name}
-                    </SelectItem>
-                  ))}
+                  {/* Les étapes de la vidéo, plus celle déjà portée par la session : une
+                      étape ajoutée après coup ne doit pas vider le champ d'une correction. */}
+                  {steps
+                    .filter(
+                      (step) => production.stepIds.includes(step.id) || step.id === form.stepId,
+                    )
+                    .map((step) => (
+                      <SelectItem key={step.id} value={step.id}>
+                        {step.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

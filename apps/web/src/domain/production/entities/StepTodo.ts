@@ -8,6 +8,11 @@ export interface StepTodo {
   defaultMinutes: number | null;
   sortOrder: number;
   isArchived: boolean;
+  /**
+   * Seules les vidéos créées à partir de cet instant portent cette tâche. `null` =
+   * toutes les vidéos (tout ce qui existait avant la règle, ou étendu à la main).
+   */
+  appliesFrom: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -18,6 +23,8 @@ export interface StepTodoInput {
   defaultMinutes?: number | null;
   sortOrder?: number;
   isArchived?: boolean;
+  /** Seul `null` est admis : étendre aux vidéos existantes. */
+  appliesFrom?: null;
 }
 
 /**

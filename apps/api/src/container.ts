@@ -13,6 +13,7 @@ import { SqliteProductionStepRepository } from './infrastructure/production/repo
 import { SqliteProductionSlotRepository } from './infrastructure/production/repositories/SqliteProductionSlotRepository.ts';
 import { SqliteTimeEntryRepository } from './infrastructure/production/repositories/SqliteTimeEntryRepository.ts';
 import { SqliteTodoRepository } from './infrastructure/production/repositories/SqliteTodoRepository.ts';
+import { SqliteProductionNoteRepository } from './infrastructure/production/repositories/SqliteProductionNoteRepository.ts';
 import { SqliteRecurringExpenseRepository } from './infrastructure/expense/repositories/SqliteRecurringExpenseRepository.ts';
 import { SqliteProductRepository } from './infrastructure/product/repositories/SqliteProductRepository.ts';
 import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/repositories/SqliteSponsorshipRepository.ts';
@@ -87,6 +88,8 @@ export interface Container {
   timeEntries: SqliteTimeEntryRepository;
   /** Référentiel des tâches d'étape, tâches ponctuelles et coches, dans un seul dépôt. */
   todos: SqliteTodoRepository;
+  /** Les notes d'une vidéo, en petits fichiers. Aucun effet de bord. */
+  productionNotes: SqliteProductionNoteRepository;
   /** Règles de dépense récurrente. Les occurrences, elles, sont des `expenses`. */
   recurringExpenses: SqliteRecurringExpenseRepository;
   products: SqliteProductRepository;
@@ -198,6 +201,7 @@ export const buildContainer = (config: Config): Container => {
   const productionSlots = new SqliteProductionSlotRepository(db);
   const timeEntries = new SqliteTimeEntryRepository(db);
   const todos = new SqliteTodoRepository(db);
+  const productionNotes = new SqliteProductionNoteRepository(db);
   const recurringExpenses = new SqliteRecurringExpenseRepository(db);
   const products = new SqliteProductRepository(db);
   const sponsorships = new SqliteSponsorshipRepository(db);
@@ -272,6 +276,7 @@ export const buildContainer = (config: Config): Container => {
     productionSlots,
     timeEntries,
     todos,
+    productionNotes,
     recurringExpenses,
     products,
     sponsorships,
@@ -293,7 +298,6 @@ export const buildContainer = (config: Config): Container => {
     manageSponsorships,
     manageProductions: new ManageProductions(
       productions,
-      productionSteps,
       products,
       sponsorships,
       manageProducts,

@@ -5,7 +5,7 @@ import {
   useStartTimer,
 } from '../../../application/production/usecases/useProductions.ts';
 import type { Production } from '../../../domain/production/entities/Production.ts';
-import { isStepChecked } from '../../../domain/production/entities/Production.ts';
+import { isStepChecked, stepsOf } from '../../../domain/production/entities/Production.ts';
 import { todosOfStep } from '../../../domain/production/entities/StepTodo.ts';
 import { formatMinutes } from '../../../domain/planning/entities/Planning.ts';
 import { Button } from '../ui/button.tsx';
@@ -43,7 +43,9 @@ interface StartTimerDialogProps {
  * souvent sur un montage qu'on croyait terminé.
  */
 export const StartTimerDialog = ({ open, onOpenChange, production }: StartTimerDialogProps) => {
-  const { data: steps = [] } = useProductionSteps();
+  const { data: referential = [] } = useProductionSteps();
+  // Seulement les étapes de cette vidéo : une étape créée après elle ne la concerne pas.
+  const steps = production ? stepsOf(production, referential) : [];
   const start = useStartTimer();
   const [stepId, setStepId] = useState<string | null>(null);
   const [todoId, setTodoId] = useState<string | null>(null);

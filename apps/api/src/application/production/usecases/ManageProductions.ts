@@ -3,11 +3,7 @@ import type {
   Production,
   UpdateProductionInput,
 } from '../../../domain/production/entities/Production.ts';
-import { PUBLISH_STEP_ID } from '../../../domain/production/entities/ProductionStep.ts';
-import type {
-  ProductionRepository,
-  ProductionStepRepository,
-} from '../../../domain/production/repositories/ProductionRepository.ts';
+import type { ProductionRepository } from '../../../domain/production/repositories/ProductionRepository.ts';
 import type { ProductRepository } from '../../../domain/product/repositories/ProductRepository.ts';
 import type { SponsorshipRepository } from '../../../domain/sponsorship/repositories/SponsorshipRepository.ts';
 import type { ManageProducts } from '../../product/usecases/ManageProducts.ts';
@@ -24,7 +20,6 @@ import { conflict, notFound } from '../../../shared/errors.ts';
  */
 export class ManageProductions {
   private readonly productions: ProductionRepository;
-  private readonly steps: ProductionStepRepository;
   private readonly products: ProductRepository;
   private readonly sponsorships: SponsorshipRepository;
   private readonly manageProducts: ManageProducts;
@@ -32,14 +27,12 @@ export class ManageProductions {
 
   constructor(
     productions: ProductionRepository,
-    steps: ProductionStepRepository,
     products: ProductRepository,
     sponsorships: SponsorshipRepository,
     manageProducts: ManageProducts,
     manageSponsorships: ManageSponsorships,
   ) {
     this.productions = productions;
-    this.steps = steps;
     this.products = products;
     this.sponsorships = sponsorships;
     this.manageProducts = manageProducts;
@@ -78,9 +71,14 @@ export class ManageProductions {
   }
 
   /**
-   * Marque la production publiée : rattache la sortie réelle, coche l'étape de
-   * publication et passe en terminé. La vidéo quitte alors la file d'attente sans que
-   * rien ne soit perdu — script, créneaux et argent restent consultables.
+   * Marque la production publiée : rattache la sortie réelle et passe en terminé. La
+   * vidéo quitte alors la file d'attente sans que rien ne soit perdu — script, créneaux
+   * et argent restent consultables.
+   *
+   * **Aucune étape n'est cochée**, pas même « publication » : on publie souvent avant que
+   * tout soit fini (miniature à refaire, commentaire à épingler, tâches de l'étape de
+   * publication elles-mêmes). Cocher à la place de l'utilisateur mentirait sur
+   * l'avancement, et c'est ce reste à faire que l'alerte `production_incomplete` rappelle.
    */
   publish(id: string, videoId: string): Production {
     const existing = this.productions.findById(id);
@@ -92,11 +90,6 @@ export class ManageProductions {
     }
 
     const published = this.productions.update(id, { videoId, status: 'done' });
-
-    // L'étape peut avoir été supprimée : la publication reste valable sans elle.
-    if (this.steps.findById(PUBLISH_STEP_ID)) {
-      this.productions.checkStep(id, PUBLISH_STEP_ID);
-    }
     this.resync(id);
 
     return published;

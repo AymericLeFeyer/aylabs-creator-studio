@@ -124,7 +124,7 @@ export const PublishDialog = ({
                 ? 'Chargement des sorties…'
                 : options.length === 0
                   ? 'Aucune sortie connue pour cette chaîne. Les vidéos arrivent avec la collecte.'
-                  : "Triées par proximité avec la date visée. L'étape de publication sera cochée."}
+                  : 'Triées par proximité avec la date visée. Aucune étape ne sera cochée.'}
             </p>
             {/* Discret, mais toujours là : la sortie manquante est presque toujours celle
                 qu'on vient de mettre en ligne, et rien d'autre sur cet écran ne permet

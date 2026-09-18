@@ -20,6 +20,11 @@ export interface ProductionStep {
    */
   defaultMinutes: number | null;
   isArchived: boolean;
+  /**
+   * Seules les vidéos créées à partir de cet instant portent l'étape (`appliesTo`).
+   * `null` = toutes les vidéos.
+   */
+  appliesFrom: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,6 +38,8 @@ export interface CreateProductionStepInput {
 
 export type UpdateProductionStepInput = Partial<CreateProductionStepInput> & {
   isArchived?: boolean;
+  /** Seul `null` est admis : étendre l'étape à toutes les vidéos, existantes comprises. */
+  appliesFrom?: null;
 };
 
 /** Identifiant fixe de l'étape de publication, cochée automatiquement à la sortie. */

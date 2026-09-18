@@ -12,6 +12,7 @@ import {
 } from '../../../application/planning/usecases/usePlanning.ts';
 import { formatMinutes } from '../../../domain/planning/entities/Planning.ts';
 import { todosOfStep } from '../../../domain/production/entities/StepTodo.ts';
+import { stepsOf } from '../../../domain/production/entities/Production.ts';
 import { Badge } from '../ui/badge.tsx';
 import { FormatIcon } from '../production/FormatIcon.tsx';
 import { Button } from '../ui/button.tsx';
@@ -57,9 +58,11 @@ export interface AddToPlanDialogProps {
  */
 export const AddToPlanDialog = ({ open, onOpenChange }: AddToPlanDialogProps) => {
   const { data: overview } = useProductionOverview();
-  const { data: steps = [] } = useProductionSteps();
+  const { data: referential = [] } = useProductionSteps();
   const [productionId, setProductionId] = useState<string | null>(null);
   const { data: production } = useProduction(productionId ?? undefined);
+  // Seulement les étapes de la vidéo choisie : une étape créée après elle ne la concerne pas.
+  const steps = production ? stepsOf(production, referential) : [];
   const add = useAddPlanTargets();
 
   /** Étapes retenues **en bloc** : une seule ligne de pile, sans détail des tâches. */

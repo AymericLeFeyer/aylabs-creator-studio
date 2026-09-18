@@ -9,6 +9,7 @@ import type {
   UpdateStepTodoInput,
 } from '../../../domain/production/entities/StepTodo.ts';
 import { placeholders } from '../../db/filters.ts';
+import { appliesTo } from '../../../domain/production/services/appliesTo.ts';
 import { newId } from '../../../shared/id.ts';
 import { notFound } from '../../../shared/errors.ts';
 
@@ -19,6 +20,7 @@ interface StepTodoRow {
   default_minutes: number | null;
   sort_order: number;
   is_archived: number;
+  applies_from: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -41,6 +43,7 @@ const toStepTodo = (row: StepTodoRow): StepTodo => ({
   defaultMinutes: row.default_minutes,
   sortOrder: row.sort_order,
   isArchived: row.is_archived === 1,
+  appliesFrom: row.applies_from,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -101,10 +104,12 @@ export class SqliteTodoRepository {
     this.db
       .prepare(
         `INSERT INTO step_todos
-           (id, step_id, label, default_minutes, sort_order, is_archived, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+           (id, step_id, label, default_minutes, sort_order, is_archived, applies_from,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
       )
-      .run(id, input.stepId, input.label, input.defaultMinutes ?? null, nextOrder, now, now);
+      // Une tâche créée ne vaut que pour les vidéos à venir (`appliesTo`).
+      .run(id, input.stepId, input.label, input.defaultMinutes ?? null, nextOrder, now, now, now);
 
     return this.findStepTodoById(id)!;
   }
@@ -124,6 +129,7 @@ export class SqliteTodoRepository {
     if (input.defaultMinutes !== undefined) set('default_minutes', input.defaultMinutes);
     if (input.sortOrder !== undefined) set('sort_order', input.sortOrder);
     if (input.isArchived !== undefined) set('is_archived', input.isArchived ? 1 : 0);
+    if (input.appliesFrom !== undefined) set('applies_from', input.appliesFrom);
 
     if (fields.length === 0) return existing;
 
@@ -322,40 +328,35 @@ export class SqliteTodoRepository {
    * une seule source, donc pas deux comptages qui finissent par se contredire.
    */
   listForProduction(productionId: string): TodoItem[] {
-    const checks = this.findChecks([productionId]).get(productionId) ?? new Map<string, string>();
-
-    const fromReferential: TodoItem[] = this.findStepTodos().map((todo) => ({
-      id: todo.id,
-      stepId: todo.stepId,
-      label: todo.label,
-      defaultMinutes: todo.defaultMinutes,
-      origin: 'step' as const,
-      checked: checks.has(todo.id),
-      checkedAt: checks.get(todo.id) ?? null,
-      sortOrder: todo.sortOrder,
-    }));
-
-    const punctual: TodoItem[] = this.findProductionTodos([productionId]).map((todo) => ({
-      id: todo.id,
-      stepId: todo.stepId,
-      label: todo.label,
-      defaultMinutes: todo.defaultMinutes,
-      origin: 'production' as const,
-      checked: checks.has(todo.id),
-      checkedAt: checks.get(todo.id) ?? null,
-      // Les ponctuelles ferment la liste de leur étape : les habituelles d'abord,
-      // parce que ce sont celles qu'on parcourt de mémoire.
-      sortOrder: 1000 + todo.sortOrder,
-    }));
-
-    return [...fromReferential, ...punctual].sort((a, b) => a.sortOrder - b.sortOrder);
+    return this.listForProductions([productionId]).get(productionId) ?? [];
   }
 
-  /** Les tâches de tout un lot de vidéos, pour les cartes de la file d'attente. */
+  /**
+   * Les tâches de tout un lot de vidéos, pour les cartes de la file d'attente.
+   *
+   * Le référentiel est **borné à la date de création de chaque vidéo** (`appliesTo`) :
+   * une tâche ajoutée aujourd'hui n'apparaît pas sur une vidéo lancée hier, sauf si elle
+   * y est déjà cochée. C'est ici, et seulement ici, que la règle s'applique aux tâches —
+   * l'avancement, la synchronisation des étapes (`ManageTodos`) et l'alerte « publiée
+   * incomplète » lisent tous cette liste.
+   */
   listForProductions(productionIds: string[]): Map<string, TodoItem[]> {
     const result = new Map<string, TodoItem[]>();
     if (productionIds.length === 0) return result;
 
+    const createdAt = new Map(
+      (
+        this.db
+          .prepare(
+            `SELECT id, created_at FROM productions
+              WHERE id IN (${placeholders(productionIds.length)})`,
+          )
+          .all(...(productionIds as never[])) as unknown as Array<{
+          id: string;
+          created_at: string;
+        }>
+      ).map((row) => [row.id, row.created_at]),
+    );
     const referential = this.findStepTodos();
     const punctualByProduction = new Map<string, ProductionTodo[]>();
     for (const todo of this.findProductionTodos(productionIds)) {
@@ -367,16 +368,19 @@ export class SqliteTodoRepository {
 
     for (const productionId of productionIds) {
       const done = checks.get(productionId) ?? new Map<string, string>();
-      const items: TodoItem[] = referential.map((todo) => ({
-        id: todo.id,
-        stepId: todo.stepId,
-        label: todo.label,
-        defaultMinutes: todo.defaultMinutes,
-        origin: 'step' as const,
-        checked: done.has(todo.id),
-        checkedAt: done.get(todo.id) ?? null,
-        sortOrder: todo.sortOrder,
-      }));
+      const born = createdAt.get(productionId);
+      const items: TodoItem[] = referential
+        .filter((todo) => born === undefined || appliesTo(todo, born, done.has(todo.id)))
+        .map((todo) => ({
+          id: todo.id,
+          stepId: todo.stepId,
+          label: todo.label,
+          defaultMinutes: todo.defaultMinutes,
+          origin: 'step' as const,
+          checked: done.has(todo.id),
+          checkedAt: done.get(todo.id) ?? null,
+          sortOrder: todo.sortOrder,
+        }));
 
       for (const todo of punctualByProduction.get(productionId) ?? []) {
         items.push({
@@ -387,6 +391,8 @@ export class SqliteTodoRepository {
           origin: 'production',
           checked: done.has(todo.id),
           checkedAt: done.get(todo.id) ?? null,
+          // Les ponctuelles ferment la liste de leur étape : les habituelles d'abord,
+          // parce que ce sont celles qu'on parcourt de mémoire.
           sortOrder: 1000 + todo.sortOrder,
         });
       }

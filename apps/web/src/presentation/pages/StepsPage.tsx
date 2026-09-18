@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { Archive, ArchiveRestore, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
+import {
+  Archive,
+  ArchiveRestore,
+  ChevronDown,
+  ChevronUp,
+  History,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import {
   useCreateStep,
   useCreateStepTodo,
@@ -26,6 +34,7 @@ import {
   DialogTitle,
 } from '../components/ui/dialog.tsx';
 import { cn } from '../../shared/cn.ts';
+import { formatDate } from '../../shared/format.ts';
 
 /**
  * La durée moyenne, en minutes.
@@ -78,6 +87,15 @@ const DurationInput = ({
  * Les champs sont **non contrôlés, validés à la sortie** (`defaultValue` + `onBlur`) :
  * un `onChange` branché sur la mutation enverrait une requête par lettre tapée.
  */
+/**
+ * Étendre une étape ou une tâche aux vidéos d'avant sa création n'est pas anodin : les
+ * vidéos publiées depuis moins de trois semaines vont réclamer la case dans leur alerte
+ * « publiée avec des tâches non cochées ». La confirmation le dit.
+ */
+const extendMessage = (name: string): string =>
+  `Appliquer « ${name} » à toutes les vidéos, y compris celles créées avant ? ` +
+  'Les vidéos publiées récemment la signaleront comme non cochée.';
+
 export const StepsPage = () => {
   const { data: steps = [] } = useProductionSteps(true);
   const { data: todos = [] } = useStepTodos(true);
@@ -168,7 +186,9 @@ export const StepsPage = () => {
           <p className="text-sm text-muted-foreground">
             Les étapes sont les pastilles d'une vidéo ; les tâches sont ce qu'il y a dedans. Une
             tâche pèse autant qu'une étape dans l'avancement affiché. La durée moyenne dit au
-            planning quelle place réserver — vide, la tâche reprend celle de son étape.
+            planning quelle place réserver — vide, la tâche reprend celle de son étape. Une étape ou
+            une tâche ajoutée ne s'applique qu'aux vidéos créées ensuite : les vidéos déjà lancées
+            gardent le processus de leur création.
           </p>
         </div>
         <Button size="sm" onClick={() => setDialogOpen(true)}>
@@ -278,6 +298,24 @@ export const StepsPage = () => {
                 </div>
               </div>
 
+              {step.appliesFrom && (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  <History className="h-3.5 w-3.5 shrink-0" />
+                  <span>Vidéos créées depuis le {formatDate(step.appliesFrom)}</span>
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 hover:text-foreground"
+                    onClick={() => {
+                      if (window.confirm(extendMessage(step.name))) {
+                        update.mutate({ id: step.id, input: { appliesFrom: null } });
+                      }
+                    }}
+                  >
+                    Appliquer aussi aux vidéos existantes
+                  </button>
+                </div>
+              )}
+
               <div className="space-y-1 border-t border-border pt-2">
                 {stepTodos.length === 0 && (
                   <p className="px-1 py-1 text-xs text-muted-foreground">
@@ -336,6 +374,24 @@ export const StepsPage = () => {
                         updateTodo.mutate({ id: todo.id, input: { defaultMinutes } })
                       }
                     />
+                    {todo.appliesFrom && (
+                      // Toujours visible, contrairement aux autres actions de la ligne : c'est
+                      // une information (« pas sur les vidéos d'avant »), pas seulement un geste.
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0 text-muted-foreground"
+                        title={`Vidéos créées depuis le ${formatDate(todo.appliesFrom)} — cliquer pour l'appliquer aussi aux vidéos existantes`}
+                        onClick={() => {
+                          if (window.confirm(extendMessage(todo.label))) {
+                            updateTodo.mutate({ id: todo.id, input: { appliesFrom: null } });
+                          }
+                        }}
+                      >
+                        <History className="h-3 w-3" />
+                        <span className="sr-only">Appliquer aux vidéos existantes</span>
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"

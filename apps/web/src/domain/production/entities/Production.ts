@@ -110,7 +110,8 @@ export interface Production {
    * (`resolvePaidPromotion`). C'est un troisième état, pas un `false` déguisé.
    */
   paidPromotion: boolean | null;
-  notes: string | null;
+  // Les notes ne sont plus un champ : elles vivent à part, plusieurs par vidéo
+  // (`ProductionNote`, `/api/productions/:id/notes`).
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -124,6 +125,13 @@ export interface Production {
   videoThumbnailUrl: string | null;
   /** Étapes cochées. Un identifiant absent vaut « pas fait ». */
   steps: ProductionStepCheck[];
+  /**
+   * Étapes actives **qui s'appliquent à cette vidéo**, dans l'ordre d'affichage : celles
+   * qui existaient à sa création, plus celles qui y sont cochées. Une étape ajoutée
+   * après coup ne rouvre pas les vidéos déjà faites. Lire le référentiel à travers
+   * `stepsOf`, jamais en entier.
+   */
+  stepIds: string[];
   nextSlotDate: string | null;
   slotsCount: number;
   products: ProductionProductRef[];
@@ -149,7 +157,6 @@ export interface ProductionInput {
   publishHashtags?: string;
   publishTags?: string;
   paidPromotion?: boolean | null;
-  notes?: string | null;
 }
 
 /**
@@ -196,21 +203,31 @@ export const resolvePaidPromotion = (production: Production): boolean =>
  * (`GetProductionOverview.buildStats`) : deux pondérations différentes feraient dire
  * deux choses au même écran.
  */
-export const stepProgress = (production: Production, totalSteps: number): number => {
-  const total = totalSteps + production.todos.length;
-  if (total === 0) return 0;
-  const done = production.steps.length + production.todos.filter((todo) => todo.checked).length;
-  return Math.min(1, done / total);
+export const stepProgress = (production: Production): number => {
+  const { done, total } = progressCounts(production);
+  return total === 0 ? 0 : Math.min(1, done / total);
 };
 
-/** Le détail derrière la barre : « 7/12 » se lit mieux qu'un pourcentage sur une carte. */
-export const progressCounts = (
-  production: Production,
-  totalSteps: number,
-): { done: number; total: number } => ({
-  done: production.steps.length + production.todos.filter((todo) => todo.checked).length,
-  total: totalSteps + production.todos.length,
+/**
+ * Le détail derrière la barre : « 7/12 » se lit mieux qu'un pourcentage sur une carte.
+ * Mesuré aux étapes de la vidéo (`stepIds`), pas au référentiel entier.
+ */
+export const progressCounts = (production: Production): { done: number; total: number } => ({
+  done:
+    production.steps.filter((check) => production.stepIds.includes(check.stepId)).length +
+    production.todos.filter((todo) => todo.checked).length,
+  total: production.stepIds.length + production.todos.length,
 });
+
+/**
+ * Les étapes du référentiel qui s'appliquent à cette vidéo, dans l'ordre du référentiel.
+ * Une étape créée après la vidéo n'y figure pas (sauf si elle y est cochée) : c'est ce
+ * qui permet d'ajouter une étape sans rouvrir les vidéos terminées.
+ */
+export const stepsOf = <T extends { id: string }>(
+  production: Pick<Production, 'stepIds'>,
+  steps: T[],
+): T[] => steps.filter((step) => production.stepIds.includes(step.id));
 
 export const isStepChecked = (production: Production, stepId: string): boolean =>
   production.steps.some((step) => step.stepId === stepId);

@@ -25,6 +25,13 @@ export interface ScriptEditorProps {
    * l'application ; une modale, qui défile toute seule, passe `0px`.
    */
   stickyOffset?: string;
+  /**
+   * Gabarits, angles de vue et mode lecture. À `false` pour une **note** de vidéo : même
+   * éditeur et même enregistrement automatique, sans les outils de tournage.
+   */
+  scriptTools?: boolean;
+  placeholder?: string;
+  minHeight?: string;
 }
 
 /**
@@ -47,6 +54,9 @@ export const ScriptEditorView = ({
   onSave,
   productionId,
   stickyOffset,
+  scriptTools,
+  placeholder,
+  minHeight,
 }: ScriptEditorProps) => {
   const [status, setStatus] = useState<SaveStatus>('clean');
 
@@ -131,6 +141,9 @@ export const ScriptEditorView = ({
         onChange={handleChange}
         productionId={productionId}
         stickyOffset={stickyOffset}
+        scriptTools={scriptTools}
+        placeholder={placeholder}
+        minHeight={minHeight}
         status={<SaveIndicator status={status} onRetry={() => void flush()} />}
       />
     </div>

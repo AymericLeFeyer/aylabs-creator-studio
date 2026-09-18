@@ -25,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog.tsx';
-import { Input, Textarea } from '../ui/input.tsx';
+import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { fromSelectValue, NONE, toSelectValue } from './selectNone.ts';
@@ -50,7 +50,6 @@ const EMPTY = {
   pausedReason: '',
   startDate: '',
   plannedDate: '',
-  notes: '',
 };
 
 /**
@@ -91,7 +90,6 @@ export const ProductionDialog = ({
             pausedReason: production.pausedReason ?? '',
             startDate: production.startDate ?? '',
             plannedDate: production.plannedDate ?? '',
-            notes: production.notes ?? '',
           }
         : { ...EMPTY, title: defaultTitle ?? '', format: defaultFormat ?? 'video' },
     );
@@ -111,7 +109,6 @@ export const ProductionDialog = ({
       pausedReason: form.status === 'paused' ? form.pausedReason.trim() || null : null,
       startDate: form.startDate || null,
       plannedDate: form.plannedDate || null,
-      notes: form.notes.trim() || null,
     };
 
     try {
@@ -268,16 +265,6 @@ export const ProductionDialog = ({
               />
             </div>
           )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="production-notes">Notes</Label>
-            <Textarea
-              id="production-notes"
-              placeholder="Angle, références, ce qu'il ne faut pas oublier…"
-              value={form.notes}
-              onChange={(event) => setForm((f) => ({ ...f, notes: event.target.value }))}
-            />
-          </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 

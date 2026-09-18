@@ -217,17 +217,20 @@ export class GetProductionOverview {
   ): ProductionStats {
     const formats = new Map(all.map((production) => [production.id, production.format]));
     const weekEnd = addDays(now, 6);
-    const stepsCount = this.steps.findAll().length;
 
     const dated = queue
       .filter((production) => production.plannedDate !== null)
       .sort((a, b) => (a.plannedDate! < b.plannedDate! ? -1 : 1));
     const nextRelease = dated.find((production) => production.plannedDate! >= now) ?? null;
 
+    // Chaque vidéo se mesure à SES étapes (`stepIds`) : une étape ajoutée après sa
+    // création ne doit pas faire reculer son avancement.
     const progressOf = (production: ProductionView): number => {
-      const total = stepsCount + production.todos.length;
+      const total = production.stepIds.length + production.todos.length;
       if (total === 0) return 0;
-      const done = production.steps.length + production.todos.filter((todo) => todo.checked).length;
+      const done =
+        production.steps.filter((check) => production.stepIds.includes(check.stepId)).length +
+        production.todos.filter((todo) => todo.checked).length;
       return Math.min(1, done / total);
     };
 
@@ -435,10 +438,12 @@ export class GetProductionOverview {
             : todo.label,
         );
 
-      for (const [stepId, name] of stepNames) {
+      // Seulement les étapes de CETTE vidéo : une étape ajoutée après sa création ne
+      // lui a jamais été demandée, et ne doit pas la faire passer pour inachevée.
+      for (const stepId of production.stepIds) {
         if (checkedSteps.has(stepId)) continue;
         if (production.todos.some((todo) => todo.stepId === stepId)) continue;
-        pending.push(name);
+        pending.push(stepNames.get(stepId) ?? stepId);
       }
 
       if (pending.length === 0) continue;
