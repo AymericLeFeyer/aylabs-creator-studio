@@ -1,6 +1,7 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { Archive, ArchiveRestore, Check, Copy, Pencil, Plus } from 'lucide-react';
+import { Archive, ArchiveRestore, Check, Copy, GripVertical, Pencil, Plus } from 'lucide-react';
 import {
   usePostDrafts,
   useUpdatePostDraft,
@@ -22,6 +23,7 @@ import { Checkbox } from '../components/ui/checkbox.tsx';
 import { Fab } from '../components/Fab.tsx';
 import { PageAlerts } from '../components/PageAlerts.tsx';
 import { PostDraftDialog } from '../components/publications/PostDraftDialog.tsx';
+import { useDraftDrag } from '../components/publications/useDraftDrag.ts';
 
 /** Jours toujours affichés de part et d'autre d'aujourd'hui, même sans rien dedans. */
 const DAYS_BEFORE = 30;
@@ -65,6 +67,10 @@ const daysBetween = (from: string, to: string): string[] => {
  * Six cases par publication ; tout coché, le bouton d'archivage passe au vert et archive
  * **sans confirmation**. C'est l'archivage d'une publication complète qui remet à zéro le
  * compteur « -X » du menu. Ce qui est réellement paru se lit dans Audience → Instagram.
+ *
+ * Une publication **se glisse d'un couloir à l'autre** par sa poignée : c'est ce qui change
+ * sa date prévue, sans ouvrir la modale. La lâcher sur « Sans date » la retire du
+ * calendrier. Les archivées n'ont pas de poignée — elles sont figées, comme leurs cases.
  */
 export const PublicationsPage = () => {
   const { data: active = [], isSuccess: activeLoaded } = usePostDrafts(false);
@@ -125,6 +131,14 @@ export const PublicationsPage = () => {
     positioned.current = true;
   }, [loaded]);
 
+  // L'écriture est optimiste (`useUpdatePostDraft`) : la ligne change de couloir au lâcher.
+  const { drag, start } = useDraftDrag(scrollRef, (id, day) => {
+    const draft = drafts.find((item) => item.id === id);
+    if (!draft || draft.archivedAt || draft.plannedDate === day) return;
+    update.mutate({ id, input: { plannedDate: day } });
+  });
+  const dropHighlight = 'bg-primary/10 ring-2 ring-inset ring-primary';
+
   const copy = async (draft: PostDraft) => {
     try {
       await navigator.clipboard.writeText(draft.description);
@@ -149,11 +163,13 @@ export const PublicationsPage = () => {
         update.mutate({ id: draft.id, input: { steps: toggleStep(draft.steps, step) } })
       }
       onArchive={(value) => update.mutate({ id: draft.id, input: { archived: value } })}
+      dragging={drag?.id === draft.id}
+      onDragStart={draft.archivedAt ? undefined : (event) => start(event, draft)}
     />
   );
 
   return (
-    <div className="space-y-4">
+    <div className={cn('space-y-4', drag && 'cursor-grabbing select-none')}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="hidden lg:block">
           <h1 className="text-lg font-semibold">Publications</h1>
@@ -188,7 +204,10 @@ export const PublicationsPage = () => {
       <PageAlerts path="/publications" />
 
       {undated.length > 0 && (
-        <Card className="overflow-hidden">
+        <Card
+          data-drop-day=""
+          className={cn('overflow-hidden', drag?.day === null && dropHighlight)}
+        >
           <p className="border-b border-border px-4 py-2 text-xs font-medium text-muted-foreground">
             Sans date ({undated.length})
           </p>
@@ -210,7 +229,12 @@ export const PublicationsPage = () => {
             <div
               key={day}
               ref={isToday ? todayRef : undefined}
-              className={cn('flex min-h-11', isToday && 'bg-[var(--today)]/10')}
+              data-drop-day={day}
+              className={cn(
+                'flex min-h-11',
+                isToday && 'bg-[var(--today)]/10',
+                drag?.day === day && dropHighlight,
+              )}
             >
               {/* Le jour, en colonne collante à gauche : il reste lisible quand un couloir
                   porte plusieurs publications. */}
@@ -238,7 +262,7 @@ export const PublicationsPage = () => {
                       future ? 'text-[var(--expense)]' : 'text-muted-foreground/60',
                     )}
                   >
-                    {future ? 'Rien de prévu' : 'Rien'}
+                    {drag?.day === day ? 'Déposer ici' : future ? 'Rien de prévu' : 'Rien'}
                   </p>
                 )}
               </div>
@@ -258,6 +282,26 @@ export const PublicationsPage = () => {
           );
         })}
       </Card>
+
+      {drag &&
+        createPortal(
+          // Suit le pointeur et annonce où la publication va tomber : sur des couloirs qui
+          // défilent, le jour survolé n'est pas toujours celui qu'on croit.
+          <div
+            className="pointer-events-none fixed z-50 max-w-64 rounded-md border border-border bg-card px-3 py-1.5 text-sm shadow-lg"
+            style={{ left: drag.x + 14, top: drag.y + 14 }}
+          >
+            <p className="truncate font-medium">{drag.title}</p>
+            <p className="text-xs text-muted-foreground">
+              {drag.day === undefined
+                ? 'Lâcher sur un jour'
+                : drag.day === null
+                  ? '→ Sans date'
+                  : `→ ${WEEKDAY.format(at(drag.day)).replace('.', '')} ${DAY_MONTH.format(at(drag.day))}`}
+            </p>
+          </div>,
+          document.body,
+        )}
 
       <Fab label="Nouvelle publication" icon={Plus} onClick={() => setCreateFor(today)} />
 
@@ -282,13 +326,25 @@ interface DraftRowProps {
   onEdit: () => void;
   onToggle: (step: PostDraftStep) => void;
   onArchive: (archived: boolean) => void;
+  dragging: boolean;
+  /** Absent sur une publication archivée : elle ne se déplace pas. */
+  onDragStart?: (event: PointerEvent) => void;
 }
 
 /**
  * Une publication dans son couloir : titre, six cases, actions. Archivée, elle reste là,
  * grisée et figée — seul « Restaurer » la remet en jeu.
  */
-const DraftRow = ({ draft, copied, onCopy, onEdit, onToggle, onArchive }: DraftRowProps) => {
+const DraftRow = ({
+  draft,
+  copied,
+  onCopy,
+  onEdit,
+  onToggle,
+  onArchive,
+  dragging,
+  onDragStart,
+}: DraftRowProps) => {
   const isArchived = draft.archivedAt !== null;
   const complete = isPostDraftComplete(draft.steps);
   return (
@@ -296,16 +352,38 @@ const DraftRow = ({ draft, copied, onCopy, onEdit, onToggle, onArchive }: DraftR
       className={cn(
         'flex flex-col gap-2 px-4 py-2 lg:flex-row lg:items-center lg:gap-4',
         isArchived && 'opacity-55',
+        dragging && 'opacity-40',
       )}
     >
-      <button type="button" onClick={onEdit} className="min-w-0 flex-1 text-left" title="Modifier">
-        <p className={cn('truncate text-sm font-medium', isArchived && 'line-through')}>
-          {draft.title}
-        </p>
-        {draft.description && (
-          <p className="truncate text-xs text-muted-foreground">{draft.description}</p>
+      <div className="flex min-w-0 flex-1 items-center gap-1">
+        {/* `touch-none` sur la seule poignée : au doigt, le reste de la ligne fait défiler. */}
+        {onDragStart ? (
+          <span
+            role="button"
+            aria-label="Déplacer vers un autre jour"
+            title="Glisser vers un autre jour"
+            onPointerDown={onDragStart}
+            className="-ml-2 flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground/60 hover:text-foreground active:cursor-grabbing"
+          >
+            <GripVertical className="h-4 w-4" />
+          </span>
+        ) : (
+          <span className="-ml-2 w-6 shrink-0" />
         )}
-      </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="min-w-0 flex-1 text-left"
+          title="Modifier"
+        >
+          <p className={cn('truncate text-sm font-medium', isArchived && 'line-through')}>
+            {draft.title}
+          </p>
+          {draft.description && (
+            <p className="truncate text-xs text-muted-foreground">{draft.description}</p>
+          )}
+        </button>
+      </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         {POST_DRAFT_STEPS.map((step) => {

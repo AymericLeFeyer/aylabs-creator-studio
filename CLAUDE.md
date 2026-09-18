@@ -677,6 +677,14 @@ Instagram.
   « Aujourd'hui » y revient. Un « + » par couloir crée une publication à ce jour
   (`PostDraftDialog.defaultDate`). Les publications **sans date** attendent dans une carte
   au-dessus des couloirs.
+- **Glisser-déposer entre couloirs** (`useDraftDrag`, `components/publications/`) : une
+  poignée par ligne (`touch-none`, le reste de la ligne continue de faire défiler au
+  doigt) ; lâcher sur un couloir écrit `plannedDate`, sur la carte « Sans date » l'efface.
+  Écrit à la main (`elementFromPoint` sur `[data-drop-day]`, écouteurs sur `window`, état
+  vivant en ref) : le DnD HTML5 ne marche pas au doigt sur iOS. Les couloirs **défilent
+  seuls** près de leurs bords, un fantôme annonce le jour visé, `Échap` annule. Les
+  archivées n'ont pas de poignée. L'écriture passe par `useUpdatePostDraft`, donc
+  optimiste : la ligne change de couloir au lâcher.
 - **Archiver** (`PATCH { archived: true }`) pose `archived_at` ; `false` restaure. Les
   archivées **restent visibles** à leur jour (date prévue, sinon jour local de
   l'archivage), grisées, barrées, cases figées, avec « Restaurer » — c'est ce qui dit qu'un
