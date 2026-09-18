@@ -374,13 +374,18 @@
    * marques restent, et décocher la case les rallume telles quelles. La règle est posée
    * ici plutôt que dans le rendu du composant pour que masquer un angle ne soit jamais
    * une écriture.
+   *
+   * `data-shot-off` fait la même chose angle par angle : le lecteur (`ScriptReader`) le
+   * pose sur une **copie** du HTML qu'il affiche, jamais dans le script.
    */
-  .script-angles-hidden .prose-script [data-shot-angle] {
+  .script-angles-hidden .prose-script [data-shot-angle],
+  .prose-script [data-shot-angle][data-shot-off] {
     background-color: transparent;
     border-bottom-color: transparent;
     padding: 0;
   }
-  .script-angles-hidden .prose-script [data-shot-angle]::after {
+  .script-angles-hidden .prose-script [data-shot-angle]::after,
+  .prose-script [data-shot-angle][data-shot-off]::after {
     content: none;
   }
 

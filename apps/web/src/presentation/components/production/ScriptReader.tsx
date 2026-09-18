@@ -1,11 +1,53 @@
-import { useState } from 'react';
-import { Minus, Plus, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Check, ChevronDown, Minus, Plus, X } from 'lucide-react';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.tsx';
-import { Checkbox } from '../ui/checkbox.tsx';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu.tsx';
 import { cn } from '../../../shared/cn.ts';
 
 /** Les tailles proposées, du plus petit au plus grand. La deuxième est le défaut. */
 const SIZES = ['script-reader-md', 'script-reader-lg', 'script-reader-xl'] as const;
+
+/** Un angle tel qu'il est écrit dans le script : le lecteur ne consulte aucun référentiel. */
+interface ReaderAngle {
+  key: string;
+  label: string;
+  color: string;
+}
+
+/**
+ * La clé d'un passage marqué. `angleId` d'abord ; à défaut — marque écrite sans
+ * identifiant —, le libellé, qui est ce que le lecteur voit et ce qu'il choisit.
+ */
+const angleKey = (element: Element): string => {
+  const id = element.getAttribute('data-shot-angle');
+  return id ? id : `label:${element.getAttribute('data-shot-label') ?? ''}`;
+};
+
+/**
+ * Les angles **présents dans ce script**, dans leur ordre d'apparition — l'ordre du
+ * tournage, qui est celui dans lequel on les cherche. Lus dans le HTML plutôt que dans le
+ * référentiel : un angle supprimé depuis reste marqué dans le texte, et doit pouvoir s'y
+ * allumer comme les autres.
+ */
+const anglesOf = (doc: Document): ReaderAngle[] => {
+  const seen = new Map<string, ReaderAngle>();
+  doc.querySelectorAll('[data-shot-angle]').forEach((element) => {
+    const key = angleKey(element);
+    if (seen.has(key)) return;
+    seen.set(key, {
+      key,
+      label: element.getAttribute('data-shot-label') || 'Sans nom',
+      color: element.getAttribute('data-shot-color') ?? '#3b82f6',
+    });
+  });
+  return [...seen.values()];
+};
 
 interface ScriptReaderProps {
   open: boolean;
@@ -34,11 +76,36 @@ interface ScriptReaderProps {
  * et Échap ne referme que celle du dessus.
  *
  * Les angles de vue restent visibles par défaut — on lit souvent le script pour le
- * tourner —, et la case les éteint comme dans l'éditeur, en CSS.
+ * tourner. Un menu permet de n'en **allumer que certains** (« je tourne les plans face
+ * caméra, puis les inserts ») : le texte reste entier, seuls les passages des angles
+ * retenus gardent leur teinte. L'état retient les angles **éteints** et non les allumés,
+ * pour qu'un angle ajouté au script depuis la dernière ouverture arrive allumé.
+ *
+ * L'extinction est un `data-shot-off` posé sur une **copie** du HTML (la règle CSS est à
+ * côté de `.script-angles-hidden`) : le script n'est jamais touché.
  */
 export const ScriptReader = ({ open, onOpenChange, html, hasAngles }: ScriptReaderProps) => {
   const [size, setSize] = useState(1);
-  const [anglesHidden, setAnglesHidden] = useState(false);
+  const [off, setOff] = useState<ReadonlySet<string>>(() => new Set());
+
+  const { angles, rendered } = useMemo(() => {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const found = anglesOf(doc);
+    if (off.size > 0) {
+      doc.querySelectorAll('[data-shot-angle]').forEach((element) => {
+        if (off.has(angleKey(element))) element.setAttribute('data-shot-off', '');
+      });
+    }
+    return { angles: found, rendered: doc.body.innerHTML };
+  }, [html, off]);
+
+  const shown = angles.filter((angle) => !off.has(angle.key));
+  const toggle = (key: string) =>
+    setOff((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -54,15 +121,85 @@ export const ScriptReader = ({ open, onOpenChange, html, hasAngles }: ScriptRead
         <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
           <DialogTitle className="min-w-0 flex-1 truncate text-base">Lecture du script</DialogTitle>
 
-          {hasAngles && (
-            <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted-foreground">
-              <Checkbox
-                checked={anglesHidden}
-                onCheckedChange={(checked) => setAnglesHidden(checked === true)}
-              />
-              <span className="hidden sm:inline">Masquer les angles</span>
-              <span className="sm:hidden">Angles</span>
-            </label>
+          {hasAngles && angles.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    'flex h-9 min-w-0 items-center gap-1.5 rounded-md border border-border px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+                    shown.length !== angles.length && 'border-primary/40 text-foreground',
+                  )}
+                >
+                  <span className="flex -space-x-1">
+                    {shown.slice(0, 3).map((angle) => (
+                      <span
+                        key={angle.key}
+                        className="h-2.5 w-2.5 rounded-full ring-2 ring-background"
+                        style={{ backgroundColor: angle.color }}
+                      />
+                    ))}
+                  </span>
+                  <span className="max-w-[9rem] truncate">
+                    {shown.length === angles.length
+                      ? 'Tous les angles'
+                      : shown.length === 0
+                        ? 'Aucun angle'
+                        : shown.length === 1
+                          ? shown[0]?.label
+                          : `${shown.length} angles`}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                </button>
+              </DropdownMenuTrigger>
+
+              <DropdownMenuContent align="end" className="min-w-52">
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setOff(new Set());
+                  }}
+                >
+                  <span className="flex h-4 w-4 items-center justify-center">
+                    {shown.length === angles.length && <Check className="h-3.5 w-3.5" />}
+                  </span>
+                  Tous
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setOff(new Set(angles.map((angle) => angle.key)));
+                  }}
+                >
+                  <span className="flex h-4 w-4 items-center justify-center">
+                    {shown.length === 0 && <Check className="h-3.5 w-3.5" />}
+                  </span>
+                  Aucun
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+
+                {angles.map((angle) => (
+                  <DropdownMenuItem
+                    key={angle.key}
+                    // Sans ça, le menu se referme au premier clic : on en retient souvent deux.
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      toggle(angle.key);
+                    }}
+                  >
+                    <span className="flex h-4 w-4 items-center justify-center">
+                      {!off.has(angle.key) && <Check className="h-3.5 w-3.5" />}
+                    </span>
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: angle.color }}
+                    />
+                    <span className="truncate">{angle.label}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           <div className="flex items-center rounded-md border border-border">
@@ -94,19 +231,17 @@ export const ScriptReader = ({ open, onOpenChange, html, hasAngles }: ScriptRead
           </DialogClose>
         </div>
 
-        <div className={cn(anglesHidden && 'script-angles-hidden')}>
-          <div
-            className={cn(
-              'prose-script script-reader mx-auto max-w-3xl px-5 py-6 pb-24 sm:px-8',
-              SIZES[size],
-            )}
-            // Du HTML sérialisé par TipTap : le schéma a déjà écarté tout ce qui n'est
-            // pas un noeud ou une marque du script.
-            dangerouslySetInnerHTML={{
-              __html: html || '<p><em>Ce script est vide.</em></p>',
-            }}
-          />
-        </div>
+        <div
+          className={cn(
+            'prose-script script-reader mx-auto max-w-3xl px-5 py-6 pb-24 sm:px-8',
+            SIZES[size],
+          )}
+          // Du HTML sérialisé par TipTap : le schéma a déjà écarté tout ce qui n'est
+          // pas un noeud ou une marque du script.
+          dangerouslySetInnerHTML={{
+            __html: rendered || '<p><em>Ce script est vide.</em></p>',
+          }}
+        />
       </DialogContent>
     </Dialog>
   );
