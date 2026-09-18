@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -15,19 +15,74 @@ import type { InstagramSeriesPoint } from '../../../domain/instagram/entities/In
 import { formatCount } from '../../../domain/instagram/entities/Instagram.ts';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { formatDate } from '../../../shared/format.ts';
+import { cn } from '../../../shared/cn.ts';
+import { ActivityChart } from './ActivityChart.tsx';
 
-export interface InstagramChartProps {
-  /** Une série **au jour** : l'écran Instagram la demande toujours à cette maille. */
+interface FollowersChartProps {
   series: InstagramSeriesPoint[];
   /**
    * `followers` : le total, en ligne — un cumul se suit. `gained` : le gain de chaque jour,
-   * en barres — un flux se compte. Deux graphiques et non deux onglets : on lit l'un à
-   * côté de l'autre, et une journée à +12 se retrouve d'un coup d'œil sur la courbe.
+   * en barres — un flux se compte.
    */
   kind: 'followers' | 'gained';
 }
 
 const COLOR = '#833ab4';
+
+type Tab = 'activity' | 'followers' | 'gained';
+
+const TABS: Array<{ id: Tab; label: string; hint: string }> = [
+  { id: 'activity', label: 'Activité', hint: 'Stories, publications et abonnés gagnés par jour' },
+  { id: 'followers', label: 'Abonnés', hint: 'Total d’abonnés, jour par jour' },
+  { id: 'gained', label: 'Gain par jour', hint: 'Abonnés gagnés ou perdus chaque jour' },
+];
+
+/**
+ * Tous les graphiques Instagram **au même endroit, en onglets** : l'activité (stories,
+ * publications, abonnés gagnés) d'abord, puis le total d'abonnés et le gain de chaque
+ * jour. Des onglets plutôt que des axes superposés : un total de quelques centaines et un
+ * gain de quelques unités n'ont pas la même échelle, et les empiler ferait lire des
+ * corrélations inventées.
+ *
+ * `series` est **au jour** : l'écran Instagram la demande toujours à cette maille.
+ */
+export const InstagramChart = ({ series }: { series: InstagramSeriesPoint[] }) => {
+  const [tab, setTab] = useState<Tab>('activity');
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center rounded-md border border-border p-0.5">
+          {TABS.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              onClick={() => setTab(entry.id)}
+              title={entry.hint}
+              className={cn(
+                'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                tab === entry.id
+                  ? 'bg-secondary text-secondary-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {TABS.find((entry) => entry.id === tab)?.hint}
+        </p>
+      </div>
+
+      {tab === 'activity' ? (
+        <ActivityChart series={series} />
+      ) : (
+        <FollowersChart series={series} kind={tab} />
+      )}
+    </div>
+  );
+};
 
 /**
  * Un graphique d'abonnés Instagram.
@@ -36,7 +91,7 @@ const COLOR = '#833ab4';
  * pas : une courbe qui s'arrête et un axe qui se rétrécit disent déjà l'ordre de grandeur
  * de ce qu'on vient de retirer.
  */
-export const InstagramChart = ({ series, kind }: InstagramChartProps) => {
+const FollowersChart = ({ series, kind }: FollowersChartProps) => {
   const privacy = usePrivacy();
   const masked = privacy.isMasked('subscribers');
 
@@ -112,7 +167,7 @@ export const InstagramChart = ({ series, kind }: InstagramChartProps) => {
   );
 
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={260}>
       {kind === 'followers' ? (
         <LineChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           {axes}

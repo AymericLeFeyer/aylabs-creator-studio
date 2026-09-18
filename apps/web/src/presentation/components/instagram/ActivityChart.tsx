@@ -28,8 +28,9 @@ const SERIES = [
  * « est-ce que publier fait venir du monde ? » — et elle ne se lit qu'en voyant les trois
  * côte à côte, jour par jour.
  *
- * Un seul axe, par exception à la règle des onglets : les trois comptent des unités par
- * jour, du même ordre de grandeur (quelques stories, une publication, quelques abonnés).
+ * Un seul axe pour les trois, alors que le total d'abonnés a son propre onglet : ils comptent
+ * des unités par jour, du même ordre de grandeur (quelques stories, une publication,
+ * quelques abonnés).
  * Stories et publications en barres (ce qu'on a fait), le gain en ligne (ce qui en résulte) :
  * la ligne passe **par-dessus** les barres et le décalage d'un jour se voit.
  *
@@ -57,13 +58,13 @@ export const ActivityChart = ({ series }: { series: InstagramSeriesPoint[] }) =>
   if (empty) {
     return (
       <p className="py-12 text-center text-sm text-muted-foreground">
-        Rien sur cette période. Déclare tes stories à gauche : elles apparaîtront ici.
+        Rien sur cette période. Déclare tes stories au-dessus : elles apparaîtront ici.
       </p>
     );
   }
 
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={260}>
       <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
         <XAxis

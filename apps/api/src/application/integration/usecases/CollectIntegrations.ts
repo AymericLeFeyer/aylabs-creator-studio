@@ -14,8 +14,6 @@ import type {
   InstagramProfileSink,
 } from '../../../domain/integration/repositories/IntegrationCollectors.ts';
 import { round2 } from '../../../domain/integration/services/localeNumber.ts';
-import type { InstagramPublicReading } from '../../../domain/instagram/entities/InstagramAccount.ts';
-import type { InstagramMedia } from '../../../domain/instagram/entities/InstagramStory.ts';
 import { badRequest, conflict } from '../../../shared/errors.ts';
 import { today } from '../../../shared/dates.ts';
 import type { ManageIntegrations } from './ManageIntegrations.ts';
@@ -209,33 +207,6 @@ export class CollectIntegrations {
       approximate: fetched.approximate,
       postsListed: fetched.recentPosts.length,
       postsRefreshed,
-    };
-  }
-
-  /**
-   * Suivre une publication par son lien : lue sur sa page, rangée sous le compte de son
-   * auteur. C'est ce qui remplit le tableau quand le relevé du profil ne liste rien — elle
-   * est ensuite relue à chaque relevé comme les autres.
-   */
-  async addInstagramPost(url: string): Promise<InstagramMedia> {
-    return this.instagram.recordPublicPost(await this.collectors.instagram.fetchPost(url));
-  }
-
-  /**
-   * Ce que le dernier relevé du profil public a pu lire. C'est la seule façon de savoir,
-   * depuis l'écran Instagram, pourquoi le tableau des publications est vide : un relevé
-   * par la voie `page` ne liste rien, et rien d'autre ne le dit.
-   */
-  instagramReading(): InstagramPublicReading | null {
-    const snapshot = this.repo.snapshot('instagram');
-    if (!snapshot) return null;
-    const data = snapshot.data as Partial<InstagramProfileResult> | null;
-    return {
-      source: data?.source ?? null,
-      postsListed: data?.postsListed ?? 0,
-      postsRefreshed: data?.postsRefreshed ?? 0,
-      at: snapshot.fetchedAt,
-      error: snapshot.lastError,
     };
   }
 

@@ -98,9 +98,6 @@ export const useSetStoryCount = () => {
   });
 };
 
-export const useAddInstagramPost = () =>
-  useInstagramMutation((url: string) => instagramApi.addPost(url));
-
 export const useCollectInstagramAccount = () =>
   useInstagramMutation((id: string) => instagramApi.collectOne(id));
 

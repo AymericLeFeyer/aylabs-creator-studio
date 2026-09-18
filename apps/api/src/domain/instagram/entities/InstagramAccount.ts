@@ -125,7 +125,7 @@ export interface InstagramPublicProfile {
 export interface InstagramPublicPost {
   /**
    * Le **code court** de la publication (`/p/<code>/`), pas l'identifiant de l'API Graph :
-   * c'est la seule clé commune à toutes les voies de lecture, lien collé à la main compris.
+   * c'est la seule clé commune à toutes les voies de lecture.
    */
   id: string;
   mediaType: string | null;
@@ -146,7 +146,7 @@ export interface InstagramPublicPost {
  * de dix mille, la date n'a que le jour, et les vues n'y figurent pas.
  */
 export interface InstagramPublicPostPage extends InstagramPublicPost {
-  /** L'auteur, lu dans la description : c'est lui qui désigne le compte suivi. */
+  /** L'auteur, lu dans la description. */
   username: string | null;
 }
 
@@ -165,17 +165,6 @@ export const instagramShortcode = (url: string): string | null =>
  */
 export const instagramPermalink = (shortcode: string): string =>
   `https://www.instagram.com/p/${shortcode}/`;
-
-/** Ce que le dernier relevé du profil public a pu lire, pour que l'écran le dise. */
-export interface InstagramPublicReading {
-  source: 'api' | 'searchapi' | 'page' | null;
-  /** Publications listées par le relevé du profil (0 par la voie `page`). */
-  postsListed: number;
-  /** Publications déjà connues relues une à une sur leur page. */
-  postsRefreshed: number;
-  at: string | null;
-  error: string | null;
-}
 
 /** Couleurs attribuées en rotation à la création, comme pour les chaînes et les marques. */
 export const DEFAULT_IG_COLORS = [

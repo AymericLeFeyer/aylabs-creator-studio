@@ -3,7 +3,6 @@ import type {
   InstagramAccount,
   InstagramAccountInput,
   InstagramCollectResult,
-  InstagramMedia,
   InstagramOverview,
   StoryCount,
 } from '../../../domain/instagram/entities/Instagram.ts';
@@ -28,10 +27,6 @@ export const instagramApi = {
         accountIds: csv(params.accountIds),
       },
     }),
-
-  /** Suivre une publication par son lien : elle est lue sur sa page, puis relue à chaque relevé. */
-  addPost: (url: string) =>
-    request<InstagramMedia>('/api/instagram/media', { method: 'POST', body: { url } }),
 
   /** Le jour est celui du navigateur : le serveur tourne en UTC. */
   storyCount: (date: string) => request<StoryCount>(`/api/instagram/stories/${date}`),

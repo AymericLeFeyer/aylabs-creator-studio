@@ -177,30 +177,6 @@ export class CollectInstagram implements InstagramProfileSink {
   }
 
   /**
-   * Une publication ajoutée **par son lien**, quand le relevé du profil ne sait pas lister
-   * les publications (voie `page`). Elle est rangée sous le compte de son auteur, qui doit
-   * être un profil déjà suivi sans jeton : suivre un compte se décide dans Paramètres → API,
-   * pas en collant le lien d'un post.
-   */
-  recordPublicPost(post: InstagramPublicPostPage): InstagramMedia {
-    const candidates = this.accounts
-      .findAll()
-      .filter((account) => !account.hasToken && !account.isArchived);
-    const account = post.username
-      ? candidates.find((entry) => entry.username.toLowerCase() === post.username!.toLowerCase())
-      : candidates.length === 1
-        ? candidates[0]
-        : undefined;
-    if (!account) {
-      const followed = candidates.map((entry) => `@${entry.username}`).join(', ') || 'aucun';
-      throw badRequest(
-        `Cette publication est de @${post.username ?? '?'}, qui n’est pas un profil suivi (${followed}).`,
-      );
-    }
-    return this.upsertPublicPost(account.id, post);
-  }
-
-  /**
    * Archive une publication lue publiquement, avec ses compteurs.
    *
    * Elle est retrouvée **par son adresse** avant tout : un premier relevé a pu l'écrire

@@ -811,10 +811,6 @@ export const storyCountSchema = z.object({
 
 export const storyDateSchema = isoDate;
 
-export const addInstagramPostSchema = z.object({
-  url: z.string().trim().min(1, 'Le lien est obligatoire').max(500),
-});
-
 export const instagramQuerySchema = z.object({
   from: isoDate,
   to: isoDate,
