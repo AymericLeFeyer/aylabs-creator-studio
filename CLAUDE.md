@@ -1611,6 +1611,10 @@ euros). Types dans `domain/integration/entities/ExportData.ts`.
 | `amazon`    | `remote` | Playwright Firefox sur partenaires.amazon.fr, code TOTP maison (`totp.ts`, RFC 6238 vérifiée)             | cron horaire           |
 | `domadoo`   | `remote` | Playwright Firefox **furtif** (`playwright-extra` + stealth) : résumé, puis ventes en attente paginées    | horaire + `30 3 * * *` |
 
+**`youtube.total.subscribers` est la chaîne la plus suivie, pas la somme** (`views` et
+`videos`, eux, restent sommés) : les mêmes personnes suivent souvent plusieurs chaînes, et
+additionner compterait deux fois le même abonné. Le détail reste dans `youtube.channels`.
+
 **Local = jamais figé** : une collecte lancée à la main depuis le dashboard doit se voir
 dans l'export sans attendre le passage horaire. Chaînes et comptes archivés exclus,
 `lastUpdate` = dernier `captured_at` / `last_collected_at`. Le jour est celui du serveur

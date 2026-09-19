@@ -31,6 +31,10 @@ export interface YouTubePeriodExport {
 
 export interface YouTubeExport {
   lastUpdate: string | null;
+  /**
+   * `views` et `videos` : somme des chaînes. `subscribers` : la chaîne **la plus suivie**,
+   * pas la somme — les mêmes personnes suivent souvent plusieurs chaînes.
+   */
   total: { subscribers: number; views: number; videos: number };
   thisMonth: YouTubePeriodExport;
   last30days: YouTubePeriodExport;

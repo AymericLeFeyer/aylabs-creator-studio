@@ -57,7 +57,8 @@ interface InstagramRow {
  *
  * Mêmes règles que le reste de l'outil : les chaînes et comptes **archivés** sont
  * exclus, `daily_metrics` est un FLUX qui se somme, `channel_snapshots` un CUMUL dont
- * on prend le dernier relevé de chaque chaîne avant de sommer.
+ * on prend le dernier relevé de chaque chaîne avant de sommer — sauf les abonnés, où
+ * `total.subscribers` est celui de la chaîne **la plus suivie**.
  */
 export class SqliteLocalSourceRepository implements LocalSourceRepository {
   private readonly db: DatabaseSync;
@@ -102,7 +103,10 @@ export class SqliteLocalSourceRepository implements LocalSourceRepository {
     return {
       lastUpdate: lastUpdate ?? null,
       total: {
-        subscribers: sum((row) => row.subscribers),
+        // La chaîne la plus suivie, pas la somme : un abonné de la chaîne principale l'est
+        // souvent aussi de la secondaire, et additionner les deux compterait deux fois la
+        // même personne. Le détail par chaîne reste dans `channels`.
+        subscribers: Math.max(0, ...channels.map((row) => row.subscribers ?? 0)),
         views: sum((row) => row.total_views),
         videos: sum((row) => row.total_videos),
       },
