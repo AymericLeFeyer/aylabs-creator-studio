@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-18
+> Dernière mise à jour : 2026-09-19
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -2801,6 +2801,15 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   et `can()` s'y écrasent tous. Les deux sélecteurs du module gardent donc `instance?.schema`
   et retombent sur une valeur neutre (`EMPTY_STATS`, `INACTIVE`). Le hook lui-même peut
   rendre `null`, d'où le `?? …` sur son résultat.
+- **Un sélecteur `useEditorState` monté avant l'éditeur lit `editor` dans sa fermeture,
+  pas dans l'instantané.** Le gestionnaire du hook naît au premier rendu, quand `editor`
+  vaut encore `null` (`immediatelyRender: false`), et ne publie un nouvel instantané qu'à
+  la **transaction** suivante — l'arrivée de l'éditeur n'en est pas une. `ScriptSurface`
+  affichait donc « 0 mot » et « Lire » ouvrait un script vide jusqu'au premier clic dans
+  le texte. Un sélecteur recréé à chaque rendu et lisant `editor` directement est
+  réévalué dès que l'éditeur apparaît. `ScriptToolbar` n'est pas concernée : elle n'est
+  montée qu'une fois l'éditeur créé. Le bouton « Lire » relit l'éditeur au clic
+  (`editor.isEmpty`), jamais le compteur.
 - **Le mode lecture du script (`ScriptReader`, bouton « Lire ») est une modale Radix plein écran**, pas un `fixed` maison : ouvert depuis le script d'une sponso, il vit dans une modale centrée par `transform`, où un `fixed` serait positionné par rapport à elle. Il rend le HTML **sérialisé par l'éditeur** (`getHTML`, déjà filtré par le schéma), jamais la chaîne en base, et n'est pas éditable — un doigt qui fait défiler ne doit pas ouvrir le clavier. Un **menu d'angles** (Tous / Aucun / un par angle, liste lue dans le HTML dans l'ordre d'apparition, clé `angleId` sinon libellé) choisit quels passages gardent leur teinte : le texte reste entier, les angles éteints reçoivent `data-shot-off` sur une **copie** du HTML (règle CSS à côté de `.script-angles-hidden`). L'état retient les angles **éteints**, pour qu'un angle ajouté depuis arrive allumé. Les titres de `.prose-script` étant en `rem`, `.script-reader` les repasse en `em` pour qu'ils suivent les trois tailles de texte.
 - **Le compteur affiche la durée de lecture** (150 mots/min) plutôt que des caractères :
   c'est la seule mesure qui compte quand on écrit pour être dit à l'oral.

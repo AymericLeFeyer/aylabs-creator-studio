@@ -168,16 +168,24 @@ export const ScriptSurface = ({
   });
 
   /*
-   * `useEditorState` appelle son sélecteur avec l'instantané **courant**, qui peut porter
-   * un éditeur pas encore créé (`null`) ou déjà détruit — son `schema` vaut alors `null`
-   * et `getText()` s'y écrase. Le sélecteur ne suppose donc rien.
+   * Le sélecteur lit `editor` **dans sa fermeture, jamais dans l'instantané**.
+   *
+   * `useEditorState` crée son gestionnaire au premier rendu, quand `editor` vaut encore
+   * `null` (`immediatelyRender: false`), et ne publie un nouvel instantané qu'à la
+   * transaction suivante : l'arrivée de l'éditeur n'en est pas une. L'instantané restait
+   * donc sur `null` jusqu'au premier clic dans le texte — « 0 mot » affiché, et « Lire »
+   * ouvrait un script vide. Le sélecteur étant recréé à chaque rendu, il est réévalué dès
+   * que l'éditeur apparaît, puis à chaque transaction.
+   *
+   * La garde sur `schema` reste : une instance détruite l'a à `null`, et `getText()` s'y
+   * écrase.
    */
   const doc =
     useEditorState({
       editor,
-      selector: ({ editor: instance }) =>
-        instance?.schema
-          ? { ...scriptStats(instance.getText()), hasAngles: hasShotAngles(instance) }
+      selector: () =>
+        editor?.schema
+          ? { ...scriptStats(editor.getText()), hasAngles: hasShotAngles(editor) }
           : EMPTY_VIEW,
     }) ?? EMPTY_VIEW;
 
@@ -230,7 +238,8 @@ export const ScriptSurface = ({
             {scriptTools && (
               <button
                 type="button"
-                onClick={() => setReaderHtml(doc.words > 0 ? editor.getHTML() : '')}
+                // Relu sur l'éditeur au clic, pas sur le compteur : c'est ce qu'on va lire.
+                onClick={() => setReaderHtml(editor.isEmpty ? '' : editor.getHTML())}
                 className="flex items-center gap-1 rounded-md border border-border px-2 py-1 font-medium text-foreground transition-colors hover:bg-muted"
                 title="Lire en plein écran"
               >
