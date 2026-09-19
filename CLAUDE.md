@@ -2412,11 +2412,13 @@ les **deux** tables d'un coup — la question se pose sur le pipeline entier, et
 par onglet se contrediraient. La règle vit dans le domaine
 (`productIsOutstanding` / `sponsorshipIsOutstanding`, `domain/partner/services/pipeline.ts`) :
 
-- un **produit** reste à faire tant que sa vidéo n'est pas publiée — la question n'est pas
-  « est-il arrivé » mais « la sortie est-elle en ligne ». Un colis reçu sans vidéo est du
-  travail qui attend, exactement comme un colis en route. « Avoir une vidéo terminée » se
-  lit comme partout ailleurs : une production `done`, ou une sortie déjà publiée rattachée
-  en direct. `returned` et `cancelled` sont clos ;
+- un **produit** reste à faire quand il est **reçu** et que sa vidéo n'est pas publiée —
+  c'est la pile à tourner, exactement la carte « À tourner ». Un colis **pas encore reçu**
+  (discussion, confirmé, expédié) n'en fait pas partie : on ne peut rien tourner sans lui,
+  il se suit dans la carte « Attendus ». « Avoir une vidéo terminée » se lit comme partout
+  ailleurs : une production `done`, ou une sortie déjà publiée rattachée en direct.
+  `returned` et `cancelled` sont clos. **Cochée, la case ignore la période** sur
+  `/produits` : un produit reçu en mars et pas tourné est toujours à tourner en août ;
 - une **sponso** reste à faire tant qu'elle n'est pas `paid` — c'est exactement
   `PENDING_SPONSORSHIP_STATUSES`.
 
@@ -3239,11 +3241,12 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
 - **Vider la pile ne décoche rien et ne replanifie rien.** Les créneaux approuvés restent
   (du temps vécu), les suggestions partent avec leur ligne, et les tâches restent à faire
   sur leur vidéo. Réécrire l'agenda demeure la décision du seul bouton « Repositionner ».
-- **« Reste à faire » sur un produit parle de sa VIDÉO, pas de sa réception.** Un colis
-  reçu dont la sortie n'est pas publiée est du travail qui attend ; c'est la même règle que
-  le cran supplémentaire de `productSortRank` entre un `received` avec et sans vidéo.
-  Filtrer sur « pas encore reçu » ferait disparaître précisément les produits qu'il reste à
-  tourner.
+- **« Reste à faire » sur un produit = reçu ET vidéo pas publiée.** C'est la pile à
+  tourner, le cran de `productSortRank` entre un `received` avec et sans vidéo. Les colis
+  pas encore reçus en sont **exclus** (ils attendent la marque, pas nous — carte
+  « Attendus »). Ne jamais filtrer sur la seule réception : un colis reçu sans vidéo est
+  précisément ce qu'il reste à tourner. Le filtre ignore la période, sinon un produit reçu
+  il y a trois mois et jamais tourné disparaîtrait de la liste.
 - **La collecte de commentaires ne réécrit JAMAIS un statut.** `upsertMany` n'inclut
   `status` ni dans ses colonnes insérées ni dans son `DO UPDATE` : c'est la seule chose
   qui empêche un commentaire écarté de remonter dans la file à chaque passage horaire. Une

@@ -49,22 +49,20 @@ export const sponsorshipInPeriod = (
 /**
  * Reste-t-il quelque chose à faire sur ce produit ?
  *
- * **La question n'est pas « est-il arrivé » mais « la vidéo est-elle sortie ».** Un colis
- * reçu dont la vidéo n'est pas publiée est du travail qui attend, exactement comme un
- * colis encore en route : dans les deux cas la marque attend son intégration. Un produit
- * dont la sortie est en ligne, lui, ne demande plus rien — et c'est aussi ce que dit
- * `productSortRank`, qui sépare déjà les reçus avec et sans vidéo.
+ * **Un produit reste à faire quand il est entre nos mains et que sa vidéo n'est pas
+ * sortie.** C'est la pile à tourner : l'objet est là, la marque attend son intégration.
+ * Un colis **pas encore reçu** (en discussion, confirmé, expédié) n'en fait pas partie —
+ * on ne peut rien tourner sans lui, il attend la marque et non nous ; il se suit dans la
+ * carte « Attendus ». `returned` et `cancelled` sont clos.
  *
  * « Avoir une vidéo terminée » se lit comme partout ailleurs : une fiche de production au
  * statut `done`, ou une sortie **déjà publiée** rattachée en direct (`videoTitle`, sans
  * fiche) — tout l'historique importé de YouTube est dans ce cas, et il est en ligne par
- * définition.
- *
- * `returned` et `cancelled` sont clos : la négociation est morte ou l'objet est reparti,
- * il n'y a plus de vidéo à faire.
+ * définition. C'est le cran que `productSortRank` pose déjà entre les reçus avec et sans
+ * vidéo.
  */
 export const productIsOutstanding = (product: Product): boolean => {
-  if (product.status === 'returned' || product.status === 'cancelled') return false;
+  if (product.status !== 'received') return false;
   if (product.productionId !== null) return product.productionStatus !== 'done';
   // Aucune fiche de production : soit une sortie déjà en ligne, soit rien — et c'est ce
   // « rien » qui est du travail à faire.

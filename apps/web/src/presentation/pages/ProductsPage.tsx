@@ -73,12 +73,15 @@ export const ProductsPage = () => {
    * Filtré ici et non dans l'API : `/api/products` alimente aussi les sélecteurs de
    * rattachement, qui doivent tout voir. Le prédicat est celui du pipeline, si bien que
    * le total annoncé retombe sur les lignes affichées.
+   *
+   * « Reste à faire » **ignore la période** : un produit reçu en mars et pas encore tourné
+   * est toujours à tourner en août. C'est un état, pas un flux — et la table retombe alors
+   * sur la carte « À tourner ».
    */
   const visible = useMemo(
     () =>
-      products.filter(
-        (product) =>
-          productInPeriod(product, range) && (!outstandingOnly || productIsOutstanding(product)),
+      products.filter((product) =>
+        outstandingOnly ? productIsOutstanding(product) : productInPeriod(product, range),
       ),
     [products, range, outstandingOnly],
   );
@@ -91,9 +94,7 @@ export const ProductsPage = () => {
       shipped: pending.filter((product) => product.status === 'shipped').length,
       pendingValueCents: pending.reduce((total, product) => total + product.valueCents, 0),
       /** Arrivés, mais la vidéo n'est pas en ligne : c'est le travail qui attend. */
-      toShoot: products.filter(
-        (product) => product.status === 'received' && productIsOutstanding(product),
-      ).length,
+      toShoot: products.filter(productIsOutstanding).length,
     };
   }, [products, range]);
 
@@ -118,7 +119,7 @@ export const ProductsPage = () => {
             id="products-outstanding-only"
             checked={outstandingOnly}
             onChange={setOutstandingOnly}
-            hint="Les produits dont la vidéo n’est pas encore publiée"
+            hint="Les produits reçus dont la vidéo n’est pas encore publiée"
           />
           <PeriodPicker />
         </div>
