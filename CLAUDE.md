@@ -1485,13 +1485,29 @@ publication : « 2,4 stories par jour » se compare d'un mois à l'autre, « 4 s
 jours où j'en poste » ne dit rien du rythme. `activeDays` reste exposé à côté pour la
 seconde lecture.
 
-#### Le jeton
+#### Le jeton, et les deux flux d'authentification
 
-Meta ne délivre **pas** de jeton perpétuel : un jeton longue durée vit 60 jours.
-`ig_accounts.token_expires_at` existe pour que l'échéance soit visible avant la panne, et
-`POST /accounts/:id/refresh-token` l'échange contre un neuf — ce qui demande `META_APP_ID`
-et `META_APP_SECRET`. Sans ces deux variables tout fonctionne, mais le jeton se régénère à
-la main tous les deux mois.
+Meta ne délivre **pas** de jeton perpétuel, quel que soit le flux : un jeton longue durée
+vit 60 jours. `ig_accounts.token_expires_at` existe pour que l'échéance soit visible avant
+la panne, et `POST /accounts/:id/refresh-token` l'échange contre un neuf.
+
+**Deux flux coexistent, et `InstagramClient` les distingue au seul préfixe du jeton**
+(`isInstagramLoginToken`, `InstagramClient.ts`) :
+
+| Flux                                    | Préfixe typique | Base d'URL               | Rafraîchissement                                                      |
+| ---------------------------------------- | ---------------- | ------------------------- | ----------------------------------------------------------------------- |
+| Connexion directe (« …with Instagram Login », sans Page) | `IGAA…`           | `graph.instagram.com`     | `refresh_access_token` (`ig_refresh_token`) — **aucune variable requise** |
+| Connexion Facebook (« …with Facebook Login », via une Page) | `EAA…` typiquement | `graph.facebook.com/v23.0` | `oauth/access_token` (`fb_exchange_token`) — demande `META_APP_ID`/`META_APP_SECRET` |
+
+Le second flux exige une Page Facebook reliée au compte ; le premier n'en a pas besoin —
+c'est la voie la plus simple pour un créateur solo, et celle que `POST /accounts` accepte
+aussi bien que l'autre (un seul champ `accessToken`, aucune distinction dans le
+formulaire). Les appels de données (`fetchProfile`, `fetchStories`, `fetchMedia`,
+`/insights`…) ont la même forme sur les deux bases : seule la base change, calculée une
+fois à la construction du client (`baseUrlFor`). **Non vérifié en conditions réelles pour
+la connexion directe** (contrairement au scraper TikTok) — si une métrique se comporte
+différemment sur ce flux, le corriger n'est qu'un ajustement de `InstagramClient`, la
+structure absorbe déjà la différence.
 
 Comme le refresh token des chaînes, **il ne sort jamais de l'API** : `findAll` renvoie des
 `InstagramAccountView` où il est remplacé par `hasToken`, et les routes d'écriture

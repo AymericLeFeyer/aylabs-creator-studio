@@ -40,20 +40,45 @@ export const TikTokPage = () => {
   const totals = data?.totals;
   const tiktok = integrations?.providers.find((provider) => provider.id === 'tiktok');
 
+  // Configuré (un pseudo est renseigné) mais pas encore collecté : le lien vers les
+  // réglages ne mènerait nulle part de neuf, la personne vient d'en revenir. Proposer de
+  // collecter tout de suite évite l'aller-retour, et le message dit qu'il ne s'agit pas
+  // d'une panne — juste du premier relevé qui n'a pas encore eu lieu.
   if (!isLoading && accounts.length === 0) {
     return (
       <div className="space-y-4">
         <h1 className="hidden text-lg font-semibold lg:block">TikTok</h1>
         <Card className="space-y-3 p-6 text-center">
           <Music2 className="mx-auto h-8 w-8 text-muted-foreground" />
-          <p className="text-sm font-medium">Aucun profil TikTok suivi</p>
-          <p className="mx-auto max-w-lg text-sm text-muted-foreground">
-            Renseigne ton nom d’utilisateur : abonnés, coeurs et dernières vidéos sont relevés
-            chaque jour sur ton profil public, sans compte développeur.
+          <p className="text-sm font-medium">
+            {tiktok?.configured ? 'Aucun relevé pour l’instant' : 'Aucun profil TikTok suivi'}
           </p>
-          <Button asChild size="sm">
-            <Link to="/parametres?onglet=tiktok">Suivre un profil</Link>
-          </Button>
+          <p className="mx-auto max-w-lg text-sm text-muted-foreground">
+            {tiktok?.configured
+              ? 'Le profil est configuré, mais rien n’a encore été collecté. La collecte tourne toutes les heures — ou lance-la maintenant.'
+              : 'Renseigne ton nom d’utilisateur : abonnés, coeurs et dernières vidéos sont relevés chaque jour sur ton profil public, sans compte développeur.'}
+          </p>
+          {tiktok?.configured ? (
+            <>
+              <Button
+                size="sm"
+                disabled={collect.isPending}
+                onClick={() => collect.mutate('tiktok')}
+              >
+                <RefreshCw className={cn('h-4 w-4', collect.isPending && 'animate-spin')} />
+                {collect.isPending ? 'Collecte…' : 'Collecter maintenant'}
+              </Button>
+              {(tiktok.lastError || collect.error) && (
+                <p className="text-sm text-destructive">
+                  {collect.error?.message ?? tiktok.lastError}
+                </p>
+              )}
+            </>
+          ) : (
+            <Button asChild size="sm">
+              <Link to="/parametres?onglet=tiktok">Suivre un profil</Link>
+            </Button>
+          )}
         </Card>
       </div>
     );

@@ -1,8 +1,16 @@
 import type { IsoDate } from '../../../shared/dates.ts';
-import { upstream } from '../../../shared/errors.ts';
+import { badRequest, upstream } from '../../../shared/errors.ts';
 
 /**
  * L'API Instagram, vue de ce qu'elle sait réellement faire.
+ *
+ * **Deux flux d'authentification, deux bases d'URL.** Meta propose depuis 2024 une
+ * connexion directe (« Instagram API with Instagram Login », `login.instagram.com`, sans
+ * Page Facebook) en plus de l'ancienne (« … with Facebook Login », qui exige une Page).
+ * Les jetons du premier flux commencent par `IGAA` et parlent à `graph.instagram.com` ;
+ * ceux du second (typiquement `EAA…`) parlent à `graph.facebook.com`. Les formes des
+ * appels sont quasi identiques (mêmes champs, mêmes métriques), seule la base change —
+ * `baseUrlFor` la déduit du préfixe du jeton, une fois, à la construction du client.
  *
  * Trois limites décident de tout le module, et aucune n'est contournable :
  *
@@ -21,7 +29,18 @@ import { upstream } from '../../../shared/errors.ts';
  * collecte partielle qu'une collecte qui échoue en entier.
  */
 
-const GRAPH = 'https://graph.facebook.com/v23.0';
+const GRAPH_FACEBOOK = 'https://graph.facebook.com/v23.0';
+const GRAPH_INSTAGRAM = 'https://graph.instagram.com';
+
+/**
+ * Les jetons issus de la connexion directe Instagram commencent par `IGAA` — c'est le
+ * seul signal documenté par Meta pour les distinguer d'un jeton Facebook (`EAA…`), et il
+ * suffit : il n'y a que deux flux possibles.
+ */
+const isInstagramLoginToken = (token: string): boolean => token.startsWith('IGAA');
+
+const baseUrlFor = (token: string): string =>
+  isInstagramLoginToken(token) ? GRAPH_INSTAGRAM : GRAPH_FACEBOOK;
 
 interface GraphError {
   error?: { message?: string; type?: string; code?: number; error_subcode?: number };
@@ -66,13 +85,15 @@ export const localDateOf = (timestamp: string): IsoDate => timestamp.slice(0, 10
 
 export class InstagramClient {
   private readonly token: string;
+  private readonly baseUrl: string;
 
   constructor(token: string) {
     this.token = token;
+    this.baseUrl = baseUrlFor(token);
   }
 
   private async call<T>(path: string, params: Record<string, string> = {}): Promise<T> {
-    const url = new URL(`${GRAPH}${path}`);
+    const url = new URL(`${this.baseUrl}${path}`);
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     url.searchParams.set('access_token', this.token);
 
@@ -332,17 +353,65 @@ export class InstagramClient {
   /**
    * Échange un jeton longue durée contre un nouveau, valable 60 jours de plus.
    *
-   * Meta ne délivre pas de jeton perpétuel : sans ce rafraîchissement, la collecte
-   * s'arrête au bout de deux mois. Il demande l'identifiant et le secret de l'app, d'où
-   * les deux variables d'environnement — sans elles, on se contente de prévenir dans
-   * l'écran de réglages.
+   * Meta ne délivre pas de jeton perpétuel, quel que soit le flux : sans ce
+   * rafraîchissement, la collecte s'arrête au bout de deux mois. **Les deux flux ne se
+   * rafraîchissent pas pareil** — c'est le branchement qui justifie que cette méthode
+   * existe plutôt qu'un simple appel direct :
+   *
+   * - connexion directe (`IGAA…`) : `graph.instagram.com/refresh_access_token`, sans
+   *   identifiant d'app — le jeton se suffit à lui-même. Seule condition posée par Meta :
+   *   il doit avoir au moins 24 h d'existence ;
+   * - Facebook Login (`EAA…` typiquement) : `graph.facebook.com/oauth/access_token`
+   *   (`fb_exchange_token`), qui demande l'identifiant et le secret de l'app — d'où les
+   *   deux variables d'environnement. Sans elles, on se contente de prévenir dans l'écran
+   *   de réglages.
    */
   static async refreshLongLivedToken(
+    token: string,
+    appId: string | null,
+    appSecret: string | null,
+  ): Promise<{ token: string; expiresAt: string | null }> {
+    if (isInstagramLoginToken(token)) {
+      return InstagramClient.refreshInstagramLoginToken(token);
+    }
+    if (!appId || !appSecret) {
+      throw badRequest(
+        'Renseigne META_APP_ID et META_APP_SECRET pour rafraîchir un jeton issu de la connexion Facebook.',
+      );
+    }
+    return InstagramClient.refreshFacebookToken(token, appId, appSecret);
+  }
+
+  private static async refreshInstagramLoginToken(
+    token: string,
+  ): Promise<{ token: string; expiresAt: string | null }> {
+    const url = new URL(`${GRAPH_INSTAGRAM}/refresh_access_token`);
+    url.searchParams.set('grant_type', 'ig_refresh_token');
+    url.searchParams.set('access_token', token);
+
+    const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    const text = await response.text();
+    const payload = (text ? JSON.parse(text) : null) as
+      ({ access_token?: string; expires_in?: number } & GraphError) | null;
+
+    if (!response.ok || payload?.error || !payload?.access_token) {
+      throw upstream(payload?.error?.message ?? 'Rafraîchissement du jeton refusé');
+    }
+
+    return {
+      token: payload.access_token,
+      expiresAt: payload.expires_in
+        ? new Date(Date.now() + payload.expires_in * 1000).toISOString()
+        : null,
+    };
+  }
+
+  private static async refreshFacebookToken(
     token: string,
     appId: string,
     appSecret: string,
   ): Promise<{ token: string; expiresAt: string | null }> {
-    const url = new URL(`${GRAPH}/oauth/access_token`);
+    const url = new URL(`${GRAPH_FACEBOOK}/oauth/access_token`);
     url.searchParams.set('grant_type', 'fb_exchange_token');
     url.searchParams.set('client_id', appId);
     url.searchParams.set('client_secret', appSecret);

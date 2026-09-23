@@ -1,9 +1,13 @@
-import { Archive, ArchiveRestore, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, RefreshCw, Trash2 } from 'lucide-react';
 import {
   useDeleteTikTokAccount,
   useTikTokAccounts,
   useUpdateTikTokAccount,
 } from '../../application/tiktok/usecases/useTikTok.ts';
+import {
+  useCollectIntegration,
+  useIntegrations,
+} from '../../application/integration/usecases/useIntegrations.ts';
 import { formatCount } from '../../domain/tiktok/entities/TikTok.ts';
 import { ProviderCredentialsCard } from '../components/integration/ProviderCredentialsCard.tsx';
 import { Badge } from '../components/ui/badge.tsx';
@@ -21,13 +25,20 @@ import { cn } from '../../shared/cn.ts';
  * au premier passage.
  *
  * Ce que le studio en publie vers Home Assistant (activer la source, choisir les comptes
- * à exporter, collecter) reste dans Paramètres → API : cette page ne parle que de ce qui
- * entre, pas de ce qui sort.
+ * à exporter) reste dans Paramètres → API : cette page ne parle que de ce qui entre.
+ *
+ * **Enregistrer le pseudo ne collecte rien.** Le premier passage du cron horaire crée le
+ * compte tout seul, mais attendre jusqu'à une heure la première fois se lit comme une
+ * panne — d'où le bouton **Collecter maintenant** juste en dessous du profil, plutôt que
+ * de le laisser uniquement dans la ligne dépliée, moins visible, de Paramètres → API.
  */
 export const TikTokSettingsPage = () => {
   const { data: accounts = [] } = useTikTokAccounts(true);
   const update = useUpdateTikTokAccount();
   const remove = useDeleteTikTokAccount();
+  const collect = useCollectIntegration();
+  const { data: integrations } = useIntegrations();
+  const tiktok = integrations?.providers.find((provider) => provider.id === 'tiktok');
 
   return (
     <div className="space-y-4">
@@ -41,9 +52,29 @@ export const TikTokSettingsPage = () => {
 
       <ProviderCredentialsCard provider="tiktok" title="Profil public à suivre" />
 
+      {tiktok?.configured && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={collect.isPending}
+            onClick={() => collect.mutate('tiktok')}
+          >
+            <RefreshCw className={cn('h-4 w-4', collect.isPending && 'animate-spin')} />
+            {collect.isPending ? 'Collecte…' : 'Collecter maintenant'}
+          </Button>
+          {tiktok.lastError && (
+            <p className="text-sm text-destructive">Dernier échec : {tiktok.lastError}</p>
+          )}
+        </div>
+      )}
+      {collect.error && <p className="text-sm text-destructive">{collect.error.message}</p>}
+
       {accounts.length === 0 && (
         <Card className="p-4 text-sm text-muted-foreground">
-          Aucun profil suivi pour l’instant : il apparaîtra ici après le premier relevé.
+          {tiktok?.configured
+            ? 'Aucun profil suivi pour l’instant : clique « Collecter maintenant » ci-dessus, ou attends le prochain passage de la collecte horaire.'
+            : 'Renseigne un profil ci-dessus : il apparaîtra ici après le premier relevé.'}
         </Card>
       )}
 
