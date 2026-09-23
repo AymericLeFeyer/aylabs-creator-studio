@@ -163,8 +163,23 @@ const DomadooTab = ({ from, to }: { from: string; to: string }) => {
     <div className="space-y-4">
       {header}
 
+      <Card className="space-y-2 p-4">
+        <div>
+          <h3 className="text-sm font-semibold">Évolution</h3>
+          <p className="text-xs text-muted-foreground">
+            Sur la période choisie en haut de l'écran — distincte des deux fenêtres fixes
+            ci-dessous.
+          </p>
+        </div>
+        {isLoading && !overview ? (
+          <div className="h-64 animate-pulse rounded-xl bg-muted" />
+        ) : (
+          <DomadooChart series={overview?.series ?? []} granularity="day" />
+        )}
+      </Card>
+
       {/* Les deux fenêtres que Domadoo calcule lui-même, telles quelles — distinctes de
-          l'historique du bas, qui suit la période choisie en haut de l'écran. */}
+          l'historique ci-dessus, qui suit la période choisie en haut de l'écran. */}
       <div className="grid gap-3 lg:grid-cols-2">
         <InfoCard
           title="30 derniers jours"
@@ -231,20 +246,6 @@ const DomadooTab = ({ from, to }: { from: string; to: string }) => {
               ))}
             </TableBody>
           </Table>
-        )}
-      </Card>
-
-      <Card className="space-y-2 p-4">
-        <div>
-          <h3 className="text-sm font-semibold">Évolution</h3>
-          <p className="text-xs text-muted-foreground">
-            Sur la période choisie en haut de l'écran — distincte des deux fenêtres fixes ci-dessus.
-          </p>
-        </div>
-        {isLoading && !overview ? (
-          <div className="h-64 animate-pulse rounded-xl bg-muted" />
-        ) : (
-          <DomadooChart series={overview?.series ?? []} granularity="day" />
         )}
       </Card>
     </div>

@@ -56,18 +56,10 @@ export interface InstagramCollectResult {
 export class CollectInstagram {
   private readonly accounts: InstagramAccountRepository;
   private readonly data: InstagramDataRepository;
-  private readonly appId: string | null;
-  private readonly appSecret: string | null;
 
-  constructor(
-    accounts: InstagramAccountRepository,
-    data: InstagramDataRepository,
-    options: { appId: string | null; appSecret: string | null } = { appId: null, appSecret: null },
-  ) {
+  constructor(accounts: InstagramAccountRepository, data: InstagramDataRepository) {
     this.accounts = accounts;
     this.data = data;
-    this.appId = options.appId;
-    this.appSecret = options.appSecret;
   }
 
   /** Collecte tous les comptes actifs, jeton requis. Un échec par compte n'arrête pas les suivants. */
@@ -244,28 +236,15 @@ export class CollectInstagram {
    * Rafraîchit le jeton longue durée d'un compte.
    *
    * Meta n'en délivre pas de perpétuel : sans ça, la collecte s'arrête au bout de deux
-   * mois. Demande l'identifiant et le secret de l'app — sans eux, l'écran se contente de
-   * prévenir de l'échéance.
-   */
-  /**
-   * Rafraîchit le jeton longue durée d'un compte.
-   *
-   * `META_APP_ID`/`META_APP_SECRET` ne sont nécessaires que pour un jeton issu de la
-   * connexion Facebook — `InstagramClient.refreshLongLivedToken` fait le tri selon le
-   * préfixe du jeton, et lève lui-même si l'un des deux manque pour ce cas-là. Une garde
-   * ici, avant l'appel, bloquerait à tort un jeton de connexion directe (`IGAA…`), qui
-   * n'en a besoin d'aucun.
+   * mois. Aucune variable d'environnement requise — le jeton de connexion directe se
+   * suffit à lui-même (`InstagramClient.refreshLongLivedToken`).
    */
   async refreshToken(accountId: string): Promise<{ expiresAt: string | null }> {
     const account = this.accounts.findById(accountId);
     if (!account) throw notFound('Compte Instagram');
     if (!account.accessToken) throw badRequest('Aucun jeton à rafraîchir.');
 
-    const refreshed = await InstagramClient.refreshLongLivedToken(
-      account.accessToken,
-      this.appId,
-      this.appSecret,
-    );
+    const refreshed = await InstagramClient.refreshLongLivedToken(account.accessToken);
     this.accounts.update(accountId, {
       accessToken: refreshed.token,
       tokenExpiresAt: refreshed.expiresAt,

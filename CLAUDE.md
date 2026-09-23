@@ -1370,44 +1370,35 @@ Absent quand Todo n'est pas connecté.
 > été **entièrement retiré** : Instagram redevient `collectable: false` côté
 > `PROVIDERS` (comme YouTube), et toute collecte passe par `/api/instagram/collect`, un
 > jeton par compte. `/instagram` demande toujours l'aperçu **au jour** (quelle que soit la
-> maille des filtres) et se lit en quatre blocs : une **alerte de jeton** en tête si un
-> compte expire sous dix jours ou a expiré ; **saisie des stories et chiffres clés sur la
-> même ligne** (`StoryCounter`, Stories, Abonnés + gain, Publications, **Portée**,
-> **Interactions**) ; **tous les graphiques ensemble, en onglets** (`InstagramChart` :
-> Activité, Abonnés, Gain par jour) ; puis le **calendrier des publications façon
-> contributions GitHub** (`PostsCalendar` : une colonne par semaine, lundi en haut, clic
-> sur une case = ses publications, avec vues/portée/j'aime/commentaires/enregistrements
-> quand l'API Graph les a mesurés). Paramètres → Instagram porte le **formulaire de
-> connexion** (nom d'utilisateur, identifiant Meta, jeton longue durée, expiration),
-> l'archivage/suppression d'un compte, le bouton « Rafraîchir le jeton »
-> (`useRefreshInstagramToken`) et la collecte d'un seul compte
-> (`useCollectInstagramAccount`) — plus rien de tout ça dans Paramètres → API, qui ne
-> parle plus que de ce qui *sort* du studio (voir `integration`).
+> maille des filtres) et se lit en trois blocs : une **alerte de jeton** en tête si un
+> compte expire sous dix jours ou a expiré ; les **chiffres clés sur une ligne** (Stories,
+> Abonnés + gain, Publications, **Portée**, **Interactions**) ; **tous les graphiques
+> ensemble, en onglets** (`InstagramChart` : Activité, Abonnés, Gain par jour) ; puis le
+> **calendrier des publications façon contributions GitHub** (`PostsCalendar` : une
+> colonne par semaine, lundi en haut, clic sur une case = ses publications, avec
+> vues/portée/j'aime/commentaires/enregistrements quand l'API Graph les a mesurés).
+> Paramètres → Instagram porte le **formulaire de connexion** (nom d'utilisateur,
+> identifiant Meta, jeton longue durée, expiration), l'archivage/suppression d'un compte,
+> le bouton « Rafraîchir le jeton » (`useRefreshInstagramToken`) et la collecte d'un seul
+> compte (`useCollectInstagramAccount`) — plus rien de tout ça dans Paramètres → API, qui
+> ne parle plus que de ce qui *sort* du studio (voir `integration`).
 >
 > **Les stories ne sont pas lisibles sans jeton** : c'est ce qui borne tout le module à
 > l'API Graph — aucune voie publique n'existe, contrairement aux abonnés ou aux
 > publications. Un compte sans jeton n'a donc plus sa place ici (`collectOne` refuse en
-> 400). Les stories déclarées à la main (ci-dessous) restent le seul filet pour un jour où
-> la collecte horaire aurait manqué un compte.
+> 400). **Plus de saisie manuelle** (retirée le 2026-09-23, avec `ig_story_log`,
+> `StoryCounter`, `storyBadge` et la route `/api/instagram/stories/:date`) : une story vit
+> 24 h dans l'API, et la collecte tourne toutes les heures (`Config.collectCron`, défaut
+> `0 * * * *`) — elle la voit donc forcément, tant que le serveur ne reste pas arrêté une
+> journée entière. `upsertStory` dédoublonne par `ig_media_id` (`ON CONFLICT DO NOTHING`),
+> si bien qu'une même story vue à plusieurs passages n'est comptée qu'une fois : le compte
+> automatique est déjà exact, pas seulement « une valeur à l'instant T ».
 
-#### Les stories saisies à la main
+`ig_story_log` (migration 32) reste en base, **morte** : la supprimer imposerait de
+recréer la table pour rien. Voir « Les référentiels ne se sèment qu'une fois » pour le
+même principe appliqué ailleurs — ici ce n'est pas un référentiel mais une table
+abandonnée, même traitement que `productions.notes`.
 
-Table `ig_story_log` (migration 32) : `date` (clé), `count > 0`. **Aucun compte** : on ne
-suit qu'un profil. Pas de ligne = zéro, et écrire `0` supprime la ligne.
-
-- **Saisie** : `StoryCounter`, en tête de `/instagram`, sur la ligne des chiffres clés. « J'ai
-  fait une story » = +1, « − » corrige, **enregistré au clic** (`PUT /stories/:date`).
-  Bascule « Hier » pour rattraper un oubli du soir. Mise à jour **optimiste**
-  (`useSetStoryCount`) : trois « + » d'affilée envoient 1, 2, 3 et non 1, 1, 1 ; le reste
-  n'est relu qu'après la dernière écriture.
-- **Le jour vient du navigateur** (`localToday()`), dans l'adresse, jamais du serveur (UTC).
-- **Fusion** : `GetInstagramOverview.storiesByDate` prend le **maximum** par jour entre les
-  stories archivées par Graph et la saisie — jamais la somme, pour ne rien compter deux
-  fois le jour où Graph reviendra. Tout l'aval (`series.stories`, `totals.stories`,
-  `storiesPerDay`, `activeDays`) en hérite.
-- **Pastille** sur l'entrée Instagram (`storyBadge`, `navBadges.ts`) : un **point orange**
-  tant que la saisie du jour vaut zéro, seulement si un profil est suivi. Elle s'éteint au
-  premier « + ».
 - **Graphique d'activité** (`ActivityChart`, **premier onglet** d'`InstagramChart`) :
   stories et publications en barres, abonnés gagnés en ligne, **un seul axe** — trois
   comptes par jour du même ordre de grandeur, qu'on veut lire ensemble (« publier fait-il
@@ -1485,29 +1476,22 @@ publication : « 2,4 stories par jour » se compare d'un mois à l'autre, « 4 s
 jours où j'en poste » ne dit rien du rythme. `activeDays` reste exposé à côté pour la
 seconde lecture.
 
-#### Le jeton, et les deux flux d'authentification
+#### Le jeton — un seul flux, la connexion directe
 
-Meta ne délivre **pas** de jeton perpétuel, quel que soit le flux : un jeton longue durée
-vit 60 jours. `ig_accounts.token_expires_at` existe pour que l'échéance soit visible avant
-la panne, et `POST /accounts/:id/refresh-token` l'échange contre un neuf.
+**Un seul flux d'authentification : « Instagram API with Instagram Login »**
+(`graph.instagram.com`, jetons préfixés `IGAA…`), sans Page Facebook. L'ancien flux
+« … with Facebook Login » (`graph.facebook.com`, Page requise, `META_APP_ID`/
+`META_APP_SECRET`) a été **retiré du code** le 2026-09-23 : ce studio ne s'en sert pas, et
+le garder pour un cas jamais utilisé aurait doublé chaque branchement de
+`InstagramClient` pour rien. `POST /accounts` ne prend qu'un champ `accessToken`, sans
+distinction de flux.
 
-**Deux flux coexistent, et `InstagramClient` les distingue au seul préfixe du jeton**
-(`isInstagramLoginToken`, `InstagramClient.ts`) :
-
-| Flux                                    | Préfixe typique | Base d'URL               | Rafraîchissement                                                      |
-| ---------------------------------------- | ---------------- | ------------------------- | ----------------------------------------------------------------------- |
-| Connexion directe (« …with Instagram Login », sans Page) | `IGAA…`           | `graph.instagram.com`     | `refresh_access_token` (`ig_refresh_token`) — **aucune variable requise** |
-| Connexion Facebook (« …with Facebook Login », via une Page) | `EAA…` typiquement | `graph.facebook.com/v23.0` | `oauth/access_token` (`fb_exchange_token`) — demande `META_APP_ID`/`META_APP_SECRET` |
-
-Le second flux exige une Page Facebook reliée au compte ; le premier n'en a pas besoin —
-c'est la voie la plus simple pour un créateur solo, et celle que `POST /accounts` accepte
-aussi bien que l'autre (un seul champ `accessToken`, aucune distinction dans le
-formulaire). Les appels de données (`fetchProfile`, `fetchStories`, `fetchMedia`,
-`/insights`…) ont la même forme sur les deux bases : seule la base change, calculée une
-fois à la construction du client (`baseUrlFor`). **Non vérifié en conditions réelles pour
-la connexion directe** (contrairement au scraper TikTok) — si une métrique se comporte
-différemment sur ce flux, le corriger n'est qu'un ajustement de `InstagramClient`, la
-structure absorbe déjà la différence.
+Meta ne délivre **pas** de jeton perpétuel : un jeton longue durée vit 60 jours.
+`ig_accounts.token_expires_at` existe pour que l'échéance soit visible avant la panne, et
+`POST /accounts/:id/refresh-token` l'échange contre un neuf via
+`graph.instagram.com/refresh_access_token` (`ig_refresh_token`) — **sans variable
+d'environnement**, le jeton se suffit à lui-même (seule condition posée par Meta : au
+moins 24 h d'existence).
 
 Comme le refresh token des chaînes, **il ne sort jamais de l'API** : `findAll` renvoie des
 `InstagramAccountView` où il est remplacé par `hasToken`, et les routes d'écriture
@@ -2016,8 +2000,6 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/production-time`                              | Saisie manuelle `{ productionId, startedAt, minutes, stepId?, todoId?, notes?, date?, startTime? }`. `date`/`startTime` **locaux** posent le créneau approuvé dans le planning et l'agenda                                                               |
 | `PATCH`  | `/api/production-time/:id`                          | Corrige la session **et recale son créneau** (mêmes champs, tous facultatifs). Une session sans créneau en reçoit un si `date`/`startTime` sont fournis                                                                                                  |
 | `DELETE` | `/api/production-time/:id`                          | Supprime la session **et son créneau approuvé** ; un créneau encore en cours redevient prévu                                                                                                                                                             |
-| `GET`    | `/api/instagram/stories/:date`                      | Stories déclarées ce jour (`AAAA-MM-JJ`, jour **local**). `{ date, count }`, 0 sans saisie                                                                                                                                                               |
-| `PUT`    | `/api/instagram/stories/:date`                      | `{ count }` (0 à 200) remplace la saisie du jour ; `0` l'efface                                                                                                                                                                                          |
 | `GET`    | `/api/instagram/overview`                           | Séries, totaux, stories et publications. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                                                                                 |
 | `GET`    | `/api/instagram/accounts`                           | Comptes suivis. **Le jeton n'en sort jamais**, remplacé par `hasToken` et `tokenDaysLeft`                                                                                                                                                                |
 | `POST`   | `/api/instagram/accounts`                           | Connecter un compte. 409 si l'`igUserId` est déjà suivi                                                                                                                                                                                                  |
@@ -2025,7 +2007,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `DELETE` | `/api/instagram/accounts/:id`                       | Supprimer **et tout l'historique** (cascade). Irrécupérable : les stories ne se recollectent pas                                                                                                                                                         |
 | `POST`   | `/api/instagram/collect`                            | Collecte immédiate de tous les comptes **à jeton**                                                                                                                                                                                                       |
 | `POST`   | `/api/instagram/accounts/:id/collect`               | Collecter ce compte                                                                                                                                                                                                                                      |
-| `POST`   | `/api/instagram/accounts/:id/refresh-token`         | Échange le jeton contre un neuf (60 j de plus). Demande `META_APP_ID` / `META_APP_SECRET`                                                                                                                                                                |
+| `POST`   | `/api/instagram/accounts/:id/refresh-token`         | Échange le jeton contre un neuf (60 j de plus). Aucune variable d'environnement requise                                                                                                                                                                  |
 | `GET`    | `/api/tiktok/overview`                              | Séries et totaux du profil public. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                                                                                       |
 | `GET`    | `/api/tiktok/accounts`                              | Comptes suivis. Param `includeArchived`                                                                                                                                                                                                                  |
 | `PATCH`  | `/api/tiktok/accounts/:id`                          | Modifier / archiver. `exportEnabled` pilote `/api/export` (Paramètres → API). Pas de `POST` : un compte se crée tout seul au premier relevé (`/api/integrations/tiktok/collect`)                                                                        |
@@ -2051,7 +2033,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, puis **les deux graphiques seulement** (argent, audience). Plus d'alertes : elles sont en pastilles                                                                                                                                                                                                                |
 | `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                                                                                                        |
-| `/instagram`        | `InstagramPage`        | **API Graph**, toujours au jour : alerte de jeton, saisie des stories + chiffres clés (Stories, Abonnés, Publications, Portée, Interactions), graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications (vues/portée/j'aime/commentaires/enregistrements au clic)                                                                                |
+| `/instagram`        | `InstagramPage`        | **API Graph**, toujours au jour : alerte de jeton, chiffres clés (Stories, Abonnés, Publications, Portée, Interactions), graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications (vues/portée/j'aime/commentaires/enregistrements au clic)                                                                                |
 | `/tiktok`           | `TikTokPage`            | **Profil public seulement**, toujours au jour : cartes Abonnés/Coeurs/Vidéos, graphique en onglets (Abonnés, Vidéos), dernières vidéos. N'apparaît dans le menu que si un profil est configuré (Paramètres → Audience → TikTok)                                                                                                                                                |
 | `/discord`          | `DiscordPage`          | Nom du serveur, membres, membres en ligne, dernier relevé, bouton Collecter. **Aucune série** : Discord ne renvoie que des compteurs courants. N'apparaît dans le menu que si un serveur est configuré (Paramètres → Audience → Discord)                                                                                                                                       |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
@@ -2128,7 +2110,6 @@ cartes). Le calcul reste côté API ; le front ne fait que ranger.
 | Produits        | alertes `product_late`                   | idem                                                            |
 | Sponsors        | **paiements en attente**                 | `sponsorship_due`, `_undelivered`, `_awaiting_payment`          |
 | Légal           | alertes légales                          | `late` et `due_soon` de `GetLegalOverview`                      |
-| Instagram       | point orange sans story déclarée ce jour | « Pas encore de story aujourd'hui » (`storyBadge`)              |
 | Publications    | `-X` : jours sans publication validée    | « Aucune publication validée aujourd'hui » (`publicationBadge`) |
 
 **Le chiffre et la couleur ne disent pas la même chose** : la couleur est celle de la pire
@@ -2710,7 +2691,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useRemovePlanningItem`, `useClearPlanningItems`, `usePlaceItem`, `useContinueSlot`                                                                                                                            | `application/planning/usecases/usePlanning.ts`          | La grille, la pile et le placement                                                                                                                  |
 | `useToggleTodoTask`, `usePlaceTodoTask`, `useUnplaceTodoTask`                                                                                                                                                                                                                                                                  | `application/planning/usecases/usePlanning.ts`          | Tâches Todo du planning. N'invalident **que** `planningBoard` : une coche Todo ne touche ni la pile ni la file                                      |
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                                                                                                                                                      | idem                                                    | Horaires de travail et connexion à l'agenda                                                                                                         |
-| `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCollectInstagramAccount`, `useStoryCount`, `useSetStoryCount`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                     | `application/instagram/usecases/useInstagram.ts`        | Comptes Instagram (API Graph), séries et collecte                                                                                                   |
+| `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCollectInstagramAccount`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                     | `application/instagram/usecases/useInstagram.ts`        | Comptes Instagram (API Graph), séries et collecte                                                                                                   |
 | `useTikTokOverview`, `useTikTokAccounts`, `useUpdateTikTokAccount`, `useDeleteTikTokAccount`                                                                                                                                                                                                                                   | `application/tiktok/usecases/useTikTok.ts`               | Profil public TikTok, séries — pas de création : le compte se crée tout seul au premier relevé (`useCollectIntegration('tiktok')`)                  |
 | `useSlotFromTimeEntry`                                                                                                                                                                                                                                                                                                         | idem                                                    | Transforme une session de travail en créneau approuvé                                                                                               |
 | `useScriptPresets`, `useShotAngles`, `useProductionShotAngles`, `useCreateScriptPreset`, `useUpdateScriptPreset`, `useDeleteScriptPreset`, `useReorderScriptPresets`, `useCreateShotAngle`, `useUpdateShotAngle`, `useDeleteShotAngle`, `useReorderShotAngles`, `useCreateProductionShotAngle`, `useDeleteProductionShotAngle` | `application/script/usecases/useScript.ts`              | Gabarits et angles de vue (cache 5 min)                                                                                                             |
@@ -3155,8 +3136,9 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **`end_time` d'une série de portée désigne la FIN du jour mesuré** : le jour concerné est
   la veille. Le prendre tel quel décalerait toute la courbe d'une journée.
 - **Le jeton Instagram expire au bout de 60 jours.** Meta n'en délivre pas de perpétuel.
-  L'alerte se déclenche à 10 jours ; `META_APP_ID` et `META_APP_SECRET` permettent
-  l'échange automatique, sans eux la régénération est manuelle.
+  L'alerte se déclenche à 10 jours ; le rafraîchissement (`POST
+  /accounts/:id/refresh-token`) ne demande aucune variable d'environnement — le jeton de
+  connexion directe se suffit à lui-même.
 - **Supprimer un compte Instagram efface un historique irrécupérable.** Contrairement à une
   chaîne YouTube, dont tout se recollecte, les stories parties ne reviendront jamais.
   L'écran propose l'archivage et le dit dans sa confirmation.
@@ -3709,7 +3691,7 @@ Images publiées sur GHCR par `.github/workflows/release.yml` :
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 
-Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `META_APP_ID`, `META_APP_SECRET` (rafraîchissement automatique du jeton Instagram), `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
 
 Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer.
 

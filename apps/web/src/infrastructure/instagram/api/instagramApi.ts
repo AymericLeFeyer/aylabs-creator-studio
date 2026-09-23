@@ -4,7 +4,6 @@ import type {
   InstagramAccountInput,
   InstagramCollectResult,
   InstagramOverview,
-  StoryCount,
 } from '../../../domain/instagram/entities/Instagram.ts';
 
 export interface InstagramOverviewParams {
@@ -27,12 +26,6 @@ export const instagramApi = {
         accountIds: csv(params.accountIds),
       },
     }),
-
-  /** Le jour est celui du navigateur : le serveur tourne en UTC. */
-  storyCount: (date: string) => request<StoryCount>(`/api/instagram/stories/${date}`),
-
-  setStoryCount: (date: string, count: number) =>
-    request<StoryCount>(`/api/instagram/stories/${date}`, { method: 'PUT', body: { count } }),
 
   accounts: (includeArchived = false) =>
     request<InstagramAccount[]>('/api/instagram/accounts', { query: { includeArchived } }),

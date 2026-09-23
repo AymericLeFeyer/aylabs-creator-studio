@@ -5,7 +5,7 @@ import { Label } from './ui/label.tsx';
 import { Switch } from './ui/switch.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select.tsx';
 import { PeriodPicker } from './filters/PeriodPicker.tsx';
-import { ChannelPicker } from './filters/ChannelPicker.tsx';
+import { ContextualEntityPicker } from './filters/ContextualEntityPicker.tsx';
 import { CollectAction } from './filters/CollectAction.tsx';
 import { FiltersSheet } from './filters/FiltersSheet.tsx';
 import { cn } from '../../shared/cn.ts';
@@ -45,7 +45,7 @@ export const FiltersBar = () => {
 
       <div className="hidden flex-wrap items-center gap-x-3 gap-y-2 lg:flex">
         <PeriodPicker />
-        <ChannelPicker />
+        <ContextualEntityPicker />
 
         <div className="flex items-center gap-1.5">
           <Label className="text-xs text-muted-foreground">Pas</Label>

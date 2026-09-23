@@ -57,6 +57,8 @@ import { SqliteIntegrationRepository } from './infrastructure/integration/reposi
 import { SqliteExportKeyRepository } from './infrastructure/integration/repositories/SqliteExportKeyRepository.ts';
 import { SqliteLocalSourceRepository } from './infrastructure/integration/repositories/SqliteLocalSourceRepository.ts';
 import { SqliteDomadooSnapshotRepository } from './infrastructure/integration/repositories/SqliteDomadooSnapshotRepository.ts';
+import { SqliteDiscordSnapshotRepository } from './infrastructure/integration/repositories/SqliteDiscordSnapshotRepository.ts';
+import type { DiscordSnapshotRepository } from './domain/integration/repositories/DiscordSnapshotRepository.ts';
 import { SecretBox } from './infrastructure/integration/secrets/SecretBox.ts';
 import { AmazonScraper } from './infrastructure/integration/api/AmazonScraper.ts';
 import { DomadooScraper } from './infrastructure/integration/api/DomadooScraper.ts';
@@ -183,6 +185,8 @@ export interface Container {
   collectIntegrations: CollectIntegrations;
   /** L'écran Affiliations → Domadoo : séries et totaux reconstruits depuis l'historique. */
   getDomadooOverview: GetDomadooOverview;
+  /** L'historique Discord : un point par collecte, sans transformation. */
+  discordSnapshots: DiscordSnapshotRepository;
   /** Ce que lit Home Assistant sur `/api/export`. Ne collecte jamais rien. */
   getExport: GetExport;
   /**
@@ -253,6 +257,7 @@ export const buildContainer = (config: Config): Container => {
 
   const integrations = new SqliteIntegrationRepository(db);
   const domadooSnapshots = new SqliteDomadooSnapshotRepository(db);
+  const discordSnapshots = new SqliteDiscordSnapshotRepository(db);
   const manageIntegrations = new ManageIntegrations(
     integrations,
     new SqliteExportKeyRepository(db),
@@ -261,10 +266,7 @@ export const buildContainer = (config: Config): Container => {
     config.integrationEnv,
   );
 
-  const collectInstagram = new CollectInstagram(instagramAccounts, instagramData, {
-    appId: config.metaAppId,
-    appSecret: config.metaAppSecret,
-  });
+  const collectInstagram = new CollectInstagram(instagramAccounts, instagramData);
   // Partagé : la collecte des sources de l'export y écrit le relevé du profil public.
   const collectTikTok = new CollectTikTok(tiktokAccounts, tiktokAccounts);
 
@@ -378,7 +380,9 @@ export const buildContainer = (config: Config): Container => {
       },
       collectTikTok,
       domadooSnapshots,
+      discordSnapshots,
     ),
+    discordSnapshots,
     getDomadooOverview: new GetDomadooOverview(domadooSnapshots),
     getExport: new GetExport(integrations, manageIntegrations),
     manageTodoTasks,

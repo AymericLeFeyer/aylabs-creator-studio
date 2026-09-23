@@ -4,6 +4,10 @@ import {
   domadooApi,
   type DomadooOverviewParams,
 } from '../../../infrastructure/integration/api/domadooApi.ts';
+import {
+  discordApi,
+  type DiscordHistoryParams,
+} from '../../../infrastructure/integration/api/discordApi.ts';
 import type {
   IntegrationProvider,
   IntegrationUpdateInput,
@@ -41,11 +45,11 @@ export const useUpdateIntegration = () =>
   );
 
 /**
- * Trois exceptions à la règle du dessus : le relevé du profil TikTok **écrit dans le
+ * Quatre exceptions à la règle du dessus : le relevé du profil TikTok **écrit dans le
  * module TikTok** (compte et relevé du jour), celui de Domadoo ajoute un point à son
- * historique, et une collecte Instagram (déclenchée depuis `/instagram`, pas depuis
- * cette liste) touche elle aussi son propre module — leurs écrans doivent donc repartir
- * aussi.
+ * historique, Discord de même, et une collecte Instagram (déclenchée depuis
+ * `/instagram`, pas depuis cette liste) touche elle aussi son propre module — leurs
+ * écrans doivent donc repartir aussi.
  */
 export const useCollectIntegration = () => {
   const queryClient = useQueryClient();
@@ -55,6 +59,8 @@ export const useCollectIntegration = () => {
       void queryClient.invalidateQueries({ queryKey: ['integrations'] });
       if (provider === 'domadoo')
         void queryClient.invalidateQueries({ queryKey: ['domadooOverview'] });
+      if (provider === 'discord')
+        void queryClient.invalidateQueries({ queryKey: ['discordHistory'] });
       if (provider === 'instagram') {
         for (const root of INSTAGRAM_ROOTS) {
           void queryClient.invalidateQueries({ queryKey: [root] });
@@ -74,6 +80,14 @@ export const useDomadooOverview = (params: DomadooOverviewParams) =>
   useQuery({
     queryKey: queryKeys.domadooOverview(params),
     queryFn: () => domadooApi.overview(params),
+    staleTime: 60_000,
+  });
+
+/** L'historique Discord, un point par collecte. */
+export const useDiscordHistory = (params: DiscordHistoryParams) =>
+  useQuery({
+    queryKey: queryKeys.discordHistory(params),
+    queryFn: () => discordApi.history(params),
     staleTime: 60_000,
   });
 

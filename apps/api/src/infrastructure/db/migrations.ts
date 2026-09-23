@@ -1530,6 +1530,23 @@ const migrations: Migration[] = [
       CREATE INDEX idx_tiktok_videos_date ON tiktok_videos(account_id, date);
     `,
   },
+  {
+    version: 38,
+    name: 'discord_snapshots',
+    // Un relevé Discord n'a rien de quotidien comme Domadoo : la collecte tourne toutes
+    // les heures et chaque passage est un point de mesure a part entiere ("le nombre de
+    // gens et le nombre de connectes a chaque fetch"). D'ou un INSERT par collecte plutot
+    // qu'un upsert par jour, et un horodatage complet plutot qu'une simple date.
+    up: `
+      CREATE TABLE discord_snapshots (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        fetched_at      TEXT NOT NULL,
+        members         INTEGER,
+        members_online  INTEGER
+      );
+      CREATE INDEX idx_discord_snapshots_fetched_at ON discord_snapshots(fetched_at);
+    `,
+  },
 ];
 
 /**

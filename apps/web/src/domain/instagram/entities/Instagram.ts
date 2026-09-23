@@ -139,15 +139,6 @@ export interface InstagramOverview {
   dailyMetrics: InstagramDailyMetric[];
 }
 
-/**
- * Les stories d'un jour, **déclarées à la main** : le profil public ne les expose pas. Pas
- * de saisie = zéro.
- */
-export interface StoryCount {
-  date: string;
-  count: number;
-}
-
 export interface InstagramCollectResult {
   accountId: string;
   username: string;

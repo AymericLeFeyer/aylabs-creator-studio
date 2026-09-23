@@ -7,8 +7,8 @@ import {
 import { useFilters } from '../hooks/useFilters.tsx';
 import { formatCount, tokenWarning } from '../../domain/instagram/entities/Instagram.ts';
 import { InstagramChart } from '../components/instagram/InstagramChart.tsx';
+import { InstagramLinkedCharts } from '../components/instagram/InstagramLinkedCharts.tsx';
 import { PostsCalendar } from '../components/instagram/PostsCalendar.tsx';
-import { StoryCounter } from '../components/instagram/StoryCounter.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
 import { StatCard } from '../components/StatCard.tsx';
@@ -20,14 +20,17 @@ import { MASKED_TEXT } from '../../domain/privacy/entities/Privacy.ts';
  * Instagram, connecté par l'**API Graph** (Meta for Developers) : abonnés, stories,
  * portée, interactions et publications des comptes Business/Creator connectés.
  *
- * Trois étages, de haut en bas :
+ * Deux étages, de haut en bas :
  *
- * 1. la saisie des stories et les chiffres clés, **sur la même ligne** — les stories
- *    collectées par Graph et celles déclarées à la main se combinent (le plus grand des
- *    deux par jour, jamais la somme), pour rattraper un compte qu'on aurait oublié de
- *    connecter un jour donné ;
- * 2. **tous les graphiques ensemble, en onglets** (activité, abonnés, gain par jour) ;
- * 3. le calendrier des publications.
+ * 1. les chiffres clés, sur une ligne ;
+ * 2. **tous les graphiques ensemble, en onglets** (activité, abonnés, gain par jour), puis
+ *    le calendrier des publications.
+ *
+ * **Aucune saisie manuelle de stories** : une story vit 24 h dans l'API, la collecte
+ * horaire tourne toutes les heures (`Config.collectCron`), elle la voit donc forcément au
+ * moins une fois tant que le serveur ne s'arrête pas une journée entière — `upsertStory`
+ * dédoublonne par `ig_media_id`, donc chaque story n'est comptée qu'une fois quel que soit
+ * le nombre de passages qui l'ont vue.
  *
  * Les brouillons de publication vivent dans Production → Publications : cet écran ne
  * montre que ce qui est réellement paru.
@@ -43,6 +46,7 @@ export const InstagramPage = () => {
     from: filters.from,
     to: filters.to,
     granularity: 'day',
+    accountIds: filters.instagramAccountIds,
   });
   const collect = useCollectInstagram();
 
@@ -118,15 +122,14 @@ export const InstagramPage = () => {
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[22rem_repeat(5,minmax(0,1fr))]">
-        <StoryCounter />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <StatCard
           label="Stories"
           value={formatCount(totals?.stories ?? null)}
           hint={
             totals
               ? `${totals.storiesPerDay} par jour · ${totals.activeDays} jour(s) avec au moins une`
-              : 'Collectées et déclarées à la main'
+              : 'Archivées à la collecte horaire'
           }
         />
         <StatCard
@@ -160,6 +163,8 @@ export const InstagramPage = () => {
           hint="j’aime, commentaires, partages, enregistrements"
         />
       </div>
+
+      {data && <InstagramLinkedCharts data={data} />}
 
       <Card className="p-4">
         <InstagramChart series={series} />

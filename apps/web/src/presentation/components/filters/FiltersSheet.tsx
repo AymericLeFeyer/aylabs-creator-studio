@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { useFilters } from '../../hooks/useFilters.tsx';
-import { useChannels } from '../../../application/channel/usecases/useChannels.ts';
 import type { Granularity } from '../../../domain/analytics/entities/Analytics.ts';
 import { formatDate } from '../../../shared/format.ts';
 import { Button } from '../ui/button.tsx';
@@ -16,7 +15,8 @@ import {
   DialogTitle,
 } from '../ui/dialog.tsx';
 import { PeriodPicker } from './PeriodPicker.tsx';
-import { ChannelPicker } from './ChannelPicker.tsx';
+import { EntityPicker } from './EntityPicker.tsx';
+import { useFilterPicker } from './useFilterPicker.ts';
 import { cn } from '../../../shared/cn.ts';
 
 const GRANULARITIES: Array<{ value: Granularity | 'auto'; label: string }> = [
@@ -62,16 +62,19 @@ const Row = ({
  */
 export const FiltersSheet = () => {
   const filters = useFilters();
-  const { data: channels = [] } = useChannels();
+  const picker = useFilterPicker();
   const [open, setOpen] = useState(false);
 
-  const selected = filters.channelIds.length;
-  const channelLabel =
-    selected === 0
-      ? 'Toutes les chaînes'
-      : selected === 1
-        ? (channels.find((channel) => channel.id === filters.channelIds[0])?.name ?? '1 chaîne')
-        : `${selected} chaînes`;
+  const selectedEntities = picker.entities.filter((entity) =>
+    picker.selectedIds.includes(entity.id),
+  );
+  const entityLabel =
+    selectedEntities.length === 0
+      ? picker.allLabel
+      : selectedEntities.length === 1
+        ? selectedEntities[0]!.label
+        : `${selectedEntities.length} ${picker.noun}`;
+  const entityRowLabel = picker.noun.charAt(0).toUpperCase() + picker.noun.slice(1);
 
   return (
     <>
@@ -88,7 +91,7 @@ export const FiltersSheet = () => {
           <span className="block truncate text-sm font-medium">
             {formatDate(filters.from)} – {formatDate(filters.to)}
           </span>
-          <span className="block truncate text-xs text-muted-foreground">{channelLabel}</span>
+          <span className="block truncate text-xs text-muted-foreground">{entityLabel}</span>
         </span>
       </button>
 
@@ -106,9 +109,11 @@ export const FiltersSheet = () => {
               <PeriodPicker />
             </Row>
 
-            <Row label="Chaînes">
-              <ChannelPicker />
-            </Row>
+            {picker.entities.length > 1 && (
+              <Row label={entityRowLabel}>
+                <EntityPicker {...picker} />
+              </Row>
+            )}
 
             <Row label="Pas" hint="Le découpage des séries.">
               <Select

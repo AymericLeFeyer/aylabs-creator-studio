@@ -7,6 +7,7 @@ import {
 import type {
   DomadooExport,
   DomadooSale,
+  DiscordExport,
 } from '../../../domain/integration/entities/ExportData.ts';
 import type { IntegrationRepository } from '../../../domain/integration/repositories/IntegrationRepository.ts';
 import type {
@@ -14,6 +15,7 @@ import type {
   TikTokProfileSink,
 } from '../../../domain/integration/repositories/IntegrationCollectors.ts';
 import type { DomadooSnapshotRepository } from '../../../domain/integration/repositories/DomadooSnapshotRepository.ts';
+import type { DiscordSnapshotRepository } from '../../../domain/integration/repositories/DiscordSnapshotRepository.ts';
 import { round2 } from '../../../domain/integration/services/localeNumber.ts';
 import { badRequest, conflict } from '../../../shared/errors.ts';
 import { today } from '../../../shared/dates.ts';
@@ -63,6 +65,7 @@ export class CollectIntegrations {
   private readonly collectors: IntegrationCollectors;
   private readonly tiktok: TikTokProfileSink;
   private readonly domadooSnapshots: DomadooSnapshotRepository;
+  private readonly discordSnapshots: DiscordSnapshotRepository;
   private readonly running = new Set<string>();
 
   constructor(
@@ -71,12 +74,14 @@ export class CollectIntegrations {
     collectors: IntegrationCollectors,
     tiktok: TikTokProfileSink,
     domadooSnapshots: DomadooSnapshotRepository,
+    discordSnapshots: DiscordSnapshotRepository,
   ) {
     this.repo = repo;
     this.manage = manage;
     this.collectors = collectors;
     this.tiktok = tiktok;
     this.domadooSnapshots = domadooSnapshots;
+    this.discordSnapshots = discordSnapshots;
   }
 
   /** Toutes les sources actives et configurées, l'une après l'autre. */
@@ -141,7 +146,7 @@ export class CollectIntegrations {
         case 'domadoo':
           return this.collectDomadoo({ login: values.login!, password: values.password! });
         case 'discord':
-          return this.collectors.discord.fetch(values.inviteCode!);
+          return this.collectDiscord(values.inviteCode!);
         case 'tiktok':
           return this.collectTikTok(values.profile!);
         default:
@@ -185,6 +190,21 @@ export class CollectIntegrations {
       approximate: fetched.approximate,
       videosListed: fetched.recentVideos.length,
     };
+  }
+
+  /**
+   * Un relevé de plus dans `discord_snapshots` à **chaque** collecte, contrairement à
+   * Domadoo qui n'en garde qu'un par jour : membres et connectés varient d'une heure à
+   * l'autre, et c'est cette variation que le graphique doit montrer.
+   */
+  private async collectDiscord(inviteCode: string): Promise<DiscordExport> {
+    const data = await this.collectors.discord.fetch(inviteCode);
+    this.discordSnapshots.insert({
+      fetchedAt: new Date().toISOString(),
+      members: data.members,
+      membersOnline: data.members_online,
+    });
+    return data;
   }
 
   private async collectDomadoo(credentials: {

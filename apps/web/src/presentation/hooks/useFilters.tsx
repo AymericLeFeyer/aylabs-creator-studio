@@ -62,6 +62,9 @@ interface FiltersState {
   customLabel: string | null;
   granularity: Granularity | 'auto';
   channelIds: string[];
+  /** Comptes Instagram / TikTok retenus sur leurs écrans respectifs. Vide = tous. */
+  instagramAccountIds: string[];
+  tiktokAccountIds: string[];
   includeUnassigned: boolean;
   moneyMode: MoneyMode;
   includeInKind: boolean;
@@ -76,6 +79,8 @@ const DEFAULT_STATE: FiltersState = {
   customLabel: null,
   granularity: 'auto',
   channelIds: [],
+  instagramAccountIds: [],
+  tiktokAccountIds: [],
   includeUnassigned: true,
   moneyMode: 'revenue',
   includeInKind: true,

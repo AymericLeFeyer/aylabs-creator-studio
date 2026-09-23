@@ -126,20 +126,18 @@ export class GetInstagramOverview {
   }
 
   /**
-   * Les stories de chaque jour : celles archivées par l'API Graph **et** celles déclarées
-   * à la main (`ig_story_log`). On garde le **plus grand** des deux par jour, jamais la
-   * somme : le jour où la collecte Graph reviendra, une journée saisie et collectée ne doit
-   * pas compter chaque story deux fois.
+   * Les stories de chaque jour, archivées par la collecte horaire. Une story vit 24 h
+   * dans l'API : à ce rythme, la collecte la voit forcément au moins une fois tant que le
+   * serveur tourne en continu — `upsertStory` dédoublonne par `ig_media_id`
+   * (`ON CONFLICT DO NOTHING`), donc chaque story n'est comptée qu'une fois quel que soit
+   * le nombre de passages qui l'ont vue. Plus de repli manuel : voir `firstStoryDate` pour
+   * l'aveu qui reste, sur ce qui précède la première collecte.
    */
   private storiesByDate(filter: {
     accountIds: string[];
     range: { from: IsoDate; to: IsoDate };
   }): Map<IsoDate, number> {
-    const merged = this.data.countStoriesByDate(filter);
-    for (const [date, count] of this.data.manualStoriesByDate(filter.range)) {
-      merged.set(date, Math.max(merged.get(date) ?? 0, count));
-    }
-    return merged;
+    return this.data.countStoriesByDate(filter);
   }
 
   private buildSeries(input: {

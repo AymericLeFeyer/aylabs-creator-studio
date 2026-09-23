@@ -111,6 +111,15 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Revenus',
     items: [
+      // Le chiffre d'affaires en tête : c'est la question qu'on vient poser en premier
+      // (« combien j'ai gagné »), avant le détail de ce qui reste à tourner ou à relancer.
+      {
+        to: '/chiffre-affaires',
+        label: "Chiffre d'affaires",
+        short: 'CA',
+        icon: Wallet,
+        end: false,
+      },
       // Trois entrées et non un écran à onglets : produits, sponsors et affiliations ne
       // posent pas la même question (qu'est-ce que je dois tourner, qui dois-je relancer,
       // où est gérée l'affiliation), et chacun porte sa propre pastille — un onglet
@@ -120,13 +129,6 @@ export const NAV_SECTIONS: NavSection[] = [
       // « Affiliations » : Domadoo (collecté tout seul) et les autres plateformes
       // (rattachées à la main). Deux onglets d'un même écran, plus deux entrées de menu.
       { to: '/affiliations', label: 'Affiliations', icon: Link2, end: false },
-      {
-        to: '/chiffre-affaires',
-        label: "Chiffre d'affaires",
-        short: 'CA',
-        icon: Wallet,
-        end: false,
-      },
     ],
   },
   {
@@ -161,41 +163,39 @@ export const withExternalApps = (apps: ExternalApp[]): NavSection[] =>
   });
 
 /**
- * Le menu, augmenté de l'entrée **Discord** — seulement si un serveur est configuré
- * (Paramètres → Audience → Discord). Sans invitation renseignée, l'écran n'a rien à
- * montrer : une entrée qui mène à un vide se lit comme une panne, même règle que les
- * pastilles qui restent neutres sans raison à afficher.
+ * Le menu, augmenté de l'entrée **TikTok** — seulement si un profil est configuré
+ * (Paramètres → Audience → TikTok). Sans profil renseigné, l'écran n'a rien à montrer :
+ * une entrée qui mène à un vide se lit comme une panne, même règle que les pastilles qui
+ * restent neutres sans raison à afficher.
  *
- * Insérée après Instagram, dans la famille Audience — c'est là qu'elle est réglée.
- */
-export const withDiscord = (sections: NavSection[], configured: boolean): NavSection[] => {
-  if (!configured) return sections;
-  return sections.map((section) => {
-    if (section.label !== 'Audience') return section;
-    const index = section.items.findIndex((item) => item.to === '/instagram');
-    const items = [...section.items];
-    items.splice(index + 1, 0, { to: '/discord', label: 'Discord', icon: Hash, end: false });
-    return { ...section, items };
-  });
-};
-
-/**
- * Le menu, augmenté de l'entrée **TikTok** — même règle que Discord, et pour la même
- * raison : sans profil renseigné (Paramètres → Audience → TikTok), l'écran n'a rien à
- * montrer. Insérée après Discord s'il est déjà présent, sinon juste après Instagram —
- * appliquer `withDiscord` avant `withTikTok` donne donc Instagram, Discord, TikTok.
+ * Insérée juste après Instagram, dans la famille Audience — c'est là qu'elle est réglée.
  */
 export const withTikTok = (sections: NavSection[], configured: boolean): NavSection[] => {
   if (!configured) return sections;
   return sections.map((section) => {
     if (section.label !== 'Audience') return section;
-    const discordIndex = section.items.findIndex((item) => item.to === '/discord');
-    const index =
-      discordIndex >= 0
-        ? discordIndex
-        : section.items.findIndex((item) => item.to === '/instagram');
+    const index = section.items.findIndex((item) => item.to === '/instagram');
     const items = [...section.items];
     items.splice(index + 1, 0, { to: '/tiktok', label: 'TikTok', icon: Music2, end: false });
+    return { ...section, items };
+  });
+};
+
+/**
+ * Le menu, augmenté de l'entrée **Discord** — même règle que TikTok, et pour la même
+ * raison : sans invitation renseignée, l'écran n'a rien à montrer. Insérée après TikTok
+ * s'il est déjà présent, sinon juste après Instagram — appliquer `withTikTok` avant
+ * `withDiscord` donne donc Instagram, TikTok, Discord.
+ */
+export const withDiscord = (sections: NavSection[], configured: boolean): NavSection[] => {
+  if (!configured) return sections;
+  return sections.map((section) => {
+    if (section.label !== 'Audience') return section;
+    const tiktokIndex = section.items.findIndex((item) => item.to === '/tiktok');
+    const index =
+      tiktokIndex >= 0 ? tiktokIndex : section.items.findIndex((item) => item.to === '/instagram');
+    const items = [...section.items];
+    items.splice(index + 1, 0, { to: '/discord', label: 'Discord', icon: Hash, end: false });
     return { ...section, items };
   });
 };

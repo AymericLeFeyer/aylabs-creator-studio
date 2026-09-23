@@ -5,7 +5,6 @@ import {
   Gift,
   Handshake,
   Images,
-  Instagram,
   ListChecks,
   Pause,
   Wallet,
@@ -233,28 +232,3 @@ export const publicationBadge = (summary: PostDraftSummary, today: string): NavB
     ],
   };
 };
-
-/**
- * La pastille d'Audience → Instagram : **pas encore de story aujourd'hui**. Les stories se
- * déclarent à la main (le profil public ne les expose pas) : sans ce rappel, on oublie de
- * les noter, et le graphique d'activité ment. Un point orange, pas un nombre — il n'y a
- * rien à compter, seulement quelque chose à faire. Elle s'éteint au premier « + ».
- */
-export const storyBadge = (count: number): NavBadge | null =>
-  count > 0
-    ? null
-    : {
-        count: 0,
-        tone: 'warning',
-        reasons: [
-          {
-            key: 'stories-today',
-            severity: 'warning',
-            title: 'Pas encore de story aujourd’hui',
-            detail: 'Déclare-la en tête de l’écran Instagram.',
-            date: null,
-            to: '/instagram',
-            icon: Instagram,
-          },
-        ],
-      };

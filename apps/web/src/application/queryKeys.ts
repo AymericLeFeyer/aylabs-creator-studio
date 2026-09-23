@@ -53,7 +53,6 @@ export const queryKeys = {
 
   instagramOverview: (params: unknown) => ['instagramOverview', params] as const,
   instagramAccounts: (includeArchived: boolean) => ['instagramAccounts', includeArchived] as const,
-  instagramStories: (date: string) => ['instagramStories', date] as const,
 
   tiktokOverview: (params: unknown) => ['tiktokOverview', params] as const,
   tiktokAccounts: (includeArchived: boolean) => ['tiktokAccounts', includeArchived] as const,
@@ -64,6 +63,8 @@ export const queryKeys = {
   exportKeys: () => ['exportKeys'] as const,
   /** Affiliations → Domadoo : l'historique reconstruit depuis la collecte horaire. */
   domadooOverview: (params: unknown) => ['domadooOverview', params] as const,
+  /** Discord : un point par collecte, sans reconstruction. */
+  discordHistory: (params: unknown) => ['discordHistory', params] as const,
 
   // Applications externes (iframe). `todoToday` porte la pastille de l'entrée Todo : le
   // jour local fait partie de la clé, passé minuit la liste change.
@@ -147,11 +148,7 @@ export const PLANNING_ROOTS = [...PRODUCTION_ROOTS, 'planningSettings', 'workHou
  * les comptes, les séries, les stories et les publications d'un coup — d'où deux racines
  * seulement, invalidées ensemble.
  */
-export const INSTAGRAM_ROOTS = [
-  'instagramOverview',
-  'instagramAccounts',
-  'instagramStories',
-] as const;
+export const INSTAGRAM_ROOTS = ['instagramOverview', 'instagramAccounts'] as const;
 
 /**
  * Racines de TikTok — même découpage qu'Instagram, en plus court : pas de stories saisies

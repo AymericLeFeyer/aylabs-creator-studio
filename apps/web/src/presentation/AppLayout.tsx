@@ -166,7 +166,7 @@ export const AppLayout = () => {
     integrations?.providers.find((provider) => provider.id === 'tiktok')?.configured ?? false;
   const navSections = useMemo(
     () =>
-      withTikTok(withDiscord(withExternalApps(externalApps), discordConfigured), tiktokConfigured),
+      withDiscord(withTikTok(withExternalApps(externalApps), tiktokConfigured), discordConfigured),
     [externalApps, discordConfigured, tiktokConfigured],
   );
   const openAppId = matchPath('/apps/:id', location.pathname)?.params.id;

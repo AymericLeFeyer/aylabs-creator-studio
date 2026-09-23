@@ -7,12 +7,8 @@ import {
 } from '../../application/externalApp/usecases/useExternalApps.ts';
 import { externalAppPath } from '../../domain/externalApp/entities/ExternalApp.ts';
 import { usePostDraftSummary } from '../../application/postDraft/usecases/usePostDrafts.ts';
-import {
-  useInstagramAccounts,
-  useStoryCount,
-} from '../../application/instagram/usecases/useInstagram.ts';
 import { localToday } from '../../application/planning/usecases/usePlanning.ts';
-import { buildNavBadges, publicationBadge, storyBadge, type NavBadge } from '../navBadges.ts';
+import { buildNavBadges, publicationBadge, type NavBadge } from '../navBadges.ts';
 
 /**
  * Les pastilles du menu, et les raisons qui les expliquent.
@@ -35,17 +31,11 @@ export const useNavBadges = (): Record<string, NavBadge> => {
   const { data: publications } = usePostDraftSummary();
   // Le jour local, relu à chaque rendu : la pastille doit basculer à minuit sans recharger.
   const localDay = localToday();
-  // Le rappel de story ne vaut que si un profil Instagram est suivi.
-  const { data: igAccounts } = useInstagramAccounts();
-  const followsInstagram = (igAccounts?.length ?? 0) > 0;
-  const { data: stories } = useStoryCount(localDay, followsInstagram);
 
   return useMemo(() => {
     const badges = buildNavBadges(overview, legal?.alerts);
     const publicationsBadge = publications ? publicationBadge(publications, localDay) : null;
     if (publicationsBadge) badges['/publications'] = publicationsBadge;
-    const instagramBadge = followsInstagram && stories ? storyBadge(stories.count) : null;
-    if (instagramBadge) badges['/instagram'] = instagramBadge;
     if (todoApp && today?.connected && !today.error) {
       badges[externalAppPath(todoApp)] = {
         count: today.tasks.length,
@@ -54,5 +44,5 @@ export const useNavBadges = (): Record<string, NavBadge> => {
       };
     }
     return badges;
-  }, [overview, legal, todoApp, today, publications, localDay, followsInstagram, stories]);
+  }, [overview, legal, todoApp, today, publications, localDay]);
 };

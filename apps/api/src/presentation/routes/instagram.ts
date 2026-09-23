@@ -2,8 +2,6 @@ import { Router } from 'express';
 import type { Container } from '../../container.ts';
 import type { Granularity } from '../../shared/dates.ts';
 import {
-  storyCountSchema,
-  storyDateSchema,
   createInstagramAccountSchema,
   instagramQuerySchema,
   updateInstagramAccountSchema,
@@ -33,24 +31,6 @@ export const instagramRouter = (container: Container): Router => {
         accountIds: query.accountIds,
       }),
     );
-  });
-
-  /**
-   * Les stories d'un jour, **déclarées à la main** : ni le profil public ni aucune voie
-   * sans jeton ne les expose. Le jour vient du navigateur (`:date`), jamais de l'horloge du
-   * serveur, qui tourne en UTC.
-   */
-  router.get('/stories/:date', (req, res) => {
-    const date = storyDateSchema.parse(param(req, 'date'));
-    res.json({ date, count: container.instagramData.manualStoryCount(date) });
-  });
-
-  /** `{ count }` remplace la saisie du jour ; `0` l'efface. */
-  router.put('/stories/:date', (req, res) => {
-    const date = storyDateSchema.parse(param(req, 'date'));
-    const { count } = storyCountSchema.parse(req.body);
-    container.instagramData.setManualStoryCount(date, count);
-    res.json({ date, count });
   });
 
   router.get('/accounts', (req, res) => {
@@ -83,24 +63,9 @@ export const instagramRouter = (container: Container): Router => {
     res.status(204).end();
   });
 
-  /**
-   * Collecte immédiate de tous les comptes — ceux à jeton par l'API Graph, et le profil
-   * public de Paramètres → API s'il est renseigné. Le bouton de l'écran ne doit pas
-   * dépendre de la voie par laquelle un compte est suivi.
-   *
-   * Le relevé du profil note son échec dans son instantané (visible dans Paramètres → API)
-   * sans faire échouer la réponse : les comptes à jeton ont peut-être déjà sauvé leurs
-   * stories.
-   */
+  /** Collecte immédiate de tous les comptes à jeton. */
   router.post('/collect', async (_req, res) => {
-    const results = await container.collectInstagram.collectAll();
-    if (container.manageIntegrations.resolve('instagram').missing.length === 0) {
-      await container.collectIntegrations.collectOne('instagram').catch((error: unknown) => {
-        // Seul le verrou lève ici : le passage horaire est déjà en train de le relever.
-        console.warn('[instagram] profil public :', error);
-      });
-    }
-    res.json(results);
+    res.json(await container.collectInstagram.collectAll());
   });
 
   router.post('/accounts/:id/collect', async (req, res) => {
