@@ -56,6 +56,7 @@ import { YouTubeDataClient } from './infrastructure/youtube/api/YouTubeDataClien
 import { SqliteIntegrationRepository } from './infrastructure/integration/repositories/SqliteIntegrationRepository.ts';
 import { SqliteExportKeyRepository } from './infrastructure/integration/repositories/SqliteExportKeyRepository.ts';
 import { SqliteLocalSourceRepository } from './infrastructure/integration/repositories/SqliteLocalSourceRepository.ts';
+import { SqliteDomadooSnapshotRepository } from './infrastructure/integration/repositories/SqliteDomadooSnapshotRepository.ts';
 import { SecretBox } from './infrastructure/integration/secrets/SecretBox.ts';
 import { AmazonScraper } from './infrastructure/integration/api/AmazonScraper.ts';
 import { DomadooScraper } from './infrastructure/integration/api/DomadooScraper.ts';
@@ -65,6 +66,7 @@ import { SqliteExternalAppRepository } from './infrastructure/externalApp/reposi
 import { ManageExternalApps } from './application/externalApp/usecases/ManageExternalApps.ts';
 import { ManageIntegrations } from './application/integration/usecases/ManageIntegrations.ts';
 import { CollectIntegrations } from './application/integration/usecases/CollectIntegrations.ts';
+import { GetDomadooOverview } from './application/integration/usecases/GetDomadooOverview.ts';
 import { GetExport } from './application/integration/usecases/GetExport.ts';
 import { ManageTodoTasks } from './application/todoApp/usecases/ManageTodoTasks.ts';
 import { SqliteTodoPlacementRepository } from './infrastructure/todoApp/repositories/SqliteTodoPlacementRepository.ts';
@@ -171,6 +173,8 @@ export interface Container {
   manageIntegrations: ManageIntegrations;
   /** Amazon, Domadoo, Discord, et le profil public Instagram. YouTube n'a rien à collecter en plus. */
   collectIntegrations: CollectIntegrations;
+  /** L'écran Affiliations → Domadoo : séries et totaux reconstruits depuis l'historique. */
+  getDomadooOverview: GetDomadooOverview;
   /** Ce que lit Home Assistant sur `/api/export`. Ne collecte jamais rien. */
   getExport: GetExport;
   /**
@@ -239,6 +243,7 @@ export const buildContainer = (config: Config): Container => {
   const secrets = new SecretBox(config.secretsKey);
 
   const integrations = new SqliteIntegrationRepository(db);
+  const domadooSnapshots = new SqliteDomadooSnapshotRepository(db);
   const manageIntegrations = new ManageIntegrations(
     integrations,
     new SqliteExportKeyRepository(db),
@@ -359,7 +364,9 @@ export const buildContainer = (config: Config): Container => {
         instagram: new InstagramProfileClient(),
       },
       collectInstagram,
+      domadooSnapshots,
     ),
+    getDomadooOverview: new GetDomadooOverview(domadooSnapshots),
     getExport: new GetExport(integrations, manageIntegrations),
     manageTodoTasks,
     // L'adresse de l'app Todo retombe sur celle de sa connexion : relue à chaque appel,

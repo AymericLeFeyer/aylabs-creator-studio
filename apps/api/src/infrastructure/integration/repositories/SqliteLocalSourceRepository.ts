@@ -59,6 +59,10 @@ interface InstagramRow {
  * exclus, `daily_metrics` est un FLUX qui se somme, `channel_snapshots` un CUMUL dont
  * on prend le dernier relevé de chaque chaîne avant de sommer — sauf les abonnés, où
  * `total.subscribers` est celui de la chaîne **la plus suivie**.
+ *
+ * Une chaîne ou un compte **décoché dans Paramètres → API** (`export_enabled = 0`) est
+ * exclu au même titre qu'un archivé : c'est ce qui permet de publier « la chaîne pro »
+ * sans publier aussi la chaîne perso, sans avoir à l'archiver dans le studio lui-même.
  */
 export class SqliteLocalSourceRepository implements LocalSourceRepository {
   private readonly db: DatabaseSync;
@@ -74,7 +78,7 @@ export class SqliteLocalSourceRepository implements LocalSourceRepository {
          FROM channels c
          LEFT JOIN channel_snapshots s ON s.channel_id = c.id
            AND s.date = (SELECT MAX(date) FROM channel_snapshots WHERE channel_id = c.id)
-         WHERE c.is_archived = 0
+         WHERE c.is_archived = 0 AND c.export_enabled = 1
          ORDER BY c.name`,
       )
       .all() as unknown as ChannelRow[];
@@ -94,7 +98,7 @@ export class SqliteLocalSourceRepository implements LocalSourceRepository {
                 v.comments, v.stats_updated_at, c.name AS channel_name
          FROM videos v
          JOIN channels c ON c.id = v.channel_id
-         WHERE v.deleted_at IS NULL AND c.is_archived = 0
+         WHERE v.deleted_at IS NULL AND c.is_archived = 0 AND c.export_enabled = 1
          ORDER BY v.published_at DESC
          LIMIT 1`,
       )
@@ -146,7 +150,7 @@ export class SqliteLocalSourceRepository implements LocalSourceRepository {
                 COALESCE(SUM(m.estimated_revenue_cents), 0)             AS revenue_cents
          FROM daily_metrics m
          JOIN channels c ON c.id = m.channel_id
-         WHERE c.is_archived = 0 AND m.date BETWEEN ? AND ?`,
+         WHERE c.is_archived = 0 AND c.export_enabled = 1 AND m.date BETWEEN ? AND ?`,
       )
       .get(from, to) as unknown as PeriodRow;
 
@@ -174,7 +178,7 @@ export class SqliteLocalSourceRepository implements LocalSourceRepository {
          FROM ig_accounts a
          LEFT JOIN ig_account_snapshots s ON s.account_id = a.id
            AND s.date = (SELECT MAX(date) FROM ig_account_snapshots WHERE account_id = a.id)
-         WHERE a.is_archived = 0
+         WHERE a.is_archived = 0 AND a.export_enabled = 1
          ORDER BY a.created_at`,
       )
       .all() as unknown as InstagramRow[];

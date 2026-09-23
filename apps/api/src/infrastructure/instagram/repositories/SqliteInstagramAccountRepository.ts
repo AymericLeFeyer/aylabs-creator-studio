@@ -21,6 +21,7 @@ interface Row {
   profile_picture: string | null;
   color: string;
   is_archived: number;
+  export_enabled: number;
   last_collected_at: string | null;
   created_at: string;
   updated_at: string;
@@ -36,6 +37,7 @@ const toDomain = (row: Row): InstagramAccount => ({
   profilePicture: row.profile_picture,
   color: row.color,
   isArchived: row.is_archived === 1,
+  exportEnabled: row.export_enabled === 1,
   lastCollectedAt: row.last_collected_at,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -170,6 +172,7 @@ export class SqliteInstagramAccountRepository implements InstagramAccountReposit
     if (input.profilePicture !== undefined) set('profile_picture', input.profilePicture);
     if (input.color !== undefined) set('color', input.color);
     if (input.isArchived !== undefined) set('is_archived', input.isArchived ? 1 : 0);
+    if (input.exportEnabled !== undefined) set('export_enabled', input.exportEnabled ? 1 : 0);
     if (input.lastCollectedAt !== undefined) set('last_collected_at', input.lastCollectedAt);
 
     if (fields.length === 0) return existing;

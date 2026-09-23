@@ -1,7 +1,23 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Check, Copy, KeyRound, Lock, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
+import {
+  Check,
+  ChevronRight,
+  Copy,
+  Hash,
+  Instagram,
+  KeyRound,
+  PackageSearch,
+  Plus,
+  RefreshCw,
+  ShoppingCart,
+  Trash2,
+  Youtube,
+  type LucideIcon,
+} from 'lucide-react';
 import {
   useCollectIntegration,
   useCreateExportKey,
@@ -10,10 +26,14 @@ import {
   useIntegrations,
   useUpdateIntegration,
 } from '../../application/integration/usecases/useIntegrations.ts';
+import { useChannels, useUpdateChannel } from '../../application/channel/usecases/useChannels.ts';
+import {
+  useInstagramAccounts,
+  useUpdateInstagramAccount,
+} from '../../application/instagram/usecases/useInstagram.ts';
 import {
   integrationStatus,
   type CreatedExportKey,
-  type CredentialFieldView,
   type IntegrationProvider,
   type IntegrationStatus,
   type IntegrationView,
@@ -54,11 +74,7 @@ const STATUS_BADGES: Record<IntegrationStatus, { label: string; variant: BadgePr
     never: { label: 'Jamais collectée', variant: 'secondary' },
   };
 
-/**
- * Ce que l'aperçu JSON d'une source laisserait lire. Il est remplacé par un message dès
- * qu'une de ces familles est masquée : un bloc brut contournerait sinon toute la
- * confidentialité de l'outil, qui ne masque que ce qu'elle affiche elle-même.
- */
+/** Ce que l'aperçu JSON d'une source laisserait lire, masqué comme partout ailleurs. */
 const PREVIEW_MASKS: Record<IntegrationProvider, PrivacyTarget[]> = {
   youtube: ['adsense', 'views', 'subscribers'],
   instagram: ['subscribers'],
@@ -69,21 +85,38 @@ const PREVIEW_MASKS: Record<IntegrationProvider, PrivacyTarget[]> = {
 
 const LOCAL_SOURCE_HINTS: Partial<Record<IntegrationProvider, { ok: string; empty: string }>> = {
   youtube: {
-    ok: 'Alimentée par la collecte des chaînes, rien à configurer ici.',
-    empty: 'Aucune chaîne suivie : ajoute-en une dans l’onglet Chaînes.',
+    ok: 'Alimentée par la collecte des chaînes, rien à identifier ici.',
+    empty: 'Aucune chaîne suivie : ajoute-en une dans Paramètres → Audience → YouTube.',
   },
   instagram: {
-    ok: 'Alimentée par le profil public ci-dessous, relevé une fois par jour : abonnés et dernières publications.',
-    empty: 'Aucun profil suivi : renseigne le nom d’utilisateur ci-dessous.',
+    ok: 'Alimentée par le profil public, relevé une fois par jour : abonnés et dernières publications.',
+    empty: 'Aucun profil suivi : renseigne-le dans Paramètres → Audience → Instagram.',
   },
+};
+
+const PROVIDER_ICONS: Record<IntegrationProvider, LucideIcon> = {
+  youtube: Youtube,
+  instagram: Instagram,
+  amazon: ShoppingCart,
+  domadoo: PackageSearch,
+  discord: Hash,
 };
 
 /**
  * Paramètres → API : ce que le studio publie pour Home Assistant (ex
- * YouTube-Money-Exporter), et les comptes qu'il va chercher pour ça.
+ * YouTube-Money-Exporter), et les clés qui autorisent à le lire.
  *
- * Trois blocs, dans l'ordre où on les règle : la clé qui ouvre l'export, la façon dont
- * les secrets sont gardés, puis une carte par source.
+ * Cette page ne parle plus que de ce qui **sort** du studio : activer une source, choisir
+ * ce qu'elle publie, la collecter, vérifier ce qu'elle renvoie. Les identifiants
+ * (Amazon, Domadoo, Discord, le profil Instagram) se règlent désormais avec le domaine
+ * qu'ils alimentent — Paramètres → Revenus → Affiliation, → Audience → Instagram et
+ * → Audience → Discord — et une source qui n'est pas encore configurée le dit avec un
+ * lien plutôt que d'exposer ses champs ici une seconde fois.
+ *
+ * Chaque source est une **ligne dépliable** plutôt qu'une carte pleine largeur : cinq
+ * cartes détaillées, dont trois ne concernent presque jamais l'écran (Amazon, Domadoo,
+ * Discord n'ont plus rien à y saisir), faisaient défiler pour rien. Repliée, une ligne
+ * dit déjà l'essentiel — statut, activée ou non.
  */
 export const ApiSettingsPage = () => {
   const { data, isLoading, error } = useIntegrations();
@@ -93,15 +126,20 @@ export const ApiSettingsPage = () => {
       <div>
         <h2 className="font-semibold">API</h2>
         <p className="text-sm text-muted-foreground">
-          Ce que le studio publie pour Home Assistant ou un widget, et les comptes qu’il va chercher
-          pour ça. Les sources distantes sont collectées toutes les heures.
+          Ce que le studio publie pour Home Assistant ou un widget. Les sources distantes sont
+          collectées toutes les heures.
         </p>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <ExportAccessCard />
-        {data && <SecretsCard configured={data.secretsKeyConfigured} />}
-      </div>
+      <ApiKeysCard />
+
+      {data && !data.secretsKeyConfigured && (
+        <p className="text-xs text-muted-foreground">
+          <code>SECRETS_KEY</code> n’est pas définie côté serveur : les identifiants secrets
+          (Amazon, Domadoo, SearchAPI…) ne peuvent pas être enregistrés depuis les écrans de
+          réglages tant qu’elle manque.
+        </p>
+      )}
 
       {isLoading && <p className="text-sm text-muted-foreground">Chargement…</p>}
       {error && (
@@ -111,13 +149,9 @@ export const ApiSettingsPage = () => {
       )}
 
       {data && (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="space-y-2">
           {data.providers.map((integration) => (
-            <ProviderCard
-              key={integration.id}
-              integration={integration}
-              secretsKeyConfigured={data.secretsKeyConfigured}
-            />
+            <ProviderRow key={integration.id} integration={integration} />
           ))}
         </div>
       )}
@@ -152,7 +186,7 @@ const CopyField = ({ value, label }: { value: string; label: string }) => {
  * doit pas couper Home Assistant. Le jeton n'est montré qu'une fois, dans la modale qui
  * suit la création — l'API n'en garde que l'empreinte, il n'y a donc rien à « réafficher ».
  */
-const ExportAccessCard = () => {
+const ApiKeysCard = () => {
   const { data: keys = [] } = useExportKeys();
   const create = useCreateExportKey();
   const remove = useDeleteExportKey();
@@ -164,7 +198,7 @@ const ExportAccessCard = () => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Accès à l’export</CardTitle>
+        <CardTitle>API Keys</CardTitle>
         <CardDescription>
           Une seule adresse pour toutes les sources, protégée par une clé. Même format JSON que
           YouTube-Money-Exporter : une configuration Home Assistant existante n’a qu’à changer
@@ -183,7 +217,7 @@ const ExportAccessCard = () => {
         </div>
 
         <div className="space-y-2">
-          <Label>Clés d’accès</Label>
+          <Label>Clés</Label>
           {keys.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               Aucune clé : l’export refuse toute requête tant qu’il n’en existe pas.
@@ -310,253 +344,259 @@ const CreatedKeyDialog = ({
   );
 };
 
-/** Comment les secrets sont gardés — et ce qu'il manque quand ils ne peuvent pas l'être. */
-const SecretsCard = ({ configured }: { configured: boolean }) => (
-  <Card className={cn(!configured && 'border-[var(--negative)]/50')}>
-    <CardHeader>
-      <CardTitle className="flex items-center gap-2">
-        {configured ? (
-          <Lock className="h-4 w-4 text-[var(--positive)]" />
-        ) : (
-          <ShieldAlert className="h-4 w-4 text-[var(--negative)]" />
-        )}
-        Secrets
-      </CardTitle>
-      <CardDescription>
-        {configured
-          ? 'Les mots de passe saisis ici sont chiffrés (AES-256-GCM) avec SECRETS_KEY, qui vit dans l’environnement du serveur et jamais dans la base : une copie du fichier SQLite ne livre aucun mot de passe.'
-          : 'SECRETS_KEY n’est pas définie : les champs secrets sont verrouillés, rien ne sera stocké en clair.'}
-      </CardDescription>
-    </CardHeader>
-    <CardContent className="space-y-2 text-sm text-muted-foreground">
-      {!configured && (
-        <p>
-          Deux voies : ajouter <code>SECRETS_KEY</code> (16 caractères minimum, par exemple le
-          résultat de <code>openssl rand -base64 32</code>) à la stack puis redémarrer l’API, ou
-          passer les identifiants directement en variables d’environnement — leur nom est indiqué
-          sous chaque champ.
-        </p>
-      )}
-      <p>
-        Une variable d’environnement <strong>l’emporte toujours</strong> sur l’écran : le champ
-        correspondant est alors verrouillé. Changer <code>SECRETS_KEY</code> rend illisibles les
-        secrets déjà enregistrés, qui sont à ressaisir.
-      </p>
-    </CardContent>
-  </Card>
-);
+/** Les chaînes YouTube incluses dans l'export, une bascule chacune. */
+const ChannelExportList = () => {
+  const { data: channels = [] } = useChannels(false);
+  const update = useUpdateChannel();
+  const queryClient = useQueryClient();
 
-const fieldPlaceholder = (field: CredentialFieldView, secretsKeyConfigured: boolean): string => {
-  if (field.source === 'env') return `Défini par ${field.envVar}`;
-  if (field.unreadable) return 'Illisible (SECRETS_KEY a changé) : à ressaisir';
-  if (field.secret && field.source === 'app') return '•••••••• (enregistré)';
-  if (field.secret && !secretsKeyConfigured) return 'SECRETS_KEY requise';
-  return field.optional ? 'Facultatif' : '';
+  if (channels.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Aucune chaîne configurée : ajoute-en une dans{' '}
+        <Link to="/parametres?onglet=youtube" className="underline underline-offset-2">
+          Paramètres → Audience → YouTube
+        </Link>
+        .
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-sm text-muted-foreground">Chaînes incluses dans l’export :</p>
+      <ul className="divide-y divide-border rounded-md border border-border">
+        {channels.map((channel) => (
+          <li key={channel.id} className="flex items-center gap-3 px-3 py-2">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: channel.color }}
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate text-sm">{channel.name}</span>
+            <Switch
+              checked={channel.exportEnabled}
+              onCheckedChange={(exportEnabled) =>
+                update.mutate(
+                  { id: channel.id, input: { exportEnabled } },
+                  {
+                    onSuccess: () =>
+                      void queryClient.invalidateQueries({ queryKey: ['integrations'] }),
+                  },
+                )
+              }
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+/** Les comptes Instagram inclus dans l'export, une bascule chacun. */
+const InstagramExportList = () => {
+  const { data: accounts = [] } = useInstagramAccounts(false);
+  const update = useUpdateInstagramAccount();
+  const queryClient = useQueryClient();
+
+  if (accounts.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Aucun compte suivi : renseigne un profil dans{' '}
+        <Link to="/parametres?onglet=instagram" className="underline underline-offset-2">
+          Paramètres → Audience → Instagram
+        </Link>
+        .
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-sm text-muted-foreground">Comptes inclus dans l’export :</p>
+      <ul className="divide-y divide-border rounded-md border border-border">
+        {accounts.map((account) => (
+          <li key={account.id} className="flex items-center gap-3 px-3 py-2">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: account.color }}
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate text-sm">@{account.username}</span>
+            <Switch
+              checked={account.exportEnabled}
+              onCheckedChange={(exportEnabled) =>
+                update.mutate(
+                  { id: account.id, input: { exportEnabled } },
+                  {
+                    onSuccess: () =>
+                      void queryClient.invalidateQueries({ queryKey: ['integrations'] }),
+                  },
+                )
+              }
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+/** Où sont réglés les identifiants d'une source qui n'en montre plus ici. */
+const CONFIG_POINTERS: Partial<Record<IntegrationProvider, { to: string; label: string }>> = {
+  amazon: { to: '/parametres?onglet=affiliation', label: 'Paramètres → Revenus → Affiliation' },
+  domadoo: { to: '/parametres?onglet=affiliation', label: 'Paramètres → Revenus → Affiliation' },
+  discord: { to: '/parametres?onglet=discord', label: 'Paramètres → Audience → Discord' },
 };
 
 /**
- * Une source de l'export.
+ * Une source de l'export, en ligne dépliable.
  *
- * Les identifiants s'éditent **localement jusqu'à l'enregistrement**, comme la semaine
- * type du planning, et seuls les champs touchés partent : un secret laissé vide est
- * conservé, exactement comme le jeton Home Assistant d'à côté.
+ * Repliée, elle dit l'essentiel (statut, activée ou non) ; dépliée, elle donne accès à ce
+ * qui reste propre à l'export — quoi publier, tester la collecte, voir ce qui en sort.
  */
-const ProviderCard = ({
-  integration,
-  secretsKeyConfigured,
-}: {
-  integration: IntegrationView;
-  secretsKeyConfigured: boolean;
-}) => {
+const ProviderRow = ({ integration }: { integration: IntegrationView }) => {
+  const [open, setOpen] = useState(false);
   const update = useUpdateIntegration();
   const collect = useCollectIntegration();
   const privacy = usePrivacy();
-  const [draft, setDraft] = useState<Record<string, string>>({});
 
   const status = integrationStatus(integration);
   const badge = STATUS_BADGES[status];
-  const dirty = Object.keys(draft).length > 0;
   const previewMasked = PREVIEW_MASKS[integration.id].some((target) => privacy.isMasked(target));
   const localHint = LOCAL_SOURCE_HINTS[integration.id];
-
-  const save = () => {
-    const credentials: Record<string, string | null> = {};
-    for (const field of integration.fields) {
-      if (!(field.key in draft)) continue;
-      const value = draft[field.key] ?? '';
-      // Un secret vide veut dire « je n'y touche pas », pas « efface-le ».
-      if (field.secret && value === '') continue;
-      credentials[field.key] = value === '' ? null : value;
-    }
-    update.mutate(
-      { provider: integration.id, input: { credentials } },
-      { onSuccess: () => setDraft({}) },
-    );
-  };
+  const pointer = CONFIG_POINTERS[integration.id];
+  const Icon = PROVIDER_ICONS[integration.id];
 
   return (
-    <Card className={cn(!integration.enabled && 'opacity-70')}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-1">
-            <CardTitle className="flex flex-wrap items-center gap-2">
-              {integration.label}
-              <Badge variant={badge.variant}>{badge.label}</Badge>
-            </CardTitle>
-            <CardDescription>{integration.description}</CardDescription>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Label htmlFor={`enabled-${integration.id}`} className="text-xs font-normal">
-              Publier
-            </Label>
-            <Switch
-              id={`enabled-${integration.id}`}
-              checked={integration.enabled}
-              onCheckedChange={(enabled) =>
-                update.mutate({ provider: integration.id, input: { enabled } })
-              }
-            />
-          </div>
+    <div className={cn('rounded-lg border border-border', !integration.enabled && 'opacity-70')}>
+      <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+        >
+          <ChevronRight
+            className={cn(
+              'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+              open && 'rotate-90',
+            )}
+          />
+          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="font-medium">{integration.label}</span>
+            <Badge variant={badge.variant}>{badge.label}</Badge>
+          </span>
+        </button>
+
+        <div
+          className="flex shrink-0 items-center gap-2"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <Label
+            htmlFor={`enabled-${integration.id}`}
+            className="text-xs font-normal text-muted-foreground"
+          >
+            Publier
+          </Label>
+          <Switch
+            id={`enabled-${integration.id}`}
+            checked={integration.enabled}
+            onCheckedChange={(enabled) =>
+              update.mutate({ provider: integration.id, input: { enabled } })
+            }
+          />
         </div>
-      </CardHeader>
+      </div>
 
-      <CardContent className="space-y-4">
-        {integration.kind === 'local' && localHint && (
-          <p className="text-sm text-muted-foreground">
-            {integration.configured ? localHint.ok : localHint.empty}
-            {integration.lastUpdate && <> Dernier relevé {relative(integration.lastUpdate)}.</>}
-          </p>
-        )}
+      {open && (
+        <div className="space-y-4 border-t border-border px-3 py-3 sm:px-4 sm:py-4">
+          <p className="text-sm text-muted-foreground">{integration.description}</p>
 
-        {integration.fields.length > 0 && (
-          <div className="space-y-3">
-            {integration.fields.map((field) => {
-              const locked = field.source === 'env' || (field.secret && !secretsKeyConfigured);
-              const id = `${integration.id}-${field.key}`;
-              return (
-                <div key={field.key} className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor={id}>{field.label}</Label>
-                    {field.unreadable && <Badge variant="negative">illisible</Badge>}
-                    {field.source === 'app' && !locked && (
-                      <button
-                        type="button"
-                        className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:underline"
-                        onClick={() =>
-                          update.mutate({
-                            provider: integration.id,
-                            input: { credentials: { [field.key]: null } },
-                          })
-                        }
-                      >
-                        Effacer
-                      </button>
-                    )}
-                  </div>
-                  <Input
-                    id={id}
-                    type={field.secret ? 'password' : 'text'}
-                    autoComplete="off"
-                    disabled={locked}
-                    value={
-                      field.key in draft
-                        ? (draft[field.key] ?? '')
-                        : field.secret
-                          ? ''
-                          : (field.value ?? '')
-                    }
-                    placeholder={fieldPlaceholder(field, secretsKeyConfigured)}
-                    onChange={(event) => setDraft({ ...draft, [field.key]: event.target.value })}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {field.hint && <>{field.hint} </>}
-                    Variable : <code>{field.envVar}</code>
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {integration.requiresBrowser && (
-          <p className="text-xs text-muted-foreground">
-            Lu dans un navigateur sans interface côté serveur : une vingtaine de secondes par
-            collecte, et sensible à tout changement du site.
-          </p>
-        )}
-
-        {integration.collectable && (
-          <div className="space-y-1 text-sm">
-            {/* Une source locale annonce déjà son dernier relevé dans son texte d'aide. */}
-            {integration.kind === 'remote' && integration.lastUpdate && (
-              <p className="text-muted-foreground">
-                Dernière collecte réussie {relative(integration.lastUpdate)}
-                {integration.durationMs !== null && status === 'ok' && (
-                  <> ({Math.max(1, Math.round(integration.durationMs / 1000))} s)</>
-                )}
-                .
-              </p>
-            )}
-            {status === 'error' && integration.lastAttemptAt && (
-              <p className="text-destructive">
-                Échec {relative(integration.lastAttemptAt)} : {integration.lastError}
-                {integration.lastUpdate && ' — la dernière valeur reste publiée.'}
-              </p>
-            )}
-          </div>
-        )}
-
-        {(update.error || collect.error) && (
-          <p className="text-sm text-destructive">{(update.error ?? collect.error)?.message}</p>
-        )}
-
-        <div className="flex flex-wrap gap-2">
-          {dirty && (
-            <>
-              <Button size="sm" disabled={update.isPending} onClick={save}>
-                {update.isPending ? 'Enregistrement…' : 'Enregistrer'}
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setDraft({})}>
-                Annuler
-              </Button>
-            </>
+          {integration.kind === 'local' && localHint && (
+            <p className="text-sm text-muted-foreground">
+              {integration.configured ? localHint.ok : localHint.empty}
+              {integration.lastUpdate && <> Dernier relevé {relative(integration.lastUpdate)}.</>}
+            </p>
           )}
+
+          {integration.id === 'youtube' && <ChannelExportList />}
+          {integration.id === 'instagram' && <InstagramExportList />}
+
+          {pointer && (
+            <p className="text-sm text-muted-foreground">
+              Identifiants gérés dans{' '}
+              <Link to={pointer.to} className="underline underline-offset-2">
+                {pointer.label}
+              </Link>
+              .
+            </p>
+          )}
+
+          {integration.requiresBrowser && (
+            <p className="text-xs text-muted-foreground">
+              Lu dans un navigateur sans interface côté serveur : une vingtaine de secondes par
+              collecte, et sensible à tout changement du site.
+            </p>
+          )}
+
+          {integration.collectable && (
+            <div className="space-y-1 text-sm">
+              {integration.kind === 'remote' && integration.lastUpdate && (
+                <p className="text-muted-foreground">
+                  Dernière collecte réussie {relative(integration.lastUpdate)}
+                  {integration.durationMs !== null && status === 'ok' && (
+                    <> ({Math.max(1, Math.round(integration.durationMs / 1000))} s)</>
+                  )}
+                  .
+                </p>
+              )}
+              {status === 'error' && integration.lastAttemptAt && (
+                <p className="text-destructive">
+                  Échec {relative(integration.lastAttemptAt)} : {integration.lastError}
+                  {integration.lastUpdate && ' — la dernière valeur reste publiée.'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {(update.error || collect.error) && (
+            <p className="text-sm text-destructive">{(update.error ?? collect.error)?.message}</p>
+          )}
+
           {integration.collectable && (
             <Button
               variant="outline"
               size="sm"
-              // L'interrupteur d'Instagram ne coupe que la publication : son relevé alimente
-              // aussi l'écran Instagram, et continue sans elle.
               disabled={
                 !integration.configured ||
                 (integration.kind === 'remote' && !integration.enabled) ||
-                dirty ||
                 collect.isPending
               }
               onClick={() => collect.mutate(integration.id)}
-              title={dirty ? 'Enregistre d’abord les identifiants' : undefined}
             >
               <RefreshCw className={cn('h-4 w-4', collect.isPending && 'animate-spin')} />
               {collect.isPending ? 'Collecte…' : 'Collecter maintenant'}
             </Button>
           )}
-        </div>
 
-        {integration.data !== null && (
-          <details className="rounded-md border border-border">
-            <summary className="cursor-pointer px-3 py-2 text-sm">Données publiées</summary>
-            {previewMasked ? (
-              <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-                Masquées par la confidentialité (Paramètres → Application).
-              </p>
-            ) : (
-              <pre className="max-h-72 overflow-auto border-t border-border bg-muted/40 p-3 text-xs">
-                {JSON.stringify(integration.data, null, 2)}
-              </pre>
-            )}
-          </details>
-        )}
-      </CardContent>
-    </Card>
+          {integration.data !== null && (
+            <details className="rounded-md border border-border">
+              <summary className="cursor-pointer px-3 py-2 text-sm">Données publiées</summary>
+              {previewMasked ? (
+                <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
+                  Masquées par la confidentialité (Paramètres → Application).
+                </p>
+              ) : (
+                <pre className="max-h-72 overflow-auto border-t border-border bg-muted/40 p-3 text-xs">
+                  {JSON.stringify(integration.data, null, 2)}
+                </pre>
+              )}
+            </details>
+          )}
+        </div>
+      )}
+    </div>
   );
 };

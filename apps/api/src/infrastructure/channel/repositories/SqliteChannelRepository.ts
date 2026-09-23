@@ -20,6 +20,7 @@ interface ChannelRow {
   thumbnail_url: string | null;
   refresh_token: string | null;
   is_archived: number;
+  export_enabled: number;
   created_at: string;
   updated_at: string;
 }
@@ -35,6 +36,7 @@ const toDomain = (row: ChannelRow): Channel => ({
   thumbnailUrl: row.thumbnail_url,
   refreshToken: row.refresh_token,
   isArchived: fromSqlBool(row.is_archived),
+  exportEnabled: fromSqlBool(row.export_enabled),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -125,6 +127,7 @@ export class SqliteChannelRepository implements ChannelRepository {
     if (input.color !== undefined) set('color', input.color);
     if (input.thumbnailUrl !== undefined) set('thumbnail_url', input.thumbnailUrl);
     if (input.isArchived !== undefined) set('is_archived', toSqlBool(input.isArchived));
+    if (input.exportEnabled !== undefined) set('export_enabled', toSqlBool(input.exportEnabled));
     // Une chaîne vide efface le token ; `undefined` le laisse intact (le front ne le renvoie jamais).
     if (input.refreshToken !== undefined) {
       set('refresh_token', input.refreshToken === '' ? null : input.refreshToken);

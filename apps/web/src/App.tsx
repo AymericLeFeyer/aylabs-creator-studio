@@ -11,10 +11,11 @@ import { SettingsPage } from './presentation/pages/SettingsPage.tsx';
 import { ProductionPage } from './presentation/pages/ProductionPage.tsx';
 import { PlanningPage } from './presentation/pages/PlanningPage.tsx';
 import { InstagramPage } from './presentation/pages/InstagramPage.tsx';
+import { DiscordPage } from './presentation/pages/DiscordPage.tsx';
 import { ProductionDetailPage } from './presentation/pages/ProductionDetailPage.tsx';
 import { ProductsPage } from './presentation/pages/ProductsPage.tsx';
 import { SponsorsPage } from './presentation/pages/SponsorsPage.tsx';
-import { PlatformsPage } from './presentation/pages/PlatformsPage.tsx';
+import { AffiliationsPage } from './presentation/pages/AffiliationsPage.tsx';
 import { CommentsPage } from './presentation/pages/CommentsPage.tsx';
 import { ExternalAppPage } from './presentation/pages/ExternalAppPage.tsx';
 import { PublicationsPage } from './presentation/pages/PublicationsPage.tsx';
@@ -24,7 +25,11 @@ const LegacyPartnersRedirect = () => {
   const [params] = useSearchParams();
   const tab = params.get('onglet');
   const target =
-    tab === 'sponsors' ? '/sponsors' : tab === 'plateformes' ? '/plateformes' : '/produits';
+    tab === 'sponsors'
+      ? '/sponsors'
+      : tab === 'plateformes'
+        ? '/affiliations?onglet=plateformes'
+        : '/produits';
   return <Navigate to={target} replace />;
 };
 
@@ -52,6 +57,7 @@ export const App = () => (
               <Route path="youtube" element={<ContentPage />} />
               <Route path="contenu" element={<Navigate to="/youtube" replace />} />
               <Route path="instagram" element={<InstagramPage />} />
+              <Route path="discord" element={<DiscordPage />} />
               <Route path="commentaires" element={<CommentsPage />} />
               <Route path="planning" element={<PlanningPage />} />
               {/* Un seul écran pour les deux files. La clé force un remontage en passant
@@ -63,7 +69,13 @@ export const App = () => (
               <Route path="production/:id" element={<ProductionDetailPage />} />
               <Route path="produits" element={<ProductsPage />} />
               <Route path="sponsors" element={<SponsorsPage />} />
-              <Route path="plateformes" element={<PlatformsPage />} />
+              <Route path="affiliations" element={<AffiliationsPage />} />
+              {/* « Plateformes » est devenu le second onglet d'« Affiliations » : l'ancienne
+                  adresse mène au bon onglet, pour les signets. */}
+              <Route
+                path="plateformes"
+                element={<Navigate to="/affiliations?onglet=plateformes" replace />}
+              />
               {/* Les trois onglets des partenariats sont devenus trois écrans : l'ancienne
                   adresse mène au bon, pour les signets. */}
               <Route path="partenariats" element={<LegacyPartnersRedirect />} />
@@ -82,6 +94,12 @@ export const App = () => (
               />
               <Route
                 path="taxes"
+                element={<Navigate to="/chiffre-affaires?onglet=depenses" replace />}
+              />
+              {/* Les dépenses récurrentes se gèrent désormais directement dans l'onglet
+                Dépenses, plus dans les paramètres. */}
+              <Route
+                path="abonnements"
                 element={<Navigate to="/chiffre-affaires?onglet=depenses" replace />}
               />
               {/* Tous les réglages vivent dans un seul écran à onglets : on configure
@@ -103,10 +121,6 @@ export const App = () => (
               <Route
                 path="societe"
                 element={<Navigate to="/parametres?onglet=societe" replace />}
-              />
-              <Route
-                path="abonnements"
-                element={<Navigate to="/parametres?onglet=chiffre-affaires" replace />}
               />
               <Route
                 path="horaires"

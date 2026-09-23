@@ -13,10 +13,15 @@ import type {
   IntegrationCollectors,
   InstagramProfileSink,
 } from '../../../domain/integration/repositories/IntegrationCollectors.ts';
+import type { DomadooSnapshotRepository } from '../../../domain/integration/repositories/DomadooSnapshotRepository.ts';
 import { round2 } from '../../../domain/integration/services/localeNumber.ts';
 import { badRequest, conflict } from '../../../shared/errors.ts';
 import { today } from '../../../shared/dates.ts';
 import type { ManageIntegrations } from './ManageIntegrations.ts';
+
+/** Euros (le scraper ne parle que ça) → centimes, `null` conservé. */
+const toCents = (value: number | null): number | null =>
+  value === null ? null : Math.round(value * 100);
 
 /**
  * Les appels HTTP d'abord (Discord, le profil Instagram : une demi-seconde chacun), qui
@@ -65,6 +70,7 @@ export class CollectIntegrations {
   private readonly manage: ManageIntegrations;
   private readonly collectors: IntegrationCollectors;
   private readonly instagram: InstagramProfileSink;
+  private readonly domadooSnapshots: DomadooSnapshotRepository;
   private readonly running = new Set<string>();
 
   constructor(
@@ -72,11 +78,13 @@ export class CollectIntegrations {
     manage: ManageIntegrations,
     collectors: IntegrationCollectors,
     instagram: InstagramProfileSink,
+    domadooSnapshots: DomadooSnapshotRepository,
   ) {
     this.repo = repo;
     this.manage = manage;
     this.collectors = collectors;
     this.instagram = instagram;
+    this.domadooSnapshots = domadooSnapshots;
   }
 
   /** Toutes les sources actives et configurées, l'une après l'autre. */
@@ -224,6 +232,22 @@ export class CollectIntegrations {
     const waitingSalesTotal = Array.isArray(sales)
       ? round2((sales as DomadooSale[]).reduce((total, sale) => total + (sale.commission ?? 0), 0))
       : null;
+
+    // Un relevé de plus dans l'historique : c'est lui qui permet à l'écran Affiliations →
+    // Domadoo de naviguer dans le passé, là où `integration_snapshots` n'écrase jamais
+    // que le dernier. Un seul par jour — la collecte tourne toutes les heures, la
+    // dernière écrase la précédente.
+    this.domadooSnapshots.upsert({
+      date: today(),
+      clicks: summary.total.clicks,
+      uniqueClicks: summary.total.uniquesClicks,
+      approvedSales: summary.total.approvedSales,
+      earningsCents: toCents(summary.total.earnings),
+      paymentsCents: toCents(summary.total.payments),
+      waitingPaymentsCents: toCents(summary.total.waitingPayments),
+      balanceCents: toCents(summary.total.balance),
+      waitingSalesCents: toCents(waitingSalesTotal),
+    });
 
     return { ...summary, last30days: { ...summary.last30days, waitingSalesTotal } };
   }

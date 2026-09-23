@@ -17,6 +17,7 @@ import { MoneyChart } from '../components/charts/MoneyChart.tsx';
 import { MoneyBreakdowns } from '../components/money/MoneyBreakdowns.tsx';
 import { RevenuesPanel } from '../components/money/RevenuesPanel.tsx';
 import { ExpensesPanel } from '../components/money/ExpensesPanel.tsx';
+import { RecurringExpensesPanel } from '../components/money/RecurringExpensesPanel.tsx';
 import { UpcomingExpensesCard } from '../components/money/UpcomingExpensesCard.tsx';
 
 const TABS = ['synthese', 'revenus', 'depenses'] as const;
@@ -135,8 +136,11 @@ export const TurnoverPage = () => {
           <RevenuesPanel />
         </TabsContent>
 
-        <TabsContent value="depenses">
+        <TabsContent value="depenses" className="space-y-8">
           <ExpensesPanel />
+          {/* Les dépenses récurrentes (abonnements) engendrent les lignes du tableau
+              ci-dessus : elles se gèrent juste en dessous, plus dans les paramètres. */}
+          <RecurringExpensesPanel />
         </TabsContent>
       </Tabs>
     </div>

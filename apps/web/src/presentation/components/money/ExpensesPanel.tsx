@@ -54,7 +54,7 @@ const ExpenseRow = ({ expense, upcoming, onEdit, onDelete }: ExpenseRowProps) =>
         {expense.recurringId && (
           <span
             className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-normal text-muted-foreground"
-            title="Engendrée par une dépense récurrente. Corrige-la dans Paramètres → Abonnements."
+            title="Engendrée par une dépense récurrente. Corrige-la dans les dépenses récurrentes, ci-dessous."
           >
             <Repeat className="h-3 w-3" aria-hidden />
             récurrente
@@ -151,7 +151,7 @@ export const ExpensesPanel = () => {
 
   const confirmDelete = (expense: ExpenseEntry) => {
     const warning = expense.recurringId
-      ? `Supprimer « ${expense.label} » ? Cette échéance vient d'une dépense récurrente : elle sera recréée à la prochaine projection. Pour l'arrêter durablement, désactive la règle dans Paramètres → Abonnements.`
+      ? `Supprimer « ${expense.label} » ? Cette échéance vient d'une dépense récurrente : elle sera recréée à la prochaine projection. Pour l'arrêter durablement, désactive la règle dans les dépenses récurrentes, ci-dessous.`
       : `Supprimer « ${expense.label} » ?`;
     if (window.confirm(warning)) remove.mutate(expense.id);
   };

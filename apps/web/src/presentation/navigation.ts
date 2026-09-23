@@ -3,6 +3,7 @@ import {
   CalendarClock,
   Gift,
   Handshake,
+  Hash,
   Images,
   Instagram,
   Link2,
@@ -109,13 +110,15 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Revenus',
     items: [
-      // Trois entrées et non un écran à onglets : produits, sponsors et plateformes ne
+      // Trois entrées et non un écran à onglets : produits, sponsors et affiliations ne
       // posent pas la même question (qu'est-ce que je dois tourner, qui dois-je relancer,
       // où est gérée l'affiliation), et chacun porte sa propre pastille — un onglet
       // n'aurait pas pu la montrer depuis le menu.
       { to: '/produits', label: 'Produits', icon: Gift, end: false },
       { to: '/sponsors', label: 'Sponsors', icon: Handshake, end: false },
-      { to: '/plateformes', label: 'Plateformes', icon: Link2, end: false },
+      // « Affiliations » : Domadoo (collecté tout seul) et les autres plateformes
+      // (rattachées à la main). Deux onglets d'un même écran, plus deux entrées de menu.
+      { to: '/affiliations', label: 'Affiliations', icon: Link2, end: false },
       {
         to: '/chiffre-affaires',
         label: "Chiffre d'affaires",
@@ -156,6 +159,25 @@ export const withExternalApps = (apps: ExternalApp[]): NavSection[] =>
     return extra.length > 0 ? { ...section, items: [...section.items, ...extra] } : section;
   });
 
+/**
+ * Le menu, augmenté de l'entrée **Discord** — seulement si un serveur est configuré
+ * (Paramètres → Audience → Discord). Sans invitation renseignée, l'écran n'a rien à
+ * montrer : une entrée qui mène à un vide se lit comme une panne, même règle que les
+ * pastilles qui restent neutres sans raison à afficher.
+ *
+ * Insérée après Instagram, dans la famille Audience — c'est là qu'elle est réglée.
+ */
+export const withDiscord = (sections: NavSection[], configured: boolean): NavSection[] => {
+  if (!configured) return sections;
+  return sections.map((section) => {
+    if (section.label !== 'Audience') return section;
+    const index = section.items.findIndex((item) => item.to === '/instagram');
+    const items = [...section.items];
+    items.splice(index + 1, 0, { to: '/discord', label: 'Discord', icon: Hash, end: false });
+    return { ...section, items };
+  });
+};
+
 /** Toutes les entrées à plat, dans l'ordre d'affichage. */
 export const NAV: NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);
 
@@ -194,10 +216,11 @@ const TITLES: Array<[string, string]> = [
   ['/planning', 'Planning'],
   ['/youtube', 'YouTube'],
   ['/instagram', 'Instagram'],
+  ['/discord', 'Discord'],
   ['/commentaires', 'Commentaires'],
   ['/produits', 'Produits'],
   ['/sponsors', 'Sponsors'],
-  ['/plateformes', 'Plateformes'],
+  ['/affiliations', 'Affiliations'],
   ['/chiffre-affaires', "Chiffre d'affaires"],
   ['/legal', 'Légal'],
   ['/parametres', 'Paramètres'],

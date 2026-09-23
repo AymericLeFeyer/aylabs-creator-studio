@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-19
+> Dernière mise à jour : 2026-09-23
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -128,7 +128,12 @@ Les types du front **dupliquent** le contrat de l'API plutôt que de passer par 
 
 ### `channel`
 
-`Channel { id, name, platform, mode, externalId, handle, color, refreshToken, isArchived }`
+`Channel { id, name, platform, mode, externalId, handle, color, refreshToken, isArchived, exportEnabled }`
+
+`exportEnabled` (migration 36, défaut `true`) ne pilote que `/api/export` : une chaîne
+archivée en est de toute façon exclue, cette colonne permet d'en retirer une **active**
+(une chaîne personnelle, par exemple) sans l'archiver dans le studio lui-même. Se règle
+depuis Paramètres → API, dans la ligne YouTube dépliée — voir `integration`.
 
 `mode` détermine ce qui est collectable :
 
@@ -534,6 +539,12 @@ qu'une fois » dans les points d'attention.
 ### `recurringExpense` — les dépenses qui reviennent
 
 `RecurringExpense { id, channelId, categoryId, label, amountCents, intervalMonths, dayOfMonth, startDate, endDate, notes, isActive }` — table `recurring_expenses`.
+
+Se gère dans `RecurringExpensesPanel`, monté sous la table dans l'onglet **Dépenses**
+de `/chiffre-affaires` — plus dans les paramètres, dont il a été retiré : ces règles
+engendrent les lignes du tableau juste au-dessus, les avoir sur le même écran évite
+l'aller-retour vers une page de configuration séparée pour un geste répété (tarif qui
+change, abonnement résilié).
 
 **La périodicité est un nombre de mois**, pas une énumération (migration 16) : 1 mensuel,
 3 trimestriel, 6 semestriel, 12 annuel, 24 tous les deux ans. Ajouter « tous les deux
@@ -1366,8 +1377,10 @@ Absent quand Todo n'est pas connecté.
 > jour) ; puis le **calendrier des publications façon contributions GitHub**
 > (`PostsCalendar` : une colonne par semaine, lundi en haut, clic sur une case = ses
 > publications). Ni j'aime ni commentaires à l'écran, plus de tableau des publications, et
-> **pas d'ajout de publication par lien** (retiré : sans intérêt). Paramètres → Instagram ne sert plus
-> qu'à archiver ou supprimer un profil ; le pseudo se règle dans Paramètres → API.
+> **pas d'ajout de publication par lien** (retiré : sans intérêt). Paramètres → Instagram
+> porte l'archivage/suppression d'un profil **et**, depuis le 2026-09-23, le pseudo à
+> suivre (`ProviderCredentialsCard provider="instagram"`) — ça a quitté Paramètres → API,
+> qui ne parle plus que de ce qui *sort* du studio (voir `integration`).
 >
 > **Les stories ne sont pas lisibles en public** : `web_profile_info` sans session ne les
 > expose pas, SearchAPI non plus. Seules voies : l'API Graph, ou une session connectée
@@ -1480,6 +1493,9 @@ la main tous les deux mois.
 Comme le refresh token des chaînes, **il ne sort jamais de l'API** : `findAll` renvoie des
 `InstagramAccountView` où il est remplacé par `hasToken`, et les routes d'écriture
 relisent la vue plutôt que de renvoyer l'entité qu'elles viennent d'écrire.
+
+`exportEnabled` (migration 36, défaut `true`, même rôle que sur `Channel`) ne pilote que
+`/api/export` — se règle depuis Paramètres → API, dans la ligne Instagram dépliée.
 
 ### `comment` — ce que les gens écrivent, et ce qu'on en fait
 
@@ -1713,6 +1729,82 @@ Ports (`domain/integration/repositories/`) : `IntegrationRepository` (`isEnabled
 `LocalSourceRepository` (`youtube(today)`, `instagram()`), `SecretCipher`,
 `IntegrationCollectors`.
 
+#### Paramètres → API ne parle plus que de ce qui *sort* du studio (depuis le 2026-09-23)
+
+La page mêlait identifiants (Amazon, Domadoo, Discord, le profil Instagram), clés d'accès
+et une carte « Secrets » à part — brouillon, et redondant avec les écrans où chaque
+source vit déjà par ailleurs. Trois changements :
+
+- **Les identifiants ont déménagé** avec le domaine qu'ils alimentent :
+  `ProviderCredentialsCard` (`presentation/components/integration/`, un composant
+  partagé — mêmes champs, mêmes règles `SECRETS_KEY`/`env`, pas dupliqué trois fois) porte
+  desormais le profil Instagram (`profile`, `searchApiKey`) dans Paramètres → Audience →
+  Instagram, Amazon et Domadoo dans Paramètres → Revenus → Affiliation
+  (`AffiliationSettingsPage`), et Discord (`inviteCode`) dans Paramètres → Audience →
+  Discord (`DiscordSettingsPage`). YouTube n'a jamais eu de champ ici (`fields: []`).
+- **La carte « Secrets » a disparu.** Son message (`SECRETS_KEY` absente ⇒ champs
+  verrouillés) est maintenant **contextuel** : `ProviderCredentialsCard` ne l'affiche que
+  si la source qu'elle porte a effectivement un champ secret bloqué. Un simple rappel
+  d'une ligne subsiste sur `/parametres?onglet=api` quand `SECRETS_KEY` manque, pour dire
+  où aller le résoudre.
+- **Chaque source est une ligne dépliable** (`ProviderRow`, `<button>` + état React local,
+  pas un `<details>` — un interrupteur et un statut devaient rester cliquables dans l'en-tête
+  sans déclencher le repli/dépli). Repliée : icône, libellé, pastille de statut, interrupteur
+  « Publier ». Dépliée : description, astuce spécifique au type de source, puis ce qui reste
+  propre à l'export — bouton Collecter, dernier statut/erreur, aperçu JSON masqué par la
+  confidentialité. **YouTube et Instagram y gagnent une case à cocher par chaîne/compte**
+  (`export_enabled`, voir `channel` et `instagram`) : c'est ce qui permet de publier « la
+  chaîne pro » sans publier une chaîne personnelle, sans l'archiver dans le studio.
+- **« Accès à l'export » est renommé « API Keys »** — même carte, même comportement.
+
+#### L'historique Domadoo (`/affiliations` → onglet Domadoo)
+
+`integration_snapshots` (clé `domadoo`) ne garde que le **dernier** résumé : parfait pour
+l'export, muet pour « qui a rapporté en mars ». Table `domadoo_snapshots` (migration 35,
+PK `date`) écrit donc **un relevé cumulatif par jour**, même nature que
+`channel_snapshots` — Domadoo renvoie déjà des totaux depuis toujours (clics, ventes
+validées, gains, solde) — pour que les gains d'une période se lisent par simple
+différence de deux relevés, jamais confondus avec le cumul depuis toujours.
+
+Écrit par `CollectIntegrations.collectDomadoo()` à chaque collecte réussie (donc environ
+chaque heure ; un seul relevé par jour, le dernier écrase le précédent), en **centimes**
+(contrainte 2) — le scraper ne parle qu'en euros, la conversion vit à l'écriture et n'est
+jamais recalculée à la lecture.
+
+`GetDomadooOverview.execute({ from, to, granularity })` reconstruit la série demandée :
+`clicksGained` / `approvedSalesGained` / `earningsGainedCents` sont des **FLUX**
+(différence de deux relevés cumulatifs consécutifs, plancher à zéro — même raison que
+`sumStatsOverRange` sur les vidéos, une correction à la baisse ne doit pas afficher un
+gain négatif) ; `balanceCents` / `waitingPaymentsCents` / `waitingSalesCents` sont des
+**ÉTATS** (dernier relevé connu du bucket, reporté sur les buckets sans collecte — comme
+les abonnés Instagram). Un bucket **avant le premier relevé** rend `null` sur les champs
+de flux, jamais zéro : sans relevé antérieur, la part de la période ne se distingue pas
+du cumul d'avant. `firstSnapshotDate` porte cet aveu pour l'écran, comme
+`InstagramOverview.firstStoryDate`.
+
+Port dédié plutôt qu'une extension d'`IntegrationRepository` : `DomadooSnapshotRepository`
+(`upsert`, `findInRange`, `findBefore`, `findAtOrBefore`, `findFirstDate`) — l'historique
+n'a rien à voir avec les identifiants ou l'instantané d'export, et un dépôt qui mélangerait
+les deux répondrait à deux questions différentes.
+
+#### Le tableau de bord Discord (`/discord`)
+
+Écran minimal (`DiscordPage`) : nom du serveur, membres, membres en ligne, heure du
+dernier relevé — lus tels quels dans `integration.data` (le `DiscordExport` figé au
+dernier passage du cron, comme toute source `remote`). **Aucune série temporelle** :
+contrairement à Domadoo, Discord ne renvoie que des compteurs courants, jamais archivés
+jour par jour — pas de table `discord_snapshots` à faire, deux chiffres suffisent à tout
+dire.
+
+**L'entrée de menu n'existe que si le serveur est configuré**
+(`navigation.withDiscord(sections, configured)`, `AppLayout` la compose avec
+`withExternalApps` en lisant `useIntegrations()` — un second `fetch`, léger, déjà en cache
+partout ailleurs dans l'app). Même raison que les pastilles qui restent neutres sans
+raison à afficher : une entrée qui mène à un écran vide se lit comme une panne. L'écran
+reste joignable par adresse directe même hors du menu (le temps que la configuration se
+propage au cache), et affiche alors un état vide qui renvoie vers Paramètres → Audience →
+Discord plutôt qu'une redirection muette.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -1737,7 +1829,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/channels`                                     | Liste + `latestSnapshot` + `lastMetricDate`. Param `includeArchived`                                                                                                                                                                                     |
 | `POST`   | `/api/channels`                                     | Créer                                                                                                                                                                                                                                                    |
 | `POST`   | `/api/channels/resolve`                             | `{ query }` (@handle / URL / UC…) → identifiant + stats                                                                                                                                                                                                  |
-| `PATCH`  | `/api/channels/:id`                                 | Modifier (`refreshToken: ""` efface, absent = conserve)                                                                                                                                                                                                  |
+| `PATCH`  | `/api/channels/:id`                                 | Modifier (`refreshToken: ""` efface, absent = conserve). `exportEnabled` pilote `/api/export` (Paramètres → API)                                                                                                                                          |
 | `DELETE` | `/api/channels/:id`                                 | Supprimer                                                                                                                                                                                                                                                |
 | `POST`   | `/api/channels/:id/collect`                         | Collecter cette chaîne                                                                                                                                                                                                                                   |
 | `PUT`    | `/api/channels/:id/metrics`                         | Saisie manuelle d'une journée (`source = manual`)                                                                                                                                                                                                        |
@@ -1826,6 +1918,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/affiliate-platforms`                          | Créer. `brandIds` remplace entièrement la liste des marques                                                                                                                                                                                              |
 | `PATCH`  | `/api/affiliate-platforms/:id`                      | Modifier / archiver. `brandIds` absent = marques inchangées                                                                                                                                                                                              |
 | `DELETE` | `/api/affiliate-platforms/:id`                      | Supprimer ; les revenus rattachés sont **détachés**                                                                                                                                                                                                      |
+| `GET`    | `/api/domadoo/overview`                             | Historique Domadoo reconstruit depuis `domadoo_snapshots`. Params `from`, `to` (obligatoires), `granularity`. Ne collecte jamais rien — relit ce que `POST /api/integrations/domadoo/collect` a déjà écrit                                             |
 | `GET`    | `/api/legal/bookmarks`                              | Liens utiles de l'écran Légal. Param `includeArchived`                                                                                                                                                                                                   |
 | `POST`   | `/api/legal/bookmarks`                              | Créer. `url` doit être **absolue** (le front complète le `https://` manquant)                                                                                                                                                                            |
 | `PATCH`  | `/api/legal/bookmarks/:id`                          | Modifier / réordonner                                                                                                                                                                                                                                    |
@@ -1864,7 +1957,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/instagram/overview`                           | Séries, totaux, stories et publications. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                                                                                 |
 | `GET`    | `/api/instagram/accounts`                           | Comptes suivis. **Le jeton n'en sort jamais**, remplacé par `hasToken` et `tokenDaysLeft`                                                                                                                                                                |
 | `POST`   | `/api/instagram/accounts`                           | Connecter un compte. 409 si l'`igUserId` est déjà suivi                                                                                                                                                                                                  |
-| `PATCH`  | `/api/instagram/accounts/:id`                       | Modifier / archiver. `accessToken: ""` efface, absent conserve                                                                                                                                                                                           |
+| `PATCH`  | `/api/instagram/accounts/:id`                       | Modifier / archiver. `accessToken: ""` efface, absent conserve. `exportEnabled` pilote `/api/export` (Paramètres → API)                                                                                                                                   |
 | `DELETE` | `/api/instagram/accounts/:id`                       | Supprimer **et tout l'historique** (cascade). Irrécupérable : les stories ne se recollectent pas                                                                                                                                                         |
 | `POST`   | `/api/instagram/collect`                            | Collecte immédiate de tous les comptes **à jeton**, puis du profil public s'il est renseigné                                                                                                                                                             |
 | `POST`   | `/api/instagram/accounts/:id/collect`               | Collecter ce compte                                                                                                                                                                                                                                      |
@@ -1891,6 +1984,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, puis **les deux graphiques seulement** (argent, audience). Plus d'alertes : elles sont en pastilles                                                                                                                                                                                                                |
 | `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                                                                                                        |
 | `/instagram`        | `InstagramPage`        | **Profil public seulement**, toujours au jour : saisie des stories + 3 chiffres clés sur une ligne, graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications                                                                                                                                                                                     |
+| `/discord`          | `DiscordPage`          | Nom du serveur, membres, membres en ligne, dernier relevé, bouton Collecter. **Aucune série** : Discord ne renvoie que des compteurs courants. N'apparaît dans le menu que si un serveur est configuré (Paramètres → Audience → Discord)                                                                                                                                       |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
@@ -1899,34 +1993,42 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / **Notes** (plusieurs, en fichiers)                                                                                                                                                                                                           |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                    |
 | `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                                                                                                |
-| `/plateformes`      | `PlatformsPage`        | 4 cartes (Total affiliations, Sans plateforme, En tête, Plateformes suivies), puis `PlatformsPanel`                                                                                                                                                                                                                                                                           |
-| `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, Dépenses                                                                                                                                                                                                                                                         |
+| `/affiliations`     | `AffiliationsPage`     | Deux onglets (`?onglet=`) : **Domadoo** (collecté tout seul dès que la source est renseignée — 6 cartes, graphique Gains/Solde) et **Plateformes** (4 cartes, `PlatformsPanel`, rattachées à la main). Ex-`/plateformes`, qui redirige ici                                                                                                                                     |
+| `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, **Dépenses** (table + dépenses récurrentes, `RecurringExpensesPanel`)                                                                                                                                                                                             |
 | `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                                                                                                                                                                                                                              |
 | `/apps/:id`         | `ExternalAppPage`      | Une **application externe** en iframe, pleine hauteur (Recharger, Nouvel onglet). L'entrée vit dans la famille de menu choisie                                                                                                                                                                                                                                                |
-| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en **liste verticale groupée comme le menu** (`?onglet=`) : Général (`general`), Production (`planning`, `script`, `etapes`), Audience (`youtube`, `instagram`), Revenus (`chiffre-affaires` = catégories + abonnements, `marques`), Entreprise (`societe`), API (`api`), Applications externes (`applications`). Sur mobile, un seul bouton déroulant |
+| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en **liste verticale groupée comme le menu** (`?onglet=`) : Général (`general`), Production (`planning`, `script`, `etapes`), Audience (`youtube`, `instagram` — accueille désormais le pseudo public suivi —, `discord`), Revenus (`chiffre-affaires` = catégories, `marques`, `affiliation` = identifiants Amazon/Domadoo), Entreprise (`societe`), API (`api` — export, clés, sélection des chaînes/comptes exportés), Applications externes (`applications`). Sur mobile, un seul bouton déroulant |
 
 **Les réglages sont rangés dans les familles du menu, en liste verticale** et non en
 onglets : onze onglets passaient à la ligne dans un ordre qui ne disait rien. `GROUPS`
 (`SettingsPage`) porte groupes et entrées ; les anciens identifiants restent valides par
-`ALIASES` (`app` → `general`, `chaines` → `youtube`, `categories` et `abonnements` →
+`ALIASES` (`app` → `general`, `chaines` → `youtube`, `categories` →
 `chiffre-affaires`). La connexion Todo (`TodoConnectionCard`) a quitté Planning pour
 **Applications externes**, à côté de l'entrée de menu qu'elle alimente.
 
-`/chaines`, `/categories`, `/marques`, `/etapes`, `/societe` et `/abonnements`
-**redirigent** vers `/parametres` sur le bon onglet : c'étaient six entrées d'un menu
-déroulant, donc six adresses à connaître et autant d'allers-retours pour comparer deux
+`/chaines`, `/categories`, `/marques`, `/etapes` et `/societe`
+**redirigent** vers `/parametres` sur le bon onglet : c'étaient des entrées d'un menu
+déroulant, donc autant d'adresses à connaître et autant d'allers-retours pour comparer deux
 référentiels. Les pages existent toujours comme composants, montées dans les onglets —
 leur titre est passé en `<h2>`, `SettingsPage` porte le `<h1>`.
 
-`/revenus`, `/depenses` et `/taxes` **redirigent** vers `/chiffre-affaires` sur le bon
-onglet : ce sont les deux moitiés de la même soustraction, et elles se consultent l'une
-après l'autre. Les tables vivent désormais dans `components/money/RevenuesPanel.tsx` et
-`ExpensesPanel.tsx` — ce sont les anciennes pages, déplacées telles quelles.
+`/revenus`, `/depenses`, `/taxes` et `/abonnements` **redirigent** vers `/chiffre-affaires`
+sur le bon onglet : dépenses, dépenses récurrentes et revenus sont les moitiés d'une même
+comptabilité, et se consultent l'une après l'autre. Les tables vivent désormais dans
+`components/money/RevenuesPanel.tsx` et `ExpensesPanel.tsx` — ce sont les anciennes pages,
+déplacées telles quelles. **Les dépenses récurrentes ont quitté les paramètres pour
+l'onglet Dépenses** (`RecurringExpensesPanel`, monté sous `ExpensesPanel` dans
+`TurnoverPage`) : elles engendrent les lignes de ce tableau, les gérer à côté d'elles
+évite l'aller-retour vers un écran de configuration séparé pour un geste qu'on répète
+souvent (une hausse de tarif, un abonnement résilié). Les textes qui renvoyaient vers
+« Paramètres → Abonnements » (`ExpensesPanel`, ligne récurrente) pointent maintenant vers
+ce même bloc, plus bas sur l'écran.
 
 `/horaires` **redirige** vers `/parametres?onglet=planning`.
 
 `/contenu` **redirige** vers `/youtube`, et `/partenariats?onglet=…` vers `/produits`,
-`/sponsors` ou `/plateformes` (`LegacyPartnersRedirect`, dans `App.tsx`). Les trois onglets
+`/sponsors` ou `/affiliations?onglet=plateformes` (`LegacyPartnersRedirect`, dans
+`App.tsx`). Les trois onglets
 des partenariats sont devenus **trois entrées de menu** : ils ne posent pas la même question
 (quoi tourner, qui relancer, où est gérée l'affiliation), et chacun porte sa pastille — un
 onglet n'aurait pas pu la montrer depuis le menu. Les cellules communes aux deux tables
@@ -2383,11 +2485,12 @@ arrêt fait depuis un autre onglet sans marteler l'API pour animer un compteur.
 La `FiltersBar` vit **dans l'en-tête collant**, sans trait de séparation : elle en fait
 partie. Elle n'apparaît pas sur les routes de `ROUTES_WITHOUT_FILTERS` (`/parametres`,
 `/commentaires`, `/planning`, `/production`, `/shorts`, `/publications`, `/produits`, `/sponsors`,
-`/plateformes`, `/legal`, `/apps`).
+`/affiliations`, `/legal`, `/apps`).
 
-**`/produits`, `/sponsors` et `/plateformes` montent le `PeriodPicker` seul, dans leur
+**`/produits`, `/sponsors` et `/affiliations` montent le `PeriodPicker` seul, dans leur
 en-tête** (ce qui suit parlait d'un seul écran `/partenariats`, désormais coupé en trois ;
-la règle vaut pour chacun). L'écran n'a pas la
+la règle vaut pour chacun — `/affiliations` la partage entre ses deux onglets, Domadoo et
+Plateformes, puisqu'elle pilote autant l'un que l'autre). L'écran n'a pas la
 barre entière — chaînes, pas d'agrégation et interrupteur CA/bénéfice n'y pilotent rien et
 resteraient décoratifs. La période, elle, y pilote beaucoup : les deux tables, les cinq
 cartes et les gains par plateforme. Sans sélecteur, l'écran affichait une période qu'on ne
@@ -2545,7 +2648,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                                                                                                                                                         | idem                                                    | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                                                                            |
 | `useExternalApps`, `useCreateExternalApp`, `useUpdateExternalApp`, `useDeleteExternalApp`, `useTodayTodos`                                                                                                                                                                                                                     | `application/externalApp/usecases/useExternalApps.ts`   | Applications externes du menu ; tâches Todo du jour (pastille, **relue chaque minute** : ce qu'on coche dans l'iframe ne passe pas par le studio)   |
 | `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
-| `useIntegrations`, `useUpdateIntegration`, `useCollectIntegration`, `useExportKeys`, `useCreateExportKey`, `useDeleteExportKey`                                                                                                                                                                                                | `application/integration/usecases/useIntegrations.ts`   | Paramètres → API : sources de l'export, identifiants, clés d'accès                                                                                  |
+| `useIntegrations`, `useUpdateIntegration`, `useCollectIntegration`, `useExportKeys`, `useCreateExportKey`, `useDeleteExportKey`, `useDomadooOverview`                                                                                                                                                                          | `application/integration/usecases/useIntegrations.ts`   | Sources de l'export et clés d'accès. `useUpdateIntegration` sert aussi `ProviderCredentialsCard`, monté hors de Paramètres → API (Instagram, Affiliation, Discord). `useDomadooOverview` alimente `/affiliations` → Domadoo                          |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
 
@@ -2583,6 +2686,14 @@ ligne d'un onglet et entrer dans un autre, et les trois pastilles bougent d'un c
 l'autre : ce que le studio publie à l'extérieur ne change ni un chiffre, ni une alerte,
 ni une file. Une écriture de source n'invalide que `integrations`, une écriture de clé que
 `exportKeys`.
+
+**Exception locale et volontaire** : cocher/décocher une chaîne ou un compte Instagram
+dans la ligne dépliée de Paramètres → API (`export_enabled`) passe par `useUpdateChannel` /
+`useUpdateInstagramAccount`, qui n'invalident que `COLLECT_ROOTS` / `INSTAGRAM_ROOTS` — la
+mutation `.mutate(vars, { onSuccess })` de l'appelant ajoute **en plus** `['integrations']`,
+directement dans `ApiSettingsPage`, plutôt que d'ajouter `integrations` aux racines
+partagées : le faire là-bas aurait rafraîchi l'aperçu JSON à chaque modification de couleur
+de chaîne, sans rapport avec l'export.
 
 `RECURRING_ROOTS` = `MONEY_ROOTS` + `recurringExpenses` : écrire une règle crée, réécrit
 ou supprime des dépenses, les vues d'argent repartent avec elle. Le contraire n'est pas
@@ -2623,6 +2734,12 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 34** ajoute `production_notes` (plusieurs notes par vidéo, cascade) et y
   reprend `productions.notes`, converti en HTML en SQL. La colonne `productions.notes`
   n'est plus lue ni écrite.
+- **Migration 35** ajoute `domadoo_snapshots` (PK `date`) : un relevé cumulatif par jour,
+  écrit à chaque collecte réussie, pour que `/affiliations` → Domadoo puisse naviguer
+  dans le passé — `integration_snapshots` n'en gardait que le dernier.
+- **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
+  (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
+  simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
 - **Migration 32** ajoute `ig_story_log` (stories déclarées à la main, une ligne par jour,
   sans compte).
 - **Migration 31** ajoute `post_drafts.steps` (texte, `''` par défaut) et
@@ -3067,6 +3184,13 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   `NAV` est dérivé de `NAV_SECTIONS` et non l'inverse. C'est le contraire de l'ancien
   `orderedNav`, qui faisait fermer la marche aux entrées inconnues — il n'y a plus de
   liste de repli, et une entrée oubliée est une entrée absente.
+- **Une entrée de menu peut être conditionnelle sans casser l'ordre fixe** : `withDiscord`
+  (`navigation.ts`) insère l'entrée Discord après Instagram **seulement si un serveur est
+  configuré**, sur le même modèle que `withExternalApps` — une fonction pure qui prend
+  `NAV_SECTIONS` en entrée et rend des sections augmentées, jamais une seconde source de
+  vérité. `AppLayout` les compose (`withDiscord(withExternalApps(externalApps), …)`) : un
+  écran dont la présence dépend d'une donnée suit ce patron plutôt que d'ajouter un
+  `if` dans `NAV_SECTIONS`, qui doit rester une liste statique.
 - **La barre du bas ne prend que cinq écrans, et le tiroir les garde aussi.** Y ajouter une
   sixième entrée casserait la largeur des cibles ; en retirer une du tiroir sous prétexte
   qu'elle est en bas ferait un trou dans le seul endroit qui liste tout.
@@ -3081,7 +3205,7 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
 - **La carte de file affiche une FENÊTRE de travail, pas une échéance** (`DateRange`) : `startDate → plannedDate`, la flèche entre les deux. Les deux dates ensemble disent ce qu'aucune ne dit seule — la sortie donne l'échéance, le début dit s'il reste du temps devant ou si on est déjà dedans ; deux dates côte à côte sans flèche se liraient comme deux échéances. Le relatif (« dans 3 jours ») est **au survol** de chaque date et non dans le texte : il doublait la longueur de la ligne alors qu'on ne le lit que sur la vidéo qu'on s'apprête à attaquer — même parti pris que le détail de la barre de progression. La ligne disparaît entièrement quand aucune des deux dates n'est posée, enveloppe comprise, sinon le `gap` de la carte s'écarterait pour rien.
 - **`days()` compare des jours de calendrier LOCAUX, jamais des heures écoulées.** Les deux bornes sont ramenées à minuit avant d'être soustraites. Soustraire l'instant présent d'une date à minuit UTC faisait basculer « aujourd'hui » en « hier » à partir de 22 h à Paris, l'écart réel dépassant alors la demi-journée que `Math.round` arbitre. Ce qu'on veut savoir est de combien de **nuits** la date est séparée d'aujourd'hui.
 - **La barre de progression affiche le pourcentage, le détail est au survol.** Le pourcentage se compare d'une carte à l'autre ; le compte exact (« 18 sur 30 ») ne sert qu'à savoir combien il reste, ce qu'on ne demande que sur la vidéo qu'on s'apprête à attaquer.
-- **L'en-tête n'a de hauteur que s'il porte la barre de filtres.** Sur les routes de `ROUTES_WITHOUT_FILTERS` (`/production`, `/shorts`, `/produits`, `/sponsors`, `/plateformes`, `/legal`, `/parametres`…), il perd son trait et son padding : un bandeau vide repoussait le contenu pour rien. Le bandeau du chronomètre, lui, porte une bordure **haut et bas** (`border-y`) parce qu'il peut se retrouver seul tout en haut — c'est même le cas le plus probable, `/production` étant l'écran sans filtres où un chronomètre tourne.
+- **L'en-tête n'a de hauteur que s'il porte la barre de filtres.** Sur les routes de `ROUTES_WITHOUT_FILTERS` (`/production`, `/shorts`, `/produits`, `/sponsors`, `/affiliations`, `/legal`, `/parametres`…), il perd son trait et son padding : un bandeau vide repoussait le contenu pour rien. Le bandeau du chronomètre, lui, porte une bordure **haut et bas** (`border-y`) parce qu'il peut se retrouver seul tout en haut — c'est même le cas le plus probable, `/production` étant l'écran sans filtres où un chronomètre tourne.
 - **Les liens utiles s'intercalent entre la fiche société et les alertes**, avant le tableau à cocher : on ouvre le portail, on fait la démarche, on revient cocher la case juste en dessous. La carte **entière** est le lien (cible la plus large) et s'ouvre dans un **nouvel onglet** — une navigation ferait perdre l'année choisie et la position dans le tableau. Le bloc ne s'affiche pas du tout tant qu'aucun lien n'est configuré : un encart vide prendrait la place de ce qu'on vient réellement faire sur cet écran.
 - **L'arrêt du chronomètre passe par `ManagePlanning`, pas par `TrackTime`.** L'arrêt ne
   fige pas seulement une durée : il pose ou recale un créneau, le publie dans l'agenda et

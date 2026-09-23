@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { integrationApi } from '../../../infrastructure/integration/api/integrationApi.ts';
+import {
+  domadooApi,
+  type DomadooOverviewParams,
+} from '../../../infrastructure/integration/api/domadooApi.ts';
 import type {
   IntegrationProvider,
   IntegrationUpdateInput,
@@ -37,8 +41,9 @@ export const useUpdateIntegration = () =>
   );
 
 /**
- * Seule exception à la règle du dessus : le relevé du profil Instagram **écrit dans le
- * module Instagram** (compte et relevé du jour), ses écrans doivent donc repartir aussi.
+ * Deux exceptions à la règle du dessus : le relevé du profil Instagram **écrit dans le
+ * module Instagram** (compte et relevé du jour), et celui de Domadoo ajoute un point à
+ * son historique — leurs écrans doivent donc repartir aussi.
  */
 export const useCollectIntegration = () => {
   const queryClient = useQueryClient();
@@ -46,6 +51,8 @@ export const useCollectIntegration = () => {
     mutationFn: (provider: IntegrationProvider) => integrationApi.collect(provider),
     onSuccess: (_result, provider) => {
       void queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      if (provider === 'domadoo')
+        void queryClient.invalidateQueries({ queryKey: ['domadooOverview'] });
       if (provider !== 'instagram') return;
       for (const root of INSTAGRAM_ROOTS) {
         void queryClient.invalidateQueries({ queryKey: [root] });
@@ -53,6 +60,14 @@ export const useCollectIntegration = () => {
     },
   });
 };
+
+/** L'historique Domadoo, pour l'onglet Affiliations → Domadoo. */
+export const useDomadooOverview = (params: DomadooOverviewParams) =>
+  useQuery({
+    queryKey: queryKeys.domadooOverview(params),
+    queryFn: () => domadooApi.overview(params),
+    staleTime: 60_000,
+  });
 
 export const useExportKeys = () =>
   useQuery({

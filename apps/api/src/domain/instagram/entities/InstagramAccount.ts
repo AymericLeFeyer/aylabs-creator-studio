@@ -26,6 +26,12 @@ export interface InstagramAccount {
   profilePicture: string | null;
   color: string;
   isArchived: boolean;
+  /**
+   * Compte dans `/api/export` (Paramètres → API). Même rôle que sur `Channel` : un compte
+   * archivé en est de toute façon exclu, celle-ci permet d'en retirer un actif sans le
+   * retirer du studio.
+   */
+  exportEnabled: boolean;
   lastCollectedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -56,6 +62,7 @@ export interface CreateInstagramAccountInput {
 
 export type UpdateInstagramAccountInput = Partial<CreateInstagramAccountInput> & {
   isArchived?: boolean;
+  exportEnabled?: boolean;
   profilePicture?: string | null;
   lastCollectedAt?: string | null;
 };

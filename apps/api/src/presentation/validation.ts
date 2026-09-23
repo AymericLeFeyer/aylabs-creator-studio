@@ -26,6 +26,8 @@ export const createChannelSchema = z.object({
   handle: z.string().trim().nullable().optional(),
   color: hexColor,
   refreshToken: z.string().trim().nullable().optional(),
+  /** Compte dans `/api/export` (Paramètres → API). Absent à la création = incluse. */
+  exportEnabled: z.boolean().optional(),
 });
 
 export const updateChannelSchema = createChannelSchema.partial().extend({
@@ -810,6 +812,8 @@ export const createInstagramAccountSchema = z.object({
 
 export const updateInstagramAccountSchema = createInstagramAccountSchema.partial().extend({
   isArchived: z.boolean().optional(),
+  /** Compte dans `/api/export` (Paramètres → API). */
+  exportEnabled: z.boolean().optional(),
 });
 
 /**
@@ -1100,4 +1104,11 @@ export const updateIntegrationSchema = z.object({
 
 export const createExportKeySchema = z.object({
   label: z.string().trim().min(1, 'Donne un nom à la clé (ex. « Home Assistant »)').max(60),
+});
+
+/** Fenêtre de l'écran Affiliations → Domadoo : mêmes paramètres que l'aperçu Instagram. */
+export const domadooQuerySchema = z.object({
+  from: isoDate,
+  to: isoDate,
+  granularity: z.enum(['day', 'week', 'month']).default('day'),
 });

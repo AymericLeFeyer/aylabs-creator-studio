@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
-import { Menu, Moon, PanelLeftClose, PanelLeftOpen, Settings, Sun, X } from 'lucide-react';
-import { MOBILE_NAV, pageTitle, withExternalApps, type NavItem } from './navigation.ts';
+import { Menu, PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
+import {
+  MOBILE_NAV,
+  pageTitle,
+  withDiscord,
+  withExternalApps,
+  type NavItem,
+} from './navigation.ts';
 import { useExternalApps } from '../application/externalApp/usecases/useExternalApps.ts';
-import { useTheme } from './hooks/useTheme.ts';
+import { useIntegrations } from '../application/integration/usecases/useIntegrations.ts';
 import { usePreferences } from './hooks/usePreferences.ts';
 import { Button } from './components/ui/button.tsx';
+import { ThemeToggle } from './components/ThemeToggle.tsx';
 import { FiltersBar } from './components/FiltersBar.tsx';
 import { RunningTimerBar } from './components/production/RunningTimerBar.tsx';
 import { CollectAction } from './components/filters/CollectAction.tsx';
@@ -34,7 +41,8 @@ const ROUTES_WITHOUT_FILTERS = [
   '/publications',
   '/produits',
   '/sponsors',
-  '/plateformes',
+  '/affiliations',
+  '/discord',
   '/legal',
   // Une app embarquée a sa propre interface : une barre de période au-dessus d'elle ne
   // piloterait rien.
@@ -83,7 +91,6 @@ const BOTTOM_NAV = `calc(${BOTTOM_NAV_HEIGHT} + ${BOTTOM_NAV_GAP} * 2 + env(safe
  * réellement chaque jour.
  */
 export const AppLayout = () => {
-  const { theme, toggle } = useTheme();
   /**
    * Le conteneur des actions de la barre d'application mobile.
    *
@@ -150,7 +157,13 @@ export const AppLayout = () => {
    * (`/apps/<id>`) ne porte pas.
    */
   const { data: externalApps = [] } = useExternalApps();
-  const navSections = useMemo(() => withExternalApps(externalApps), [externalApps]);
+  const { data: integrations } = useIntegrations();
+  const discordConfigured =
+    integrations?.providers.find((provider) => provider.id === 'discord')?.configured ?? false;
+  const navSections = useMemo(
+    () => withDiscord(withExternalApps(externalApps), discordConfigured),
+    [externalApps, discordConfigured],
+  );
   const openAppId = matchPath('/apps/:id', location.pathname)?.params.id;
 
   const collapsed = preferences.sidebarCollapsed;
@@ -239,22 +252,7 @@ export const AppLayout = () => {
           {!compact && <span>Paramètres</span>}
         </NavLink>
 
-        <button
-          type="button"
-          onClick={toggle}
-          title="Changer de thème"
-          className={cn(
-            'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
-            compact && 'justify-center px-0',
-          )}
-        >
-          {theme === 'dark' ? (
-            <Sun className="h-4 w-4 shrink-0" />
-          ) : (
-            <Moon className="h-4 w-4 shrink-0" />
-          )}
-          {!compact && <span>{theme === 'dark' ? 'Thème clair' : 'Thème sombre'}</span>}
-        </button>
+        <ThemeToggle compact={compact} />
 
         {/* Le repli ne s'offre qu'en colonne fixe : dans un tiroir, il n'aurait pas de sens. */}
         <button

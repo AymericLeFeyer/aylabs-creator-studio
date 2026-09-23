@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom';
 import { Archive, ArchiveRestore, Trash2 } from 'lucide-react';
 import {
   useDeleteInstagramAccount,
@@ -6,6 +5,7 @@ import {
   useUpdateInstagramAccount,
 } from '../../application/instagram/usecases/useInstagram.ts';
 import { formatCount } from '../../domain/instagram/entities/Instagram.ts';
+import { ProviderCredentialsCard } from '../components/integration/ProviderCredentialsCard.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
@@ -14,13 +14,14 @@ import { cn } from '../../shared/cn.ts';
 /**
  * Les profils Instagram suivis.
  *
- * **Uniquement par le profil public** : le nom d'utilisateur se renseigne dans
- * Paramètres → API, et le relevé quotidien crée le compte ici au premier passage. La
- * connexion par l'API Graph (identifiant 178414…, jeton longue durée) a été retirée de
- * l'écran tant qu'elle ne fonctionne pas — les routes existent toujours côté API.
+ * **Uniquement par le profil public** : le nom d'utilisateur se renseigne juste en
+ * dessous, et le relevé quotidien crée le compte ici au premier passage. La connexion par
+ * l'API Graph (identifiant 178414…, jeton longue durée) a été retirée de l'écran tant
+ * qu'elle ne fonctionne pas — les routes existent toujours côté API.
  *
- * Il ne reste que ce qui a un sens sans jeton : archiver un profil pour en arrêter le
- * suivi sans perdre son historique, ou le supprimer.
+ * Ce que le studio en publie vers Home Assistant (activer la source, choisir les comptes
+ * à exporter, collecter) reste dans Paramètres → API : cette page ne parle que de ce qui
+ * entre, pas de ce qui sort.
  */
 export const InstagramSettingsPage = () => {
   const { data: accounts = [] } = useInstagramAccounts(true);
@@ -33,13 +34,11 @@ export const InstagramSettingsPage = () => {
         <h2 className="font-semibold">Instagram</h2>
         <p className="max-w-2xl text-sm text-muted-foreground">
           Les abonnés et les publications sont relevés une fois par jour sur le profil public, sans
-          compte Meta. Le nom d’utilisateur se règle dans{' '}
-          <Link to="/parametres?onglet=api" className="underline underline-offset-2">
-            Paramètres → API
-          </Link>
-          .
+          compte Meta.
         </p>
       </div>
+
+      <ProviderCredentialsCard provider="instagram" title="Profil public à suivre" />
 
       {accounts.length === 0 && (
         <Card className="p-4 text-sm text-muted-foreground">

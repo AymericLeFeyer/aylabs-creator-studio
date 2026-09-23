@@ -6,8 +6,10 @@ import {
   CalendarClock,
   ChevronDown,
   FileText,
+  Hash,
   Instagram,
   KeyRound,
+  Link2,
   ListOrdered,
   SlidersHorizontal,
   Tags,
@@ -18,7 +20,7 @@ import {
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
 import { usePreferences } from '../hooks/usePreferences.ts';
-import { useTheme } from '../hooks/useTheme.ts';
+import { ThemeToggle } from '../components/ThemeToggle.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.tsx';
 import { Checkbox } from '../components/ui/checkbox.tsx';
@@ -37,10 +39,11 @@ import { StepsPage } from './StepsPage.tsx';
 import { ScriptSettingsPage } from './ScriptSettingsPage.tsx';
 import { PlanningSettingsPage } from './PlanningSettingsPage.tsx';
 import { InstagramSettingsPage } from './InstagramSettingsPage.tsx';
+import { DiscordSettingsPage } from './DiscordSettingsPage.tsx';
+import { AffiliationSettingsPage } from './AffiliationSettingsPage.tsx';
 import { CompanyPage } from './CompanyPage.tsx';
 import { ApiSettingsPage } from './ApiSettingsPage.tsx';
 import { ExternalAppsSettingsPage } from './ExternalAppsSettingsPage.tsx';
-import { RecurringExpensesPanel } from '../components/money/RecurringExpensesPanel.tsx';
 import { PrivacySettings } from '../components/PrivacySettings.tsx';
 import { cn } from '../../shared/cn.ts';
 
@@ -74,8 +77,9 @@ interface SettingsGroup {
  * déroule toute la liste — une colonne de quinze lignes au-dessus du contenu aurait
  * repoussé le réglage sous le pli.
  *
- * Les catégories et les abonnements forment **une seule** entrée, « Chiffre
- * d'affaires » : ce sont les deux référentiels de l'écran du même nom.
+ * Les dépenses récurrentes (abonnements) se gèrent désormais directement dans
+ * l'onglet Dépenses de `/chiffre-affaires`, à côté des dépenses qu'elles engendrent —
+ * plus dans les paramètres.
  */
 const GROUPS: SettingsGroup[] = [
   {
@@ -107,6 +111,7 @@ const GROUPS: SettingsGroup[] = [
         icon: Instagram,
         render: () => <InstagramSettingsPage />,
       },
+      { id: 'discord', label: 'Discord', icon: Hash, render: () => <DiscordSettingsPage /> },
     ],
   },
   {
@@ -116,14 +121,15 @@ const GROUPS: SettingsGroup[] = [
         id: 'chiffre-affaires',
         label: "Chiffre d'affaires",
         icon: Wallet,
-        render: () => (
-          <div className="space-y-8">
-            <CategoriesPage />
-            <RecurringExpensesPanel />
-          </div>
-        ),
+        render: () => <CategoriesPage />,
       },
       { id: 'marques', label: 'Marques', icon: Tags, render: () => <BrandsPage /> },
+      {
+        id: 'affiliation',
+        label: 'Affiliation',
+        icon: Link2,
+        render: () => <AffiliationSettingsPage />,
+      },
     ],
   },
   {
@@ -159,7 +165,6 @@ const ALIASES: Record<string, string> = {
   app: 'general',
   chaines: 'youtube',
   categories: 'chiffre-affaires',
-  abonnements: 'chiffre-affaires',
 };
 
 /**
@@ -273,7 +278,6 @@ export const SettingsPage = () => {
 const AppSettings = () => {
   const filters = useFilters();
   const { preferences, set } = usePreferences();
-  const { theme, toggle } = useTheme();
 
   // Même clé de cache que le dashboard : la requête est partagée, pas dupliquée.
   const { data } = useAnalytics(useAnalyticsParams());
@@ -350,13 +354,16 @@ const AppSettings = () => {
               'Une ligne par vidéo au lieu d’une carte. Le chevron rouvre celle qu’on travaille.',
             )}
 
-            {row(
-              'pref-theme',
-              theme === 'dark',
-              () => toggle(),
-              'Thème sombre',
-              'Se change aussi depuis le bas du menu de gauche.',
-            )}
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label className="font-normal">Thème</Label>
+                <p className="text-xs text-muted-foreground">
+                  Système par défaut : il suit celui de l'appareil. Se change aussi depuis le bas du
+                  menu de gauche.
+                </p>
+              </div>
+              <ThemeToggle />
+            </div>
           </CardContent>
         </Card>
 

@@ -32,6 +32,12 @@ export interface Channel {
   /** Refresh token OAuth, requis en mode `oauth`. Jamais renvoyé par l'API. */
   refreshToken: string | null;
   isArchived: boolean;
+  /**
+   * Compte dans `/api/export` (Paramètres → API). Une chaîne archivée en est de toute
+   * façon exclue ; celle-ci permet d'en retirer une active — une chaîne personnelle par
+   * exemple — sans la retirer du studio lui-même.
+   */
+  exportEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -53,6 +59,7 @@ export interface CreateChannelInput {
   color?: string;
   thumbnailUrl?: string | null;
   refreshToken?: string | null;
+  exportEnabled?: boolean;
 }
 
 export type UpdateChannelInput = Partial<CreateChannelInput> & { isArchived?: boolean };

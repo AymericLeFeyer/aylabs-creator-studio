@@ -1424,6 +1424,52 @@ const migrations: Migration[] = [
       WHERE notes IS NOT NULL AND trim(notes) <> '';
     `,
   },
+  {
+    version: 35,
+    name: 'domadoo_snapshots',
+    // L'historique Domadoo, pour naviguer dans le passé.
+    //
+    // "integration_snapshots" (migration 27) ne garde que le DERNIER résumé : parfait
+    // pour l'export, muet pour une question comme "qui a rapporté en mars". Une ligne par
+    // jour, CUMUL comme "channel_snapshots" ou "ig_account_snapshots" — Domadoo renvoie
+    // déjà des totaux depuis toujours (clics, ventes validées, gains, solde) — pour que
+    // les gains d'une période se lisent par simple différence de deux relevés, sans
+    // jamais confondre "gagné sur la période" et "cumul depuis toujours".
+    //
+    // Les montants sont en CENTIMES (contrainte 2), convertis à l'écriture depuis les
+    // euros que renvoie le scraper : la conversion vit une seule fois, jamais recalculée
+    // à la lecture.
+    up: `
+      CREATE TABLE domadoo_snapshots (
+        date                   TEXT PRIMARY KEY,
+        clicks                 INTEGER,
+        unique_clicks          INTEGER,
+        approved_sales         INTEGER,
+        earnings_cents         INTEGER,
+        payments_cents         INTEGER,
+        waiting_payments_cents INTEGER,
+        balance_cents          INTEGER,
+        waiting_sales_cents    INTEGER,
+        created_at             TEXT NOT NULL
+      );
+    `,
+  },
+  {
+    version: 36,
+    name: 'export_selection',
+    // Quelles chaînes et quels comptes Instagram comptent dans l'export.
+    //
+    // `SqliteLocalSourceRepository` sommait jusqu'ici TOUTES les chaînes et comptes non
+    // archivés : impossible de publier une chaîne perso sur `/api/export` sans l'exclure
+    // aussi du studio. Une colonne plutôt qu'une table de liaison — même raison que
+    // `is_archived` juste à côté : la présence d'une ligne suffit, pas de jointure de plus
+    // pour une question purement binaire. Défaut à 1 : l'export d'une base existante ne
+    // change pas de forme tant que personne n'a décoché quoi que ce soit.
+    up: `
+      ALTER TABLE channels ADD COLUMN export_enabled INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE ig_accounts ADD COLUMN export_enabled INTEGER NOT NULL DEFAULT 1;
+    `,
+  },
 ];
 
 /**

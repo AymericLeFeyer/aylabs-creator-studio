@@ -28,6 +28,8 @@ export interface Channel {
   /** Le refresh token n'est jamais renvoyé : seule sa présence est exposée. */
   hasCredentials: boolean;
   isArchived: boolean;
+  /** Compte dans `/api/export` (Paramètres → API). Réglable indépendamment de l'archivage. */
+  exportEnabled: boolean;
   createdAt: string;
   updatedAt: string;
   latestSnapshot: ChannelSnapshot | null;
@@ -42,6 +44,7 @@ export interface ChannelInput {
   color?: string;
   refreshToken?: string | null;
   isArchived?: boolean;
+  exportEnabled?: boolean;
 }
 
 export interface ResolvedChannel {

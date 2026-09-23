@@ -24,6 +24,8 @@ export interface InstagramAccount {
   profilePicture: string | null;
   color: string;
   isArchived: boolean;
+  /** Compte dans `/api/export` (Paramètres → API). Réglable indépendamment de l'archivage. */
+  exportEnabled: boolean;
   lastCollectedAt: string | null;
   latestSnapshot: InstagramSnapshot | null;
   lastMetricDate: string | null;
@@ -39,6 +41,7 @@ export interface InstagramAccountInput {
   accessToken?: string | null;
   color?: string;
   isArchived?: boolean;
+  exportEnabled?: boolean;
 }
 
 export interface InstagramStory {
