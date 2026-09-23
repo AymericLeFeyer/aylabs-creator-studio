@@ -4,10 +4,7 @@ import type {
   DomadooSale,
   DomadooSummary,
 } from '../entities/ExportData.ts';
-import type {
-  InstagramPublicPostPage,
-  InstagramPublicProfile,
-} from '../../instagram/entities/InstagramAccount.ts';
+import type { TikTokPublicProfile } from '../../tiktok/entities/TikTokAccount.ts';
 
 /** Les collecteurs distants, vus du use case : il ne sait pas qu'un navigateur tourne derrière. */
 export interface IntegrationCollectors {
@@ -25,26 +22,19 @@ export interface IntegrationCollectors {
   discord: {
     fetch(inviteCode: string): Promise<DiscordExport>;
   };
-  instagram: {
+  tiktok: {
     /** `profile` : adresse du profil ou @pseudo, tel que saisi. */
-    fetch(profile: string, searchApiKey: string | null): Promise<InstagramPublicProfile>;
-    /** Une publication lue sur sa propre page : la voie que le blocage par IP laisse passer. */
-    fetchPost(url: string): Promise<InstagramPublicPostPage>;
+    fetch(profile: string): Promise<TikTokPublicProfile>;
   };
 }
 
 /**
- * Où va un profil Instagram relevé : dans les tables du module Instagram, et non dans un
+ * Où va un profil TikTok relevé : dans les tables du module TikTok, et non dans un
  * instantané d'export. C'est ce qui donne un **historique jour par jour** (courbe
- * d'abonnés, gain sur la période) et ce qui fait que l'export, calculé depuis la base,
- * n'a rien à savoir de la voie par laquelle le chiffre est arrivé.
+ * d'abonnés) et ce qui fait que l'export, calculé depuis la base, n'a rien à savoir de la
+ * voie par laquelle le chiffre est arrivé — même parti pris que l'ancien profil public
+ * Instagram, dont ce module reprend l'architecture.
  */
-export interface InstagramProfileSink {
-  recordPublicProfile(profile: InstagramPublicProfile): { accountId: string; username: string };
-  /**
-   * Les publications déjà archivées d'un compte suivi par son profil public, à relire une
-   * à une sur leur page. Vide pour un compte à jeton : l'API Graph s'en charge.
-   */
-  postsToRefresh(accountId: string, limit: number): Array<{ id: string; permalink: string }>;
-  recordPostStats(mediaId: string, post: InstagramPublicPostPage): void;
+export interface TikTokProfileSink {
+  recordPublicProfile(profile: TikTokPublicProfile): { accountId: string; username: string };
 }

@@ -1,5 +1,6 @@
 import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react';
 import { useTheme, type ThemePreference } from '../hooks/useTheme.ts';
+import { CompactTooltip } from './CompactTooltip.tsx';
 import { cn } from '../../shared/cn.ts';
 
 const OPTIONS: Array<{ value: ThemePreference; label: string; icon: LucideIcon }> = [
@@ -29,10 +30,11 @@ export const ThemeToggle = ({ compact = false }: { compact?: boolean }) => {
       <button
         type="button"
         onClick={() => setPreference(next.value)}
-        title={`Thème : ${current.label} (clic → ${next.label})`}
-        className="flex items-center justify-center rounded-md px-2.5 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        aria-label={`Thème : ${current.label} (clic → ${next.label})`}
+        className="group relative flex items-center justify-center rounded-md px-2.5 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <current.icon className="h-4 w-4 shrink-0" />
+        <CompactTooltip label={`Thème : ${current.label} (clic → ${next.label})`} />
       </button>
     );
   }

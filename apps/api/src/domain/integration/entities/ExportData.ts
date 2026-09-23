@@ -60,6 +60,23 @@ export interface InstagramExport {
   accounts: Array<{ username: string; followers: number; following: number; posts: number }>;
 }
 
+export interface TikTokExport {
+  lastUpdate: string | null;
+  /** Le premier compte suivi, comme l'unique compte de l'ancien outil. */
+  username: string;
+  followers: number;
+  following: number;
+  hearts: number;
+  videos: number;
+  accounts: Array<{
+    username: string;
+    followers: number;
+    following: number;
+    hearts: number;
+    videos: number;
+  }>;
+}
+
 export interface AmazonExport {
   thisMonth: {
     clicks: number | null;
@@ -122,6 +139,7 @@ export interface ExportPayload {
   generatedAt: string;
   youtube: ExportEntry | null;
   instagram: ExportEntry | null;
+  tiktok: ExportEntry | null;
   amazon: ExportEntry | null;
   domadoo: ExportEntry | null;
   discord: ExportEntry | null;

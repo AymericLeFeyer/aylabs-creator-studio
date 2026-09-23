@@ -39,6 +39,7 @@ export interface InstagramAccountInput {
   igUserId: string;
   /** `""` efface le jeton, absent le conserve — même convention que `refreshToken`. */
   accessToken?: string | null;
+  tokenExpiresAt?: string | null;
   color?: string;
   isArchived?: boolean;
   exportEnabled?: boolean;

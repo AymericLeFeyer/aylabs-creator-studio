@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type {
   InstagramExport,
+  TikTokExport,
   YouTubeExport,
   YouTubePeriodExport,
 } from '../../../domain/integration/entities/ExportData.ts';
@@ -46,6 +47,15 @@ interface InstagramRow {
   followers_count: number | null;
   follows_count: number | null;
   media_count: number | null;
+}
+
+interface TikTokRow {
+  username: string;
+  last_collected_at: string | null;
+  followers_count: number | null;
+  following_count: number | null;
+  heart_count: number | null;
+  video_count: number | null;
 }
 
 /**
@@ -202,6 +212,44 @@ export class SqliteLocalSourceRepository implements LocalSourceRepository {
       followers: accounts.reduce((total, account) => total + account.followers, 0),
       following: accounts.reduce((total, account) => total + account.following, 0),
       posts: accounts.reduce((total, account) => total + account.posts, 0),
+      accounts,
+    };
+  }
+
+  tiktok(): TikTokExport | null {
+    const rows = this.db
+      .prepare(
+        `SELECT a.username, a.last_collected_at, s.followers_count, s.following_count,
+                s.heart_count, s.video_count
+         FROM tiktok_accounts a
+         LEFT JOIN tiktok_account_snapshots s ON s.account_id = a.id
+           AND s.date = (SELECT MAX(date) FROM tiktok_account_snapshots WHERE account_id = a.id)
+         WHERE a.is_archived = 0 AND a.export_enabled = 1
+         ORDER BY a.created_at`,
+      )
+      .all() as unknown as TikTokRow[];
+    if (rows.length === 0) return null;
+
+    const accounts = rows.map((row) => ({
+      username: row.username,
+      followers: row.followers_count ?? 0,
+      following: row.following_count ?? 0,
+      hearts: row.heart_count ?? 0,
+      videos: row.video_count ?? 0,
+    }));
+    const lastUpdate = rows
+      .map((row) => row.last_collected_at)
+      .filter((value): value is string => value !== null)
+      .sort()
+      .at(-1);
+
+    return {
+      lastUpdate: lastUpdate ?? null,
+      username: rows[0]!.username,
+      followers: accounts.reduce((total, account) => total + account.followers, 0),
+      following: accounts.reduce((total, account) => total + account.following, 0),
+      hearts: accounts.reduce((total, account) => total + account.hearts, 0),
+      videos: accounts.reduce((total, account) => total + account.videos, 0),
       accounts,
     };
   }

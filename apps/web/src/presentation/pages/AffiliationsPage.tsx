@@ -1,18 +1,6 @@
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import {
-  CheckCircle2,
-  Clock,
-  Layers,
-  Link2,
-  MousePointerClick,
-  PiggyBank,
-  RefreshCw,
-  ShoppingCart,
-  Trophy,
-  Unlink,
-  Wallet,
-} from 'lucide-react';
+import { Layers, Link2, RefreshCw, Trophy, Unlink, Wallet } from 'lucide-react';
 import { usePlatforms } from '../../application/affiliate/usecases/usePlatforms.ts';
 import { useRevenues } from '../../application/revenue/usecases/useRevenues.ts';
 import {
@@ -21,7 +9,8 @@ import {
   useIntegrations,
 } from '../../application/integration/usecases/useIntegrations.ts';
 import { AFFILIATE_CATEGORY_ID } from '../../domain/category/entities/Category.ts';
-import { formatDate, formatNumber } from '../../shared/format.ts';
+import type { DomadooExport } from '../../domain/integration/entities/DomadooOverview.ts';
+import { formatDate, formatDateTime, formatNumber } from '../../shared/format.ts';
 import { cn } from '../../shared/cn.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
 import { usePrivacy } from '../hooks/usePrivacy.tsx';
@@ -32,6 +21,15 @@ import { DomadooChart } from '../components/domadoo/DomadooChart.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
+import { Badge } from '../components/ui/badge.tsx';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/ui/table.tsx';
 
 const TABS = ['domadoo', 'plateformes'] as const;
 type AffiliationsTab = (typeof TABS)[number];
@@ -113,81 +111,136 @@ const DomadooTab = ({ from, to }: { from: string; to: string }) => {
     );
   }
 
-  const totals = overview?.totals;
-  const previous = overview?.previousTotals;
-  const change = (
-    value: number | null | undefined,
-    previousValue: number | null | undefined,
-  ): number | null => {
-    if (value == null || previousValue == null || previousValue === 0) return null;
-    return ((value - previousValue) / previousValue) * 100;
-  };
+  // L'instantané brut, tel que Domadoo le renvoie — pas l'historique reconstruit
+  // ci-dessous, ses deux fenêtres fixes et les dernières ventes.
+  const snapshot = (domadoo?.data ?? null) as DomadooExport | null;
+
+  const header = (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <p className="text-xs text-muted-foreground">
+        {overview?.firstSnapshotDate
+          ? `Historique depuis le ${formatDate(overview.firstSnapshotDate)}`
+          : "Aucun relevé pour l'instant : le premier passage de la collecte horaire l'écrira."}
+        {domadoo?.lastUpdate && ` · dernier relevé le ${formatDateTime(domadoo.lastUpdate)}`}
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={collect.isPending}
+        onClick={() => collect.mutate('domadoo')}
+      >
+        <RefreshCw className={cn('h-4 w-4', collect.isPending && 'animate-spin')} />
+        {collect.isPending ? 'Collecte…' : 'Collecter'}
+      </Button>
+    </div>
+  );
+
+  // Configuré, mais la collecte horaire n'est pas encore passée : rien à afficher que
+  // l'invite à patienter, ou à déclencher le premier relevé soi-même.
+  if (!snapshot) {
+    return (
+      <div className="space-y-4">
+        {header}
+        <Card className="space-y-3 p-6 text-center">
+          <Wallet className="mx-auto h-8 w-8 text-muted-foreground" />
+          <p className="text-sm font-medium">Aucune collecte pour l'instant</p>
+          <p className="mx-auto max-w-lg text-sm text-muted-foreground">
+            Domadoo est configuré, mais rien n'a encore été relevé. La collecte tourne toutes les
+            heures — ou lance-la maintenant avec le bouton ci-dessus.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  // Domadoo parle en euros : ce n'est pas un montant du domaine, mais un contrat externe
+  // recopié tel quel. `null` reste `null` — « pas mesuré » n'est pas « zéro ».
+  const money = (value: number | null): string =>
+    value === null ? '—' : privacy.money(Math.round(value * 100), 'affiliation');
+  const count = (value: number | null): string => (value === null ? '—' : formatNumber(value));
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          {overview?.firstSnapshotDate
-            ? `Historique depuis le ${formatDate(overview.firstSnapshotDate)}`
-            : "Aucun relevé pour l'instant : le premier passage de la collecte horaire l'écrira."}
-          {overview?.lastUpdate && ` · dernier relevé le ${formatDate(overview.lastUpdate)}`}
-        </p>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={collect.isPending}
-          onClick={() => collect.mutate('domadoo')}
-        >
-          <RefreshCw className={cn('h-4 w-4', collect.isPending && 'animate-spin')} />
-          {collect.isPending ? 'Collecte…' : 'Collecter'}
-        </Button>
-      </div>
+      {header}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <StatCard
-          label="Gains"
-          value={totals ? privacy.money(totals.earningsGainedCents ?? 0, 'affiliation') : '—'}
-          change={privacy.change(
-            change(totals?.earningsGainedCents, previous?.earningsGainedCents),
-            'affiliation',
-          )}
-          hint="commissions validées sur la période"
-          icon={<Wallet className="h-4 w-4" />}
-          accent={totals && (totals.earningsGainedCents ?? 0) > 0 ? 'var(--cash)' : undefined}
+      {/* Les deux fenêtres que Domadoo calcule lui-même, telles quelles — distinctes de
+          l'historique du bas, qui suit la période choisie en haut de l'écran. */}
+      <div className="grid gap-3 lg:grid-cols-2">
+        <InfoCard
+          title="30 derniers jours"
+          rows={[
+            { label: 'Clics', value: count(snapshot.last30days.clicks) },
+            { label: 'Clics uniques', value: count(snapshot.last30days.uniquesClicks) },
+            { label: 'Ventes validées', value: count(snapshot.last30days.approvedSales) },
+            { label: 'Ventes en attente', value: count(snapshot.last30days.waitingSales) },
+            { label: 'Gains', value: money(snapshot.last30days.earnings) },
+            {
+              label: 'Commissions en attente',
+              value: money(snapshot.last30days.waitingSalesTotal),
+            },
+          ]}
         />
-        <StatCard
-          label="Clics"
-          value={formatNumber(totals?.clicksGained ?? 0)}
-          hint="sur la période"
-          icon={<MousePointerClick className="h-4 w-4" />}
-        />
-        <StatCard
-          label="Ventes validées"
-          value={formatNumber(totals?.approvedSalesGained ?? 0)}
-          hint="sur la période"
-          icon={<CheckCircle2 className="h-4 w-4" />}
-        />
-        <StatCard
-          label="Solde"
-          value={totals ? privacy.money(totals.balanceCents ?? 0, 'affiliation') : '—'}
-          hint="au dernier relevé, pas un cumul de la période"
-          icon={<PiggyBank className="h-4 w-4" />}
-        />
-        <StatCard
-          label="En attente de paiement"
-          value={totals ? privacy.money(totals.waitingPaymentsCents ?? 0, 'affiliation') : '—'}
-          hint="dû par Domadoo, pas encore versé"
-          icon={<Clock className="h-4 w-4" />}
-        />
-        <StatCard
-          label="Ventes en attente"
-          value={totals ? privacy.money(totals.waitingSalesCents ?? 0, 'affiliation') : '—'}
-          hint="commandes pas encore validées"
-          icon={<ShoppingCart className="h-4 w-4" />}
+        <InfoCard
+          title="Total depuis toujours"
+          rows={[
+            { label: 'Clics', value: count(snapshot.total.clicks) },
+            { label: 'Clics uniques', value: count(snapshot.total.uniquesClicks) },
+            { label: 'Ventes validées', value: count(snapshot.total.approvedSales) },
+            { label: 'Gains', value: money(snapshot.total.earnings) },
+            { label: 'Versé', value: money(snapshot.total.payments) },
+            { label: 'En attente de versement', value: money(snapshot.total.waitingPayments) },
+            { label: 'Solde', value: money(snapshot.total.balance) },
+          ]}
         />
       </div>
 
       <Card className="p-4">
+        <h3 className="mb-3 text-sm font-semibold">Ventes récentes</h3>
+        {snapshot.lastSales.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Aucune vente relevée pour l'instant.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>N°</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead className="text-right">Commande</TableHead>
+                <TableHead className="text-right">Commission</TableHead>
+                <TableHead>Statut</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {snapshot.lastSales.map((sale) => (
+                <TableRow key={sale.id}>
+                  <TableCell className="font-medium">{sale.id}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDateTime(sale.date)}
+                  </TableCell>
+                  <TableCell className="text-right tabular">{money(sale.order)}</TableCell>
+                  <TableCell className="text-right tabular">{money(sale.commission)}</TableCell>
+                  <TableCell>
+                    {sale.approved ? (
+                      <Badge variant="cash">Validée</Badge>
+                    ) : (
+                      <Badge variant="outline">En attente</Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
+
+      <Card className="space-y-2 p-4">
+        <div>
+          <h3 className="text-sm font-semibold">Évolution</h3>
+          <p className="text-xs text-muted-foreground">
+            Sur la période choisie en haut de l'écran — distincte des deux fenêtres fixes ci-dessus.
+          </p>
+        </div>
         {isLoading && !overview ? (
           <div className="h-64 animate-pulse rounded-xl bg-muted" />
         ) : (
@@ -197,6 +250,26 @@ const DomadooTab = ({ from, to }: { from: string; to: string }) => {
     </div>
   );
 };
+
+const InfoCard = ({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{ label: string; value: string }>;
+}) => (
+  <Card className="p-4">
+    <h3 className="mb-1 text-sm font-semibold">{title}</h3>
+    <dl className="divide-y divide-border/60">
+      {rows.map((row) => (
+        <div key={row.label} className="flex items-center justify-between py-1.5 text-sm">
+          <dt className="text-muted-foreground">{row.label}</dt>
+          <dd className="font-medium tabular">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  </Card>
+);
 
 const PlatformsTab = ({
   from,

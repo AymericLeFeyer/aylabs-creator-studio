@@ -8,6 +8,7 @@ import {
   Instagram,
   Link2,
   MessagesSquare,
+  Music2,
   ScrollText,
   Wallet,
   Youtube,
@@ -178,6 +179,27 @@ export const withDiscord = (sections: NavSection[], configured: boolean): NavSec
   });
 };
 
+/**
+ * Le menu, augmenté de l'entrée **TikTok** — même règle que Discord, et pour la même
+ * raison : sans profil renseigné (Paramètres → Audience → TikTok), l'écran n'a rien à
+ * montrer. Insérée après Discord s'il est déjà présent, sinon juste après Instagram —
+ * appliquer `withDiscord` avant `withTikTok` donne donc Instagram, Discord, TikTok.
+ */
+export const withTikTok = (sections: NavSection[], configured: boolean): NavSection[] => {
+  if (!configured) return sections;
+  return sections.map((section) => {
+    if (section.label !== 'Audience') return section;
+    const discordIndex = section.items.findIndex((item) => item.to === '/discord');
+    const index =
+      discordIndex >= 0
+        ? discordIndex
+        : section.items.findIndex((item) => item.to === '/instagram');
+    const items = [...section.items];
+    items.splice(index + 1, 0, { to: '/tiktok', label: 'TikTok', icon: Music2, end: false });
+    return { ...section, items };
+  });
+};
+
 /** Toutes les entrées à plat, dans l'ordre d'affichage. */
 export const NAV: NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);
 
@@ -216,6 +238,7 @@ const TITLES: Array<[string, string]> = [
   ['/planning', 'Planning'],
   ['/youtube', 'YouTube'],
   ['/instagram', 'Instagram'],
+  ['/tiktok', 'TikTok'],
   ['/discord', 'Discord'],
   ['/commentaires', 'Commentaires'],
   ['/produits', 'Produits'],

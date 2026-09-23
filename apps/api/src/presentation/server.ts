@@ -31,6 +31,7 @@ import { legalRouter } from './routes/legal.ts';
 import { affiliatePlatformsRouter } from './routes/affiliatePlatforms.ts';
 import { planningRouter } from './routes/planning.ts';
 import { instagramRouter } from './routes/instagram.ts';
+import { tiktokRouter } from './routes/tiktok.ts';
 import { integrationsRouter } from './routes/integrations.ts';
 import { domadooRouter } from './routes/domadoo.ts';
 import { externalAppsRouter } from './routes/externalApps.ts';
@@ -81,6 +82,7 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/affiliate-platforms', affiliatePlatformsRouter(container));
   app.use('/api/planning', planningRouter(container));
   app.use('/api/instagram', instagramRouter(container));
+  app.use('/api/tiktok', tiktokRouter(container));
   app.use('/api/integrations', integrationsRouter(container));
   app.use('/api/domadoo', domadooRouter(container));
   app.use('/api/external-apps', externalAppsRouter(container));

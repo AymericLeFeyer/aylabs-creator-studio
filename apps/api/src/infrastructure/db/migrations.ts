@@ -1470,6 +1470,66 @@ const migrations: Migration[] = [
       ALTER TABLE ig_accounts ADD COLUMN export_enabled INTEGER NOT NULL DEFAULT 1;
     `,
   },
+  {
+    version: 37,
+    name: 'tiktok',
+    // TikTok, suivi par son profil public — même architecture que l'ancien profil public
+    // Instagram (avant le passage à l'API Graph) : TikTok n'ouvre son API officielle qu'à
+    // des partenaires validés, hors de portée d'un studio individuel. Un domaine séparé et
+    // non une "channel" ou un "ig_account" de plus : les compteurs (cœurs, pas de revenu,
+    // pas de minutes vues) ne recoupent ni YouTube ni Instagram.
+    up: `
+      CREATE TABLE tiktok_accounts (
+        id                TEXT PRIMARY KEY,
+        username          TEXT NOT NULL UNIQUE,
+        name              TEXT,
+        profile_picture   TEXT,
+        color             TEXT NOT NULL DEFAULT '#000000',
+        is_archived       INTEGER NOT NULL DEFAULT 0,
+        export_enabled    INTEGER NOT NULL DEFAULT 1,
+        last_collected_at TEXT,
+        created_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL
+      );
+
+      -- CUMUL, une ligne par jour : abonnés, abonnements, coeurs, vidéos. Même nature que
+      -- "ig_account_snapshots" — ces valeurs ne se somment pas entre deux jours, on prend
+      -- la dernière connue du bucket.
+      CREATE TABLE tiktok_account_snapshots (
+        account_id      TEXT NOT NULL REFERENCES tiktok_accounts(id) ON DELETE CASCADE,
+        date            TEXT NOT NULL,
+        followers_count INTEGER,
+        following_count INTEGER,
+        heart_count     INTEGER,
+        video_count     INTEGER,
+        created_at      TEXT NOT NULL,
+        PRIMARY KEY (account_id, date)
+      );
+
+      -- Les vidéos visibles sur le profil public, avec leurs compteurs au moment du
+      -- relevé. Contrairement aux stories Instagram, une vidéo TikTok reste lisible tant
+      -- qu'elle n'est pas supprimée : l'historique n'a pas la fragilité des 24 heures.
+      CREATE TABLE tiktok_videos (
+        id            TEXT PRIMARY KEY,
+        account_id    TEXT NOT NULL REFERENCES tiktok_accounts(id) ON DELETE CASCADE,
+        video_id      TEXT NOT NULL,
+        description   TEXT,
+        permalink     TEXT,
+        thumbnail_url TEXT,
+        posted_at     TEXT NOT NULL,
+        date          TEXT NOT NULL,
+        views         INTEGER,
+        likes         INTEGER,
+        comments      INTEGER,
+        shares        INTEGER,
+        stats_at      TEXT,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        UNIQUE (account_id, video_id)
+      );
+      CREATE INDEX idx_tiktok_videos_date ON tiktok_videos(account_id, date);
+    `,
+  },
 ];
 
 /**

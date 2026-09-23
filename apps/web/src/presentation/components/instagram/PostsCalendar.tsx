@@ -177,23 +177,35 @@ export const PostsCalendar = ({ series, media, from, to }: PostsCalendarProps) =
             </p>
           ) : (
             selectedMedia.map((item) => (
-              <div key={item.id} className="flex items-center gap-2 text-sm">
-                <span className="min-w-0 flex-1 truncate">
-                  {item.caption?.split('\n')[0] || '(sans légende)'}
-                </span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {MEDIA_TYPE_LABELS[item.mediaType ?? ''] ?? ''}
-                </span>
-                {item.permalink && (
-                  <a
-                    href={item.permalink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                    title="Ouvrir sur Instagram"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
+              <div key={item.id} className="space-y-0.5">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="min-w-0 flex-1 truncate">
+                    {item.caption?.split('\n')[0] || '(sans légende)'}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {MEDIA_TYPE_LABELS[item.mediaType ?? ''] ?? ''}
+                  </span>
+                  {item.permalink && (
+                    <a
+                      href={item.permalink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
+                      title="Ouvrir sur Instagram"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
+                {/* Portée et enregistrements : uniquement mesurés par l'API Graph, absents
+                    d'une publication seulement déduite du compteur du profil public. */}
+                {item.statsAt && (
+                  <p className="text-xs text-muted-foreground">
+                    {item.views !== null && <>{item.views} vues · </>}
+                    {item.reach !== null && <>{item.reach} portée · </>}
+                    {item.likes ?? 0} j’aime · {item.comments ?? 0} commentaires
+                    {item.saved !== null && <> · {item.saved} enregistrements</>}
+                  </p>
                 )}
               </div>
             ))

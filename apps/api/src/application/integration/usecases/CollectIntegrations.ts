@@ -11,7 +11,7 @@ import type {
 import type { IntegrationRepository } from '../../../domain/integration/repositories/IntegrationRepository.ts';
 import type {
   IntegrationCollectors,
-  InstagramProfileSink,
+  TikTokProfileSink,
 } from '../../../domain/integration/repositories/IntegrationCollectors.ts';
 import type { DomadooSnapshotRepository } from '../../../domain/integration/repositories/DomadooSnapshotRepository.ts';
 import { round2 } from '../../../domain/integration/services/localeNumber.ts';
@@ -24,37 +24,29 @@ const toCents = (value: number | null): number | null =>
   value === null ? null : Math.round(value * 100);
 
 /**
- * Les appels HTTP d'abord (Discord, le profil Instagram : une demi-seconde chacun), qui
+ * Les appels HTTP d'abord (Discord, le profil TikTok : une demi-seconde chacun), qui
  * n'ont pas à attendre deux navigateurs.
  */
-const COLLECTED_PROVIDERS: IntegrationProvider[] = ['discord', 'instagram', 'amazon', 'domadoo'];
+const COLLECTED_PROVIDERS: IntegrationProvider[] = ['discord', 'tiktok', 'amazon', 'domadoo'];
 
-/** Ce que garde l'instantané d'un relevé de profil Instagram, pour l'écran des sources. */
-export interface InstagramProfileResult {
+/** Ce que garde l'instantané d'un relevé de profil TikTok, pour l'écran des sources. */
+export interface TikTokProfileResult {
   username: string;
   followers: number | null;
   following: number | null;
-  posts: number | null;
-  source: 'api' | 'searchapi' | 'page';
+  hearts: number | null;
+  source: 'json';
   approximate: boolean;
-  /** Publications listées par le relevé du profil — 0 par la voie `page`. */
-  postsListed: number;
-  /** Publications déjà connues relues une à une sur leur page, faute de liste. */
-  postsRefreshed: number;
+  videosListed: number;
 }
-
-/**
- * Publications relues une à une quand le profil ne les liste pas. Une requête chacune :
- * au-delà d'une douzaine, on s'expose au blocage qu'on cherche justement à contourner,
- * et les compteurs des publications plus anciennes ne bougent plus guère.
- */
-const POST_REFRESH_LIMIT = 12;
 
 /** L'instantané des ventes Domadoo en attente, relevé une fois par jour. */
 export const DOMADOO_SALES_KEY = 'domadoo:sales';
 
 /**
- * La collecte des sources distantes : Amazon, Domadoo, Discord.
+ * La collecte des sources distantes : Amazon, Domadoo, Discord — et TikTok, distant lui
+ * aussi dans les faits (aucun jeton, une page web lue à chaque passage), même s'il vit
+ * côté domaine dans la famille `local` comme Instagram.
  *
  * Chaque résultat est **figé** dans `integration_snapshots`, et l'export ne relit que ça :
  * une requête de Home Assistant ne déclenche jamais un navigateur. Un échec est noté à
@@ -69,7 +61,7 @@ export class CollectIntegrations {
   private readonly repo: IntegrationRepository;
   private readonly manage: ManageIntegrations;
   private readonly collectors: IntegrationCollectors;
-  private readonly instagram: InstagramProfileSink;
+  private readonly tiktok: TikTokProfileSink;
   private readonly domadooSnapshots: DomadooSnapshotRepository;
   private readonly running = new Set<string>();
 
@@ -77,13 +69,13 @@ export class CollectIntegrations {
     repo: IntegrationRepository,
     manage: ManageIntegrations,
     collectors: IntegrationCollectors,
-    instagram: InstagramProfileSink,
+    tiktok: TikTokProfileSink,
     domadooSnapshots: DomadooSnapshotRepository,
   ) {
     this.repo = repo;
     this.manage = manage;
     this.collectors = collectors;
-    this.instagram = instagram;
+    this.tiktok = tiktok;
     this.domadooSnapshots = domadooSnapshots;
   }
 
@@ -113,16 +105,16 @@ export class CollectIntegrations {
   /**
    * Ce que le passage horaire saute.
    *
-   * **Instagram obéit à deux règles à part.** Son interrupteur ne dit que « publier dans
-   * l'export » : le relevé alimente aussi l'écran Instagram, et couper la publication ne
-   * doit pas arrêter l'historique. Et il ne tourne qu'**une fois par jour** — un relevé
-   * quotidien suffit à une courbe d'abonnés, et Instagram bloque vite une adresse qui lit
-   * un profil toutes les heures. Un échec, lui, est retenté au passage suivant : c'est la
-   * dernière *réussite* du jour qui fait foi.
+   * **TikTok obéit à deux règles à part**, comme l'ancien profil public Instagram. Son
+   * interrupteur ne dit que « publier dans l'export » : le relevé alimente aussi l'écran
+   * TikTok, et couper la publication ne doit pas arrêter l'historique. Et il ne tourne
+   * qu'**une fois par jour** — un relevé quotidien suffit à une courbe d'abonnés, et une
+   * lecture trop fréquente expose l'adresse du serveur au blocage. Un échec, lui, est
+   * retenté au passage suivant : c'est la dernière *réussite* du jour qui fait foi.
    */
   private shouldSkip(provider: IntegrationProvider): boolean {
     if (this.manage.resolve(provider).missing.length > 0) return true;
-    if (provider !== 'instagram') return !this.repo.isEnabled(provider);
+    if (provider !== 'tiktok') return !this.repo.isEnabled(provider);
     return this.repo.snapshot(provider)?.fetchedAt?.slice(0, 10) === today();
   }
 
@@ -150,8 +142,8 @@ export class CollectIntegrations {
           return this.collectDomadoo({ login: values.login!, password: values.password! });
         case 'discord':
           return this.collectors.discord.fetch(values.inviteCode!);
-        case 'instagram':
-          return this.collectInstagram(values.profile!, values.searchApiKey ?? null);
+        case 'tiktok':
+          return this.collectTikTok(values.profile!);
         default:
           throw badRequest(`Aucun collecteur pour ${definition.label}`);
       }
@@ -175,46 +167,23 @@ export class CollectIntegrations {
   }
 
   /**
-   * Le relevé du profil public : il est **écrit dans le module Instagram** (compte + relevé
+   * Le relevé du profil public : il est **écrit dans le module TikTok** (compte + relevé
    * du jour), d'où l'export le relit comme n'importe quel compte. L'instantané n'en garde
    * qu'un résumé, pour que l'écran des sources dise d'où vient le chiffre et s'il est
-   * arrondi.
+   * arrondi — même parti pris que l'ancien profil public Instagram.
    */
-  private async collectInstagram(
-    profile: string,
-    searchApiKey: string | null,
-  ): Promise<InstagramProfileResult> {
-    const fetched = await this.collectors.instagram.fetch(profile, searchApiKey);
-    const { accountId, username } = this.instagram.recordPublicProfile(fetched);
-
-    // La voie `page` ne liste aucune publication : sans ce second temps, les j'aime et
-    // commentaires restaient figés à la dernière lecture réussie de la liste. La page de
-    // chaque publication, elle, reste lisible quand l'adresse du serveur est bloquée.
-    let postsRefreshed = 0;
-    if (fetched.recentPosts.length === 0) {
-      for (const media of this.instagram.postsToRefresh(accountId, POST_REFRESH_LIMIT)) {
-        try {
-          this.instagram.recordPostStats(
-            media.id,
-            await this.collectors.instagram.fetchPost(media.permalink),
-          );
-          postsRefreshed += 1;
-        } catch (error) {
-          // Une publication supprimée ou illisible ne doit pas faire échouer le relevé.
-          console.warn(`[instagram] ${media.permalink} :`, error);
-        }
-      }
-    }
+  private async collectTikTok(profile: string): Promise<TikTokProfileResult> {
+    const fetched = await this.collectors.tiktok.fetch(profile);
+    const { username } = this.tiktok.recordPublicProfile(fetched);
 
     return {
       username,
       followers: fetched.followers,
       following: fetched.following,
-      posts: fetched.posts,
+      hearts: fetched.hearts,
       source: fetched.source,
       approximate: fetched.approximate,
-      postsListed: fetched.recentPosts.length,
-      postsRefreshed,
+      videosListed: fetched.recentVideos.length,
     };
   }
 

@@ -2,7 +2,8 @@
  * Les sources de l'export (Paramètres → API). Duplique le contrat de l'API — toute
  * évolution doit être répercutée des deux côtés.
  */
-export type IntegrationProvider = 'youtube' | 'instagram' | 'amazon' | 'domadoo' | 'discord';
+export type IntegrationProvider =
+  'youtube' | 'instagram' | 'tiktok' | 'amazon' | 'domadoo' | 'discord';
 
 export type IntegrationKind = 'local' | 'remote';
 

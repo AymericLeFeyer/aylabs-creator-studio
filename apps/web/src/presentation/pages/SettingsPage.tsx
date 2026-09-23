@@ -11,6 +11,7 @@ import {
   KeyRound,
   Link2,
   ListOrdered,
+  Music2,
   SlidersHorizontal,
   Tags,
   Wallet,
@@ -39,6 +40,7 @@ import { StepsPage } from './StepsPage.tsx';
 import { ScriptSettingsPage } from './ScriptSettingsPage.tsx';
 import { PlanningSettingsPage } from './PlanningSettingsPage.tsx';
 import { InstagramSettingsPage } from './InstagramSettingsPage.tsx';
+import { TikTokSettingsPage } from './TikTokSettingsPage.tsx';
 import { DiscordSettingsPage } from './DiscordSettingsPage.tsx';
 import { AffiliationSettingsPage } from './AffiliationSettingsPage.tsx';
 import { CompanyPage } from './CompanyPage.tsx';
@@ -111,6 +113,7 @@ const GROUPS: SettingsGroup[] = [
         icon: Instagram,
         render: () => <InstagramSettingsPage />,
       },
+      { id: 'tiktok', label: 'TikTok', icon: Music2, render: () => <TikTokSettingsPage /> },
       { id: 'discord', label: 'Discord', icon: Hash, render: () => <DiscordSettingsPage /> },
     ],
   },

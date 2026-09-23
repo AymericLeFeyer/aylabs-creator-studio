@@ -4,14 +4,17 @@
  *
  * Deux familles, et elles ne se collectent pas pareil :
  *
- * - `local` — YouTube et Instagram. Le studio les collecte **déjà** pour ses propres
- *   écrans : l'export se calcule à la lecture depuis la base, rien à configurer ni à
- *   refaire tourner.
+ * - `local` — YouTube, Instagram et TikTok. Le studio les collecte **déjà** pour ses
+ *   propres écrans : l'export se calcule à la lecture depuis la base, rien à configurer
+ *   ni à refaire tourner. Instagram (API Graph, jeton par compte) et TikTok (profil
+ *   public, sans jeton) n'ont pas la même collecte, mais tous deux publient leurs
+ *   comptes suivis sans navigateur ni instantané figé.
  * - `remote` — Amazon, Domadoo, Discord. Des comptes que le studio ne connaît pas
  *   autrement : un collecteur va les chercher, et le résultat est figé dans un
  *   instantané (`integration_snapshots`) que l'export relit.
  */
-export type IntegrationProvider = 'youtube' | 'instagram' | 'amazon' | 'domadoo' | 'discord';
+export type IntegrationProvider =
+  'youtube' | 'instagram' | 'tiktok' | 'amazon' | 'domadoo' | 'discord';
 
 export type IntegrationKind = 'local' | 'remote';
 
@@ -60,7 +63,20 @@ export const PROVIDERS: ProviderDefinition[] = [
     id: 'instagram',
     label: 'Instagram',
     description:
-      'Abonnés, abonnements et publications des comptes suivis. Sans compte Meta connecté, le profil public ci-dessous est relevé une fois par jour.',
+      'Abonnés, stories, portée et publications des comptes connectés par l’API Graph (Meta for Developers). Se règle dans Paramètres → Instagram, un compte à la fois, avec son jeton.',
+    kind: 'local',
+    // Rien à collecter ici : la collecte se déclenche depuis /api/instagram/collect
+    // (bouton de l'écran Instagram), un jeton par compte plutôt qu'un identifiant
+    // générique de cette liste.
+    requiresBrowser: false,
+    collectable: false,
+    fields: [],
+  },
+  {
+    id: 'tiktok',
+    label: 'TikTok',
+    description:
+      'Abonnés, coeurs et vidéos du profil public suivi. TikTok n’ouvre son API officielle qu’à des partenaires validés : la lecture se fait donc sans jeton, sur la page publique, une fois par jour.',
     kind: 'local',
     requiresBrowser: false,
     collectable: true,
@@ -69,17 +85,9 @@ export const PROVIDERS: ProviderDefinition[] = [
         key: 'profile',
         label: 'Compte à suivre',
         secret: false,
-        envVar: 'INSTAGRAM_USERNAME',
+        envVar: 'TIKTOK_USERNAME',
         optional: false,
-        hint: 'Adresse du profil ou @pseudo. Lecture du profil public, sans jeton : abonnés, abonnements et nombre de publications — ni stories, ni statistiques.',
-      },
-      {
-        key: 'searchApiKey',
-        label: 'Clé SearchAPI',
-        secret: true,
-        envVar: 'SEARCH_API_APIKEY',
-        optional: true,
-        hint: 'Facultatif. Tentée quand Instagram refuse la lecture directe (429) ; sans elle, les compteurs sont lus sur la page du profil, arrondis au-delà de 10 000.',
+        hint: 'Adresse du profil ou @pseudo. Lecture du profil public, sans jeton : abonnés, abonnements, coeurs et dernières vidéos visibles.',
       },
     ],
   },

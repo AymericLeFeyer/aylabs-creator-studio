@@ -46,4 +46,13 @@ export const formatBucketLabel = (date: string, granularity: 'day' | 'week' | 'm
 export const formatDate = (date: string): string =>
   format(parseISO(date), 'dd MMM yyyy', { locale: fr });
 
+/**
+ * Date et heure, pour un horodatage qui n'est pas forcément un ISO strict — Domadoo
+ * renvoie `"2026-09-17 17:30:07"`, un espace là où `parseISO` attend un `T`.
+ */
+export const formatDateTime = (date: string): string =>
+  format(parseISO(date.includes('T') ? date : date.replace(' ', 'T')), 'dd MMM yyyy HH:mm', {
+    locale: fr,
+  });
+
 export const toIsoDate = (date: Date): string => format(date, 'yyyy-MM-dd');

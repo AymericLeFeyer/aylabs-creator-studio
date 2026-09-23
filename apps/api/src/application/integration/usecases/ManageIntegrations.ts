@@ -114,6 +114,7 @@ export class ManageIntegrations {
   localData(provider: IntegrationProvider) {
     if (provider === 'youtube') return this.local.youtube(today());
     if (provider === 'instagram') return this.local.instagram();
+    if (provider === 'tiktok') return this.local.tiktok();
     return null;
   }
 

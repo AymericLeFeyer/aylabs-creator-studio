@@ -11,6 +11,7 @@ import { SettingsPage } from './presentation/pages/SettingsPage.tsx';
 import { ProductionPage } from './presentation/pages/ProductionPage.tsx';
 import { PlanningPage } from './presentation/pages/PlanningPage.tsx';
 import { InstagramPage } from './presentation/pages/InstagramPage.tsx';
+import { TikTokPage } from './presentation/pages/TikTokPage.tsx';
 import { DiscordPage } from './presentation/pages/DiscordPage.tsx';
 import { ProductionDetailPage } from './presentation/pages/ProductionDetailPage.tsx';
 import { ProductsPage } from './presentation/pages/ProductsPage.tsx';
@@ -57,6 +58,7 @@ export const App = () => (
               <Route path="youtube" element={<ContentPage />} />
               <Route path="contenu" element={<Navigate to="/youtube" replace />} />
               <Route path="instagram" element={<InstagramPage />} />
+              <Route path="tiktok" element={<TikTokPage />} />
               <Route path="discord" element={<DiscordPage />} />
               <Route path="commentaires" element={<CommentsPage />} />
               <Route path="planning" element={<PlanningPage />} />

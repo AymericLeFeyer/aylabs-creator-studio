@@ -10,6 +10,7 @@ import {
   Hash,
   Instagram,
   KeyRound,
+  Music2,
   PackageSearch,
   Plus,
   RefreshCw,
@@ -31,6 +32,10 @@ import {
   useInstagramAccounts,
   useUpdateInstagramAccount,
 } from '../../application/instagram/usecases/useInstagram.ts';
+import {
+  useTikTokAccounts,
+  useUpdateTikTokAccount,
+} from '../../application/tiktok/usecases/useTikTok.ts';
 import {
   integrationStatus,
   type CreatedExportKey,
@@ -78,6 +83,7 @@ const STATUS_BADGES: Record<IntegrationStatus, { label: string; variant: BadgePr
 const PREVIEW_MASKS: Record<IntegrationProvider, PrivacyTarget[]> = {
   youtube: ['adsense', 'views', 'subscribers'],
   instagram: ['subscribers'],
+  tiktok: ['subscribers'],
   amazon: ['affiliation'],
   domadoo: ['affiliation'],
   discord: [],
@@ -89,14 +95,19 @@ const LOCAL_SOURCE_HINTS: Partial<Record<IntegrationProvider, { ok: string; empt
     empty: 'Aucune chaîne suivie : ajoute-en une dans Paramètres → Audience → YouTube.',
   },
   instagram: {
-    ok: 'Alimentée par le profil public, relevé une fois par jour : abonnés et dernières publications.',
-    empty: 'Aucun profil suivi : renseigne-le dans Paramètres → Audience → Instagram.',
+    ok: 'Alimentée par les comptes connectés à l’API Graph (Meta), collectés chaque heure.',
+    empty: 'Aucun compte connecté : ajoute-en un dans Paramètres → Audience → Instagram.',
+  },
+  tiktok: {
+    ok: 'Alimentée par le profil public, relevé une fois par jour : abonnés, coeurs et dernières vidéos.',
+    empty: 'Aucun profil suivi : renseigne-le dans Paramètres → Audience → TikTok.',
   },
 };
 
 const PROVIDER_ICONS: Record<IntegrationProvider, LucideIcon> = {
   youtube: Youtube,
   instagram: Instagram,
+  tiktok: Music2,
   amazon: ShoppingCart,
   domadoo: PackageSearch,
   discord: Hash,
@@ -108,10 +119,11 @@ const PROVIDER_ICONS: Record<IntegrationProvider, LucideIcon> = {
  *
  * Cette page ne parle plus que de ce qui **sort** du studio : activer une source, choisir
  * ce qu'elle publie, la collecter, vérifier ce qu'elle renvoie. Les identifiants
- * (Amazon, Domadoo, Discord, le profil Instagram) se règlent désormais avec le domaine
- * qu'ils alimentent — Paramètres → Revenus → Affiliation, → Audience → Instagram et
- * → Audience → Discord — et une source qui n'est pas encore configurée le dit avec un
- * lien plutôt que d'exposer ses champs ici une seconde fois.
+ * (Amazon, Domadoo, Discord, les comptes Instagram, le profil TikTok) se règlent
+ * désormais avec le domaine qu'ils alimentent — Paramètres → Revenus → Affiliation,
+ * → Audience → Instagram, → Audience → TikTok et → Audience → Discord — et une source
+ * qui n'est pas encore configurée le dit avec un lien plutôt que d'exposer ses champs ici
+ * une seconde fois.
  *
  * Chaque source est une **ligne dépliable** plutôt qu'une carte pleine largeur : cinq
  * cartes détaillées, dont trois ne concernent presque jamais l'écran (Amazon, Domadoo,
@@ -393,6 +405,55 @@ const ChannelExportList = () => {
   );
 };
 
+/** Les comptes TikTok inclus dans l'export, une bascule chacun. */
+const TikTokExportList = () => {
+  const { data: accounts = [] } = useTikTokAccounts(false);
+  const update = useUpdateTikTokAccount();
+  const queryClient = useQueryClient();
+
+  if (accounts.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Aucun profil suivi : renseigne-le dans{' '}
+        <Link to="/parametres?onglet=tiktok" className="underline underline-offset-2">
+          Paramètres → Audience → TikTok
+        </Link>
+        .
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-sm text-muted-foreground">Comptes inclus dans l’export :</p>
+      <ul className="divide-y divide-border rounded-md border border-border">
+        {accounts.map((account) => (
+          <li key={account.id} className="flex items-center gap-3 px-3 py-2">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: account.color }}
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate text-sm">@{account.username}</span>
+            <Switch
+              checked={account.exportEnabled}
+              onCheckedChange={(exportEnabled) =>
+                update.mutate(
+                  { id: account.id, input: { exportEnabled } },
+                  {
+                    onSuccess: () =>
+                      void queryClient.invalidateQueries({ queryKey: ['integrations'] }),
+                  },
+                )
+              }
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
 /** Les comptes Instagram inclus dans l'export, une bascule chacun. */
 const InstagramExportList = () => {
   const { data: accounts = [] } = useInstagramAccounts(false);
@@ -444,6 +505,7 @@ const InstagramExportList = () => {
 
 /** Où sont réglés les identifiants d'une source qui n'en montre plus ici. */
 const CONFIG_POINTERS: Partial<Record<IntegrationProvider, { to: string; label: string }>> = {
+  instagram: { to: '/parametres?onglet=instagram', label: 'Paramètres → Audience → Instagram' },
   amazon: { to: '/parametres?onglet=affiliation', label: 'Paramètres → Revenus → Affiliation' },
   domadoo: { to: '/parametres?onglet=affiliation', label: 'Paramètres → Revenus → Affiliation' },
   discord: { to: '/parametres?onglet=discord', label: 'Paramètres → Audience → Discord' },
@@ -523,6 +585,7 @@ const ProviderRow = ({ integration }: { integration: IntegrationView }) => {
 
           {integration.id === 'youtube' && <ChannelExportList />}
           {integration.id === 'instagram' && <InstagramExportList />}
+          {integration.id === 'tiktok' && <TikTokExportList />}
 
           {pointer && (
             <p className="text-sm text-muted-foreground">

@@ -1,11 +1,11 @@
 import { Link } from 'react-router-dom';
-import { Instagram, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Instagram, RefreshCw } from 'lucide-react';
 import {
   useCollectInstagram,
   useInstagramOverview,
 } from '../../application/instagram/usecases/useInstagram.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
-import { formatCount } from '../../domain/instagram/entities/Instagram.ts';
+import { formatCount, tokenWarning } from '../../domain/instagram/entities/Instagram.ts';
 import { InstagramChart } from '../components/instagram/InstagramChart.tsx';
 import { PostsCalendar } from '../components/instagram/PostsCalendar.tsx';
 import { StoryCounter } from '../components/instagram/StoryCounter.tsx';
@@ -17,18 +17,18 @@ import { usePrivacy } from '../hooks/usePrivacy.tsx';
 import { MASKED_TEXT } from '../../domain/privacy/entities/Privacy.ts';
 
 /**
- * Instagram : le profil public (abonnés, publications) et les stories **déclarées à la
- * main**, le profil public ne les exposant pas.
+ * Instagram, connecté par l'**API Graph** (Meta for Developers) : abonnés, stories,
+ * portée, interactions et publications des comptes Business/Creator connectés.
  *
  * Trois étages, de haut en bas :
  *
- * 1. la saisie des stories et les chiffres clés, **sur la même ligne** — on déclare sa
- *    story du jour là où on lit le compteur qu'elle fait bouger ;
+ * 1. la saisie des stories et les chiffres clés, **sur la même ligne** — les stories
+ *    collectées par Graph et celles déclarées à la main se combinent (le plus grand des
+ *    deux par jour, jamais la somme), pour rattraper un compte qu'on aurait oublié de
+ *    connecter un jour donné ;
  * 2. **tous les graphiques ensemble, en onglets** (activité, abonnés, gain par jour) ;
  * 3. le calendrier des publications.
  *
- * La connexion par l'API Graph (stories collectées, portée, interactions) est retirée de
- * l'écran tant qu'elle ne fonctionne pas. Le code de collecte est toujours là, côté API.
  * Les brouillons de publication vivent dans Production → Publications : cet écran ne
  * montre que ce qui est réellement paru.
  *
@@ -49,6 +49,7 @@ export const InstagramPage = () => {
   const accounts = data?.accounts ?? [];
   const totals = data?.totals;
   const series = data?.series ?? [];
+  const expiringAccounts = accounts.filter((account) => tokenWarning(account) !== null);
 
   // Le nombre de publications affiché sur le profil, hors période : c'est lui qu'on
   // connaît toujours, même quand aucune publication n'a pu être datée.
@@ -63,13 +64,13 @@ export const InstagramPage = () => {
         <h1 className="hidden text-lg font-semibold lg:block">Instagram</h1>
         <Card className="space-y-3 p-6 text-center">
           <Instagram className="mx-auto h-8 w-8 text-muted-foreground" />
-          <p className="text-sm font-medium">Aucun profil Instagram suivi</p>
+          <p className="text-sm font-medium">Aucun compte Instagram connecté</p>
           <p className="mx-auto max-w-lg text-sm text-muted-foreground">
-            Renseigne ton nom d’utilisateur : abonnés et publications sont relevés chaque jour sur
-            ton profil public, sans compte Meta.
+            Connecte un compte Business ou Creator par l’API Graph (Meta for Developers) : abonnés,
+            stories, portée et publications sont relevés chaque heure.
           </p>
           <Button asChild size="sm">
-            <Link to="/parametres?onglet=api">Suivre le profil public</Link>
+            <Link to="/parametres?onglet=instagram">Connecter un compte</Link>
           </Button>
         </Card>
       </div>
@@ -90,14 +91,34 @@ export const InstagramPage = () => {
           variant="outline"
           disabled={collect.isPending}
           onClick={() => collect.mutate(undefined)}
-          title="Relire le profil public maintenant"
+          title="Relancer la collecte maintenant"
         >
           <RefreshCw className={cn('h-4 w-4', collect.isPending && 'animate-spin')} />
           {collect.isPending ? 'Collecte…' : 'Collecter'}
         </Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[22rem_repeat(3,minmax(0,1fr))]">
+      {expiringAccounts.length > 0 && (
+        <div className="flex items-start gap-2 rounded-md border border-[var(--negative)]/40 bg-[var(--negative)]/10 px-3 py-2 text-sm text-[var(--negative)]">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            {expiringAccounts
+              .map((account) =>
+                account.tokenDaysLeft !== null && account.tokenDaysLeft < 0
+                  ? `Le jeton de @${account.username} a expiré`
+                  : `Le jeton de @${account.username} expire dans ${account.tokenDaysLeft} jour(s)`,
+              )
+              .join(' · ')}
+            . La collecte s’arrêtera sans un nouveau jeton —{' '}
+            <Link to="/parametres?onglet=instagram" className="underline underline-offset-2">
+              rafraîchis-le dans Paramètres → Instagram
+            </Link>
+            .
+          </p>
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[22rem_repeat(5,minmax(0,1fr))]">
         <StoryCounter />
         <StatCard
           label="Stories"
@@ -105,7 +126,7 @@ export const InstagramPage = () => {
           hint={
             totals
               ? `${totals.storiesPerDay} par jour · ${totals.activeDays} jour(s) avec au moins une`
-              : 'Déclarées à la main'
+              : 'Collectées et déclarées à la main'
           }
         />
         <StatCard
@@ -127,6 +148,16 @@ export const InstagramPage = () => {
           label="Publications"
           value={formatCount(profilePosts ?? totals?.posts ?? null)}
           hint={`${formatCount(totals?.posts ?? 0)} parue(s) sur la période`}
+        />
+        <StatCard
+          label="Portée"
+          value={formatCount(totals?.reach ?? null)}
+          hint="comptes touchés sur la période"
+        />
+        <StatCard
+          label="Interactions"
+          value={formatCount(totals?.totalInteractions ?? null)}
+          hint="j’aime, commentaires, partages, enregistrements"
         />
       </div>
 

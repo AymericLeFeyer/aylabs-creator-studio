@@ -3,7 +3,7 @@ import type {
   IntegrationProvider,
   IntegrationSnapshot,
 } from '../entities/Integration.ts';
-import type { InstagramExport, YouTubeExport } from '../entities/ExportData.ts';
+import type { InstagramExport, TikTokExport, YouTubeExport } from '../entities/ExportData.ts';
 
 export interface StoredCredential {
   key: string;
@@ -44,6 +44,7 @@ export interface ExportKeyRepository {
 export interface LocalSourceRepository {
   youtube(today: string): YouTubeExport | null;
   instagram(): InstagramExport | null;
+  tiktok(): TikTokExport | null;
 }
 
 /**

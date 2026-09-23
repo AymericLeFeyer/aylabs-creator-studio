@@ -6,6 +6,7 @@ import {
   pageTitle,
   withDiscord,
   withExternalApps,
+  withTikTok,
   type NavItem,
 } from './navigation.ts';
 import { useExternalApps } from '../application/externalApp/usecases/useExternalApps.ts';
@@ -13,6 +14,7 @@ import { useIntegrations } from '../application/integration/usecases/useIntegrat
 import { usePreferences } from './hooks/usePreferences.ts';
 import { Button } from './components/ui/button.tsx';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
+import { CompactTooltip } from './components/CompactTooltip.tsx';
 import { FiltersBar } from './components/FiltersBar.tsx';
 import { RunningTimerBar } from './components/production/RunningTimerBar.tsx';
 import { CollectAction } from './components/filters/CollectAction.tsx';
@@ -160,9 +162,12 @@ export const AppLayout = () => {
   const { data: integrations } = useIntegrations();
   const discordConfigured =
     integrations?.providers.find((provider) => provider.id === 'discord')?.configured ?? false;
+  const tiktokConfigured =
+    integrations?.providers.find((provider) => provider.id === 'tiktok')?.configured ?? false;
   const navSections = useMemo(
-    () => withDiscord(withExternalApps(externalApps), discordConfigured),
-    [externalApps, discordConfigured],
+    () =>
+      withTikTok(withDiscord(withExternalApps(externalApps), discordConfigured), tiktokConfigured),
+    [externalApps, discordConfigured, tiktokConfigured],
   );
   const openAppId = matchPath('/apps/:id', location.pathname)?.params.id;
 
@@ -185,10 +190,10 @@ export const AppLayout = () => {
       key={to}
       to={to}
       end={end}
-      title={compact ? label : undefined}
+      aria-label={compact ? label : undefined}
       className={({ isActive }) =>
         cn(
-          'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
+          'group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
           compact && 'justify-center px-0',
           isItemActive(to, isActive)
             ? 'bg-secondary text-secondary-foreground'
@@ -204,6 +209,9 @@ export const AppLayout = () => {
       </span>
       {!compact && <span className="min-w-0 flex-1 truncate">{label}</span>}
       {!compact && <NavBadgePill badge={badges[to]} />}
+      {/* Repliée, l'identité de l'icône ne se lit qu'au survol — instantanément, pas
+          après le délai de l'infobulle native du navigateur. */}
+      {compact && <CompactTooltip label={label} />}
     </NavLink>
   );
 
@@ -233,14 +241,18 @@ export const AppLayout = () => {
         ))}
       </nav>
 
-      {/* Le pied : ce qui se règle une fois, hors du fil du travail. */}
+      {/* Le pied : ce qui se règle une fois, hors du fil du travail. Le thème avant
+          Paramètres : c'est le réglage qu'on retouche le plus souvent des deux. Le repli
+          n'y est plus — il flotte désormais sur le filet qui sépare le menu du contenu. */}
       <div className="flex flex-col gap-0.5 border-t border-border pt-2">
+        <ThemeToggle compact={compact} />
+
         <NavLink
           to="/parametres"
-          title={compact ? 'Paramètres' : undefined}
+          aria-label={compact ? 'Paramètres' : undefined}
           className={({ isActive }) =>
             cn(
-              'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
+              'group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
               compact && 'justify-center px-0',
               isActive
                 ? 'bg-secondary text-secondary-foreground'
@@ -250,27 +262,8 @@ export const AppLayout = () => {
         >
           <Settings className="h-4 w-4 shrink-0" />
           {!compact && <span>Paramètres</span>}
+          {compact && <CompactTooltip label="Paramètres" />}
         </NavLink>
-
-        <ThemeToggle compact={compact} />
-
-        {/* Le repli ne s'offre qu'en colonne fixe : dans un tiroir, il n'aurait pas de sens. */}
-        <button
-          type="button"
-          onClick={() => set({ sidebarCollapsed: !collapsed })}
-          title={collapsed ? 'Déplier le menu' : 'Replier le menu'}
-          className={cn(
-            'hidden items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:flex',
-            compact && 'justify-center px-0',
-          )}
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="h-4 w-4 shrink-0" />
-          ) : (
-            <PanelLeftClose className="h-4 w-4 shrink-0" />
-          )}
-          {!compact && <span>Replier</span>}
-        </button>
       </div>
     </div>
   );
@@ -281,12 +274,41 @@ export const AppLayout = () => {
       className="min-h-screen bg-background"
       style={{ ['--bottom-nav' as string]: BOTTOM_NAV, ['--app-header' as string]: '0px' }}
     >
-      {/* Colonne fixe, à partir de `lg` seulement. */}
+      {/* Colonne fixe, à partir de `lg` seulement. `group` porte le survol dont dépend
+          le bouton de repli flottant : lui poser l'écouteur ici, et non sur le bouton
+          seul, est ce qui le fait apparaître dès qu'on entre dans la barre, pas
+          seulement en arrivant pile sur lui. */}
       <aside
-        className="fixed inset-y-0 left-0 z-40 hidden border-r border-border bg-card transition-[width] lg:block"
+        className="group fixed inset-y-0 left-0 z-40 hidden border-r border-border bg-card transition-[width] lg:block"
         style={{ width: collapsed ? SIDEBAR_CLOSED : SIDEBAR_OPEN }}
       >
         {sidebarContent({ compact: collapsed })}
+
+        {/* Le bouton de repli flotte sur le filet qui sépare le menu du contenu, plutôt
+            que de vivre dans le pied de la barre : c'est un réglage du cadre, pas un
+            réglage de l'outil, et `left-full -translate-x-1/2` le garde centré sur la
+            bordure quelle que soit la largeur courante — pas de calcul à refaire au
+            passage plié/déplié. Replié, il reste invisible tant qu'on n'est pas dans la
+            barre (`opacity-0`, révélé par le survol du `group` ci-dessus) : un rond qui
+            flotterait en permanence sur le contenu n'aurait rien à y faire tant qu'on ne
+            cherche pas à déplier. Déplié, il reste toujours visible — c'est la
+            disposition de repos, elle n'a pas à se cacher. */}
+        <button
+          type="button"
+          onClick={() => set({ sidebarCollapsed: !collapsed })}
+          title={collapsed ? 'Déplier le menu' : 'Replier le menu'}
+          aria-label={collapsed ? 'Déplier le menu' : 'Replier le menu'}
+          className={cn(
+            'absolute top-4 left-full z-50 hidden h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-opacity duration-150 hover:text-foreground lg:flex',
+            collapsed && 'opacity-0 group-hover:opacity-100',
+          )}
+        >
+          {collapsed ? (
+            <PanelLeftOpen className="h-3.5 w-3.5" />
+          ) : (
+            <PanelLeftClose className="h-3.5 w-3.5" />
+          )}
+        </button>
       </aside>
 
       {/* Tiroir mobile : même barre, posée par-dessus le contenu. */}

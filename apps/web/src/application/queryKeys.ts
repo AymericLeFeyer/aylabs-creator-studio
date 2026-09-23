@@ -55,6 +55,9 @@ export const queryKeys = {
   instagramAccounts: (includeArchived: boolean) => ['instagramAccounts', includeArchived] as const,
   instagramStories: (date: string) => ['instagramStories', date] as const,
 
+  tiktokOverview: (params: unknown) => ['tiktokOverview', params] as const,
+  tiktokAccounts: (includeArchived: boolean) => ['tiktokAccounts', includeArchived] as const,
+
   // Paramètres → API. Aucune autre racine ne les croise : ce que le studio publie à
   // l'extérieur ne change ni un chiffre, ni une alerte, ni une file.
   integrations: () => ['integrations'] as const,
@@ -149,6 +152,12 @@ export const INSTAGRAM_ROOTS = [
   'instagramAccounts',
   'instagramStories',
 ] as const;
+
+/**
+ * Racines de TikTok — même découpage qu'Instagram, en plus court : pas de stories saisies
+ * à la main, une seule collecte qui touche le compte, les séries et les vidéos d'un coup.
+ */
+export const TIKTOK_ROOTS = ['tiktokOverview', 'tiktokAccounts'] as const;
 
 /**
  * Racines des commentaires.

@@ -1,11 +1,4 @@
 import type {
-  InstagramPublicPost,
-  InstagramPublicPostPage,
-  InstagramPublicProfile,
-} from '../../../domain/instagram/entities/InstagramAccount.ts';
-import type { InstagramMedia } from '../../../domain/instagram/entities/InstagramStory.ts';
-import type { InstagramProfileSink } from '../../../domain/integration/repositories/IntegrationCollectors.ts';
-import type {
   InstagramAccountRepository,
   InstagramDataRepository,
 } from '../../../domain/instagram/repositories/InstagramRepository.ts';
@@ -60,7 +53,7 @@ export interface InstagramCollectResult {
  * Une métrique de compte refusée ne doit pas empêcher d'archiver les stories du jour, qui
  * auront disparu dans vingt-quatre heures.
  */
-export class CollectInstagram implements InstagramProfileSink {
+export class CollectInstagram {
   private readonly accounts: InstagramAccountRepository;
   private readonly data: InstagramDataRepository;
   private readonly appId: string | null;
@@ -77,14 +70,7 @@ export class CollectInstagram implements InstagramProfileSink {
     this.appSecret = options.appSecret;
   }
 
-  /**
-   * Collecte tous les comptes actifs. Un échec par compte n'arrête pas les suivants.
-   *
-   * Les comptes **sans jeton** sont passés : ils sont alimentés par le relevé du profil
-   * public (`recordPublicProfile`, depuis Paramètres → API). Les inclure ferait lever
-   * `collectOne` et interromprait la boucle avant les comptes qui, eux, ont des stories à
-   * sauver.
-   */
+  /** Collecte tous les comptes actifs, jeton requis. Un échec par compte n'arrête pas les suivants. */
   async collectAll(): Promise<InstagramCollectResult[]> {
     const results: InstagramCollectResult[] = [];
     for (const view of this.accounts.findAll()) {
@@ -94,134 +80,12 @@ export class CollectInstagram implements InstagramProfileSink {
     return results;
   }
 
-  /**
-   * Écrit le relevé d'un **profil public** (sans jeton) dans les tables du module :
-   * le compte, créé au premier passage, et le relevé du jour.
-   *
-   * Le compte est retrouvé **par son nom d'utilisateur d'abord**, puis par identifiant :
-   * un compte déjà connecté par l'API Graph porte un `ig_user_id` différent (178414…) de
-   * l'identifiant public, et c'est bien le même compte — en créer un second doublerait
-   * les abonnés dans tous les totaux. Sans identifiant public, `public:<pseudo>` en tient
-   * lieu : la colonne est `NOT NULL UNIQUE`.
-   *
-   * Un seul relevé par jour (clé `(account_id, date)`) : le dernier passage l'emporte.
-   */
-  recordPublicProfile(profile: InstagramPublicProfile): { accountId: string; username: string } {
-    const wanted = profile.username.toLowerCase();
-    const existing =
-      this.accounts.findAll(true).find((account) => account.username.toLowerCase() === wanted) ??
-      (profile.igId ? this.accounts.findByIgUserId(profile.igId) : null);
-
-    if (existing?.isArchived) {
-      throw badRequest(
-        `@${existing.username} est archivé : réactive-le dans Paramètres → Instagram pour reprendre son suivi.`,
-      );
-    }
-
-    const account = existing
-      ? existing
-      : this.accounts.create({
-          username: profile.username,
-          name: profile.fullName,
-          igUserId: profile.igId ?? `public:${profile.username}`,
-        });
-
-    this.data.upsertSnapshot({
-      accountId: account.id,
-      date: today(),
-      followersCount: profile.followers,
-      followsCount: profile.following,
-      mediaCount: profile.posts,
-    });
-    // Les publications visibles sur le profil sont archivées comme celles de l'API Graph :
-    // c'est ce qui date chaque parution au jour près et remplit l'onglet Publications. Pas
-    // sur un compte à jeton — ses publications arrivent déjà par Graph, sous un autre
-    // identifiant, et les écrire ici les compterait deux fois.
-    const hasToken = 'hasToken' in account ? account.hasToken : account.accessToken !== null;
-    if (!hasToken) {
-      for (const post of profile.recentPosts) this.upsertPublicPost(account.id, post);
-    }
-
-    this.accounts.update(account.id, {
-      username: profile.username,
-      name: profile.fullName ?? account.name,
-      profilePicture: profile.profilePicture ?? account.profilePicture,
-      lastCollectedAt: new Date().toISOString(),
-    });
-
-    return { accountId: account.id, username: profile.username };
-  }
-
-  /**
-   * Les publications à relire une à une sur leur page, les plus récentes d'abord — ce
-   * sont celles dont les compteurs bougent encore. Rien pour un compte à jeton.
-   */
-  postsToRefresh(accountId: string, limit: number): Array<{ id: string; permalink: string }> {
-    const account = this.accounts.findById(accountId);
-    if (!account || account.accessToken) return [];
-    return this.data
-      .findMedia({ accountIds: [accountId], limit })
-      .flatMap((media) => (media.permalink ? [{ id: media.id, permalink: media.permalink }] : []));
-  }
-
-  /** Les j'aime et commentaires relus sur la page ; `null` (j'aime masqués) ne touche à rien. */
-  recordPostStats(mediaId: string, post: InstagramPublicPostPage): void {
-    this.data.setMediaInsights(mediaId, {
-      views: null,
-      reach: null,
-      likes: post.likes,
-      comments: post.comments,
-      saved: null,
-      shares: null,
-    });
-  }
-
-  /**
-   * Archive une publication lue publiquement, avec ses compteurs.
-   *
-   * Elle est retrouvée **par son adresse** avant tout : un premier relevé a pu l'écrire
-   * sous son identifiant numérique, les suivants l'écrivent sous son code court — sans
-   * ça, la même publication compterait deux fois. Seuls les compteurs publics existent
-   * ici : portée, enregistrements et partages restent à `null`, et le COALESCE du dépôt
-   * ne les écrase pas. La date d'une publication déjà connue n'est jamais réécrite : une
-   * page ne donne que le jour, le relevé du profil donnait l'heure.
-   */
-  private upsertPublicPost(accountId: string, post: InstagramPublicPost): InstagramMedia {
-    const known = post.permalink
-      ? this.data
-          .findMedia({ accountIds: [accountId] })
-          .find((media) => media.permalink === post.permalink)
-      : undefined;
-    const row = this.data.upsertMedia({
-      accountId,
-      igMediaId: known?.igMediaId ?? post.id,
-      mediaType: post.mediaType,
-      caption: post.caption,
-      permalink: post.permalink,
-      thumbnailUrl: post.thumbnailUrl,
-      postedAt: post.postedAt,
-      date: localDateOf(post.postedAt),
-    });
-    this.data.setMediaInsights(row.id, {
-      views: post.views,
-      reach: null,
-      likes: post.likes,
-      comments: post.comments,
-      saved: null,
-      shares: null,
-    });
-    // Relue après la mesure : la ligne rendue par l'upsert n'a pas encore ses compteurs.
-    return (
-      this.data.findMedia({ accountIds: [accountId] }).find((media) => media.id === row.id) ?? row
-    );
-  }
-
   async collectOne(accountId: string): Promise<InstagramCollectResult> {
     const account = this.accounts.findById(accountId);
     if (!account) throw notFound('Compte Instagram');
     if (!account.accessToken) {
       throw badRequest(
-        `Aucun jeton pour @${account.username} : il n’est relevé que par son profil public (Paramètres → API). Renseigne un jeton pour les stories et les statistiques.`,
+        `Aucun jeton pour @${account.username} : renseigne un jeton d’accès Meta pour ce compte.`,
       );
     }
 

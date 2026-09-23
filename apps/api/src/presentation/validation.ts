@@ -837,6 +837,30 @@ export const instagramQuerySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// TikTok
+// ---------------------------------------------------------------------------
+
+/**
+ * Aucun champ de création : un compte TikTok se crée tout seul au premier relevé du
+ * profil configuré dans Paramètres → API, comme l'ancien profil public Instagram.
+ */
+export const updateTikTokAccountSchema = z.object({
+  username: z.string().trim().min(1).max(60).optional(),
+  name: z.string().trim().nullable().optional(),
+  color: hexColor,
+  isArchived: z.boolean().optional(),
+  /** Compte dans `/api/export` (Paramètres → API). */
+  exportEnabled: z.boolean().optional(),
+});
+
+export const tiktokQuerySchema = z.object({
+  from: isoDate,
+  to: isoDate,
+  granularity: z.enum(['day', 'week', 'month']).default('day'),
+  accountIds: csvList,
+});
+
+// ---------------------------------------------------------------------------
 // Planning
 // ---------------------------------------------------------------------------
 

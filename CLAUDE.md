@@ -1364,28 +1364,31 @@ Absent quand Todo n'est pas connecté.
 
 ### `instagram` — le rythme de publication
 
-> **État au 2026-09-18 : l'écran ne montre que le profil public.** La connexion par l'API
-> Graph (compte Meta, identifiant 178414…, jeton) ne fonctionnait pas : son formulaire, les
-> cartes stories / portée, le calendrier des stories, les colonnes Portée / Enregistrements
-> et l'alerte de jeton ont été **retirés du front**. Tout le code de collecte Graph décrit
-> ci-dessous existe toujours côté API (routes, `CollectInstagram.collectOne`, tables) : le
-> rebrancher ne demande que de remonter l'UI. `/instagram` demande toujours l'aperçu **au
-> jour** (quelle que soit la maille des filtres) et se lit en trois étages : **saisie des
-> stories et chiffres clés sur la même ligne** (`StoryCounter`, Stories, Abonnés + gain,
-> Publications — total du profil en grand, parutions de la période en sous-titre) ; **tous
-> les graphiques ensemble, en onglets** (`InstagramChart` : Activité, Abonnés, Gain par
-> jour) ; puis le **calendrier des publications façon contributions GitHub**
-> (`PostsCalendar` : une colonne par semaine, lundi en haut, clic sur une case = ses
-> publications). Ni j'aime ni commentaires à l'écran, plus de tableau des publications, et
-> **pas d'ajout de publication par lien** (retiré : sans intérêt). Paramètres → Instagram
-> porte l'archivage/suppression d'un profil **et**, depuis le 2026-09-23, le pseudo à
-> suivre (`ProviderCredentialsCard provider="instagram"`) — ça a quitté Paramètres → API,
-> qui ne parle plus que de ce qui *sort* du studio (voir `integration`).
+> **Depuis le 2026-09-23 : l'API Graph est remise en place, et c'est la seule voie.**
+> L'ancien repli « profil public » (sans compte Meta — `InstagramProfileClient`,
+> `web_profile_info`/SearchAPI/page, le champ `profile` générique de Paramètres → API) a
+> été **entièrement retiré** : Instagram redevient `collectable: false` côté
+> `PROVIDERS` (comme YouTube), et toute collecte passe par `/api/instagram/collect`, un
+> jeton par compte. `/instagram` demande toujours l'aperçu **au jour** (quelle que soit la
+> maille des filtres) et se lit en quatre blocs : une **alerte de jeton** en tête si un
+> compte expire sous dix jours ou a expiré ; **saisie des stories et chiffres clés sur la
+> même ligne** (`StoryCounter`, Stories, Abonnés + gain, Publications, **Portée**,
+> **Interactions**) ; **tous les graphiques ensemble, en onglets** (`InstagramChart` :
+> Activité, Abonnés, Gain par jour) ; puis le **calendrier des publications façon
+> contributions GitHub** (`PostsCalendar` : une colonne par semaine, lundi en haut, clic
+> sur une case = ses publications, avec vues/portée/j'aime/commentaires/enregistrements
+> quand l'API Graph les a mesurés). Paramètres → Instagram porte le **formulaire de
+> connexion** (nom d'utilisateur, identifiant Meta, jeton longue durée, expiration),
+> l'archivage/suppression d'un compte, le bouton « Rafraîchir le jeton »
+> (`useRefreshInstagramToken`) et la collecte d'un seul compte
+> (`useCollectInstagramAccount`) — plus rien de tout ça dans Paramètres → API, qui ne
+> parle plus que de ce qui *sort* du studio (voir `integration`).
 >
-> **Les stories ne sont pas lisibles en public** : `web_profile_info` sans session ne les
-> expose pas, SearchAPI non plus. Seules voies : l'API Graph, ou une session connectée
-> (cookie) — fragile et contraire aux conditions d'Instagram. **Elles se déclarent donc à la
-> main** (voir plus bas).
+> **Les stories ne sont pas lisibles sans jeton** : c'est ce qui borne tout le module à
+> l'API Graph — aucune voie publique n'existe, contrairement aux abonnés ou aux
+> publications. Un compte sans jeton n'a donc plus sa place ici (`collectOne` refuse en
+> 400). Les stories déclarées à la main (ci-dessous) restent le seul filet pour un jour où
+> la collecte horaire aurait manqué un compte.
 
 #### Les stories saisies à la main
 
@@ -1496,6 +1499,51 @@ relisent la vue plutôt que de renvoyer l'entité qu'elles viennent d'écrire.
 
 `exportEnabled` (migration 36, défaut `true`, même rôle que sur `Channel`) ne pilote que
 `/api/export` — se règle depuis Paramètres → API, dans la ligne Instagram dépliée.
+
+### `tiktok` — le profil public, en attendant mieux
+
+Ajouté le 2026-09-23, en même temps qu'Instagram migrait vers l'API Graph : TikTok
+n'ouvre la sienne (`Display API`, `Content Posting API`) qu'à des partenaires validés,
+hors de portée d'un studio individuel. Le module reprend donc **l'architecture de
+l'ancien profil public Instagram**, adaptée à ce que la page de TikTok rend réellement
+(voir `integration` pour le détail du scraper).
+
+`TikTokAccount { id, username, name, profilePicture, color, isArchived, exportEnabled,
+lastCollectedAt }` — table `tiktok_accounts` (migration 37), `username` **unique**. Créé
+tout seul au premier relevé du profil configuré dans Paramètres → API
+(`CollectTikTok.recordPublicProfile`), retrouvé ensuite **par nom d'utilisateur**
+(`COLLATE NOCASE`) faute d'identifiant numérique lisible depuis la page publique — sans
+jeton, il n'y a pas de distinction « connecté » / « public » comme sur Instagram, un seul
+chemin existe.
+
+`TikTokSnapshot { accountId, date, followersCount, followingCount, heartCount,
+videoCount }` — table `tiktok_account_snapshots`, **CUMUL** journalier, même nature que
+`ig_account_snapshots` et `channel_snapshots` : on garde la dernière valeur connue du
+bucket, jamais une somme entre deux jours. Contrairement à Instagram, ces chiffres sont
+des **entiers exacts** renvoyés par le JSON de la page — pas de compteur arrondi à
+corriger.
+
+`TikTokVideo { id, accountId, videoId, description, permalink, thumbnailUrl, postedAt,
+date, views, likes, comments, shares, statsAt }` — table `tiktok_videos`, clé unique
+`(account_id, video_id)`. Écrite **en un seul bloc** (`upsertVideo`) : la page publique
+rend la vidéo et ses compteurs d'une traite, pas de second appel d'insights à orchestrer
+comme sur Instagram (`setMediaInsights`). La liste des vidéos récentes n'est présente que
+sur certains profils ; son absence n'empêche pas le relevé du compte de réussir, elle
+laisse simplement `tiktok_videos` sans nouvelle ligne ce jour-là.
+
+`GetTikTokOverview.execute({ from, to, granularity, accountIds })` — version réduite de
+`GetInstagramOverview` : pas de stories, pas de compteurs quotidiens de portée (TikTok ne
+les expose pas publiquement), juste `videos` (FLUX, compté par bucket) et `followers` /
+`hearts` (CUMUL, dernière valeur connue reportée sur les buckets sans relevé, plus
+`followersGained` par différence avec le relevé antérieur à `from`).
+
+Écran `/tiktok` (nav conditionnelle, voir `withTikTok` dans `presentation/navigation.ts` —
+n'apparaît que si un profil est configuré, même règle que `withDiscord`) : cartes Abonnés
+(+ gain), Coeurs, Vidéos ; `TikTokChart` (onglets Abonnés / Vidéos, même schéma que
+`DomadooChart`) ; liste des dernières vidéos avec lien externe. Paramètres → TikTok
+(`TikTokSettingsPage`) reprend `ProviderCredentialsCard provider="tiktok"` et la liste des
+comptes (archiver/supprimer) — exactement l'ancien `InstagramSettingsPage` d'avant l'API
+Graph.
 
 ### `comment` — ce que les gens écrivent, et ce qu'on en fait
 
@@ -1622,10 +1670,18 @@ euros). Types dans `domain/integration/entities/ExportData.ts`.
 | Source      | `kind`   | D'où                                                                                                      | Rythme                 |
 | ----------- | -------- | --------------------------------------------------------------------------------------------------------- | ---------------------- |
 | `youtube`   | `local`  | calculé **à la lecture** : `daily_metrics` (flux), dernier `channel_snapshots` (cumul), dernière `videos` | chaque requête         |
-| `instagram` | `local`  | `ig_accounts` + dernier `ig_account_snapshots` (Graph **ou** profil public, voir plus bas)                | chaque requête         |
+| `instagram` | `local`  | `ig_accounts` + dernier `ig_account_snapshots`, alimentés par l'API Graph (`/api/instagram/collect`)      | chaque requête         |
+| `tiktok`    | `local`  | `tiktok_accounts` + dernier `tiktok_account_snapshots`, alimentés par le profil public (voir plus bas)    | chaque requête         |
 | `discord`   | `remote` | `GET discord.com/api/v10/invites/<code>?with_counts=true`, sans bot ni jeton                              | cron horaire           |
 | `amazon`    | `remote` | Playwright Firefox sur partenaires.amazon.fr, code TOTP maison (`totp.ts`, RFC 6238 vérifiée)             | cron horaire           |
 | `domadoo`   | `remote` | Playwright Firefox **furtif** (`playwright-extra` + stealth) : résumé, puis ventes en attente paginées    | horaire + `30 3 * * *` |
+
+**Instagram n'a plus de repli public** (retiré le 2026-09-23) : `instagram` est
+`collectable: false`, comme YouTube — rien à saisir dans `PROVIDERS`, toute la collecte
+passe par les comptes connectés à l'API Graph (`/instagram`, jeton par compte). L'ancien
+`InstagramProfileClient` (scraping `web_profile_info`/SearchAPI/page) a été supprimé, avec
+les types `InstagramPublicProfile`/`InstagramPublicPost`. **TikTok en reprend
+l'architecture** pour son propre profil public, ci-dessous.
 
 **`youtube.total.subscribers` est la chaîne la plus suivie, pas la somme** (`views` et
 `videos`, eux, restent sommés) : les mêmes personnes suivent souvent plusieurs chaînes, et
@@ -1636,50 +1692,37 @@ dans l'export sans attendre le passage horaire. Chaînes et comptes archivés ex
 `lastUpdate` = dernier `captured_at` / `last_collected_at`. Le jour est celui du serveur
 (UTC) : aucun navigateur n'est là pour donner l'heure locale.
 
-**Instagram sans compte Meta : le profil public** (la voie de l'ancien exporter). La
-source `instagram` reste `local` pour l'export, mais porte `collectable: true` et deux
-champs : `profile` (`INSTAGRAM_USERNAME`, @pseudo ou URL, `parseInstagramUsername`) et
-`searchApiKey` (`SEARCH_API_APIKEY`, secret, facultatif). `InstagramProfileClient` essaie
-trois voies : `web_profile_info` (JSON exact, mais **429** vite — c'était le cas depuis le
-poste de dev), SearchAPI.io si la clé existe, puis la page du profil lue en
-`facebookexternalhit` (balise `og:description`, toujours servie, **arrondie** au-delà de
-10 000 : `approximate`). Le résultat **n'est pas un instantané d'export** :
-`CollectInstagram.recordPublicProfile` (port `InstagramProfileSink`) crée ou retrouve le
-compte — **par pseudo d'abord**, un compte Graph du même nom a un `ig_user_id` différent
-(178414…) — et écrit le relevé du jour dans `ig_account_snapshots`. D'où la courbe
-d'abonnés de `/instagram` et l'export, sans rien de plus.
-**Les dernières publications du profil sont archivées aussi** (`InstagramPublicProfile.recentPosts` :
-les 12 de `web_profile_info` — `edge_owner_to_timeline_media.edges`, types ramenés à
-`IMAGE | VIDEO | CAROUSEL_ALBUM | REELS` —, la liste `posts` de SearchAPI lue
-défensivement, **rien** par la voie `page`) dans `ig_media`, avec j'aime, commentaires et
-vues via `setMediaInsights` (portée, enregistrements, partages à `null`). Jamais sur un
-compte **à jeton** : ses publications arrivent par Graph sous un autre identifiant et
-seraient comptées deux fois.
+**TikTok, uniquement en profil public** — TikTok n'ouvre son API officielle (`Display`,
+`Content Posting`) qu'à des partenaires validés, hors de portée d'un studio individuel :
+même situation qu'Instagram avant sa migration vers l'API Graph, et même traitement. La
+source `tiktok` est `local` mais porte `collectable: true` et un seul champ, `profile`
+(`TIKTOK_USERNAME`, @pseudo ou URL, `parseTikTokUsername`). `TikTokProfileClient` n'a
+**qu'une seule voie**, vérifiée en conditions réelles : la page du profil ne sert **aucune**
+balise Open Graph exploitable (ni `og:description`, ni `name="description"`) — tout vient
+du JSON du rendu serveur (`__UNIVERSAL_DATA_FOR_REHYDRATION__`, bloc
+`webapp.user-detail`). Ses chiffres sont des **entiers exacts**, jamais arrondis
+(`approximate` vaut donc toujours `false`, contrairement à Instagram) ; `statusCode !== 0`
+(ex. `10221 "user banned"`) signale un compte introuvable ou inaccessible. Le résultat
+**n'est pas un instantané d'export** : `CollectTikTok.recordPublicProfile` (port
+`TikTokProfileSink`) crée ou retrouve le compte **par nom d'utilisateur** (`COLLATE
+NOCASE` — TikTok n'a pas d'identifiant numérique lisible depuis la page publique) et écrit
+le relevé du jour dans `tiktok_account_snapshots`. D'où la courbe d'abonnés de `/tiktok`
+et l'export, sans rien de plus.
 
-**Le serveur est presque toujours bloqué** (429 sur `web_profile_info`, Instagram limite
-par IP) : le relevé retombe alors sur la voie `page`, qui ne liste **aucune** publication.
-C'est ce qui laissait les publications à zéro et les j'aime figés. Parade : **la page d'une
-publication** (`InstagramProfileClient.fetchPost`), qui reste servie au
-robot d'aperçu : `og:description` y porte « 12 likes, 3 comments - pseudo on September 1,
-2026: "légende" » (compteurs arrondis au-delà de 10 000, jour sans heure, pas de vues ;
-j'aime absents si l'auteur les masque → `null`, que le COALESCE ignore). Quand le relevé
-n'a rien listé, `CollectIntegrations.collectInstagram` relit une à une les **12 dernières**
-publications déjà archivées (`postsToRefresh` / `recordPostStats`) — plus serait s'exposer
-au blocage qu'on contourne. L'ajout d'une publication par son lien a existé puis a été
-**retiré** (route `POST /media`, `recordPublicPost`) : ne pas le réintroduire sans demande.
+**Les vidéos récentes** (`TikTokPublicProfile.recentVideos`, depuis `userInfo.itemList` du
+même JSON) sont archivées dans `tiktok_videos` avec leurs compteurs du moment
+(`upsertVideo` écrit vidéo et statistiques en un seul bloc — pas de second appel
+d'insights à orchestrer comme sur Instagram). **`itemList` est présent sur certains
+profils, vide sur la plupart** des comptes testés : son absence ne fait pas échouer le
+relevé, elle laisse seulement `tiktok_videos` sans nouvelle ligne ce jour-là. Faute de
+total de vidéos fiable, `TikTokSnapshot.videoCount` retombe sur le nombre de vidéos
+**listées** (`recentVideos.length`, ou `null` si aucune) — un plancher, pas un total exact.
 
-**Clé d'une publication publique = son code court** (`/p/<code>/`, `instagramShortcode`,
-`instagramPermalink`), commun à toutes les voies. `upsertPublicPost`
-retrouve d'abord une ligne **par son adresse** : un premier relevé a pu l'écrire sous
-l'identifiant numérique. La date d'une publication connue n'est jamais réécrite (la page
-ne donne que le jour).
-
-L'instantané du relevé garde `source`, `postsListed` et `postsRefreshed` pour le diagnostic
-(aucun écran ne les lit). L'instantané `instagram` ne garde
-qu'un résumé et les échecs (`ManageIntegrations.view` les fusionne à la vue locale).
-**Une fois par jour** : `shouldSkip` saute Instagram si une réussite date d'aujourd'hui
-(UTC) ; un échec est retenté à l'heure suivante. Son interrupteur ne coupe **que la
-publication**, jamais le relevé. `POST /api/instagram/collect` le relève aussi.
+L'instantané du relevé garde `source` (toujours `'json'`) et `videosListed` pour le
+diagnostic (aucun écran ne les lit). L'instantané `tiktok` ne garde qu'un résumé et les
+échecs (`ManageIntegrations.view` les fusionne à la vue locale). **Une fois par jour** :
+`shouldSkip` saute TikTok si une réussite date d'aujourd'hui (UTC) ; un échec est retenté
+à l'heure suivante — même règle que l'ancien profil public Instagram.
 
 **Remote = instantané** dans `integration_snapshots` (clé = la source, plus
 `domadoo:sales` pour le relevé nocturne). `saveFailure` n'écrit **jamais** `data` ni
@@ -1716,32 +1759,36 @@ Use cases :
 - `ManageIntegrations` — `overview()`, `view(p)`, `update(p, { enabled?, credentials? })`,
   `resolve(p)` → `{ values, missing }` **en clair, jamais renvoyé à une route**,
   `localData(p)`, `listKeys()`, `createKey(label)`, `deleteKey(id)`, `authenticate(token)`.
-- `CollectIntegrations` — `collectAll()` (Discord puis Amazon puis Domadoo, sautées si
-  désactivées ou incomplètes), `collectOne(p)` (400 sur une source locale),
-  `collectDomadooSales()`. Le premier passage Domadoo relève les ventes s'il n'y en a pas
-  encore, pour que `waitingSalesTotal` ne reste pas vide jusqu'à la nuit.
+- `CollectIntegrations` — `collectAll()` (Discord, TikTok, Amazon puis Domadoo, sautées
+  si désactivées ou incomplètes), `collectOne(p)` (400 sur une source non `collectable`
+  comme YouTube ou Instagram — leur collecte a sa propre route), `collectDomadooSales()`.
+  Le premier passage Domadoo relève les ventes s'il n'y en a pas encore, pour que
+  `waitingSalesTotal` ne reste pas vide jusqu'à la nuit.
 - `GetExport` — `execute()`, `entry(p)`. Les clés restent présentes à `null` : un gabarit
   HA doit tomber sur un vide, pas sur une clé absente qui casse tout le capteur REST.
 
 Ports (`domain/integration/repositories/`) : `IntegrationRepository` (`isEnabled`,
 `setEnabled`, `storedCredentials`, `setCredential`, `snapshot`, `saveSuccess`,
 `saveFailure`), `ExportKeyRepository` (`findAll`, `create`, `delete`, `touch`, `count`),
-`LocalSourceRepository` (`youtube(today)`, `instagram()`), `SecretCipher`,
+`LocalSourceRepository` (`youtube(today)`, `instagram()`, `tiktok()`), `SecretCipher`,
 `IntegrationCollectors`.
 
 #### Paramètres → API ne parle plus que de ce qui *sort* du studio (depuis le 2026-09-23)
 
-La page mêlait identifiants (Amazon, Domadoo, Discord, le profil Instagram), clés d'accès
+La page mêlait identifiants (Amazon, Domadoo, Discord, le profil public), clés d'accès
 et une carte « Secrets » à part — brouillon, et redondant avec les écrans où chaque
 source vit déjà par ailleurs. Trois changements :
 
 - **Les identifiants ont déménagé** avec le domaine qu'ils alimentent :
   `ProviderCredentialsCard` (`presentation/components/integration/`, un composant
   partagé — mêmes champs, mêmes règles `SECRETS_KEY`/`env`, pas dupliqué trois fois) porte
-  desormais le profil Instagram (`profile`, `searchApiKey`) dans Paramètres → Audience →
-  Instagram, Amazon et Domadoo dans Paramètres → Revenus → Affiliation
-  (`AffiliationSettingsPage`), et Discord (`inviteCode`) dans Paramètres → Audience →
-  Discord (`DiscordSettingsPage`). YouTube n'a jamais eu de champ ici (`fields: []`).
+  le profil TikTok (`profile`) dans Paramètres → Audience → TikTok, Amazon et Domadoo dans
+  Paramètres → Revenus → Affiliation (`AffiliationSettingsPage`), et Discord
+  (`inviteCode`) dans Paramètres → Audience → Discord (`DiscordSettingsPage`). YouTube et
+  Instagram n'ont jamais eu de champ ici (`fields: []`) : Instagram se connecte compte par
+  compte, jeton compris, directement dans Paramètres → Audience → Instagram
+  (`InstagramSettingsPage`, hors de `ProviderCredentialsCard` — un jeton par compte n'a
+  pas sa place dans un formulaire à un seul jeu de champs).
 - **La carte « Secrets » a disparu.** Son message (`SECRETS_KEY` absente ⇒ champs
   verrouillés) est maintenant **contextuel** : `ProviderCredentialsCard` ne l'affiche que
   si la source qu'elle porte a effectivement un champ secret bloqué. Un simple rappel
@@ -1752,9 +1799,10 @@ source vit déjà par ailleurs. Trois changements :
   sans déclencher le repli/dépli). Repliée : icône, libellé, pastille de statut, interrupteur
   « Publier ». Dépliée : description, astuce spécifique au type de source, puis ce qui reste
   propre à l'export — bouton Collecter, dernier statut/erreur, aperçu JSON masqué par la
-  confidentialité. **YouTube et Instagram y gagnent une case à cocher par chaîne/compte**
-  (`export_enabled`, voir `channel` et `instagram`) : c'est ce qui permet de publier « la
-  chaîne pro » sans publier une chaîne personnelle, sans l'archiver dans le studio.
+  confidentialité. **YouTube, Instagram et TikTok y gagnent une case à cocher par
+  chaîne/compte** (`export_enabled`, voir `channel`, `instagram` et `tiktok`) : c'est ce
+  qui permet de publier « la chaîne pro » sans publier une chaîne personnelle, sans
+  l'archiver dans le studio.
 - **« Accès à l'export » est renommé « API Keys »** — même carte, même comportement.
 
 #### L'historique Domadoo (`/affiliations` → onglet Domadoo)
@@ -1959,9 +2007,13 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/instagram/accounts`                           | Connecter un compte. 409 si l'`igUserId` est déjà suivi                                                                                                                                                                                                  |
 | `PATCH`  | `/api/instagram/accounts/:id`                       | Modifier / archiver. `accessToken: ""` efface, absent conserve. `exportEnabled` pilote `/api/export` (Paramètres → API)                                                                                                                                   |
 | `DELETE` | `/api/instagram/accounts/:id`                       | Supprimer **et tout l'historique** (cascade). Irrécupérable : les stories ne se recollectent pas                                                                                                                                                         |
-| `POST`   | `/api/instagram/collect`                            | Collecte immédiate de tous les comptes **à jeton**, puis du profil public s'il est renseigné                                                                                                                                                             |
+| `POST`   | `/api/instagram/collect`                            | Collecte immédiate de tous les comptes **à jeton**                                                                                                                                                                                                       |
 | `POST`   | `/api/instagram/accounts/:id/collect`               | Collecter ce compte                                                                                                                                                                                                                                      |
 | `POST`   | `/api/instagram/accounts/:id/refresh-token`         | Échange le jeton contre un neuf (60 j de plus). Demande `META_APP_ID` / `META_APP_SECRET`                                                                                                                                                                |
+| `GET`    | `/api/tiktok/overview`                              | Séries et totaux du profil public. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                                                                                       |
+| `GET`    | `/api/tiktok/accounts`                              | Comptes suivis. Param `includeArchived`                                                                                                                                                                                                                  |
+| `PATCH`  | `/api/tiktok/accounts/:id`                          | Modifier / archiver. `exportEnabled` pilote `/api/export` (Paramètres → API). Pas de `POST` : un compte se crée tout seul au premier relevé (`/api/integrations/tiktok/collect`)                                                                        |
+| `DELETE` | `/api/tiktok/accounts/:id`                          | Supprimer **et tout l'historique** (cascade). Irrécupérable                                                                                                                                                                                              |
 | `GET`    | `/api/comments`                                     | Commentaires archivés. Params `statuses` (CSV), `channelIds`, `from`/`to`, `search`, `limit` (500). Période **facultative** : on trie sa file en entier                                                                                                  |
 | `GET`    | `/api/comments/stats`                               | Compte par statut, pour les pastilles des onglets. Param `channelIds`. **Déclaré avant `/:id`**                                                                                                                                                          |
 | `POST`   | `/api/comments/collect`                             | Collecte immédiate de toutes les chaînes                                                                                                                                                                                                                 |
@@ -1971,8 +2023,8 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/integrations/keys`                            | `{ label }` → `{ key, token }`. Le jeton n'est **montré qu'une fois**                                                                                                                                                                                    |
 | `DELETE` | `/api/integrations/keys/:id`                        | Révoquer une clé                                                                                                                                                                                                                                         |
 | `PATCH`  | `/api/integrations/:provider`                       | `{ enabled?, credentials? }` — champ absent conservé, `null`/`""` efface. 409 si le champ est couvert par l'env, ou si c'est un secret sans `SECRETS_KEY`                                                                                                |
-| `POST`   | `/api/integrations/:provider/collect`               | Collecte immédiate d'une source distante ou du profil public Instagram (400 sur `youtube`, 409 si déjà en cours). ~20 s avec navigateur. Rend `{ result, integration }`                                                                                  |
-| `GET`    | `/api/export`                                       | **Clé obligatoire** (`Authorization: Bearer acs_…` ou `?key=`). `{ generatedAt, youtube, instagram, amazon, domadoo, discord }`, `null` si désactivée ou rien collecté. `Cache-Control: no-store`                                                        |
+| `POST`   | `/api/integrations/:provider/collect`               | Collecte immédiate d'une source distante ou du profil public TikTok (400 sur `youtube`/`instagram`, non `collectable` ; 409 si déjà en cours). ~20 s avec navigateur sur les sources distantes. Rend `{ result, integration }`                          |
+| `GET`    | `/api/export`                                       | **Clé obligatoire** (`Authorization: Bearer acs_…` ou `?key=`). `{ generatedAt, youtube, instagram, tiktok, amazon, domadoo, discord }`, `null` si désactivée ou rien collecté. `Cache-Control: no-store`                                                |
 | `GET`    | `/api/export/:provider`                             | Une seule source, même clé. 404 si rien à publier                                                                                                                                                                                                        |
 
 Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube ou d'une source de l'export.
@@ -1983,7 +2035,8 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, puis **les deux graphiques seulement** (argent, audience). Plus d'alertes : elles sont en pastilles                                                                                                                                                                                                                |
 | `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                                                                                                        |
-| `/instagram`        | `InstagramPage`        | **Profil public seulement**, toujours au jour : saisie des stories + 3 chiffres clés sur une ligne, graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications                                                                                                                                                                                     |
+| `/instagram`        | `InstagramPage`        | **API Graph**, toujours au jour : alerte de jeton, saisie des stories + chiffres clés (Stories, Abonnés, Publications, Portée, Interactions), graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications (vues/portée/j'aime/commentaires/enregistrements au clic)                                                                                |
+| `/tiktok`           | `TikTokPage`            | **Profil public seulement**, toujours au jour : cartes Abonnés/Coeurs/Vidéos, graphique en onglets (Abonnés, Vidéos), dernières vidéos. N'apparaît dans le menu que si un profil est configuré (Paramètres → Audience → TikTok)                                                                                                                                                |
 | `/discord`          | `DiscordPage`          | Nom du serveur, membres, membres en ligne, dernier relevé, bouton Collecter. **Aucune série** : Discord ne renvoie que des compteurs courants. N'apparaît dans le menu que si un serveur est configuré (Paramètres → Audience → Discord)                                                                                                                                       |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
@@ -2330,9 +2383,9 @@ horizontalement.
 
 **Les écrans sont groupés par famille** (`NAV_SECTIONS`, `presentation/navigation.ts`) :
 le dashboard **hors famille** en tête, puis **Production** (Planning, Vidéos, Shorts &
-Réels, Publications), **Audience** (YouTube, Instagram, Commentaires), **Revenus** (Produits, Sponsors,
-Plateformes, Chiffre
-d'affaires) et **Entreprise** (Légal). À neuf entrées, une liste à plat obligeait à lire
+Réels, Publications), **Audience** (YouTube, Instagram, Commentaires — plus TikTok et
+Discord, conditionnels, voir plus bas), **Revenus** (Produits, Sponsors, Affiliations,
+Chiffre d'affaires) et **Entreprise** (Légal). À neuf entrées, une liste à plat obligeait à lire
 tous les libellés pour en trouver un — rien ne disait que « Contenu » et « Instagram »
 répondent à la même question. Le dashboard n'a pas d'intitulé : c'est la vue d'ensemble,
 elle n'appartient à aucun des métiers et lui en donner un ferait une rubrique d'une ligne.
@@ -2641,7 +2694,8 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useRemovePlanningItem`, `useClearPlanningItems`, `usePlaceItem`, `useContinueSlot`                                                                                                                            | `application/planning/usecases/usePlanning.ts`          | La grille, la pile et le placement                                                                                                                  |
 | `useToggleTodoTask`, `usePlaceTodoTask`, `useUnplaceTodoTask`                                                                                                                                                                                                                                                                  | `application/planning/usecases/usePlanning.ts`          | Tâches Todo du planning. N'invalident **que** `planningBoard` : une coche Todo ne touche ni la pile ni la file                                      |
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                                                                                                                                                      | idem                                                    | Horaires de travail et connexion à l'agenda                                                                                                         |
-| `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useStoryCount`, `useSetStoryCount`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                                                  | `application/instagram/usecases/useInstagram.ts`        | Comptes Instagram, séries et collecte                                                                                                               |
+| `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCollectInstagramAccount`, `useStoryCount`, `useSetStoryCount`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                     | `application/instagram/usecases/useInstagram.ts`        | Comptes Instagram (API Graph), séries et collecte                                                                                                   |
+| `useTikTokOverview`, `useTikTokAccounts`, `useUpdateTikTokAccount`, `useDeleteTikTokAccount`                                                                                                                                                                                                                                   | `application/tiktok/usecases/useTikTok.ts`               | Profil public TikTok, séries — pas de création : le compte se crée tout seul au premier relevé (`useCollectIntegration('tiktok')`)                  |
 | `useSlotFromTimeEntry`                                                                                                                                                                                                                                                                                                         | idem                                                    | Transforme une session de travail en créneau approuvé                                                                                               |
 | `useScriptPresets`, `useShotAngles`, `useProductionShotAngles`, `useCreateScriptPreset`, `useUpdateScriptPreset`, `useDeleteScriptPreset`, `useReorderScriptPresets`, `useCreateShotAngle`, `useUpdateShotAngle`, `useDeleteShotAngle`, `useReorderShotAngles`, `useCreateProductionShotAngle`, `useDeleteProductionShotAngle` | `application/script/usecases/useScript.ts`              | Gabarits et angles de vue (cache 5 min)                                                                                                             |
 | `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`           | Commentaires archivés, leur tri et leur collecte                                                                                                    |
@@ -2687,10 +2741,11 @@ l'autre : ce que le studio publie à l'extérieur ne change ni un chiffre, ni un
 ni une file. Une écriture de source n'invalide que `integrations`, une écriture de clé que
 `exportKeys`.
 
-**Exception locale et volontaire** : cocher/décocher une chaîne ou un compte Instagram
-dans la ligne dépliée de Paramètres → API (`export_enabled`) passe par `useUpdateChannel` /
-`useUpdateInstagramAccount`, qui n'invalident que `COLLECT_ROOTS` / `INSTAGRAM_ROOTS` — la
-mutation `.mutate(vars, { onSuccess })` de l'appelant ajoute **en plus** `['integrations']`,
+**Exception locale et volontaire** : cocher/décocher une chaîne, un compte Instagram ou un
+compte TikTok dans la ligne dépliée de Paramètres → API (`export_enabled`) passe par
+`useUpdateChannel` / `useUpdateInstagramAccount` / `useUpdateTikTokAccount`, qui
+n'invalident que `COLLECT_ROOTS` / `INSTAGRAM_ROOTS` / `TIKTOK_ROOTS` — la mutation
+`.mutate(vars, { onSuccess })` de l'appelant ajoute **en plus** `['integrations']`,
 directement dans `ApiSettingsPage`, plutôt que d'ajouter `integrations` aux racines
 partagées : le faire là-bas aurait rafraîchi l'aperçu JSON à chaque modification de couleur
 de chaîne, sans rapport avec l'export.
@@ -2740,6 +2795,9 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 37** ajoute `tiktok_accounts`, `tiktok_account_snapshots` et
+  `tiktok_videos` : le profil public TikTok, sur le modèle de l'ancien profil public
+  Instagram (comptes + relevés CUMUL + vidéos archivées).
 - **Migration 32** ajoute `ig_story_log` (stories déclarées à la main, une ligne par jour,
   sans compte).
 - **Migration 31** ajoute `post_drafts.steps` (texte, `''` par défaut) et
@@ -3185,12 +3243,16 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   `orderedNav`, qui faisait fermer la marche aux entrées inconnues — il n'y a plus de
   liste de repli, et une entrée oubliée est une entrée absente.
 - **Une entrée de menu peut être conditionnelle sans casser l'ordre fixe** : `withDiscord`
-  (`navigation.ts`) insère l'entrée Discord après Instagram **seulement si un serveur est
-  configuré**, sur le même modèle que `withExternalApps` — une fonction pure qui prend
-  `NAV_SECTIONS` en entrée et rend des sections augmentées, jamais une seconde source de
-  vérité. `AppLayout` les compose (`withDiscord(withExternalApps(externalApps), …)`) : un
-  écran dont la présence dépend d'une donnée suit ce patron plutôt que d'ajouter un
-  `if` dans `NAV_SECTIONS`, qui doit rester une liste statique.
+  et `withTikTok` (`navigation.ts`) insèrent leur entrée après Instagram **seulement si**
+  un serveur/profil est configuré, sur le même modèle que `withExternalApps` — une
+  fonction pure qui prend `NAV_SECTIONS` en entrée et rend des sections augmentées, jamais
+  une seconde source de vérité. `AppLayout` les compose
+  (`withTikTok(withDiscord(withExternalApps(externalApps), discordConfigured),
+  tiktokConfigured)`) : l'ordre de composition **compte** — `withTikTok` cherche d'abord
+  une entrée Discord déjà posée pour s'insérer juste après elle, et ne retombe sur
+  Instagram que si Discord est absent, ce qui donne Instagram → Discord → TikTok quand les
+  deux sont configurés. Un écran dont la présence dépend d'une donnée suit ce patron
+  plutôt que d'ajouter un `if` dans `NAV_SECTIONS`, qui doit rester une liste statique.
 - **La barre du bas ne prend que cinq écrans, et le tiroir les garde aussi.** Y ajouter une
   sixième entrée casserait la largeur des cibles ; en retirer une du tiroir sous prétexte
   qu'elle est en bas ferait un trou dans le seul endroit qui liste tout.
@@ -3631,7 +3693,7 @@ Images publiées sur GHCR par `.github/workflows/release.yml` :
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 
-Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `INSTAGRAM_USERNAME`, `SEARCH_API_APIKEY`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `META_APP_ID`, `META_APP_SECRET` (rafraîchissement automatique du jeton Instagram), `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
 
 Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer.
 

@@ -8,7 +8,7 @@ import type {
   IntegrationProvider,
   IntegrationUpdateInput,
 } from '../../../domain/integration/entities/Integration.ts';
-import { INSTAGRAM_ROOTS, queryKeys } from '../../queryKeys.ts';
+import { INSTAGRAM_ROOTS, TIKTOK_ROOTS, queryKeys } from '../../queryKeys.ts';
 
 /**
  * Les sources de l'export et leurs réglages.
@@ -41,9 +41,11 @@ export const useUpdateIntegration = () =>
   );
 
 /**
- * Deux exceptions à la règle du dessus : le relevé du profil Instagram **écrit dans le
- * module Instagram** (compte et relevé du jour), et celui de Domadoo ajoute un point à
- * son historique — leurs écrans doivent donc repartir aussi.
+ * Trois exceptions à la règle du dessus : le relevé du profil TikTok **écrit dans le
+ * module TikTok** (compte et relevé du jour), celui de Domadoo ajoute un point à son
+ * historique, et une collecte Instagram (déclenchée depuis `/instagram`, pas depuis
+ * cette liste) touche elle aussi son propre module — leurs écrans doivent donc repartir
+ * aussi.
  */
 export const useCollectIntegration = () => {
   const queryClient = useQueryClient();
@@ -53,9 +55,15 @@ export const useCollectIntegration = () => {
       void queryClient.invalidateQueries({ queryKey: ['integrations'] });
       if (provider === 'domadoo')
         void queryClient.invalidateQueries({ queryKey: ['domadooOverview'] });
-      if (provider !== 'instagram') return;
-      for (const root of INSTAGRAM_ROOTS) {
-        void queryClient.invalidateQueries({ queryKey: [root] });
+      if (provider === 'instagram') {
+        for (const root of INSTAGRAM_ROOTS) {
+          void queryClient.invalidateQueries({ queryKey: [root] });
+        }
+      }
+      if (provider === 'tiktok') {
+        for (const root of TIKTOK_ROOTS) {
+          void queryClient.invalidateQueries({ queryKey: [root] });
+        }
       }
     },
   });

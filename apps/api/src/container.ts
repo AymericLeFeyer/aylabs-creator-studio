@@ -61,8 +61,11 @@ import { SecretBox } from './infrastructure/integration/secrets/SecretBox.ts';
 import { AmazonScraper } from './infrastructure/integration/api/AmazonScraper.ts';
 import { DomadooScraper } from './infrastructure/integration/api/DomadooScraper.ts';
 import { DiscordClient } from './infrastructure/integration/api/DiscordClient.ts';
-import { InstagramProfileClient } from './infrastructure/integration/api/InstagramProfileClient.ts';
+import { TikTokProfileClient } from './infrastructure/integration/api/TikTokProfileClient.ts';
 import { SqliteExternalAppRepository } from './infrastructure/externalApp/repositories/SqliteExternalAppRepository.ts';
+import { SqliteTikTokRepository } from './infrastructure/tiktok/repositories/SqliteTikTokRepository.ts';
+import { CollectTikTok } from './application/tiktok/usecases/CollectTikTok.ts';
+import { GetTikTokOverview } from './application/tiktok/usecases/GetTikTokOverview.ts';
 import { ManageExternalApps } from './application/externalApp/usecases/ManageExternalApps.ts';
 import { ManageIntegrations } from './application/integration/usecases/ManageIntegrations.ts';
 import { CollectIntegrations } from './application/integration/usecases/CollectIntegrations.ts';
@@ -119,6 +122,8 @@ export interface Container {
   instagramAccounts: SqliteInstagramAccountRepository;
   /** Stories, publications et relevés archivés d'Instagram. */
   instagramData: SqliteInstagramDataRepository;
+  /** Comptes TikTok suivis par leur profil public, et ce qu'on en a archivé. */
+  tiktokAccounts: SqliteTikTokRepository;
   /** Plages travaillables de la semaine type. */
   workHours: SqliteWorkHoursRepository;
   /** Réglages du planning et connexion à l'agenda. Le jeton n'en sort jamais. */
@@ -164,6 +169,9 @@ export interface Container {
    */
   collectInstagram: CollectInstagram;
   getInstagramOverview: GetInstagramOverview;
+  /** Écrit le relevé public TikTok dans les tables du module — appelé par `collectIntegrations`. */
+  collectTikTok: CollectTikTok;
+  getTikTokOverview: GetTikTokOverview;
   /** `null` tant qu'aucune clé API YouTube n'est configurée. */
   youtubeData: YouTubeDataClient | null;
   /**
@@ -171,7 +179,7 @@ export interface Container {
    * un secret est chiffré ou déchiffré.
    */
   manageIntegrations: ManageIntegrations;
-  /** Amazon, Domadoo, Discord, et le profil public Instagram. YouTube n'a rien à collecter en plus. */
+  /** Amazon, Domadoo, Discord, et le profil public TikTok. YouTube et Instagram n'ont rien à collecter ici. */
   collectIntegrations: CollectIntegrations;
   /** L'écran Affiliations → Domadoo : séries et totaux reconstruits depuis l'historique. */
   getDomadooOverview: GetDomadooOverview;
@@ -220,6 +228,7 @@ export const buildContainer = (config: Config): Container => {
   const affiliatePlatforms = new SqliteAffiliatePlatformRepository(db);
   const instagramAccounts = new SqliteInstagramAccountRepository(db);
   const instagramData = new SqliteInstagramDataRepository(db);
+  const tiktokAccounts = new SqliteTikTokRepository(db);
   const workHours = new SqliteWorkHoursRepository(db);
   const planningSettings = new SqlitePlanningSettingsRepository(db);
   const planningItems = new SqlitePlanningItemRepository(db);
@@ -252,11 +261,12 @@ export const buildContainer = (config: Config): Container => {
     config.integrationEnv,
   );
 
-  // Partagé : la collecte des sources de l'export y écrit le relevé du profil public.
   const collectInstagram = new CollectInstagram(instagramAccounts, instagramData, {
     appId: config.metaAppId,
     appSecret: config.metaAppSecret,
   });
+  // Partagé : la collecte des sources de l'export y écrit le relevé du profil public.
+  const collectTikTok = new CollectTikTok(tiktokAccounts, tiktokAccounts);
 
   const manageTodoTasks = new ManageTodoTasks(
     new SqliteTodoPlacementRepository(db),
@@ -296,6 +306,7 @@ export const buildContainer = (config: Config): Container => {
     affiliatePlatforms,
     instagramAccounts,
     instagramData,
+    tiktokAccounts,
     workHours,
     planningSettings,
     planningItems,
@@ -346,6 +357,8 @@ export const buildContainer = (config: Config): Container => {
     }),
     collectInstagram,
     getInstagramOverview: new GetInstagramOverview(instagramAccounts, instagramData),
+    collectTikTok,
+    getTikTokOverview: new GetTikTokOverview(tiktokAccounts, tiktokAccounts),
     getPreviousPublication: new GetPreviousPublication(productions, videos, channels, {
       youtubeApiKey: config.youtubeApiKey,
       gcpClientId: config.gcpClientId,
@@ -361,9 +374,9 @@ export const buildContainer = (config: Config): Container => {
         amazon: new AmazonScraper(),
         domadoo: new DomadooScraper(),
         discord: new DiscordClient(),
-        instagram: new InstagramProfileClient(),
+        tiktok: new TikTokProfileClient(),
       },
-      collectInstagram,
+      collectTikTok,
       domadooSnapshots,
     ),
     getDomadooOverview: new GetDomadooOverview(domadooSnapshots),
