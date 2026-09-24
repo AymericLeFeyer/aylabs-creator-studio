@@ -37,7 +37,10 @@ const VIDEO_REVISION_WINDOW_DAYS = 7;
  */
 const VIDEO_STATS_WINDOW_DAYS = 365;
 
-/** Vidéos classées Short / classique par passage : 10 appels de 50, 10 unités de quota. */
+/**
+ * Vidéos classées Short / classique par passage. Le coût est celui de la pagination des
+ * playlists `UUSH` / `UULF` (1 unité par page de 50, arrêtée dès que tout est trouvé).
+ */
 const CLASSIFY_BATCH = 500;
 
 export class CollectMetrics {
@@ -292,7 +295,9 @@ export class CollectMetrics {
     const videoStatsUpdated = await this.collectVideoStats(channel.id, (ids) =>
       client.fetchVideoStats(ids),
     );
-    await this.classifyVideos(channel.id, (ids) => client.fetchVideoFormats(ids));
+    await this.classifyVideos(channel.id, (ids) =>
+      client.fetchVideoFormats(ids, channel.externalId!),
+    );
 
     return { ...base, status: 'ok', daysUpserted, snapshotDate, videosUpserted, videoStatsUpdated };
   }

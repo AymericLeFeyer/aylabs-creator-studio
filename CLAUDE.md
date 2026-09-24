@@ -198,7 +198,19 @@ La vidéo sert donc à trois choses : **repère temporel** (trait vertical au jo
 
 `VideoRepository` : `findAll`, `findAllWithChannel`, `findById`, `upsertMany` (titre/miniature, jamais les compteurs), `upsertStats` (compteurs seuls, **UPDATE sans INSERT** : une stat sans ligne de vidéo n'a nulle part où aller), `markMissing`, `findLatestDate`, `countByChannel`, `findUnclassified(channelId, limit)` / `setFormats(channelId, Map<externalId, boolean>)` (classement Short). `VideoFilter.excludeShorts` écarte les Shorts (une vidéo non classée reste).
 
-**`isShort` (`videos.is_short`, migration 39, nullable) est déduit, pas lu** : YouTube n'expose aucun champ « short ». `CollectMetrics.classifyVideos` tourne après les stats, ne demande que les vidéos à `is_short IS NULL` (500 max par passage), via `videos.list part=contentDetails,player maxWidth=1000` (`videoFormats.ts`, 1 unité par lot de 50) : **Short = durée ≤ 180 s ET lecteur vertical ou carré** (`embedHeight >= embedWidth`) ; sans ratio, la durée seule tranche. `NULL` = pas encore classée — un défaut à 0 aurait fait passer tout l'historique pour des vidéos classiques. Échec avalé. `isShort` est porté par `Video`, `VideoMarker` et `VideoPerformanceRow`.
+**`isShort` (`videos.is_short`, migration 39, nullable) vient des onglets de la chaîne** :
+YouTube n'expose aucun champ « short », mais chaque chaîne a des playlists automatiques
+dérivées de sa playlist d'envois `UU…` — `UUSH…` = l'onglet Shorts, `UULF…` = l'onglet
+Vidéos (l'équivalent API de `@chaine/shorts` et `@chaine/videos`, sans lire de HTML).
+`CollectMetrics.classifyVideos` tourne après les stats, ne demande que les vidéos à
+`is_short IS NULL` (500 max par passage) et `fetchVideoFormats` (`videoFormats.ts`) pagine
+ces deux playlists jusqu'à les avoir toutes trouvées (40 pages max chacune, 1 unité la
+page). **Ces playlists ne sont pas documentées** : une erreur sur l'une est journalisée et
+ignorée, et ce qui n'a été trouvé nulle part (privée, non listée, direct, playlists
+indisponibles) retombe sur l'ancienne règle **durée ≤ 180 s et lecteur vertical**
+(`classifyByShape`). La migration 41 a remis `is_short` à `NULL` pour tout reclasser par
+cette voie : l'ancienne règle se trompait sur un Short de 3 min en 16:9. `NULL` = pas
+encore classée. Échec avalé. `isShort` est porté par `Video`, `VideoMarker` et `VideoPerformanceRow`.
 
 **Une vidéo retirée de YouTube est marquée, jamais supprimée** (`videos.deleted_at`,
 migration 17). La supprimer emporterait tout ce qui s'y rattache : revenus et dépenses
@@ -2862,6 +2874,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 41** remet `videos.is_short` à `NULL` : reclassement par les playlists `UUSH` / `UULF`.
 - **Migration 40** ajoute `dashboard_widgets` (`block_id` unique, `width` 1–6 en `CHECK`). Aucune ligne à la création : le dashboard part vide.
 - **Migration 39** ajoute `videos.is_short` (nullable, `NULL` = pas encore classée Short / classique).
 - **Migration 37** ajoute `tiktok_accounts`, `tiktok_account_snapshots` et

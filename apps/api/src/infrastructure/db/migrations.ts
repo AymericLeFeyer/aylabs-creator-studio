@@ -1581,6 +1581,18 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 41,
+    name: 'videos_is_short_reclassify',
+    // Le classement se fait desormais par les onglets de la chaine (playlists "UUSH" /
+    // "UULF"), exacts, au lieu de la regle duree + ratio, qui se trompait sur un Short de
+    // trois minutes en 16:9 ou une video verticale courte. On oublie donc l'ancien
+    // classement : tout est reclasse aux collectes suivantes. Rien ne depend de la
+    // colonne, la vider ne coute qu'un passage.
+    up: `
+      UPDATE videos SET is_short = NULL;
+    `,
+  },
 ];
 
 /**

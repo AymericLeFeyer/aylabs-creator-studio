@@ -145,7 +145,7 @@ export class YouTubeAnalyticsClient {
   async fetchVideoFormats(videoIds: string[]): Promise<Map<string, boolean>> {
     try {
       const youtube = google.youtube({ version: 'v3', auth: this.buildAuth() });
-      return await fetchVideoFormats(youtube, videoIds);
+      return await fetchVideoFormats(youtube, videoIds, { mine: true });
     } catch (error) {
       if (error instanceof Error && error.name === 'AppError') throw error;
       throw upstream(`YouTube Data API (formats vidéo) : ${this.describe(error)}`);

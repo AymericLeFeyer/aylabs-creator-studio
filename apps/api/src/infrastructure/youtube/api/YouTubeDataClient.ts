@@ -152,9 +152,9 @@ export class YouTubeDataClient {
   }
 
   /** Short ou vidéo classique, par identifiant (voir `fetchVideoFormats`). */
-  async fetchVideoFormats(videoIds: string[]): Promise<Map<string, boolean>> {
+  async fetchVideoFormats(videoIds: string[], channelId: string): Promise<Map<string, boolean>> {
     try {
-      return await fetchVideoFormats(this.client, videoIds);
+      return await fetchVideoFormats(this.client, videoIds, { channelId });
     } catch (error) {
       if (error instanceof Error && error.name === 'AppError') throw error;
       throw upstream(`YouTube Data API (formats vidéo) : ${(error as Error).message}`);
