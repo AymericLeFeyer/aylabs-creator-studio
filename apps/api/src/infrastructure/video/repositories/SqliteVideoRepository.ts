@@ -14,6 +14,7 @@ import type {
 } from '../../../domain/video/repositories/VideoRepository.ts';
 import { placeholders } from '../../db/filters.ts';
 import { newId } from '../../../shared/id.ts';
+import { notFound } from '../../../shared/errors.ts';
 
 interface VideoRow {
   id: string;
@@ -23,7 +24,7 @@ interface VideoRow {
   published_at: string;
   date: string;
   thumbnail_url: string | null;
-  is_short: number | null;
+  hidden_at: string | null;
   views: number;
   watch_minutes: number;
   subscribers_gained: number;
@@ -46,7 +47,7 @@ const toDomain = (row: VideoRow): Video => ({
   publishedAt: row.published_at,
   date: row.date,
   thumbnailUrl: row.thumbnail_url,
-  isShort: row.is_short === null ? null : row.is_short === 1,
+  hiddenAt: row.hidden_at,
   stats: {
     views: row.views,
     watchMinutes: row.watch_minutes,
@@ -86,8 +87,12 @@ export class SqliteVideoRepository implements VideoRepository {
       conditions.push(`${alias}.channel_id IN (${placeholders(channelIds.length)})`);
       params.push(...channelIds);
     }
-    if (filter.excludeShorts) {
-      conditions.push(`COALESCE(${alias}.is_short, 0) = 0`);
+    if (filter.ids && filter.ids.length > 0) {
+      conditions.push(`${alias}.id IN (${placeholders(filter.ids.length)})`);
+      params.push(...filter.ids);
+    }
+    if (filter.hidden !== undefined) {
+      conditions.push(`${alias}.hidden_at IS ${filter.hidden ? 'NOT NULL' : 'NULL'}`);
     }
 
     return { clause: `WHERE ${conditions.join(' AND ')}`, params };
@@ -377,27 +382,14 @@ export class SqliteVideoRepository implements VideoRepository {
     return row?.d ?? null;
   }
 
-  findUnclassified(channelId: string, limit: number): string[] {
-    const rows = this.db
-      .prepare(
-        `SELECT external_id FROM videos
-          WHERE channel_id = ? AND deleted_at IS NULL AND is_short IS NULL
-          ORDER BY published_at DESC
-          LIMIT ?`,
-      )
-      .all(channelId, limit) as Array<{ external_id: string }>;
-    return rows.map((row) => row.external_id);
-  }
-
-  setFormats(channelId: string, formats: Map<string, boolean>): number {
-    const stmt = this.db.prepare(
-      'UPDATE videos SET is_short = ? WHERE channel_id = ? AND external_id = ?',
-    );
-    let count = 0;
-    for (const [externalId, isShort] of formats) {
-      count += Number(stmt.run(isShort ? 1 : 0, channelId, externalId).changes);
-    }
-    return count;
+  setHidden(id: string, hidden: boolean): VideoView {
+    const result = this.db
+      .prepare('UPDATE videos SET hidden_at = ?, updated_at = ? WHERE id = ?')
+      .run(hidden ? new Date().toISOString() : null, new Date().toISOString(), id);
+    if (Number(result.changes) === 0) throw notFound('Vidéo');
+    const [view] = this.findAllWithChannel({ ids: [id] });
+    if (!view) throw notFound('Vidéo');
+    return view;
   }
 
   countByChannel(channelId: string): number {

@@ -37,12 +37,6 @@ const VIDEO_REVISION_WINDOW_DAYS = 7;
  */
 const VIDEO_STATS_WINDOW_DAYS = 365;
 
-/**
- * Vidéos classées Short / classique par passage. Le coût est celui de la pagination des
- * playlists `UUSH` / `UULF` (1 unité par page de 50, arrêtée dès que tout est trouvé).
- */
-const CLASSIFY_BATCH = 500;
-
 export class CollectMetrics {
   private readonly channels: ChannelRepository;
   private readonly metrics: MetricsRepository;
@@ -191,7 +185,6 @@ export class CollectMetrics {
     const videoStatsUpdated = await this.collectVideoStats(channel.id, (ids, since) =>
       client.fetchVideoStats(ids, since, to),
     );
-    await this.classifyVideos(channel.id, (ids) => client.fetchVideoFormats(ids));
 
     return {
       ...base,
@@ -295,9 +288,6 @@ export class CollectMetrics {
     const videoStatsUpdated = await this.collectVideoStats(channel.id, (ids) =>
       client.fetchVideoStats(ids),
     );
-    await this.classifyVideos(channel.id, (ids) =>
-      client.fetchVideoFormats(ids, channel.externalId!),
-    );
 
     return { ...base, status: 'ok', daysUpserted, snapshotDate, videosUpserted, videoStatsUpdated };
   }
@@ -398,29 +388,6 @@ export class CollectMetrics {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[collect] stats vidéo non collectées (${channelId}) : ${message}`);
-      return 0;
-    }
-  }
-
-  /**
-   * Range les vidéos pas encore classées en Short ou vidéo classique.
-   *
-   * Seules les vidéos à `is_short` NULL sont demandées : une vidéo ne change pas de
-   * format, la classer une fois suffit. Le plafond borne le rattrapage d'un gros
-   * catalogue à quelques unités de quota par passage — le reste suit aux suivants.
-   * Échec **avalé**, comme les deux collectes au-dessus : c'est un filtre d'affichage.
-   */
-  private async classifyVideos(
-    channelId: string,
-    fetch: (videoIds: string[]) => Promise<Map<string, boolean>>,
-  ): Promise<number> {
-    const pending = this.videos.findUnclassified(channelId, CLASSIFY_BATCH);
-    if (pending.length === 0) return 0;
-    try {
-      return this.videos.setFormats(channelId, await fetch(pending));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[collect] formats vidéo non classés (${channelId}) : ${message}`);
       return 0;
     }
   }

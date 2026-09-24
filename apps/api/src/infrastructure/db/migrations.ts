@@ -1593,6 +1593,18 @@ const migrations: Migration[] = [
       UPDATE videos SET is_short = NULL;
     `,
   },
+  {
+    version: 42,
+    name: 'videos_hidden_from_latest',
+    // Le classement Short / classique est abandonne : il ne tenait pas ses promesses. A la
+    // place, on masque a la main une video de "Dernieres sorties" ("hidden_at"), et cette
+    // liste seule en tient compte. DROP COLUMN ne reconstruit pas la table (aucun index ni
+    // contrainte sur "is_short") : pas de ON DELETE declenche, rien ne se detache.
+    up: `
+      ALTER TABLE videos DROP COLUMN is_short;
+      ALTER TABLE videos ADD COLUMN hidden_at TEXT;
+    `,
+  },
 ];
 
 /**

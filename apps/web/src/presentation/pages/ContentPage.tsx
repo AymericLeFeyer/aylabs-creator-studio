@@ -1,9 +1,7 @@
 import { useProductionOverview } from '../../application/production/usecases/useProductions.ts';
-import { useFilters } from '../hooks/useFilters.tsx';
-import { Checkbox } from '../components/ui/checkbox.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { Block } from '../dashboard/Block.tsx';
-import { useYouTubeData } from '../blocks/blockData.ts';
+import { useAnalyticsData } from '../blocks/blockData.ts';
 
 /**
  * Tout ce qui concerne les vidéos déjà sorties, sur la période choisie en haut.
@@ -18,8 +16,7 @@ import { useYouTubeData } from '../blocks/blockData.ts';
  * Chaque carte est un bloc du catalogue (`<Block>`) : ajoutable au dashboard au survol.
  */
 export const ContentPage = () => {
-  const filters = useFilters();
-  const { data, isLoading } = useYouTubeData();
+  const { data, isLoading } = useAnalyticsData();
   const { data: overview } = useProductionOverview();
 
   const periodCount = data?.videoPerformance.length ?? 0;
@@ -35,16 +32,6 @@ export const ContentPage = () => {
             {overview?.queue.length ?? 0} en production
           </p>
         </div>
-        <label
-          className="flex cursor-pointer items-center gap-2 text-sm"
-          title="Repères, classement, tableaux et dernières sorties. Les courbes d'audience sont mesurées à la chaîne et incluent toujours les Shorts."
-        >
-          <Checkbox
-            checked={filters.showShorts}
-            onCheckedChange={(checked) => filters.set({ showShorts: checked === true })}
-          />
-          Afficher les Shorts
-        </label>
       </div>
 
       {/* Les chiffres de la chaîne, hors période : où elle en est aujourd'hui. Une rangée

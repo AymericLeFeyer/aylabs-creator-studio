@@ -21,30 +21,6 @@ import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
  */
 export const useAnalyticsData = () => useAnalytics(useAnalyticsParams());
 
-/**
- * L'aperçu vu depuis YouTube : **sans les Shorts** quand la case « Afficher les Shorts »
- * est décochée (repères, classement, tableaux). Les courbes restent entières —
- * `daily_metrics` est mesuré à la chaîne, sans découpage par format — et une vidéo pas
- * encore classée (`isShort` null) reste affichée.
- */
-export const useYouTubeData = () => {
-  const filters = useFilters();
-  const query = useAnalyticsData();
-  const data = useMemo(() => {
-    const raw = query.data;
-    if (!raw || filters.showShorts) return raw;
-    const keep = <T extends { isShort: boolean | null }>(rows: T[]) =>
-      rows.filter((row) => row.isShort !== true);
-    return {
-      ...raw,
-      videos: keep(raw.videos),
-      videoPerformance: keep(raw.videoPerformance),
-      catalogPerformance: keep(raw.catalogPerformance ?? []),
-    };
-  }, [query.data, filters.showShorts]);
-  return { ...query, data };
-};
-
 export const useBrandStatsData = () => {
   const filters = useFilters();
   return useBrandStats({ from: filters.from, to: filters.to, channelIds: filters.channelIds });

@@ -6,8 +6,8 @@ export interface VideoListParams {
   to?: string;
   channelIds?: string[];
   limit?: number;
-  /** Écarte les Shorts (les vidéos pas encore classées restent). */
-  excludeShorts?: boolean;
+  /** `false` : sans les vidéos masquées ; `true` : elles seules ; absent : toutes. */
+  hidden?: boolean;
 }
 
 export const videoApi = {
@@ -18,7 +18,10 @@ export const videoApi = {
         to: params.to,
         channelIds: params.channelIds?.length ? params.channelIds.join(',') : undefined,
         limit: params.limit,
-        excludeShorts: params.excludeShorts ? 'true' : undefined,
+        hidden: params.hidden === undefined ? undefined : String(params.hidden),
       },
     }),
+
+  setHidden: (id: string, hidden: boolean) =>
+    request<Video>(`/api/videos/${id}`, { method: 'PATCH', body: { hidden } }),
 };

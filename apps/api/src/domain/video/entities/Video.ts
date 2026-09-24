@@ -39,10 +39,12 @@ export interface Video {
   date: IsoDate;
   thumbnailUrl: string | null;
   /**
-   * Short ou vidéo classique, **déduit** de la durée et du ratio à la collecte (YouTube
-   * n'expose aucun champ). `null` tant que la vidéo n'a pas été classée.
+   * Masquée de « Dernières sorties » à la main (`null` sinon). **N'agit que sur cette
+   * liste** : la vidéo reste dans les chiffres, les repères, les tableaux et les
+   * sélecteurs. C'est ce qui permet de garder dix vraies dernières sorties quand un Short,
+   * un direct ou une rediffusion n'a rien à y faire.
    */
-  isShort: boolean | null;
+  hiddenAt: string | null;
   stats: VideoStats;
 }
 
@@ -52,7 +54,7 @@ export interface VideoView extends Video {
   channelColor: string;
 }
 
-export type UpsertVideoInput = Omit<Video, 'id' | 'stats' | 'isShort'>;
+export type UpsertVideoInput = Omit<Video, 'id' | 'stats' | 'hiddenAt'>;
 
 /** Mise à jour des compteurs, adressée par la clé naturelle `(channelId, externalId)`. */
 export interface VideoStatsUpdate {

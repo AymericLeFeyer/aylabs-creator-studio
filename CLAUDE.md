@@ -196,21 +196,22 @@ Catégories créées au premier démarrage (`SeedDefaultCategories`, identifiant
 
 La vidéo sert donc à trois choses : **repère temporel** (trait vertical au jour de sortie sur les graphiques d'argent et d'audience), **porte-clé** (les revenus et dépenses s'y rattachent par `video_id`) et **support de mesure** (tableau de performance par vidéo).
 
-`VideoRepository` : `findAll`, `findAllWithChannel`, `findById`, `upsertMany` (titre/miniature, jamais les compteurs), `upsertStats` (compteurs seuls, **UPDATE sans INSERT** : une stat sans ligne de vidéo n'a nulle part où aller), `markMissing`, `findLatestDate`, `countByChannel`, `findUnclassified(channelId, limit)` / `setFormats(channelId, Map<externalId, boolean>)` (classement Short). `VideoFilter.excludeShorts` écarte les Shorts (une vidéo non classée reste).
+`VideoRepository` : `findAll`, `findAllWithChannel`, `findById`, `upsertMany` (titre/miniature, jamais les compteurs), `upsertStats` (compteurs seuls, **UPDATE sans INSERT** : une stat sans ligne de vidéo n'a nulle part où aller), `markMissing`, `findLatestDate`, `countByChannel`, `setHidden(id, hidden)`. `VideoFilter.hidden` : `false` écarte les vidéos masquées, `true` ne rend qu'elles, absent ne filtre pas ; `VideoFilter.ids` restreint à des identifiants.
 
-**`isShort` (`videos.is_short`, migration 39, nullable) vient des onglets de la chaîne** :
-YouTube n'expose aucun champ « short », mais chaque chaîne a des playlists automatiques
-dérivées de sa playlist d'envois `UU…` — `UUSH…` = l'onglet Shorts, `UULF…` = l'onglet
-Vidéos (l'équivalent API de `@chaine/shorts` et `@chaine/videos`, sans lire de HTML).
-`CollectMetrics.classifyVideos` tourne après les stats, ne demande que les vidéos à
-`is_short IS NULL` (500 max par passage) et `fetchVideoFormats` (`videoFormats.ts`) pagine
-ces deux playlists jusqu'à les avoir toutes trouvées (40 pages max chacune, 1 unité la
-page). **Ces playlists ne sont pas documentées** : une erreur sur l'une est journalisée et
-ignorée, et ce qui n'a été trouvé nulle part (privée, non listée, direct, playlists
-indisponibles) retombe sur l'ancienne règle **durée ≤ 180 s et lecteur vertical**
-(`classifyByShape`). La migration 41 a remis `is_short` à `NULL` pour tout reclasser par
-cette voie : l'ancienne règle se trompait sur un Short de 3 min en 16:9. `NULL` = pas
-encore classée. Échec avalé. `isShort` est porté par `Video`, `VideoMarker` et `VideoPerformanceRow`.
+**Une vidéo se masque de « Dernières sorties », et de là seulement** (`videos.hidden_at`,
+migration 42 ; `Video.hiddenAt`). C'est un geste manuel (l'œil barré de `LatestVideoCard`) :
+un Short, un direct ou une rediffusion n'ont rien à faire parmi « mes dix dernières
+vidéos ». La liste est filtrée **côté API** (`GET /api/videos?hidden=false&limit=10`) pour
+que la suivante prenne la place et qu'il en reste toujours dix. Rien d'autre ne lit le
+drapeau : chiffres, repères, tableaux et sélecteurs de rattachement comptent toujours la
+vidéo. Les masquées se relisent et se réaffichent par « Masquées » (`HiddenVideosDialog`,
+`?hidden=true`, requête lancée à l'ouverture seulement).
+
+Il **remplace le classement automatique Short / classique** (migrations 39 et 41, colonne
+`is_short` supprimée par la 42) : ni la règle durée + ratio, ni les playlists `UUSH` /
+`UULF` ne tenaient leurs promesses (`UUSH` plafonne à 200 vidéos, la règle se trompait sur
+un Short de 3 min en 16:9), et la case « Afficher les Shorts » qui s'en servait a été
+retirée. Ne pas le réintroduire sans une source que YouTube documente.
 
 **Une vidéo retirée de YouTube est marquée, jamais supprimée** (`videos.deleted_at`,
 migration 17). La supprimer emporterait tout ce qui s'y rattache : revenus et dépenses
@@ -236,7 +237,7 @@ lectures en héritent (liste, compteurs de période, repères de graphique, perf
 vidéo), et `findLatestDate` l'applique aussi — une vidéo retirée ne doit pas servir de
 point de reprise à la collecte suivante.
 
-La collecte passe par la **playlist « uploads »** de la chaîne (`infrastructure/youtube/api/uploads.ts`, partagé par les deux clients) et non par `search.list` : 1 unité de quota par page de 50 contre 100 pour une recherche, et l'ordre antéchronologique garanti permet de s'arrêter dès qu'on dépasse la date voulue. Fonctionne en mode `public` (clé API) comme en mode `oauth` (`mine: true`). Les Shorts en font partie, YouTube ne les distingue pas à ce niveau — le classement se fait ensuite (`classifyVideos`, voir plus haut).
+La collecte passe par la **playlist « uploads »** de la chaîne (`infrastructure/youtube/api/uploads.ts`, partagé par les deux clients) et non par `search.list` : 1 unité de quota par page de 50 contre 100 pour une recherche, et l'ordre antéchronologique garanti permet de s'arrêter dès qu'on dépasse la date voulue. Fonctionne en mode `public` (clé API) comme en mode `oauth` (`mine: true`). Les Shorts en font partie, YouTube ne les distingue pas à ce niveau — on les masque à la main de « Dernières sorties » (voir plus haut).
 
 `CollectMetrics.collectVideos()` repart de la dernière vidéo connue moins 7 jours ; sans historique, il remonte `BACKFILL_DAYS`. Son échec est **avalé** (`console.warn`) : un repère d'affichage ne doit pas faire échouer une collecte de métriques déjà écrites. Le nombre de vidéos enregistrées revient dans `CollectResult.videosUpserted`.
 
@@ -1893,9 +1894,10 @@ identifiant du registre fait disparaître le bloc des dashboards où il était p
   vit désormais dans le bloc) ; la file de production aussi (`ProductionQueueBlock`), et le
   carnet d'idées porte son propre formulaire de promotion (`IdeaBoxBlock`).
 - **L'icône d'ajout est un interrupteur** (`AddToDashboardButton`, `Addable`) : cochée si
-  le bloc est déjà sur le dashboard, recliquée elle l'en retire. Visible au survol (coin
-  haut droit, à cheval sur le bord), en permanence quand le bloc y est déjà. Pas de survol
-  sur tactile : elle apparaît au focus.
+  le bloc est déjà sur le dashboard, recliquée elle l'en retire. **Visible au survol
+  seulement** (coin haut droit, à cheval sur le bord), même quand le bloc y est déjà : une
+  coche permanente sur chaque bloc ajouté chargeait les pages. Pas de survol sur tactile :
+  elle apparaît au focus.
 - **Domadoo** : les deux fenêtres (`DomadooWindowCard`) ne sont pas ajoutables en bloc ;
   **chaque ligne** porte son bouton et se pose en grand chiffre (`domadoo.<fenêtre>.<champ>`,
   `DOMADOO_ROWS` dans `blocks/domadooRows.ts`).
@@ -1956,7 +1958,8 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `PUT`    | `/api/channels/:id/metrics`                         | Saisie manuelle d'une journée (`source = manual`)                                                                                                                                                                                                        |
 | `DELETE` | `/api/channels/:id/metrics/:date`                   | Supprimer une journée                                                                                                                                                                                                                                    |
 | `PUT`    | `/api/channels/:id/snapshots`                       | Saisie manuelle d'un total d'abonnés                                                                                                                                                                                                                     |
-| `GET`    | `/api/videos`                                       | Sorties de vidéo. Params `from`, `to`, `channelIds`, `limit` (200 par défaut), `excludeShorts`. Période **facultative** : le sélecteur de rattachement doit proposer des vidéos plus anciennes que la période affichée                                                    |
+| `GET`    | `/api/videos`                                       | Sorties de vidéo. Params `from`, `to`, `channelIds`, `limit` (200 par défaut), `hidden` (`false` = sans les masquées, `true` = elles seules). Période **facultative** : le sélecteur de rattachement doit proposer des vidéos plus anciennes que la période affichée                                                    |
+| `PATCH`  | `/api/videos/:id`                                   | `{ hidden }` → masque ou réaffiche la vidéo dans « Dernières sorties », et nulle part ailleurs. 404 si inconnue |
 | `GET`    | `/api/categories`                                   | Params `includeArchived`, `scope` (`revenue                                                                                                                                                                                                              | expense | both`;`both` répond toujours) |
 | `POST`   | `/api/categories`                                   | Créer (`scope` défaut `revenue`)                                                                                                                                                                                                                         |
 | `PATCH`  | `/api/categories/:id`                               | Modifier / archiver                                                                                                                                                                                                                                      |
@@ -2110,7 +2113,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | Route               | Page                   | Contenu                                                                                                                                                                                                                                                                                                                                                                       |
 | ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/`                 | `DashboardPage`        | **Composé et vide par défaut** : les blocs posés depuis les autres écrans (icône « + » au survol), en grille de 6. Crayon = édition WYSIWYG (glisser, texte, icône, largeur, retrait), catalogue complet. Sélecteur : chaînes YouTube + comptes Instagram + TikTok, tous cochés par défaut. Voir le domaine `dashboard` |
-| `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période. Case **« Afficher les Shorts »** (`filters.showShorts`, persistée) : filtre **côté écran** repères, classement, tableaux (période et catalogue), carte « Vidéos publiées » et dernières sorties (`excludeShorts`). Les courbes d'audience ne bougent pas — `daily_metrics` est mesuré à la chaîne, sans découpage par format — et le dashboard garde tout                                                                                                                        |
+| `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période. Les **dix dernières sorties** se masquent une à une (œil barré), la liste des masquées est derrière « Masquées »                                                                                                                        |
 | `/instagram`        | `InstagramPage`        | **API Graph**, toujours au jour : alerte de jeton, chiffres clés (Stories, Abonnés, Publications, Portée, Interactions), **dernières publications** (`LatestPostCard` : les 10 dernières hors période — `InstagramOverview.latestMedia` —, aux chevrons ou au glissement, avec vues/portée/j'aime/commentaires/partages/enregistrements), courbes d'abonnés et de portée liées, graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications (vues/portée/j'aime/commentaires/enregistrements au clic)                                                                                |
 | `/tiktok`           | `TikTokPage`            | **Profil public seulement**, toujours au jour : cartes Abonnés/Coeurs/Vidéos, graphique en onglets (Abonnés, Vidéos), dernières vidéos. N'apparaît dans le menu que si un profil est configuré (Paramètres → Audience → TikTok)                                                                                                                                                |
 | `/discord`          | `DiscordPage`          | Membres, membres en ligne (le nom du serveur n'est plus qu'en sous-titre), dernier relevé, bouton Collecter. **Aucune série** : Discord ne renvoie que des compteurs courants. N'apparaît dans le menu que si un serveur est configuré (Paramètres → Audience → Discord)                                                                                                                                       |
@@ -2874,9 +2877,10 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
-- **Migration 41** remet `videos.is_short` à `NULL` : reclassement par les playlists `UUSH` / `UULF`.
+- **Migration 42** supprime `videos.is_short` (`DROP COLUMN`, sans reconstruction de table : aucun index ni contrainte dessus) et ajoute `videos.hidden_at`.
+- **Migration 41** remettait `videos.is_short` à `NULL` (classement abandonné depuis, voir 42).
 - **Migration 40** ajoute `dashboard_widgets` (`block_id` unique, `width` 1–6 en `CHECK`). Aucune ligne à la création : le dashboard part vide.
-- **Migration 39** ajoute `videos.is_short` (nullable, `NULL` = pas encore classée Short / classique).
+- **Migration 39** ajoutait `videos.is_short` (classement Short abandonné, supprimé par la 42).
 - **Migration 37** ajoute `tiktok_accounts`, `tiktok_account_snapshots` et
   `tiktok_videos` : le profil public TikTok, sur le modèle de l'ancien profil public
   Instagram (comptes + relevés CUMUL + vidéos archivées).

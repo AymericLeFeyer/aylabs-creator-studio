@@ -105,7 +105,7 @@ export const DomadooWindowCard = ({ window }: { window: DomadooWindow }) => {
                 blockId={`domadoo.${row.id}`}
                 width={1}
                 label={`Domadoo · ${row.label}`}
-                className="h-5 w-5 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/row:opacity-100 aria-pressed:opacity-100"
+                className="h-5 w-5 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/row:opacity-100"
               />
             </dd>
           </div>

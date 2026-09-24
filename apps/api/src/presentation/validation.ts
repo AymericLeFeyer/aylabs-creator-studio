@@ -153,11 +153,15 @@ export const videoQuerySchema = z.object({
         .filter(Boolean),
     ),
   limit: z.coerce.number().int().min(1).max(500).default(200),
-  excludeShorts: z
-    .string()
+  // `false` : sans les vidéos masquées (« Dernières sorties ») ; `true` : elles seules.
+  hidden: z
+    .enum(['true', 'false'])
     .optional()
-    .transform((value) => value === 'true'),
+    .transform((value) => (value === undefined ? undefined : value === 'true')),
 });
+
+/** `PATCH /api/videos/:id` : masquer ou réafficher dans « Dernières sorties ». */
+export const setVideoHiddenSchema = z.object({ hidden: z.boolean() });
 
 /** Filtre optionnel sur une période, pour les listes de revenus et de dépenses. */
 export const rangeQuerySchema = z.object({

@@ -85,9 +85,11 @@ export const AddToDashboardButton = ({
  * L'enveloppe prend la place du bloc dans sa grille et lui transmet sa hauteur : sans ça,
  * les cartes d'une même rangée cesseraient d'avoir la même taille.
  *
- * Le bouton reste visible tant que le bloc est sur le dashboard (coché) : c'est ce qui dit
- * d'un coup d'œil, sur une page, quels blocs y figurent déjà. Sur écran tactile, il n'y a
- * pas de survol ; il apparaît dès qu'on touche un élément focalisable du bloc.
+ * **Uniquement au survol**, que le bloc soit déjà sur le dashboard ou non : une coche
+ * posée en permanence sur chaque bloc ajouté chargeait les pages pour une information
+ * qu'on ne cherche qu'au moment d'ajouter ou de retirer. Au survol, l'icône dit l'état
+ * (coche = déjà sur le dashboard). Sur écran tactile, il n'y a pas de survol ; elle
+ * apparaît dès qu'on touche un élément focalisable du bloc.
  */
 export const Addable = ({
   blockId,
@@ -97,10 +99,7 @@ export const Addable = ({
   className,
 }: AddToDashboardButtonProps & { children: ReactNode }) => {
   const onDashboard = useWidgetOverrides() !== null;
-  const { data: widgets } = useDashboardWidgets();
   if (onDashboard) return <>{children}</>;
-
-  const present = widgets?.some((widget) => widget.blockId === blockId) ?? false;
 
   return (
     <div className={cn('group/add relative min-w-0 [&>*:first-child]:h-full', className)}>
@@ -109,12 +108,7 @@ export const Addable = ({
         blockId={blockId}
         width={width}
         label={label}
-        className={cn(
-          'absolute -right-2 -top-2 z-20 transition-opacity',
-          present
-            ? 'opacity-70 hover:opacity-100'
-            : 'opacity-0 focus-visible:opacity-100 group-focus-within/add:opacity-100 group-hover/add:opacity-100',
-        )}
+        className="absolute -right-2 -top-2 z-20 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within/add:opacity-100 group-hover/add:opacity-100"
       />
     </div>
   );

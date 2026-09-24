@@ -11,6 +11,8 @@ interface LatestCarouselProps<T> {
   children: (item: T, index: number) => { main: ReactNode; stats: ReactNode };
   /** « Sortie », « Publication » : pour les libellés des chevrons. */
   noun: string;
+  /** Des gestes sur l'élément affiché (masquer…), posés à côté des chevrons. */
+  actions?: (item: T) => ReactNode;
 }
 
 /**
@@ -25,7 +27,7 @@ interface LatestCarouselProps<T> {
  * repartir de la plus récente sans qu'on l'ait demandé. Le rang est écrit à côté pour la
  * même raison.
  */
-export const LatestCarousel = <T,>({ items, children, noun }: LatestCarouselProps<T>) => {
+export const LatestCarousel = <T,>({ items, children, noun, actions }: LatestCarouselProps<T>) => {
   const [index, setIndex] = useState(0);
   const start = useRef<number | null>(null);
   const swiped = useRef(false);
@@ -77,7 +79,14 @@ export const LatestCarousel = <T,>({ items, children, noun }: LatestCarouselProp
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
         {main}
         {stats}
-        {items.length > 1 && <Pager index={index} total={items.length} onChange={go} noun={noun} />}
+        {(actions || items.length > 1) && (
+          <div className="flex shrink-0 items-center gap-1 self-end lg:self-center lg:border-l lg:border-border lg:pl-4">
+            {actions?.(item)}
+            {items.length > 1 && (
+              <Pager index={index} total={items.length} onChange={go} noun={noun} />
+            )}
+          </div>
+        )}
       </div>
     </Card>
   );
@@ -106,7 +115,7 @@ const Pager = ({
   onChange: (next: number) => void;
   noun: string;
 }) => (
-  <div className="flex shrink-0 items-center gap-1 self-end lg:self-center lg:border-l lg:border-border lg:pl-4">
+  <div className="flex items-center gap-1">
     <button
       type="button"
       onClick={() => onChange(index - 1)}

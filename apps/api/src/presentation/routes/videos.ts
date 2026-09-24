@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Container } from '../../container.ts';
-import { videoQuerySchema } from '../validation.ts';
+import { setVideoHiddenSchema, videoQuerySchema } from '../validation.ts';
+import { param } from '../helpers.ts';
 
 /**
  * Liste des sorties de vidéo, pour le sélecteur « rattacher à une vidéo » des
@@ -19,9 +20,15 @@ export const videosRouter = (container: Container): Router => {
         range: query.from && query.to ? { from: query.from, to: query.to } : undefined,
         channelIds: query.channelIds,
         limit: query.limit,
-        excludeShorts: query.excludeShorts,
+        hidden: query.hidden,
       }),
     );
+  });
+
+  /** Masquer / réafficher dans « Dernières sorties » — rien d'autre ne lit ce drapeau. */
+  router.patch('/:id', (req, res) => {
+    const { hidden } = setVideoHiddenSchema.parse(req.body);
+    res.json(container.videos.setHidden(param(req, 'id'), hidden));
   });
 
   return router;

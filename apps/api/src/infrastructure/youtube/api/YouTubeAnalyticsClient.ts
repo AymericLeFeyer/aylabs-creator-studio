@@ -5,7 +5,6 @@ import type { DailyMetric } from '../../../domain/metrics/entities/DailyMetric.t
 import { upstream } from '../../../shared/errors.ts';
 import { fetchUploads, type UploadItem } from './uploads.ts';
 import { fetchVideoSnippet, type VideoSnippet } from './videoDetails.ts';
-import { fetchVideoFormats } from './videoFormats.ts';
 import { fetchChannelComments, type FetchCommentsOptions } from './comments.ts';
 import type { VideoStatRow } from './videoStats.ts';
 
@@ -135,20 +134,6 @@ export class YouTubeAnalyticsClient {
     } catch (error) {
       if (error instanceof Error && error.name === 'AppError') throw error;
       throw upstream(`YouTube Data API (vidéos) : ${this.describe(error)}`);
-    }
-  }
-
-  /**
-   * Short ou vidéo classique, par identifiant (voir `fetchVideoFormats`). Par le jeton :
-   * une vidéo non listée n'est visible que par ce chemin.
-   */
-  async fetchVideoFormats(videoIds: string[]): Promise<Map<string, boolean>> {
-    try {
-      const youtube = google.youtube({ version: 'v3', auth: this.buildAuth() });
-      return await fetchVideoFormats(youtube, videoIds, { mine: true });
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AppError') throw error;
-      throw upstream(`YouTube Data API (formats vidéo) : ${this.describe(error)}`);
     }
   }
 
