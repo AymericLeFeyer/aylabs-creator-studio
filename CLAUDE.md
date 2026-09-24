@@ -2534,30 +2534,11 @@ mangeait une ligne entière en haut de l'écran, au plus loin du pouce. Même ac
 emplacements, jamais les deux à la fois (`hidden lg:inline-flex` d'un côté, `lg:hidden` de
 l'autre).
 
-**La barre du bas est une capsule de verre flottante**, détachée des trois bords
-(`.liquid-glass`, `index.css`). Le verre n'a de sens que si le contenu passe **autour** et
-**sous** le panneau : un bandeau pleine largeur collé en bas ne montre que sa face avant et
-se lit comme un aplat. Trois choses le font lire comme du verre, et il en manque une seule
-pour que l'effet retombe à un voile gris :
-
-1. **le fond est réfracté, pas seulement flouté** — `saturate(180%)` est la moitié
-   importante du filtre, un flou seul désature ce qui passe dessous et une image ou un
-   graphique coloré vire au gris sous la barre ;
-2. **le bord est une lumière, pas un trait** — le biseau se joue en ombres internes (ligne
-   claire en haut, ligne sombre en bas, liseré blanc très faible tout autour), là où une
-   `border` uniforme dessinerait un cadre ;
-3. **il flotte** — une ombre portée le décolle du contenu, et c'est elle qui fait
-   comprendre qu'on voit _à travers_ et non _derrière_.
-
-Le reflet spéculaire est un `::before` plutôt qu'un `background-image` : le fond porte déjà
-la teinte du verre, et empiler les deux dans une même propriété rendrait le dégradé
-impossible à ajuster sans toucher à l'opacité. `color-mix` sur `--card` fait suivre le
-thème sans écrire deux règles. Un `@supports not (backdrop-filter)` **rend le verre
-opaque** : un panneau translucide non flouté est le pire des deux mondes — on lit le
-contenu à travers les onglets, et plus rien n'est lisible.
-
-`BOTTOM_NAV_HEIGHT` est la capsule seule, `--bottom-nav` y ajoute le vide qui l'entoure et
-la zone de sécurité.
+**La barre du bas est un bandeau plein, opaque, collé au bord** (`AppLayout`, `lg:hidden`).
+Elle a été une capsule de verre flottante (`backdrop-blur`, reflet, ombre portée) : on
+lisait le contenu à travers, et le pouce visait une cible détachée du bord — retirée le
+2026-09-24. Désormais **rien ne passe derrière** : fond `bg-card`, trait `border-t`, et
+`main` réserve exactement sa hauteur. Ne pas y remettre de transparence.
 
 **`viewport-fit=cover` est dans le `<meta viewport>`, et c'est lui qui rend
 `env(safe-area-inset-*)` non nul.** Sans lui la valeur vaut zéro et iOS insère lui-même une
@@ -2566,30 +2547,25 @@ gestuelle. Avec lui, c'est à l'application de réserver l'espace : `--bottom-na
 la hauteur des onglets, et l'en-tête collant porte un `padding-top:
 env(safe-area-inset-top)` pour ne pas passer sous l'encoche.
 
-**`--bottom-nav` est la seule source de la hauteur de la barre du bas** (`4,5 rem` plus la
+**`--bottom-nav` est la seule source de la hauteur de la barre du bas** (`3,5 rem` plus la
 zone de sécurité), posée en variable CSS sur la racine de `AppLayout`. Trois choses en
-dépendent et doivent bouger ensemble : la barre, la réserve de padding sous le contenu, et
-le bouton flottant qui se pose au-dessus. Trois valeurs écrites à la main auraient fini par
-se désaccorder, et le symptôme — un bouton qui recouvre un onglet — ne se voit que sur un
-téléphone. La zone de sécurité s'**ajoute** à la hauteur au lieu de s'y fondre : la fondre
-rapetisserait les onglets sur un iPhone à barre gestuelle, là où ils sont déjà les plus
-durs à viser.
+dépendent et doivent bouger ensemble : la barre, la réserve de padding sous le contenu
+(`pb-[calc(var(--bottom-nav)+1rem)]`), et le bouton flottant qui se pose au-dessus. La
+zone de sécurité s'**ajoute** à la hauteur au lieu de s'y fondre : la fondre rapetisserait
+les onglets sur un iPhone à barre gestuelle.
 
-**Sur mobile, une barre du bas double le tiroir sur cinq écrans** (`MOBILE_NAV`) :
-Dashboard, Planning, Production, CA, Commentaires. Le pouce atteint le bas de l'écran, pas
-le coin haut-gauche où vit le hamburger — c'est toute sa raison d'être. **Cinq et pas
-plus** : au-delà, les cibles deviennent trop étroites et les libellés illisibles, d'où le
-champ `short` de `NavItem` (« CA », « Retours »). Elle ne **remplace pas** le tiroir, qui
-continue de porter **tout**, ces cinq-là compris : y chercher un écran ne doit jamais
-donner un trou.
+**Trois entrées, réglables** (`preferences.mobileNav`, Paramètres → Général →
+`MobileNavSettings`) : **YouTube à gauche, le dashboard au centre, le planning à droite**
+par défaut (`DEFAULT_MOBILE_NAV`). Tout écran du menu augmenté est proposé
+(`useNavSections`, le même point de composition que la barre latérale : applications
+externes, TikTok, Discord compris). `resolveMobileNav` retombe sur l'entrée par défaut de
+la place, puis sur le dashboard, quand une adresse choisie n'existe plus (une app retirée)
+— la barre ne montre jamais un trou. Préférence **locale à l'appareil**, comme le reste de
+`usePreferences`. L'onglet actif porte un trait en haut. Elle ne **remplace pas** le
+tiroir, qui continue de porter **tout**.
 
-Deux détails non négociables : elle est en **`z-30`, sous le voile du tiroir** (`z-40`) —
-à z-index égal c'est l'ordre du DOM qui tranche, et elle serait passée par-dessus le voile
-noir ; et `main` porte un `pb-20` que `lg:pb-6` annule, sans quoi le dernier bouton d'un
-formulaire finirait sous les onglets, hors d'atteinte. Le `env(safe-area-inset-bottom)`
-vaut zéro tant que le viewport n'est pas en `viewport-fit=cover` (iOS insère alors
-lui-même la fenêtre au-dessus de la barre gestuelle) : il est là pour le jour où il y
-passera.
+Elle est en **`z-30`, sous le voile du tiroir** (`z-40`) — à z-index égal c'est l'ordre du
+DOM qui tranche, et elle serait passée par-dessus le voile.
 
 **Repliée, la barre ne montre que les icônes** (`SIDEBAR_CLOSED` 3,75 rem contre
 `SIDEBAR_OPEN` 15 rem), le libellé revenant en infobulle. L'état est une préférence
@@ -3341,9 +3317,14 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   Instagram que si Discord est absent, ce qui donne Instagram → Discord → TikTok quand les
   deux sont configurés. Un écran dont la présence dépend d'une donnée suit ce patron
   plutôt que d'ajouter un `if` dans `NAV_SECTIONS`, qui doit rester une liste statique.
-- **La barre du bas ne prend que cinq écrans, et le tiroir les garde aussi.** Y ajouter une
-  sixième entrée casserait la largeur des cibles ; en retirer une du tiroir sous prétexte
-  qu'elle est en bas ferait un trou dans le seul endroit qui liste tout.
+- **La barre du bas prend trois écrans réglables, et le tiroir les garde aussi.** En retirer
+  un du tiroir sous prétexte qu'il est en bas ferait un trou dans le seul endroit qui liste
+  tout.
+- **Un composant plein écran avec ses propres z-index se pose en `isolate`.** L'en-tête
+  collant de la grille du planning est en `z-40` : sans contexte d'empilement propre, il
+  passait au-dessus de la barre d'application (`z-30`) et du voile du tiroir (`z-40`, plus
+  tôt dans le DOM) — et sur Safari iOS, avalait le toucher sur le bouton du menu.
+  `PlanningGrid` porte désormais `isolate` sur son conteneur de défilement.
 - **La file d'attente a une vue compacte** (`preferences.compactQueue`) : une ligne par vidéo. Au-delà de cinq ou six vidéos en cours, la version détaillée oblige à faire défiler pour voir sa propre file. Le chevron d'une carte l'ouvre **à contre-courant du réglage global** (`exceptions`, un `Set` d'identifiants) : on veut souvent une file compacte _sauf_ la vidéo sur laquelle on travaille. Changer le réglage global vide les exceptions.
 - **Les confettis sont maison** (`Confetti`, canvas, ~50 lignes, aucune dépendance) et ne se déclenchent qu'à la **publication** : c'est le seul moment de l'outil qui mérite d'être fêté, tout le reste est de la comptabilité et de la planification. Le canvas est `pointer-events-none` en position fixe — il recouvre l'écran sans jamais intercepter un clic — et se démonte tout seul.
 - **Une vidéo supprimée sur YouTube disparaît des chiffres à la collecte suivante**, mais sa ligne reste en base (`deleted_at`). Les revenus et dépenses qui lui étaient rattachés gardent leur rattachement : l'argent a bien été gagné, même si la vidéo n'est plus en ligne. Conséquence à connaître : ces montants ne se lisent plus dans le tableau de performance, alors qu'ils comptent toujours dans les totaux de la période. C'est voulu — « ne plus être comptabilisée » porte sur la vidéo, pas sur l'euro.
@@ -3584,11 +3565,6 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   `display: none`. Un en-tête en `hidden lg:flex` laisse donc une marge au-dessus de son
   voisin sur mobile. `flex flex-col gap-*` n'a pas ce défaut — un élément qui ne génère
   aucune boîte ne crée aucun `gap`. C'est le piège des interstices fantômes en vue mobile.
-- **Le verre liquide a besoin de `saturate`, d'un biseau et d'une ombre portée.** Retirer
-  la saturation fait virer au gris tout ce qui passe dessous ; remplacer le biseau (ombres
-  internes) par une `border` dessine un cadre au lieu d'une arête ; coller le panneau au
-  bord lui retire ce qu'il doit réfracter. Les trois ensemble, ou c'est un aplat
-  translucide. Et sans `backdrop-filter`, le repli doit être **opaque**.
 - **`env(safe-area-inset-*)` ne vaut quelque chose que grâce à `viewport-fit=cover`.** Le
   retirer du `<meta viewport>` remettrait la barre du bas au-dessus d'une bande insérée par
   iOS, et le `padding-top` de l'en-tête à zéro sous l'encoche. À l'inverse, le poser sans

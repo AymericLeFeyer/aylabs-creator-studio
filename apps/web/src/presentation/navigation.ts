@@ -204,20 +204,32 @@ export const withDiscord = (sections: NavSection[], configured: boolean): NavSec
 export const NAV: NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);
 
 /**
- * Les cinq écrans de la barre du bas, sur mobile.
- *
- * **Cinq et pas plus** : au-delà, les cibles deviennent trop étroites pour un pouce et
- * les libellés illisibles. Ce sont ceux qu'on ouvre en déplacement — regarder où on en
- * est, ce qu'il y a à faire aujourd'hui, ce que ça rapporte, et ce qu'on nous écrit. Le
- * reste (YouTube, Instagram, partenaires, Légal, Paramètres) se consulte assis, et reste
- * dans le tiroir du menu — qui, lui, contient **tout**, ces cinq-là compris : chercher
- * dans le menu ne doit jamais donner un trou.
+ * La barre du bas par défaut, sur mobile : YouTube à gauche, le dashboard au centre, le
+ * planning à droite. Réglable dans Paramètres → Général (`preferences.mobileNav`).
  */
-const MOBILE_PATHS = ['/', '/planning', '/production', '/chiffre-affaires', '/commentaires'];
+export const DEFAULT_MOBILE_NAV: readonly [string, string, string] = ['/youtube', '/', '/planning'];
 
-export const MOBILE_NAV: NavItem[] = MOBILE_PATHS.map((path) =>
-  NAV.find((item) => item.to === path)!,
-).filter(Boolean);
+/** Toutes les entrées de sections (menu augmenté compris), à plat. */
+export const flattenNav = (sections: NavSection[]): NavItem[] =>
+  sections.flatMap((section) => section.items);
+
+/**
+ * Les trois entrées de la barre du bas, résolues dans le menu **augmenté** (applications
+ * externes, TikTok, Discord compris). Une adresse qui n'y est plus — une app retirée —
+ * retombe sur l'entrée par défaut de la même place, puis sur le dashboard : la barre ne
+ * doit jamais montrer un trou.
+ */
+export const resolveMobileNav = (
+  paths: readonly string[],
+  sections: NavSection[],
+  fallback: readonly string[],
+): NavItem[] => {
+  const items = flattenNav(sections);
+  const find = (path: string | undefined) => items.find((item) => item.to === path);
+  return [0, 1, 2].map(
+    (slot) => find(paths[slot]) ?? find(fallback[slot]) ?? find('/') ?? items[0]!,
+  );
+};
 
 /**
  * Le titre de l'écran courant, pour la barre d'application mobile.

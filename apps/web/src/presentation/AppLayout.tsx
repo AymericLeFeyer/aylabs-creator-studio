@@ -1,17 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
 import { Menu, PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
-import {
-  MOBILE_NAV,
-  pageTitle,
-  withDiscord,
-  withExternalApps,
-  withTikTok,
-  type NavItem,
-} from './navigation.ts';
-import { useExternalApps } from '../application/externalApp/usecases/useExternalApps.ts';
-import { useIntegrations } from '../application/integration/usecases/useIntegrations.ts';
+import { DEFAULT_MOBILE_NAV, resolveMobileNav, pageTitle, type NavItem } from './navigation.ts';
 import { usePreferences } from './hooks/usePreferences.ts';
+import { useNavSections } from './hooks/useNavSections.ts';
 import { Button } from './components/ui/button.tsx';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 import { CompactTooltip } from './components/CompactTooltip.tsx';
@@ -56,26 +48,21 @@ const SIDEBAR_OPEN = '15rem';
 const SIDEBAR_CLOSED = '3.75rem';
 
 /**
- * La barre du bas est une **capsule de verre flottante**, pas un bandeau collé au bord.
+ * La barre du bas, sur mobile : un **bandeau plein, opaque, collé au bord**.
  *
- * C'est ce qui distingue le verre liquide d'un simple fond translucide : on doit voir le
- * contenu passer *autour* et *sous* le panneau, pas seulement derrière lui. Un bandeau
- * pleine largeur collé en bas ne montre que sa face avant et se lit comme un aplat.
+ * Elle a été une capsule de verre flottante : le contenu passait autour et derrière, et
+ * c'était précisément le défaut — une barre qu'on lit à travers se lit mal, et le pouce
+ * visait une cible détachée du bord. Désormais rien ne passe derrière : fond opaque, et
+ * `main` réserve exactement sa hauteur (`--bottom-nav`), si bien que le dernier élément
+ * d'une page s'arrête au-dessus d'elle.
  *
- * `BOTTOM_NAV_HEIGHT` est la capsule seule ; `--bottom-nav` y ajoute le vide qui
- * l'entoure et la zone de sécurité. C'est cette seconde valeur qui vit en variable CSS,
- * parce que trois choses en dépendent et doivent bouger ensemble : la position de la
- * capsule, la réserve de padding sous le contenu, et le bouton flottant qui se pose
- * au-dessus. Trois valeurs écrites à la main auraient fini par se désaccorder, et le
- * symptôme — un bouton qui recouvre un onglet — ne se voit que sur un téléphone.
- *
- * `env(safe-area-inset-bottom)` s'**ajoute** au lieu de s'y fondre : sur un iPhone à barre
- * gestuelle, la fondre reviendrait à rapetisser les onglets là où ils sont déjà les plus
- * difficiles à viser.
+ * `--bottom-nav` = la rangée plus la zone de sécurité (barre gestuelle d'iPhone), qui
+ * s'**ajoute** au lieu de s'y fondre : la fondre rapetisserait les onglets là où ils sont
+ * déjà les plus durs à viser. Trois choses en dépendent — la barre, la réserve sous le
+ * contenu, le bouton flottant —, d'où la variable unique.
  */
 const BOTTOM_NAV_HEIGHT = '3.5rem';
-const BOTTOM_NAV_GAP = '0.5rem';
-const BOTTOM_NAV = `calc(${BOTTOM_NAV_HEIGHT} + ${BOTTOM_NAV_GAP} * 2 + env(safe-area-inset-bottom))`;
+const BOTTOM_NAV = `calc(${BOTTOM_NAV_HEIGHT} + env(safe-area-inset-bottom))`;
 
 /**
  * La coquille de l'application : navigation à gauche, contenu à droite.
@@ -158,18 +145,12 @@ export const AppLayout = () => {
    * Le titre de la barre d'application est alors le nom de l'app ouverte, que l'adresse
    * (`/apps/<id>`) ne porte pas.
    */
-  const { data: externalApps = [] } = useExternalApps();
-  const { data: integrations } = useIntegrations();
-  const discordConfigured =
-    integrations?.providers.find((provider) => provider.id === 'discord')?.configured ?? false;
-  const tiktokConfigured =
-    integrations?.providers.find((provider) => provider.id === 'tiktok')?.configured ?? false;
-  const navSections = useMemo(
-    () =>
-      withDiscord(withTikTok(withExternalApps(externalApps), tiktokConfigured), discordConfigured),
-    [externalApps, discordConfigured, tiktokConfigured],
-  );
+  const { sections: navSections, externalApps } = useNavSections();
   const openAppId = matchPath('/apps/:id', location.pathname)?.params.id;
+  const mobileNav = useMemo(
+    () => resolveMobileNav(preferences.mobileNav, navSections, DEFAULT_MOBILE_NAV),
+    [preferences.mobileNav, navSections],
+  );
 
   const collapsed = preferences.sidebarCollapsed;
   const title =
@@ -423,98 +404,53 @@ export const AppLayout = () => {
         </main>
       </div>
 
-      {/* Barre du bas, mobile seulement.
+      {/* Barre du bas, mobile seulement : trois entrées, réglables dans Paramètres →
+          Général (`preferences.mobileNav`), le dashboard au centre par défaut. Le tiroir
+          garde **tout**, ces trois-là compris — y chercher un écran ne doit jamais donner
+          un trou.
 
-          Cinq écrans, ceux qu'on ouvre debout : où j'en suis, quoi faire aujourd'hui, ce
-          que ça rapporte, ce qu'on m'écrit. Le tiroir garde **tout**, ces cinq-là compris —
-          y chercher un écran ne doit jamais donner un trou.
-
-          Le pouce atteint le bas de l'écran, pas le coin haut-gauche où vit le burger :
-          c'est toute la raison d'être de cette barre, et pourquoi elle ne remplace pas le
-          tiroir mais le double sur ce que l'on ouvre le plus.
-
-          Elle est en `z-30`, sous le voile du tiroir (`z-40`) : à z-index égal, c'est
-          l'ordre du DOM qui tranche, et la barre serait passée par-dessus le voile.
-
-          C'est une **capsule de verre flottante** et non un bandeau collé au bord : le verre n'a de sens que si le contenu passe autour et sous lui.
-          `--bottom-nav` réserve sa hauteur plus le vide qui l'entoure, et sert aussi de
-          réserve sous le contenu et d'appui au bouton flottant — trois valeurs écrites à
-          la main auraient fini par se désaccorder, et le symptôme (un bouton qui recouvre
-          un onglet) ne se voit que sur un téléphone. La zone de sécurité s'y **ajoute**
-          plutôt que de s'y fondre, sans quoi les onglets rapetisseraient sur un iPhone à
-          barre gestuelle, là où ils sont déjà les plus difficiles à viser. */}
+          En `z-30`, sous le voile du tiroir (`z-40`) : à z-index égal, c'est l'ordre du
+          DOM qui tranche, et la barre serait passée par-dessus le voile. */}
       <nav
-        /*
-         * Le conteneur ne capte aucun geste (`pointer-events-none`) : seule la capsule le
-         * fait. Les marges qui l'entourent restent donc traversables, et on continue de
-         * faire défiler la page en posant le pouce à côté de la barre — sur un bandeau
-         * pleine largeur, cette bande était morte.
-         */
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card lg:hidden"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         aria-label="Accès rapide"
       >
-        {/*
-          Le verre, en trois couches, et il en manque une seule pour que l'effet retombe à
-          un voile gris : le **flou saturé**, qui rend à ce qui passe dessous ses couleurs
-          (un flou seul désature, et une miniature vire au gris) ; le **reflet** sur
-          l'arête haute ; l'**ombre portée**, qui décolle la capsule du fond et fait
-          comprendre qu'on voit à travers et non derrière.
-
-          `isolate` lui donne son propre contexte d'empilement, et `overflow-hidden` fait
-          suivre l'arrondi à tout ce qu'elle contient.
-        */}
-        <div
-          className={cn(
-            'pointer-events-auto isolate mx-2 overflow-hidden rounded-[26px]',
-            'border border-black/[0.06] dark:border-white/[0.14]',
-            'bg-background/55 backdrop-blur-2xl backdrop-saturate-150',
-            'shadow-[0_8px_32px_-6px_rgb(0_0_0/0.28)] dark:shadow-[0_12px_40px_-8px_rgb(0_0_0/0.65)]',
-          )}
-          style={{
-            height: BOTTOM_NAV_HEIGHT,
-            marginBottom: `calc(${BOTTOM_NAV_GAP} + env(safe-area-inset-bottom))`,
-          }}
-        >
-          {/* Le reflet est porté par la rangée elle-même : franc en haut, éteint avant la
-              moitié — au-delà ce n'est plus un reflet mais un fond, et le verre se met à
-              ressembler à un bouton. */}
-          <div className="grid h-full grid-cols-5 bg-gradient-to-b from-white/40 to-transparent dark:from-white/[0.08]">
-            {MOBILE_NAV.map(({ to, label, short, icon: Icon, end }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive }) =>
-                  cn(
-                    'relative flex flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-medium transition-colors',
-                    isItemActive(to, isActive) ? 'text-primary' : 'text-muted-foreground',
-                  )
-                }
-              >
-                {({ isActive: routeActive }) => {
-                  const isActive = isItemActive(to, routeActive);
-                  return (
-                    <>
-                      {/* Une pastille **de verre** sous l'onglet actif, et non un aplat
-                        opaque : la barre garde sa transparence d'ensemble, sinon un
-                        cinquième d'entre elle cesserait d'être du verre. */}
-                      {isActive && (
-                        <span
-                          className="absolute inset-x-1.5 inset-y-1 rounded-[18px] bg-primary/12 ring-1 ring-primary/20 ring-inset"
-                          aria-hidden
-                        />
-                      )}
-                      <span className="relative">
-                        <Icon className="h-5 w-5" />
-                        <NavBadgePill badge={badges[to]} className="absolute -right-2.5 -top-1.5" />
-                      </span>
-                      <span className="relative w-full truncate text-center">{short ?? label}</span>
-                    </>
-                  );
-                }}
-              </NavLink>
-            ))}
-          </div>
+        <div className="grid grid-cols-3" style={{ height: BOTTOM_NAV_HEIGHT }}>
+          {mobileNav.map(({ to, label, short, icon: Icon, end }, slot) => (
+            <NavLink
+              key={`${slot}:${to}`}
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                cn(
+                  'relative flex flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-medium transition-colors',
+                  isItemActive(to, isActive) ? 'text-primary' : 'text-muted-foreground',
+                )
+              }
+            >
+              {({ isActive: routeActive }) => {
+                const isActive = isItemActive(to, routeActive);
+                return (
+                  <>
+                    {/* Un trait en haut de l'onglet actif : sur un bandeau collé au bord,
+                        c'est le repère le plus lisible, et il ne mange aucune hauteur. */}
+                    {isActive && (
+                      <span
+                        className="absolute inset-x-6 top-0 h-0.5 rounded-b bg-primary"
+                        aria-hidden
+                      />
+                    )}
+                    <span className="relative">
+                      <Icon className="h-5 w-5" />
+                      <NavBadgePill badge={badges[to]} className="absolute -right-2.5 -top-1.5" />
+                    </span>
+                    <span className="w-full truncate text-center">{short ?? label}</span>
+                  </>
+                );
+              }}
+            </NavLink>
+          ))}
         </div>
       </nav>
     </div>

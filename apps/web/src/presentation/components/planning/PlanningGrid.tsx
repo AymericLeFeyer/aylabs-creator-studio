@@ -649,7 +649,11 @@ export const PlanningGrid = ({
     <div
       ref={scrollRef}
       className={cn(
-        'overflow-auto',
+        // `isolate` : les z-index de la grille (en-tête collant en z-40, blocs en z-30)
+        // restent entre eux. Sans ça, l'en-tête des jours passait au-dessus de la barre
+        // d'application et du voile du tiroir — et sur Safari iOS, avalait le toucher
+        // sur le bouton du menu.
+        'isolate overflow-auto',
         'max-h-[calc(100dvh-var(--app-header)-var(--bottom-nav)-1rem)] min-h-[16rem]',
         // Au large, la hauteur est mesurée jusqu'au bas de l'écran (voir l'effet plus haut).
         'lg:max-h-none lg:min-h-[20rem]',

@@ -47,6 +47,7 @@ import { CompanyPage } from './CompanyPage.tsx';
 import { ApiSettingsPage } from './ApiSettingsPage.tsx';
 import { ExternalAppsSettingsPage } from './ExternalAppsSettingsPage.tsx';
 import { PrivacySettings } from '../components/PrivacySettings.tsx';
+import { MobileNavSettings } from '../components/settings/MobileNavSettings.tsx';
 import { cn } from '../../shared/cn.ts';
 
 interface SettingsEntry {
@@ -369,6 +370,8 @@ const AppSettings = () => {
             </div>
           </CardContent>
         </Card>
+
+        <MobileNavSettings />
 
         {/* Sur toute la largeur : c'est la seule carte de l'onglet qui porte une liste,
             et la couper en deux colonnes séparerait un groupe de ses cases. */}

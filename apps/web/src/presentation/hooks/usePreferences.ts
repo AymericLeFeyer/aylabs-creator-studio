@@ -1,4 +1,5 @@
 import { useLocalStorage } from './useLocalStorage.ts';
+import { DEFAULT_MOBILE_NAV } from '../navigation.ts';
 
 /**
  * Les préférences d'affichage de l'application.
@@ -18,6 +19,12 @@ export interface AppPreferences {
   planningTodosCollapsed: boolean;
   /** Cran de zoom de la grille du planning, indice dans `ZOOM_LEVELS`. */
   planningZoom: number;
+  /**
+   * Les trois entrées de la barre du bas, sur mobile : gauche, centre, droite (adresses du
+   * menu). Propre à l'appareil, comme le reste des préférences : c'est le téléphone qui
+   * porte cette barre.
+   */
+  mobileNav: [string, string, string];
 }
 
 const DEFAULTS: AppPreferences = {
@@ -26,6 +33,7 @@ const DEFAULTS: AppPreferences = {
   planningTodosCollapsed: false,
   // `DEFAULT_ZOOM` : le cran qui reproduit l'ancienne hauteur fixe de 56 px par heure.
   planningZoom: 3,
+  mobileNav: [...DEFAULT_MOBILE_NAV],
 };
 
 export const usePreferences = () => {
