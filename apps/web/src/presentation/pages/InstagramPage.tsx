@@ -5,16 +5,11 @@ import {
   useInstagramOverview,
 } from '../../application/instagram/usecases/useInstagram.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
-import { formatCount, tokenWarning } from '../../domain/instagram/entities/Instagram.ts';
-import { InstagramChart } from '../components/instagram/InstagramChart.tsx';
-import { InstagramLinkedCharts } from '../components/instagram/InstagramLinkedCharts.tsx';
-import { PostsCalendar } from '../components/instagram/PostsCalendar.tsx';
+import { tokenWarning } from '../../domain/instagram/entities/Instagram.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
-import { StatCard } from '../components/StatCard.tsx';
 import { cn } from '../../shared/cn.ts';
-import { usePrivacy } from '../hooks/usePrivacy.tsx';
-import { MASKED_TEXT } from '../../domain/privacy/entities/Privacy.ts';
+import { Block } from '../dashboard/Block.tsx';
 
 /**
  * Instagram, connecté par l'**API Graph** (Meta for Developers) : abonnés, stories,
@@ -22,9 +17,10 @@ import { MASKED_TEXT } from '../../domain/privacy/entities/Privacy.ts';
  *
  * Deux étages, de haut en bas :
  *
- * 1. les chiffres clés, sur une ligne ;
- * 2. **tous les graphiques ensemble, en onglets** (activité, abonnés, gain par jour), puis
- *    le calendrier des publications.
+ * 1. les chiffres clés, sur une ligne, puis les dix dernières publications (au doigt) ;
+ * 2. les graphiques (abonnés et portée liés, activité en onglets), puis le calendrier.
+ *
+ * Chaque morceau est un bloc du catalogue (`<Block>`), ajoutable au dashboard au survol.
  *
  * **Aucune saisie manuelle de stories** : une story vit 24 h dans l'API, la collecte
  * horaire tourne toutes les heures (`Config.collectCron`), elle la voit donc forcément au
@@ -40,7 +36,6 @@ import { MASKED_TEXT } from '../../domain/privacy/entities/Privacy.ts';
  */
 export const InstagramPage = () => {
   const filters = useFilters();
-  const privacy = usePrivacy();
 
   const { data, isLoading } = useInstagramOverview({
     from: filters.from,
@@ -51,16 +46,7 @@ export const InstagramPage = () => {
   const collect = useCollectInstagram();
 
   const accounts = data?.accounts ?? [];
-  const totals = data?.totals;
-  const series = data?.series ?? [];
   const expiringAccounts = accounts.filter((account) => tokenWarning(account) !== null);
-
-  // Le nombre de publications affiché sur le profil, hors période : c'est lui qu'on
-  // connaît toujours, même quand aucune publication n'a pu être datée.
-  const profilePosts = accounts.reduce<number | null>((sum, account) => {
-    const count = account.latestSnapshot?.mediaCount;
-    return count == null ? sum : (sum ?? 0) + count;
-  }, null);
 
   if (!isLoading && accounts.length === 0) {
     return (
@@ -123,62 +109,24 @@ export const InstagramPage = () => {
       )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-        <StatCard
-          label="Stories"
-          value={formatCount(totals?.stories ?? null)}
-          hint={
-            totals
-              ? `${totals.storiesPerDay} par jour · ${totals.activeDays} jour(s) avec au moins une`
-              : 'Archivées à la collecte horaire'
-          }
-        />
-        <StatCard
-          label="Abonnés"
-          value={
-            privacy.isMasked('subscribers') ? MASKED_TEXT : formatCount(totals?.followers ?? null)
-          }
-          hint={
-            privacy.isMasked('subscribers')
-              ? 'Gain masqué'
-              : totals?.followersGained == null
-                ? 'Pas encore de point de comparaison'
-                : `${totals.followersGained >= 0 ? '+' : ''}${totals.followersGained} sur la période`
-          }
-        />
-        {/* Le total du profil en grand : c'est le chiffre qu'on connaît toujours. Le nombre
-            de parutions de la période ne se compte qu'à partir des publications datées. */}
-        <StatCard
-          label="Publications"
-          value={formatCount(profilePosts ?? totals?.posts ?? null)}
-          hint={`${formatCount(totals?.posts ?? 0)} parue(s) sur la période`}
-        />
-        <StatCard
-          label="Portée"
-          value={formatCount(totals?.reach ?? null)}
-          hint="comptes touchés sur la période"
-        />
-        <StatCard
-          label="Interactions"
-          value={formatCount(totals?.totalInteractions ?? null)}
-          hint="j’aime, commentaires, partages, enregistrements"
-        />
+        <Block id="instagram.stories" />
+        <Block id="instagram.followers" />
+        <Block id="instagram.posts" />
+        <Block id="instagram.reach" />
+        <Block id="instagram.interactions" />
       </div>
 
-      {data && <InstagramLinkedCharts data={data} />}
+      {/* Comme la dernière sortie YouTube : hors période, les dix dernières au doigt. */}
+      <Block id="instagram.latest" />
 
-      <Card className="p-4">
-        <InstagramChart series={series} />
-      </Card>
+      {/* Abonnés et portée côte à côte, survol lié : deux blocs, un même SYNC_ID. */}
+      <div className="grid gap-4 2xl:grid-cols-2">
+        <Block id="instagram.followersChart" />
+        <Block id="instagram.reachChart" />
+      </div>
 
-      <Card className="space-y-2 p-4">
-        <h2 className="text-sm font-semibold">Publications</h2>
-        <PostsCalendar
-          series={series}
-          media={data?.media ?? []}
-          from={filters.from}
-          to={filters.to}
-        />
-      </Card>
+      <Block id="instagram.activity" />
+      <Block id="instagram.calendar" />
     </div>
   );
 };

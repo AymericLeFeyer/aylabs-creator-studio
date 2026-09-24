@@ -14,7 +14,7 @@ import type { InstagramOverview } from '../../../domain/instagram/entities/Insta
 import { formatCount, variation } from '../../../domain/instagram/entities/Instagram.ts';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { formatDate, formatNumberCompact, formatPercent } from '../../../shared/format.ts';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
+import { Card, CardContent, CardHeader, CardDescription, CardTitle } from '../ui/card.tsx';
 import { groupMediaByDate } from './postMarkers.ts';
 import { videoMarkerLines, type MarkerRow } from '../charts/videoMarkers.tsx';
 import { VideoTooltipList } from '../charts/VideoTooltipList.tsx';
@@ -48,7 +48,7 @@ const useRows = (data: InstagramOverview, followersMasked: boolean, reachMasked:
   );
 };
 
-/**
+/*
  * Abonnés et portée, **côte à côte et liés** — même mécanique que le dashboard entre le
  * graphique d'argent et celui d'audience (`SYNC_ID` commun, deux abscisses identiques).
  * Les publications de la période y sont posées comme repère, exactement comme les sorties
@@ -56,22 +56,16 @@ const useRows = (data: InstagramOverview, followersMasked: boolean, reachMasked:
  * publication, un plateau d'abonnés par son absence.
  *
  * Toujours à la maille du jour, comme le reste de l'écran Instagram — pas de sélecteur de
- * granularité ici.
+ * granularité ici. Deux blocs distincts (`FollowersCard`, `ReachCard`) : ils se posent
+ * séparément sur le dashboard, et restent liés dès qu'ils sont montés ensemble.
  */
-export const InstagramLinkedCharts = ({ data }: { data: InstagramOverview }) => (
-  <div className="grid gap-4 2xl:grid-cols-2">
-    <FollowersCard data={data} />
-    <ReachCard data={data} />
-  </div>
-);
-
 const axisProps = {
   tick: { fontSize: 11, fill: 'var(--muted-foreground)' },
   tickLine: false,
   axisLine: false,
 } as const;
 
-const FollowersCard = ({ data }: { data: InstagramOverview }) => {
+export const FollowersCard = ({ data }: { data: InstagramOverview }) => {
   const privacy = usePrivacy();
   const masked = privacy.isMasked('subscribers');
   const rows = useRows(data, masked, privacy.isMasked('views'));
@@ -99,11 +93,11 @@ const FollowersCard = ({ data }: { data: InstagramOverview }) => {
         <p className="mt-1 text-2xl font-semibold tabular">
           {total === null ? (masked ? '•••' : '—') : formatCount(total)}
         </p>
-        <p className="text-xs text-muted-foreground">
+        <CardDescription className="text-xs text-muted-foreground">
           {change === null
             ? 'pas de période de comparaison'
             : `${formatPercent(change)} vs période précédente`}
-        </p>
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {empty ? (
@@ -163,7 +157,7 @@ const FollowersCard = ({ data }: { data: InstagramOverview }) => {
   );
 };
 
-const ReachCard = ({ data }: { data: InstagramOverview }) => {
+export const ReachCard = ({ data }: { data: InstagramOverview }) => {
   const privacy = usePrivacy();
   const masked = privacy.isMasked('views');
   const rows = useRows(data, privacy.isMasked('subscribers'), masked);
@@ -180,11 +174,11 @@ const ReachCard = ({ data }: { data: InstagramOverview }) => {
         <p className="mt-1 text-2xl font-semibold tabular">
           {total === null ? (masked ? '•••' : '—') : formatCount(total)}
         </p>
-        <p className="text-xs text-muted-foreground">
+        <CardDescription className="text-xs text-muted-foreground">
           {change === null
             ? 'pas de période de comparaison'
             : `${formatPercent(change)} vs période précédente`}
-        </p>
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {empty ? (

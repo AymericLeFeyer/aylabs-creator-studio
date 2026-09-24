@@ -7,7 +7,7 @@ import { useFilters } from '../../hooks/useFilters.tsx';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { formatDate } from '../../../shared/format.ts';
 import { cn } from '../../../shared/cn.ts';
-import { Card, CardHeader, CardTitle } from '../ui/card.tsx';
+import { Card, CardHeader, CardDescription, CardTitle } from '../ui/card.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
 import { sumVideoRows, withMoney, type VideoRow } from './videoPerformance.ts';
 
@@ -171,10 +171,10 @@ export const VideoPerformanceTable = ({
     <Card className="flex flex-col overflow-hidden">
       <CardHeader className="pb-3">
         <CardTitle>{title}</CardTitle>
-        <p className="text-xs text-muted-foreground">
+        <CardDescription className="text-xs text-muted-foreground">
           {subtitle ??
             `${rows.length} sortie${rows.length > 1 ? 's' : ''} · clique un en-tête pour trier`}
-        </p>
+        </CardDescription>
       </CardHeader>
 
       <Table>

@@ -131,6 +131,8 @@ export interface InstagramOverview {
   previousTotals: InstagramTotals | null;
   stories: InstagramStory[];
   media: InstagramMedia[];
+  /** Les 10 dernières publications, **hors période** (comptes filtrés seulement). */
+  latestMedia: InstagramMedia[];
   /**
    * Première story jamais archivée. **Avant elle, un zéro veut dire « pas de collecte »**,
    * pas « rien publié » — l'API n'expose les stories que 24 h, rien ne se rattrape.

@@ -153,6 +153,10 @@ export const videoQuerySchema = z.object({
         .filter(Boolean),
     ),
   limit: z.coerce.number().int().min(1).max(500).default(200),
+  excludeShorts: z
+    .string()
+    .optional()
+    .transform((value) => value === 'true'),
 });
 
 /** Filtre optionnel sur une période, pour les listes de revenus et de dépenses. */
@@ -441,6 +445,22 @@ export const createProductionNoteSchema = z.object({
 export const updateProductionNoteSchema = createProductionNoteSchema;
 
 /** Un brouillon de publication : le titre seul est obligatoire, on complète ensuite. */
+/** Les blocs du dashboard. L'identifiant vient du catalogue du front (`youtube.views`…). */
+const widgetWidth = z.number().int().min(1).max(6);
+export const createDashboardWidgetSchema = z.object({
+  blockId: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9][a-z0-9._-]{0,99}$/i, 'Identifiant de bloc invalide'),
+  width: widgetWidth.optional(),
+});
+export const updateDashboardWidgetSchema = z.object({
+  title: z.string().max(120).nullable().optional(),
+  description: z.string().max(300).nullable().optional(),
+  icon: z.string().max(40).nullable().optional(),
+  width: widgetWidth.optional(),
+});
+
 export const createPostDraftSchema = z.object({
   title: z.string().trim().min(1, 'Le titre est obligatoire').max(200),
   // 2 200 caractères : la limite d'une légende Instagram.

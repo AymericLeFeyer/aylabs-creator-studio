@@ -14,6 +14,8 @@ export interface VideoFilter {
   channelIds?: string[];
   /** Garde-fou d'affichage : au-delà, le graphique ne serait plus lisible. */
   limit?: number;
+  /** Écarte les Shorts. Une vidéo pas encore classée (`is_short` NULL) est gardée. */
+  excludeShorts?: boolean;
 }
 
 export interface VideoRepository {
@@ -41,5 +43,9 @@ export interface VideoRepository {
   countInRange(channelIds: string[], range: DateRange): number;
   /** Jour de la dernière vidéo connue, pour ne re-parcourir que le nécessaire. */
   findLatestDate(channelId: string): IsoDate | null;
+  /** Identifiants YouTube des vidéos de la chaîne pas encore classées Short / classique. */
+  findUnclassified(channelId: string, limit: number): string[];
+  /** Pose `is_short` par `(channelId, externalId)`. Renvoie le nombre de lignes classées. */
+  setFormats(channelId: string, formats: Map<string, boolean>): number;
   countByChannel(channelId: string): number;
 }

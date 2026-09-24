@@ -67,6 +67,8 @@ export interface InstagramOverview {
   stories: InstagramStory[];
   /** Les publications de la période, les plus récentes d'abord. */
   media: InstagramMedia[];
+  /** Les 10 dernières publications, **hors période** (comptes filtrés seulement). */
+  latestMedia: InstagramMedia[];
   /** Première story jamais archivée, tous comptes confondus. */
   firstStoryDate: IsoDate | null;
   /** Les métriques brutes, pour les écrans qui veulent le détail. */

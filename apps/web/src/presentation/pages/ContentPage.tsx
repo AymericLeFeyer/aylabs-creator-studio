@@ -1,255 +1,99 @@
-import { useMemo } from 'react';
-import { Clapperboard, Clock, Eye, Heart, Library, TrendingUp, Users, Video } from 'lucide-react';
-import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
-import { useChannels } from '../../application/channel/usecases/useChannels.ts';
 import { useProductionOverview } from '../../application/production/usecases/useProductions.ts';
-import { useVideos } from '../../application/video/usecases/useVideos.ts';
-import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
-import { usePrivacy } from '../hooks/usePrivacy.tsx';
-import { compareTotals } from '../../domain/analytics/services/revenueMath.ts';
-import { formatDate, formatNumber } from '../../shared/format.ts';
-import { StatCard } from '../components/StatCard.tsx';
+import { useFilters } from '../hooks/useFilters.tsx';
+import { Checkbox } from '../components/ui/checkbox.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
-import { AudienceChart } from '../components/charts/AudienceChart.tsx';
-import { VideoPerformanceChart } from '../components/charts/VideoPerformanceChart.tsx';
-import { VideoPerformanceTable } from '../components/charts/VideoPerformanceTable.tsx';
-import { LatestVideoCard } from '../components/content/LatestVideoCard.tsx';
+import { Block } from '../dashboard/Block.tsx';
+import { useYouTubeData } from '../blocks/blockData.ts';
 
 /**
  * Tout ce qui concerne les vidéos déjà sorties, sur la période choisie en haut.
  *
  * L'écran ne porte que de la **mesure** : combien de sorties, ce qu'elles ont fait, et
- * laquelle sort du lot. Ce qui n'est pas encore publié se pilote sur `/production`, et
- * la dernière sortie se lit sur le dashboard — les rappeler ici ferait trois endroits
- * où lire la même chose.
+ * laquelle sort du lot. Ce qui n'est pas encore publié se pilote sur `/production`.
  *
  * Deux tableaux et non un : les **sorties de la période**, et le **catalogue** (tout ce
  * qui est sorti avant). Une chaîne fait le plus gros de ses vues sur ce qu'elle a déjà
  * publié ; ne montrer que les nouveautés laissait croire que le reste avait disparu.
+ *
+ * Chaque carte est un bloc du catalogue (`<Block>`) : ajoutable au dashboard au survol.
  */
 export const ContentPage = () => {
   const filters = useFilters();
-  const privacy = usePrivacy();
-  const params = useAnalyticsParams();
-  const { data, isLoading } = useAnalytics(params);
-
+  const { data, isLoading } = useYouTubeData();
   const { data: overview } = useProductionOverview();
 
-  // Sans bornes de date, comme sur le dashboard : « ma dernière vidéo, elle marche
-  // comment » ne se pose pas dans une fenêtre de temps, et une période de sept jours
-  // viderait le bloc précisément quand on vient le lire.
-  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 10 });
-
-  const periodVideos = useMemo(() => data?.videoPerformance ?? [], [data]);
-  const catalog = useMemo(() => data?.catalogPerformance ?? [], [data]);
-
-  /**
-   * Les vues de la période qui ne viennent **pas** des sorties de la période.
-   *
-   * C'est une estimation, et elle est annoncée comme telle : les compteurs par vidéo
-   * sont des cumuls depuis la sortie (YouTube Analytics n'est collecté par vidéo qu'en
-   * cumul, jamais jour par jour), alors que le total de la période vient des métriques
-   * quotidiennes. La soustraction ne tombe donc juste que sur une période qui va
-   * jusqu'à aujourd'hui — d'où le plancher à zéro plutôt qu'un nombre négatif absurde.
-   */
-  const catalogViews = useMemo(() => {
-    if (!data) return 0;
-    const fromNew = periodVideos.reduce((total, video) => total + video.views, 0);
-    return Math.max(0, data.totals.views - fromNew);
-  }, [data, periodVideos]);
-
-  const catalogShare = data && data.totals.views > 0 ? catalogViews / data.totals.views : 0;
-
-  /**
-   * Les trois chiffres de la chaîne **tels qu'ils sont aujourd'hui**, hors période.
-   *
-   * Tout le reste de l'écran répond à « qu'est-ce qui s'est passé sur la période » ; ces
-   * trois-là répondent à « où en est la chaîne », qu'on vient chercher d'abord et qu'une
-   * fenêtre de sept jours ne doit pas faire disparaître. Ils viennent du dernier relevé de
-   * chaque chaîne (`latestSnapshot`, un CUMUL) : on prend la dernière valeur connue par
-   * chaîne, puis on somme entre chaînes — la règle de `channel_snapshots`.
-   *
-   * La sélection de chaînes, elle, s'applique : « toutes » est l'absence de sélection.
-   */
-  const { data: channels = [] } = useChannels();
-  const lifetime = useMemo(() => {
-    const selected = channels.filter(
-      (channel) =>
-        channel.latestSnapshot !== null &&
-        (filters.channelIds.length === 0 || filters.channelIds.includes(channel.id)),
-    );
-    if (selected.length === 0) return null;
-    const latestDate = selected
-      .map((channel) => channel.latestSnapshot!.date)
-      .sort()
-      .at(-1)!;
-    return {
-      subscribers: selected.reduce((sum, c) => sum + c.latestSnapshot!.subscribers, 0),
-      views: selected.reduce((sum, c) => sum + c.latestSnapshot!.totalViews, 0),
-      videos: selected.reduce((sum, c) => sum + c.latestSnapshot!.totalVideos, 0),
-      channels: selected.length,
-      date: latestDate,
-    };
-  }, [channels, filters.channelIds]);
-  const lifetimeHint = lifetime
-    ? `depuis toujours · relevé du ${formatDate(lifetime.date)}${
-        lifetime.channels > 1 ? ` · ${lifetime.channels} chaînes` : ''
-      }`
-    : '';
+  const periodCount = data?.videoPerformance.length ?? 0;
+  const catalogCount = data?.catalogPerformance?.length ?? 0;
 
   return (
     <div className="space-y-4">
-      <div className="hidden lg:block">
-        <h1 className="text-lg font-semibold">YouTube</h1>
-        <p className="text-sm text-muted-foreground">
-          {periodVideos.length} sortie(s) sur la période · {catalog.length} vidéo(s) au catalogue ·{' '}
-          {overview?.queue.length ?? 0} en production
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="hidden lg:block">
+          <h1 className="text-lg font-semibold">YouTube</h1>
+          <p className="text-sm text-muted-foreground">
+            {periodCount} sortie(s) sur la période · {catalogCount} vidéo(s) au catalogue ·{' '}
+            {overview?.queue.length ?? 0} en production
+          </p>
+        </div>
+        <label
+          className="flex cursor-pointer items-center gap-2 text-sm"
+          title="Repères, classement, tableaux et dernières sorties. Les courbes d'audience sont mesurées à la chaîne et incluent toujours les Shorts."
+        >
+          <Checkbox
+            checked={filters.showShorts}
+            onCheckedChange={(checked) => filters.set({ showShorts: checked === true })}
+          />
+          Afficher les Shorts
+        </label>
       </div>
 
       {/* Les chiffres de la chaîne, hors période : où elle en est aujourd'hui. Une rangée
-          à part, avant ceux de la période, pour qu'on ne lise pas « 12 400 vues » d'un côté
-          et « 1,2 M de vues » de l'autre comme deux mesures de la même chose. */}
-      {lifetime && (
-        <div className="grid grid-cols-3 gap-3">
-          <StatCard
-            label="Abonnés"
-            value={privacy.count(lifetime.subscribers, 'subscribers')}
-            hint={lifetimeHint}
-            icon={<Users className="h-4 w-4" />}
-          />
-          <StatCard
-            label="Vues au total"
-            value={privacy.count(lifetime.views, 'views')}
-            hint={lifetimeHint}
-            icon={<TrendingUp className="h-4 w-4" />}
-          />
-          <StatCard
-            label="Vidéos au total"
-            value={formatNumber(lifetime.videos)}
-            hint={lifetimeHint}
-            icon={<Clapperboard className="h-4 w-4" />}
-          />
-        </div>
-      )}
+          à part, pour qu'on ne lise pas « 12 400 vues » d'un côté et « 1,2 M » de l'autre
+          comme deux mesures de la même chose. */}
+      <div className="grid grid-cols-3 gap-3">
+        <Block id="youtube.lifetime.subscribers" />
+        <Block id="youtube.lifetime.views" />
+        <Block id="youtube.lifetime.videos" />
+      </div>
 
-      {data && (
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-          <StatCard
-            label="Vidéos publiées"
-            value={formatNumber(data.totals.videosPublished)}
-            change={compareTotals(data.totals, data.previousTotals, (t) => t.videosPublished)}
-            hint="sorties sur la période"
-            icon={<Video className="h-4 w-4" />}
-          />
-          <StatCard
-            label="Vues"
-            value={privacy.count(data.totals.views, 'views')}
-            change={privacy.change(
-              compareTotals(data.totals, data.previousTotals, (t) => t.views),
-              'views',
-            )}
-            icon={<Eye className="h-4 w-4" />}
-          />
-          {/* La question posée : « je fais aussi des vues sur mes anciennes vidéos ». */}
-          <StatCard
-            label="Vues du catalogue"
-            value={privacy.count(catalogViews, 'views')}
-            hint={
-              privacy.isMasked('views')
-                ? 'part du catalogue masquée'
-                : `${Math.round(catalogShare * 100)} % des vues, hors sorties de la période`
-            }
-            icon={<Library className="h-4 w-4" />}
-            details={
-              <p className="text-muted-foreground">
-                Estimation : les vues de la période moins celles cumulées par les vidéos sorties
-                pendant cette même période. YouTube ne fournit les compteurs par vidéo qu'en cumul
-                depuis la sortie, jamais jour par jour — le chiffre est donc juste sur une période
-                qui va jusqu'à aujourd'hui, et approché sur une période passée.
-              </p>
-            }
-          />
-          <StatCard
-            label="Abonnés gagnés"
-            value={privacy.signed(data.totals.subscribersNet, 'subscribers')}
-            change={privacy.change(
-              compareTotals(data.totals, data.previousTotals, (t) => t.subscribersNet),
-              'subscribers',
-            )}
-            hint={
-              data.totals.subscribersTotal === null
-                ? 'total inconnu'
-                : `${privacy.count(data.totals.subscribersTotal, 'subscribers')} au total`
-            }
-            icon={<Users className="h-4 w-4" />}
-            accent={data.totals.subscribersNet < 0 ? 'var(--negative)' : undefined}
-          />
-          <StatCard
-            label="Heures vues"
-            value={privacy.hours(data.totals.watchHours, 'views')}
-            change={privacy.change(
-              compareTotals(data.totals, data.previousTotals, (t) => t.watchHours),
-              'views',
-            )}
-            icon={<Clock className="h-4 w-4" />}
-          />
-          <StatCard
-            label="Engagement"
-            value={privacy.count(data.totals.likes, 'views')}
-            change={privacy.change(
-              compareTotals(data.totals, data.previousTotals, (t) => t.likes),
-              'views',
-            )}
-            hint={`${privacy.count(data.totals.comments, 'views')} commentaires`}
-            icon={<Heart className="h-4 w-4" />}
-          />
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
+        <Block id="youtube.videosPublished" />
+        <Block id="youtube.views" />
+        <Block id="youtube.catalogViews" />
+        <Block id="youtube.subscribers" />
+        <Block id="youtube.watchHours" />
+        <Block id="youtube.engagement" />
+      </div>
 
       {isLoading && !data && (
         <div className="h-80 animate-pulse rounded-xl border border-border bg-card" />
       )}
 
-      {/* La dernière sortie avant les courbes : c'est la question qui suit les totaux,
-          et l'écran Contenu est celui où on vient précisément la poser. Ses compteurs
-          sont des cumuls depuis la sortie — ils ne s'additionnent pas avec les totaux
-          de la période affichés au-dessus. */}
-      <LatestVideoCard videos={latestVideos} />
+      {/* La dernière sortie avant les courbes : c'est la question qui suit les totaux. Ses
+          compteurs sont des cumuls depuis la sortie. */}
+      <Block id="youtube.latest" />
 
-      {data && (
-        <>
-          <AudienceChart data={data} />
+      <Block id="youtube.audience" />
 
-          <Tabs defaultValue="periode">
-            <TabsList>
-              <TabsTrigger value="periode">
-                Sorties de la période ({periodVideos.length})
-              </TabsTrigger>
-              <TabsTrigger value="catalogue">Catalogue ({catalog.length})</TabsTrigger>
-            </TabsList>
+      <Tabs defaultValue="periode">
+        <TabsList>
+          <TabsTrigger value="periode">Sorties de la période ({periodCount})</TabsTrigger>
+          <TabsTrigger value="catalogue">Catalogue ({catalogCount})</TabsTrigger>
+        </TabsList>
 
-            <TabsContent value="periode">
-              {/* Le classement à gauche, le tableau complet à droite : on repère la
-                  vidéo qui sort du lot, puis on lit la ligne qui l'explique. */}
-              <div className="grid gap-4 2xl:grid-cols-2">
-                <VideoPerformanceChart data={data} />
-                <VideoPerformanceTable data={data} />
-              </div>
-            </TabsContent>
+        <TabsContent value="periode">
+          {/* Le classement à gauche, le tableau complet à droite : on repère la vidéo qui
+              sort du lot, puis on lit la ligne qui l'explique. */}
+          <div className="grid gap-4 2xl:grid-cols-2">
+            <Block id="youtube.ranking" />
+            <Block id="youtube.periodTable" />
+          </div>
+        </TabsContent>
 
-            <TabsContent value="catalogue">
-              <VideoPerformanceTable
-                data={data}
-                rows={catalog}
-                title="Catalogue"
-                subtitle={`${catalog.length} vidéo(s) sortie(s) avant la période, les plus vues d'abord. Compteurs cumulés depuis chaque sortie.`}
-                emptyLabel="Aucune vidéo antérieure connue. Les vidéos arrivent avec la collecte."
-              />
-            </TabsContent>
-          </Tabs>
-        </>
-      )}
+        <TabsContent value="catalogue">
+          <Block id="youtube.catalog" />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

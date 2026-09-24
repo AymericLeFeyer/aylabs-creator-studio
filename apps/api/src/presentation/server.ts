@@ -21,6 +21,7 @@ import { productsRouter } from './routes/products.ts';
 import { sponsorshipsRouter } from './routes/sponsorships.ts';
 import { ideasRouter } from './routes/ideas.ts';
 import { postDraftsRouter } from './routes/postDrafts.ts';
+import { dashboardRouter } from './routes/dashboard.ts';
 import {
   productionShotAnglesRouter,
   scriptPresetsRouter,
@@ -76,6 +77,7 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/sponsorships', sponsorshipsRouter(container));
   app.use('/api/ideas', ideasRouter(container));
   app.use('/api/post-drafts', postDraftsRouter(container));
+  app.use('/api/dashboard', dashboardRouter(container));
   app.use('/api/script-presets', scriptPresetsRouter(container));
   app.use('/api/shot-angles', shotAnglesRouter(container));
   app.use('/api/comments', commentsRouter(container));

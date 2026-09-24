@@ -19,7 +19,7 @@ import { revenueMaskKey } from '../../../domain/privacy/services/privacy.ts';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { Button } from '../ui/button.tsx';
 import { Badge } from '../ui/badge.tsx';
-import { Card, CardHeader, CardTitle } from '../ui/card.tsx';
+import { Card, CardHeader, CardDescription, CardTitle } from '../ui/card.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
 import { RevenueDialog } from '../forms/RevenueDialog.tsx';
 import { ProductDialog } from '../forms/ProductDialog.tsx';
@@ -341,11 +341,11 @@ export const RevenuesPanel = () => {
           <CardHeader>
             <CardTitle>{entries.length} revenu(s)</CardTitle>
             {visibleUpcoming.length > 0 && (
-              <p className="text-xs text-muted-foreground">
+              <CardDescription className="text-xs text-muted-foreground">
                 Les {visibleUpcoming.length} première(s) ligne(s), grisées, sont à venir d'ici{' '}
                 {UPCOMING_MONTHS} mois : déjà enregistrées, pas encore arrivées, et hors des totaux
                 ci-dessus.
-              </p>
+              </CardDescription>
             )}
           </CardHeader>
           {/* Une colonne de plus peut déborder sur un écran étroit : le tableau défile

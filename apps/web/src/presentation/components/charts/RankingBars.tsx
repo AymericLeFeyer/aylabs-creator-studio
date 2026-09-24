@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
+import { Card, CardContent, CardHeader, CardDescription, CardTitle } from '../ui/card.tsx';
 import { MASKED_BREAKDOWN_LABEL } from './maskedLabel.ts';
 
 export interface RankingRow {
@@ -54,7 +54,7 @@ export const RankingBars = ({
     <Card className="flex flex-col">
       <CardHeader className="pb-3">
         <CardTitle>{title}</CardTitle>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
 
       <CardContent className="flex-1">

@@ -90,6 +90,8 @@ export interface VideoMarker {
   title: string;
   /** Miniature YouTube (format `medium`, 320×180), `null` si la vidéo n'en a pas. */
   thumbnailUrl: string | null;
+  /** `null` = pas encore classée par la collecte. */
+  isShort: boolean | null;
   date: string;
   bucket: string;
 }
@@ -109,6 +111,7 @@ export interface VideoPerformanceRow {
   channelColor: string;
   title: string;
   thumbnailUrl: string | null;
+  isShort: boolean | null;
   date: string;
 
   views: number;

@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-23
+> Dernière mise à jour : 2026-09-24
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -103,7 +103,7 @@ Les deux applications suivent la même découpe.
 apps/api/src/
 ├── domain/          channel, metrics, category, revenue, expense, video, analytics,
 │                    brand, production, product, sponsorship, idea, postDraft, legal, integration,
-│                    todoApp, externalApp
+│                    todoApp, externalApp, dashboard
 │   └── <domaine>/{entities,repositories,services}    # repositories = interfaces seules
 ├── application/<domaine>/usecases/
 ├── infrastructure/
@@ -196,7 +196,9 @@ Catégories créées au premier démarrage (`SeedDefaultCategories`, identifiant
 
 La vidéo sert donc à trois choses : **repère temporel** (trait vertical au jour de sortie sur les graphiques d'argent et d'audience), **porte-clé** (les revenus et dépenses s'y rattachent par `video_id`) et **support de mesure** (tableau de performance par vidéo).
 
-`VideoRepository` : `findAll`, `findAllWithChannel`, `findById`, `upsertMany` (titre/miniature, jamais les compteurs), `upsertStats` (compteurs seuls, **UPDATE sans INSERT** : une stat sans ligne de vidéo n'a nulle part où aller), `markMissing`, `findLatestDate`, `countByChannel`.
+`VideoRepository` : `findAll`, `findAllWithChannel`, `findById`, `upsertMany` (titre/miniature, jamais les compteurs), `upsertStats` (compteurs seuls, **UPDATE sans INSERT** : une stat sans ligne de vidéo n'a nulle part où aller), `markMissing`, `findLatestDate`, `countByChannel`, `findUnclassified(channelId, limit)` / `setFormats(channelId, Map<externalId, boolean>)` (classement Short). `VideoFilter.excludeShorts` écarte les Shorts (une vidéo non classée reste).
+
+**`isShort` (`videos.is_short`, migration 39, nullable) est déduit, pas lu** : YouTube n'expose aucun champ « short ». `CollectMetrics.classifyVideos` tourne après les stats, ne demande que les vidéos à `is_short IS NULL` (500 max par passage), via `videos.list part=contentDetails,player maxWidth=1000` (`videoFormats.ts`, 1 unité par lot de 50) : **Short = durée ≤ 180 s ET lecteur vertical ou carré** (`embedHeight >= embedWidth`) ; sans ratio, la durée seule tranche. `NULL` = pas encore classée — un défaut à 0 aurait fait passer tout l'historique pour des vidéos classiques. Échec avalé. `isShort` est porté par `Video`, `VideoMarker` et `VideoPerformanceRow`.
 
 **Une vidéo retirée de YouTube est marquée, jamais supprimée** (`videos.deleted_at`,
 migration 17). La supprimer emporterait tout ce qui s'y rattache : revenus et dépenses
@@ -222,7 +224,7 @@ lectures en héritent (liste, compteurs de période, repères de graphique, perf
 vidéo), et `findLatestDate` l'applique aussi — une vidéo retirée ne doit pas servir de
 point de reprise à la collecte suivante.
 
-La collecte passe par la **playlist « uploads »** de la chaîne (`infrastructure/youtube/api/uploads.ts`, partagé par les deux clients) et non par `search.list` : 1 unité de quota par page de 50 contre 100 pour une recherche, et l'ordre antéchronologique garanti permet de s'arrêter dès qu'on dépasse la date voulue. Fonctionne en mode `public` (clé API) comme en mode `oauth` (`mine: true`). Les Shorts en font partie, YouTube ne les distingue pas à ce niveau.
+La collecte passe par la **playlist « uploads »** de la chaîne (`infrastructure/youtube/api/uploads.ts`, partagé par les deux clients) et non par `search.list` : 1 unité de quota par page de 50 contre 100 pour une recherche, et l'ordre antéchronologique garanti permet de s'arrêter dès qu'on dépasse la date voulue. Fonctionne en mode `public` (clé API) comme en mode `oauth` (`mine: true`). Les Shorts en font partie, YouTube ne les distingue pas à ce niveau — le classement se fait ensuite (`classifyVideos`, voir plus haut).
 
 `CollectMetrics.collectVideos()` repart de la dernière vidéo connue moins 7 jours ; sans historique, il remonte `BACKFILL_DAYS`. Son échec est **avalé** (`console.warn`) : un repère d'affichage ne doit pas faire échouer une collecte de métriques déjà écrites. Le nombre de vidéos enregistrées revient dans `CollectResult.videosUpserted`.
 
@@ -1853,6 +1855,65 @@ reste joignable par adresse directe même hors du menu (le temps que la configur
 propage au cache), et affiche alors un état vide qui renvoie vers Paramètres → Audience →
 Discord plutôt qu'une redirection muette.
 
+### `dashboard` — un tableau de bord composé
+
+`DashboardWidget { id, blockId, title, description, icon, width, sortOrder }` — table
+`dashboard_widgets` (migration 40), `block_id` **unique**. CRUD nu, sans use case
+(`SqliteDashboardWidgetRepository` : `findAll`, `create` — 409 si le bloc y est déjà —,
+`update`, `delete`, `reorder(ids)` qui réécrit `1..n` en transaction).
+
+**Le dashboard part vide et ne possède aucune donnée.** Chaque ligne désigne un **bloc du
+catalogue** par son identifiant (`youtube.views`, `money.chart`, `domadoo.total.balance`…)
+et n'en garde que la mise en page (ordre, `width` sur une grille de 6) et les retouches
+d'affichage (`title`, `description`, `icon` : `null` = celles d'origine ; une description
+`''` l'efface). Le catalogue vit **côté front** (`presentation/dashboard/registry.tsx`,
+`BLOCKS`), qui seul sait dessiner : l'API ne valide que la forme de l'identifiant, et un
+identifiant inconnu est ignoré à l'affichage (retirable en édition). **Renommer un
+identifiant du registre fait disparaître le bloc des dashboards où il était posé.**
+
+- **Un bloc = un composant autonome** (`presentation/blocks/*.tsx`) : il va chercher ses
+  données lui-même, par les hooks partagés de `blocks/blockData.ts` (mêmes paramètres,
+  donc même clé de cache — une requête pour toute une page). Il vit à **deux endroits** :
+  sa page, qui le monte par `<Block id>` (`dashboard/Block.tsx`, avec l'icône d'ajout au
+  survol), et le dashboard. **Une page ne monte plus une carte en direct** : tout passe par
+  `<Block>`, donc tout est ajoutable. Les tables avec modales (produits, sponsos) ont été
+  extraites avec leur état (`ProductsTable`, `SponsorshipsTable` : la case « Reste à faire »
+  vit désormais dans le bloc) ; la file de production aussi (`ProductionQueueBlock`), et le
+  carnet d'idées porte son propre formulaire de promotion (`IdeaBoxBlock`).
+- **L'icône d'ajout est un interrupteur** (`AddToDashboardButton`, `Addable`) : cochée si
+  le bloc est déjà sur le dashboard, recliquée elle l'en retire. Visible au survol (coin
+  haut droit, à cheval sur le bord), en permanence quand le bloc y est déjà. Pas de survol
+  sur tactile : elle apparaît au focus.
+- **Domadoo** : les deux fenêtres (`DomadooWindowCard`) ne sont pas ajoutables en bloc ;
+  **chaque ligne** porte son bouton et se pose en grand chiffre (`domadoo.<fenêtre>.<champ>`,
+  `DOMADOO_ROWS` dans `blocks/domadooRows.ts`).
+- **Les retouches passent par `WidgetContext`** (`dashboard/widgetContext.ts`), que
+  `StatCard`, `CardTitle`, `CardDescription` et `BlockHeading` consultent : aucun bloc n'a à
+  savoir qu'il est sur le dashboard. `CardTitle secondary` exclut un titre secondaire ;
+  `CardDescription` s'efface quand une description est posée (c'est `CardTitle` qui
+  l'affiche). Un bloc sans titre sur sa page monte `<BlockHeading />` sans `title` : rien
+  ne s'affiche, sauf retouche.
+- **Édition WYSIWYG** (crayon, `DashboardPage`) : les vrais blocs, rendus inertes
+  (`pointer-events-none`), surmontés d'une barre (`WidgetToolbar` : poignée, texte, icône
+  parmi `WIDGET_ICONS`, largeur, retrait). Glisser-déposer **écrit à la main** (poignée
+  `touch-none`, `elementFromPoint` sur `[data-widget-id]`, ordre vivant en ref, défilement
+  près des bords) ; l'ordre lâché reste affiché localement jusqu'à ce que le cache le
+  rattrape (dérivé pendant le rendu). « Ajouter des blocs » ouvre le catalogue complet
+  (`BlockCatalogDialog`).
+- **Tous les appareils voient le même dashboard** : `useDashboardWidgets` relit toutes les
+  15 s et au retour sur l'onglet. Pas de WebSocket/SSE pour une liste qui change quelques
+  fois par semaine. Toutes les écritures sont **optimistes** et ne relisent qu'après la
+  dernière en vol (même mécanique que `useUpdatePostDraft`).
+- **Sur mobile**, grille de 2 : un bloc de largeur ≥ 3 prend les deux colonnes.
+- **Le sélecteur de la barre de filtres, sur `/`, réunit chaînes YouTube, comptes Instagram
+  et TikTok** (`useFilterPicker` → `groups`), **tous cochés par défaut** : sélection vide =
+  tout ; décocher part de la liste complète, revenir à la liste complète la remet à vide ;
+  la dernière case d'un groupe ne se décoche pas. Chaque groupe écrit dans son propre filtre
+  (`channelIds`, `instagramAccountIds`, `tiktokAccountIds`), le même que sur `/instagram` et
+  `/tiktok`.
+- **Non ajoutables** (outils plein écran, pas des blocs) : grille du planning, couloirs de
+  publications, fiche d'une production, tableau de tri des commentaires, paramètres.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -1883,7 +1944,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `PUT`    | `/api/channels/:id/metrics`                         | Saisie manuelle d'une journée (`source = manual`)                                                                                                                                                                                                        |
 | `DELETE` | `/api/channels/:id/metrics/:date`                   | Supprimer une journée                                                                                                                                                                                                                                    |
 | `PUT`    | `/api/channels/:id/snapshots`                       | Saisie manuelle d'un total d'abonnés                                                                                                                                                                                                                     |
-| `GET`    | `/api/videos`                                       | Sorties de vidéo. Params `from`, `to`, `channelIds`, `limit` (200 par défaut). Période **facultative** : le sélecteur de rattachement doit proposer des vidéos plus anciennes que la période affichée                                                    |
+| `GET`    | `/api/videos`                                       | Sorties de vidéo. Params `from`, `to`, `channelIds`, `limit` (200 par défaut), `excludeShorts`. Période **facultative** : le sélecteur de rattachement doit proposer des vidéos plus anciennes que la période affichée                                                    |
 | `GET`    | `/api/categories`                                   | Params `includeArchived`, `scope` (`revenue                                                                                                                                                                                                              | expense | both`;`both` répond toujours) |
 | `POST`   | `/api/categories`                                   | Créer (`scope` défaut `revenue`)                                                                                                                                                                                                                         |
 | `PATCH`  | `/api/categories/:id`                               | Modifier / archiver                                                                                                                                                                                                                                      |
@@ -2024,6 +2085,11 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/integrations/:provider/collect`               | Collecte immédiate d'une source distante ou du profil public TikTok (400 sur `youtube`/`instagram`, non `collectable` ; 409 si déjà en cours). ~20 s avec navigateur sur les sources distantes. Rend `{ result, integration }`                          |
 | `GET`    | `/api/export`                                       | **Clé obligatoire** (`Authorization: Bearer acs_…` ou `?key=`). `{ generatedAt, youtube, instagram, tiktok, amazon, domadoo, discord }`, `null` si désactivée ou rien collecté. `Cache-Control: no-store`                                                |
 | `GET`    | `/api/export/:provider`                             | Une seule source, même clé. 404 si rien à publier                                                                                                                                                                                                        |
+| `GET`    | `/api/dashboard/widgets`                            | Les blocs du dashboard, dans l'ordre. Relu toutes les 15 s par le front |
+| `POST`   | `/api/dashboard/widgets`                            | `{ blockId, width? }` → en fin de dashboard. **409** si le bloc y est déjà |
+| `POST`   | `/api/dashboard/widgets/reorder`                    | `{ ids }` → réécrit l'ordre `1..n`. **Déclaré avant `/:id`** |
+| `PATCH`  | `/api/dashboard/widgets/:id`                        | `{ title?, description?, icon?, width? }` — `null` rend la valeur d'origine du bloc, `width` 1–6 |
+| `DELETE` | `/api/dashboard/widgets/:id`                        | Retirer du dashboard (le bloc reste sur sa page) |
 
 Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube ou d'une source de l'export.
 
@@ -2031,11 +2097,11 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 
 | Route               | Page                   | Contenu                                                                                                                                                                                                                                                                                                                                                                       |
 | ------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                 | `DashboardPage`        | 11 cartes de stats, **dernière sortie en pleine largeur**, puis **les deux graphiques seulement** (argent, audience). Plus d'alertes : elles sont en pastilles                                                                                                                                                                                                                |
-| `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période                                                                                                                        |
-| `/instagram`        | `InstagramPage`        | **API Graph**, toujours au jour : alerte de jeton, chiffres clés (Stories, Abonnés, Publications, Portée, Interactions), graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications (vues/portée/j'aime/commentaires/enregistrements au clic)                                                                                |
+| `/`                 | `DashboardPage`        | **Composé et vide par défaut** : les blocs posés depuis les autres écrans (icône « + » au survol), en grille de 6. Crayon = édition WYSIWYG (glisser, texte, icône, largeur, retrait), catalogue complet. Sélecteur : chaînes YouTube + comptes Instagram + TikTok, tous cochés par défaut. Voir le domaine `dashboard` |
+| `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période. Case **« Afficher les Shorts »** (`filters.showShorts`, persistée) : filtre **côté écran** repères, classement, tableaux (période et catalogue), carte « Vidéos publiées » et dernières sorties (`excludeShorts`). Les courbes d'audience ne bougent pas — `daily_metrics` est mesuré à la chaîne, sans découpage par format — et le dashboard garde tout                                                                                                                        |
+| `/instagram`        | `InstagramPage`        | **API Graph**, toujours au jour : alerte de jeton, chiffres clés (Stories, Abonnés, Publications, Portée, Interactions), **dernières publications** (`LatestPostCard` : les 10 dernières hors période — `InstagramOverview.latestMedia` —, aux chevrons ou au glissement, avec vues/portée/j'aime/commentaires/partages/enregistrements), courbes d'abonnés et de portée liées, graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications (vues/portée/j'aime/commentaires/enregistrements au clic)                                                                                |
 | `/tiktok`           | `TikTokPage`            | **Profil public seulement**, toujours au jour : cartes Abonnés/Coeurs/Vidéos, graphique en onglets (Abonnés, Vidéos), dernières vidéos. N'apparaît dans le menu que si un profil est configuré (Paramètres → Audience → TikTok)                                                                                                                                                |
-| `/discord`          | `DiscordPage`          | Nom du serveur, membres, membres en ligne, dernier relevé, bouton Collecter. **Aucune série** : Discord ne renvoie que des compteurs courants. N'apparaît dans le menu que si un serveur est configuré (Paramètres → Audience → Discord)                                                                                                                                       |
+| `/discord`          | `DiscordPage`          | Membres, membres en ligne (le nom du serveur n'est plus qu'en sous-titre), dernier relevé, bouton Collecter. **Aucune série** : Discord ne renvoie que des compteurs courants. N'apparaît dans le menu que si un serveur est configuré (Paramètres → Audience → Discord)                                                                                                                                       |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
@@ -2111,6 +2177,7 @@ cartes). Le calcul reste côté API ; le front ne fait que ranger.
 | Sponsors        | **paiements en attente**                 | `sponsorship_due`, `_undelivered`, `_awaiting_payment`          |
 | Légal           | alertes légales                          | `late` et `due_soon` de `GetLegalOverview`                      |
 | Publications    | `-X` : jours sans publication validée    | « Aucune publication validée aujourd'hui » (`publicationBadge`) |
+| Commentaires    | commentaires **à trier** (`new`), orange | aucune (rien à zéro, `useCommentCounts`)                        |
 
 **Le chiffre et la couleur ne disent pas la même chose** : la couleur est celle de la pire
 raison (rouge `danger`, orange `warning`), et sans aucune raison la pastille reste
@@ -2627,7 +2694,7 @@ elle en occupait deux — grâce à deux déclencheurs compacts :
 - **`ChannelPicker`** : un déclencheur unique qui empile les **miniatures** des chaînes
   retenues (`ChannelAvatar`, jusqu'à 3, puis un compteur) et affiche le nom quand il n'y
   en a qu'une. « Toutes » n'est pas une case mais **l'absence de sélection** — c'est déjà
-  ce que l'API attend. `onSelect` est neutralisé (`preventDefault`) pour que le menu ne se
+  ce que l'API attend. Désormais porté par `EntityPicker` (chaînes, comptes Instagram, comptes TikTok selon l'écran, `useFilterPicker`), **masqué seulement à zéro entité** : à une seule, le menu d'un élément reste affiché — c'est ce qui dit quel compte on regarde sur `/instagram` et `/tiktok`. `onSelect` est neutralisé (`preventDefault`) pour que le menu ne se
   referme pas au premier clic : on en coche souvent deux.
 
 `ChannelAvatar` affiche `channel.thumbnailUrl` (collecté par `CollectMetrics`, migration 12) et retombe sur l'**initiale sur la couleur de la chaîne** — ce n'est pas un cas
@@ -2651,11 +2718,13 @@ Deux cartes déplient un panneau au survol (prop `details` de `StatCard`, ouvert
 
 La carte « Abonnés gagnés » met le **gain** en grand et le total en sous-titre : sur une période, ce qui se pilote est la progression, pas un cumul qui ne bouge qu'à la marge.
 
-Disposition du dashboard, de haut en bas : 11 cartes de stats, la **dernière sortie** en pleine largeur, puis les graphiques d'argent et d'audience **côte à côte** à partir de `2xl`. **C'est tout** : anneaux, classements de partenaires et performance par vidéo ont migré vers `/chiffre-affaires` et `/youtube`, parce qu'empilés ici ils faisaient une page qu'on parcourait au lieu de la lire. Les deux bandeaux d'alertes (production, légal) ont été remplacés par les **pastilles du menu** : un bloc qui mêlait une déclaration d'Urssaf, un colis en retard et une vidéo en pause ne disait pas où aller.
-
-La grille de cartes est en `lg:grid-cols-4 2xl:grid-cols-6` et non en 5 colonnes : à 11 cartes, cinq colonnes laisseraient une dernière rangée d'une seule carte. Les **trois dernières** ne suivent pas la période — « En production », « Sponsos en cours », « Produits attendus » sont des états d'une file ou d'un pipeline, pas des flux, et leur sous-titre le dit.
-
-Les deux dernières cartes de stats — « Sponsos en cours » et « Produits attendus » — **ne suivent pas la période** : ce sont des états du pipeline, pas des flux. Une sponso signée en mars et pas encore payée est toujours à encaisser en juin. Leur sous-titre le dit, pour qu'on ne les lise pas comme un cumul de période.
+Le dashboard n'a plus de disposition fixe : il se compose (voir le domaine `dashboard`).
+Les cartes qu'il portait — CA/bénéfices, vues, abonnés, heures vues, vidéos publiées,
+produits reçus, dépenses, engagement, en production, sponsos à encaisser, produits
+attendus, à venir, dernières sorties, graphiques d'argent et d'audience — sont des blocs
+du catalogue comme les autres (`money.headline`, `youtube.views`…), à poser depuis leur
+page ou le catalogue. Les états (en production, à encaisser, attendus) **ne suivent pas la
+période**, et leur sous-titre le dit.
 
 ## Hooks
 
@@ -2698,6 +2767,7 @@ Les deux dernières cartes de stats — « Sponsos en cours » et « Produits at
 | `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`           | Commentaires archivés, leur tri et leur collecte                                                                                                    |
 | `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                                                                                                                                                         | idem                                                    | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                                                                            |
 | `useExternalApps`, `useCreateExternalApp`, `useUpdateExternalApp`, `useDeleteExternalApp`, `useTodayTodos`                                                                                                                                                                                                                     | `application/externalApp/usecases/useExternalApps.ts`   | Applications externes du menu ; tâches Todo du jour (pastille, **relue chaque minute** : ce qu'on coche dans l'iframe ne passe pas par le studio)   |
+| `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
 | `useIntegrations`, `useUpdateIntegration`, `useCollectIntegration`, `useExportKeys`, `useCreateExportKey`, `useDeleteExportKey`, `useDomadooOverview`                                                                                                                                                                          | `application/integration/usecases/useIntegrations.ts`   | Sources de l'export et clés d'accès. `useUpdateIntegration` sert aussi `ProviderCredentialsCard`, monté hors de Paramètres → API (Instagram, Affiliation, Discord). `useDomadooOverview` alimente `/affiliations` → Domadoo                          |
 
@@ -2792,6 +2862,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 40** ajoute `dashboard_widgets` (`block_id` unique, `width` 1–6 en `CHECK`). Aucune ligne à la création : le dashboard part vide.
+- **Migration 39** ajoute `videos.is_short` (nullable, `NULL` = pas encore classée Short / classique).
 - **Migration 37** ajoute `tiktok_accounts`, `tiktok_account_snapshots` et
   `tiktok_videos` : le profil public TikTok, sur le modèle de l'ancien profil public
   Instagram (comptes + relevés CUMUL + vidéos archivées).
@@ -3111,8 +3183,9 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **`AttachExistingSelect` reste bloqué sur `NONE`** : il déclenche une action et se réarme, il ne mémorise pas de valeur. Sans ça, le déclencheur afficherait le dernier élément rattaché et se lirait comme un filtre.
 - **Détacher n'est pas supprimer.** Le bouton ⛓ des listes d'une fiche de production met `productionId` à `null` : le produit reste reçu et son revenu existe toujours, il perd juste son rattachement à la vidéo (et donc le `videoId` de son revenu, par re-synchronisation).
 - **Rattacher une vidéo force la chaîne** du revenu ou de la dépense (une vidéo appartient à une seule chaîne), et changer de chaîne détache la vidéo. `VideoSelect` garde en tête de liste la vidéo déjà rattachée même si elle sort du filtre courant, sinon une édition l'effacerait silencieusement.
-- **Le dashboard n'a plus que deux graphiques.** Les répartitions et les classements sont dans `/chiffre-affaires` → Synthèse, la performance par vidéo dans `/youtube`. Y remettre un graphique demande de se demander lequel il remplace : la page doit se lire d'un regard, pas se parcourir.
-- **Le bloc des dernières sorties porte les TROIS dernières, une à la fois** (`LatestVideoCard`, alimenté par `useVideos({ limit: 3 })`). Une vidéo ne se juge pas dans l'absolu : 12 000 vues ne veulent rien dire tant qu'on ne sait pas ce que les deux précédentes ont fait. Elles défilent aux chevrons plutôt que de s'afficher côte à côte — la comparaison se fait alors sur les mêmes cases, au même endroit, ce que trois colonnes rétrécies rendraient impossible. Les chevrons **s'arrêtent aux bornes** au lieu de boucler (trois éléments se parcourent en deux clics, et un enroulement ferait repartir de la plus récente sans qu'on l'ait demandé), et le rang « 2 / 3 » est écrit entre eux. Le recadrage quand la liste rétrécit — un changement de chaîne dans les filtres — est **dérivé pendant le rendu**, jamais dans un effet : `react-hooks/set-state-in-effect` refuse l'autre.
+- **Un nouveau bloc s'écrit dans `presentation/blocks/`, s'enregistre dans `BLOCKS` et se monte par `<Block id>`**, jamais en direct dans la page : sinon il n'est pas ajoutable au dashboard. Il doit être **autonome** (ses données par `blockData.ts`, ses modales avec lui) et porter son titre par `CardTitle`, `StatCard` ou `BlockHeading`, sinon il ne se renomme pas. Un bloc qui contient deux cartes titrées marque la seconde `secondary`, ou se découpe en deux blocs (c'est ce qui a été fait pour les répartitions et les deux graphiques Instagram liés).
+- **Un identifiant de `BLOCKS` est un contrat stocké en base.** Le renommer vide silencieusement les dashboards qui l'avaient posé.
+- **Le bloc des dernières sorties porte les DIX dernières, une à la fois** (`LatestVideoCard`, alimenté par `useVideos({ limit: 10 })`, carrousel commun `LatestCarousel` avec `LatestPostCard` : chevrons **et glissement au doigt ou à la souris**, seuil de 48 px, le clic qui suit un glissement est avalé pour ne pas ouvrir le lien). Une vidéo ne se juge pas dans l'absolu : 12 000 vues ne veulent rien dire tant qu'on ne sait pas ce que les deux précédentes ont fait. Elles défilent aux chevrons plutôt que de s'afficher côte à côte — la comparaison se fait alors sur les mêmes cases, au même endroit, ce que trois colonnes rétrécies rendraient impossible. Les chevrons **s'arrêtent aux bornes** au lieu de boucler (trois éléments se parcourent en deux clics, et un enroulement ferait repartir de la plus récente sans qu'on l'ait demandé), et le rang « 2 / 3 » est écrit entre eux. Le recadrage quand la liste rétrécit — un changement de chaîne dans les filtres — est **dérivé pendant le rendu**, jamais dans un effet : `react-hooks/set-state-in-effect` refuse l'autre.
 - **Ce bloc ignore la période** (sans bornes de date) : « ma dernière vidéo marche comment » ne se pose pas dans une fenêtre de temps, et une période de 7 jours viderait le bloc précisément quand on vient le lire. Ses compteurs sont des **cumuls depuis la sortie** : ils ne s'additionnent pas avec les totaux affichés juste au-dessus, qui comptent aussi les vidéos plus anciennes. `stats.updatedAt` à `null` affiche « — » partout plutôt qu'une série de zéros.
 - **`/youtube` (ex-`/contenu`) ne porte que de la mesure** : ce qui n'est pas encore publié se pilote sur `/production` et `/shorts`, la dernière sortie se lit sur le dashboard. Y remettre une file ou un fil de sorties ferait trois endroits où lire la même chose.
 - **Une journée sans collecte Instagram est une journée de stories perdue pour toujours.**

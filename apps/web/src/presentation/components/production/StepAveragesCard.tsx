@@ -1,7 +1,7 @@
 import { Hourglass } from 'lucide-react';
 import type { StepTimeAverage } from '../../../domain/production/entities/ProductionOverview.ts';
 import { formatDuration } from '../../../domain/production/entities/TimeEntry.ts';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
+import { Card, CardContent, CardHeader, CardDescription, CardTitle } from '../ui/card.tsx';
 
 interface StepAveragesCardProps {
   averages: StepTimeAverage[];
@@ -30,11 +30,11 @@ export const StepAveragesCard = ({ averages, video, publishedLabel }: StepAverag
           <Hourglass className="h-4 w-4" />
           Temps moyen par étape
         </CardTitle>
-        <p className="text-xs text-muted-foreground">
+        <CardDescription className="text-xs text-muted-foreground">
           {video
             ? `${publishedLabel} prend ${formatDuration(video.minutes)} au total, en moyenne sur ${video.videos}.`
             : 'Temps chronométré, sur les étapes terminées.'}
-        </p>
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
         {averages.length === 0 ? (

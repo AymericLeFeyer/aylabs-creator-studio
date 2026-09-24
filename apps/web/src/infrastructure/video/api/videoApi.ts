@@ -6,6 +6,8 @@ export interface VideoListParams {
   to?: string;
   channelIds?: string[];
   limit?: number;
+  /** Écarte les Shorts (les vidéos pas encore classées restent). */
+  excludeShorts?: boolean;
 }
 
 export const videoApi = {
@@ -16,6 +18,7 @@ export const videoApi = {
         to: params.to,
         channelIds: params.channelIds?.length ? params.channelIds.join(',') : undefined,
         limit: params.limit,
+        excludeShorts: params.excludeShorts ? 'true' : undefined,
       },
     }),
 };

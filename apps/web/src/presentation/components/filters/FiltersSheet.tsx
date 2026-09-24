@@ -16,7 +16,7 @@ import {
 } from '../ui/dialog.tsx';
 import { PeriodPicker } from './PeriodPicker.tsx';
 import { EntityPicker } from './EntityPicker.tsx';
-import { useFilterPicker } from './useFilterPicker.ts';
+import { pickerSummary, useFilterPicker } from './useFilterPicker.ts';
 import { cn } from '../../../shared/cn.ts';
 
 const GRANULARITIES: Array<{ value: Granularity | 'auto'; label: string }> = [
@@ -65,15 +65,7 @@ export const FiltersSheet = () => {
   const picker = useFilterPicker();
   const [open, setOpen] = useState(false);
 
-  const selectedEntities = picker.entities.filter((entity) =>
-    picker.selectedIds.includes(entity.id),
-  );
-  const entityLabel =
-    selectedEntities.length === 0
-      ? picker.allLabel
-      : selectedEntities.length === 1
-        ? selectedEntities[0]!.label
-        : `${selectedEntities.length} ${picker.noun}`;
+  const entityLabel = pickerSummary(picker).label;
   const entityRowLabel = picker.noun.charAt(0).toUpperCase() + picker.noun.slice(1);
 
   return (
@@ -109,7 +101,7 @@ export const FiltersSheet = () => {
               <PeriodPicker />
             </Row>
 
-            {picker.entities.length > 1 && (
+            {picker.entities.length > 0 && (
               <Row label={entityRowLabel}>
                 <EntityPicker {...picker} />
               </Row>

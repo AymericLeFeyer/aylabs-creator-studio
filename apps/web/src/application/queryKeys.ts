@@ -34,6 +34,8 @@ export const queryKeys = {
   ideas: (format?: string) => ['ideas', format ?? 'all'] as const,
   postDrafts: (archived: boolean) => ['postDrafts', archived ? 'archived' : 'active'] as const,
   postDraftSummary: () => ['postDrafts', 'summary'] as const,
+  // Aucune autre racine ne la croise : poser un bloc ne change aucune donnée.
+  dashboardWidgets: () => ['dashboardWidgets'] as const,
   scriptPresets: (includeArchived: boolean) => ['scriptPresets', includeArchived] as const,
   shotAngles: (includeArchived: boolean) => ['shotAngles', includeArchived] as const,
   productionShotAngles: (id: string) => ['productionShotAngles', id] as const,

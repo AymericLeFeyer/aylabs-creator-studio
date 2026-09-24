@@ -27,6 +27,8 @@ export interface Video {
   publishedAt: string;
   date: string;
   thumbnailUrl: string | null;
+  /** Déduit à la collecte (durée + ratio). `null` = pas encore classée. */
+  isShort: boolean | null;
   stats: VideoStats;
 }
 

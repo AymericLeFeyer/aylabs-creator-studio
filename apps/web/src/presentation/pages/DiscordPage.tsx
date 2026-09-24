@@ -1,24 +1,17 @@
 import { formatDistanceToNowStrict } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Hash, RefreshCw, Users, Wifi } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import {
   useCollectIntegration,
-  useDiscordHistory,
   useIntegrations,
 } from '../../application/integration/usecases/useIntegrations.ts';
-import { useFilters } from '../hooks/useFilters.tsx';
-import { formatNumber } from '../../shared/format.ts';
 import { cn } from '../../shared/cn.ts';
-import { StatCard } from '../components/StatCard.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { Card } from '../components/ui/card.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
-import { DiscordChart } from '../components/discord/DiscordChart.tsx';
+import { Block } from '../dashboard/Block.tsx';
 
 interface DiscordData {
   name: string;
-  members: number | null;
-  members_online: number | null;
 }
 
 /**
@@ -36,8 +29,6 @@ interface DiscordData {
  */
 export const DiscordPage = () => {
   const { data } = useIntegrations();
-  const filters = useFilters();
-  const { data: history = [] } = useDiscordHistory({ from: filters.from, to: filters.to });
   const collect = useCollectIntegration();
   const discord = data?.providers.find((provider) => provider.id === 'discord');
 
@@ -83,25 +74,9 @@ export const DiscordPage = () => {
           : "Aucun relevé pour l'instant : la collecte horaire l'écrira."}
       </p>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <StatCard
-          label="Serveur"
-          value={payload?.name || '—'}
-          hint="nom lu depuis l'invitation"
-          icon={<Hash className="h-4 w-4" />}
-        />
-        <StatCard
-          label="Membres"
-          value={payload?.members != null ? formatNumber(payload.members) : '—'}
-          hint="total du serveur"
-          icon={<Users className="h-4 w-4" />}
-        />
-        <StatCard
-          label="En ligne"
-          value={payload?.members_online != null ? formatNumber(payload.members_online) : '—'}
-          hint="connectés au dernier relevé"
-          icon={<Wifi className="h-4 w-4" />}
-        />
+      <div className="grid grid-cols-2 gap-3">
+        <Block id="discord.members" />
+        <Block id="discord.online" />
       </div>
 
       {discord?.lastError && (
@@ -111,15 +86,7 @@ export const DiscordPage = () => {
         </p>
       )}
 
-      <Card className="space-y-2 p-4">
-        <div>
-          <h3 className="text-sm font-semibold">Évolution</h3>
-          <p className="text-xs text-muted-foreground">
-            Sur la période choisie — un point par collecte, pas par jour.
-          </p>
-        </div>
-        <DiscordChart snapshots={history} />
-      </Card>
+      <Block id="discord.chart" />
     </div>
   );
 };

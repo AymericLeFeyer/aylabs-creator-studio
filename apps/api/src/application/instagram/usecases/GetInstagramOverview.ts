@@ -15,6 +15,9 @@ import {
   type IsoDate,
 } from '../../../shared/dates.ts';
 
+/** Les dernières publications, hors période, que la carte « Dernière publication » parcourt. */
+const LATEST_MEDIA_LIMIT = 10;
+
 export interface InstagramQuery {
   from: IsoDate;
   to: IsoDate;
@@ -120,6 +123,9 @@ export class GetInstagramOverview {
       previousTotals,
       stories: this.data.findStories({ ...filter, limit: 500 }),
       media: this.data.findMedia({ ...filter, limit: 200 }),
+      // Hors période, comme les dernières sorties YouTube : « ma dernière publication
+      // marche comment » ne se pose pas dans une fenêtre de temps.
+      latestMedia: this.data.findMedia({ accountIds, limit: LATEST_MEDIA_LIMIT }),
       firstStoryDate: this.data.findFirstStoryDate(accountIds),
       dailyMetrics: metrics,
     };

@@ -8,6 +8,7 @@ import {
 import { externalAppPath } from '../../domain/externalApp/entities/ExternalApp.ts';
 import { usePostDraftSummary } from '../../application/postDraft/usecases/usePostDrafts.ts';
 import { localToday } from '../../application/planning/usecases/usePlanning.ts';
+import { useCommentCounts } from '../../application/comment/usecases/useComments.ts';
 import { buildNavBadges, publicationBadge, type NavBadge } from '../navBadges.ts';
 
 /**
@@ -29,6 +30,8 @@ export const useNavBadges = (): Record<string, NavBadge> => {
   const todoApp = apps?.find((app) => app.kind === 'todo' && app.enabled) ?? null;
   const { data: today } = useTodayTodos(todoApp !== null);
   const { data: publications } = usePostDraftSummary();
+  // Toutes chaînes confondues : même clé que l'écran sans filtre de chaîne.
+  const { data: commentCounts } = useCommentCounts();
   // Le jour local, relu à chaque rendu : la pastille doit basculer à minuit sans recharger.
   const localDay = localToday();
 
@@ -43,6 +46,11 @@ export const useNavBadges = (): Record<string, NavBadge> => {
         reasons: [],
       };
     }
+    // Ce qui reste à trier, en orange : c'est une boîte de réception, elle se vide. Rien à
+    // zéro — une pastille vide se lirait comme une alerte alors qu'elle dit « rien à faire ».
+    if (commentCounts && commentCounts.new > 0) {
+      badges['/commentaires'] = { count: commentCounts.new, tone: 'warning', reasons: [] };
+    }
     return badges;
-  }, [overview, legal, todoApp, today, publications, localDay]);
+  }, [overview, legal, todoApp, today, publications, localDay, commentCounts]);
 };

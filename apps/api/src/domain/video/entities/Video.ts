@@ -38,6 +38,11 @@ export interface Video {
   /** Jour de publication, en UTC comme le reste des séries. */
   date: IsoDate;
   thumbnailUrl: string | null;
+  /**
+   * Short ou vidéo classique, **déduit** de la durée et du ratio à la collecte (YouTube
+   * n'expose aucun champ). `null` tant que la vidéo n'a pas été classée.
+   */
+  isShort: boolean | null;
   stats: VideoStats;
 }
 
@@ -47,7 +52,7 @@ export interface VideoView extends Video {
   channelColor: string;
 }
 
-export type UpsertVideoInput = Omit<Video, 'id' | 'stats'>;
+export type UpsertVideoInput = Omit<Video, 'id' | 'stats' | 'isShort'>;
 
 /** Mise à jour des compteurs, adressée par la clé naturelle `(channelId, externalId)`. */
 export interface VideoStatsUpdate {

@@ -17,7 +17,7 @@ import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { toIsoDate } from '../../../shared/format.ts';
 import { ChannelAvatar } from '../filters/ChannelAvatar.tsx';
 import { Button } from '../ui/button.tsx';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
+import { Card, CardContent, CardHeader, CardDescription, CardTitle } from '../ui/card.tsx';
 import { cn } from '../../../shared/cn.ts';
 
 type Zoom = 'weeks' | 'month' | 'quarter';
@@ -224,9 +224,9 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
       <CardHeader className="flex-row items-center justify-between gap-3 pb-3">
         <div>
           <CardTitle>Planning</CardTitle>
-          <p className="text-sm text-muted-foreground">
+          <CardDescription className="text-sm text-muted-foreground">
             Du début du travail à la date de sortie visée. La couleur est l'état, le logo la chaîne.
-          </p>
+          </CardDescription>
           {/* Légende : la couleur ne se devine pas, et elle a changé de sens. */}
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {PRODUCTION_STATUSES.map((status) => (

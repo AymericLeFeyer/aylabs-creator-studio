@@ -23,6 +23,7 @@ interface VideoRow {
   published_at: string;
   date: string;
   thumbnail_url: string | null;
+  is_short: number | null;
   views: number;
   watch_minutes: number;
   subscribers_gained: number;
@@ -45,6 +46,7 @@ const toDomain = (row: VideoRow): Video => ({
   publishedAt: row.published_at,
   date: row.date,
   thumbnailUrl: row.thumbnail_url,
+  isShort: row.is_short === null ? null : row.is_short === 1,
   stats: {
     views: row.views,
     watchMinutes: row.watch_minutes,
@@ -83,6 +85,9 @@ export class SqliteVideoRepository implements VideoRepository {
     if (channelIds.length > 0) {
       conditions.push(`${alias}.channel_id IN (${placeholders(channelIds.length)})`);
       params.push(...channelIds);
+    }
+    if (filter.excludeShorts) {
+      conditions.push(`COALESCE(${alias}.is_short, 0) = 0`);
     }
 
     return { clause: `WHERE ${conditions.join(' AND ')}`, params };
@@ -370,6 +375,29 @@ export class SqliteVideoRepository implements VideoRepository {
       .prepare('SELECT MAX(date) AS d FROM videos WHERE channel_id = ? AND deleted_at IS NULL')
       .get(channelId) as { d: string | null } | undefined;
     return row?.d ?? null;
+  }
+
+  findUnclassified(channelId: string, limit: number): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT external_id FROM videos
+          WHERE channel_id = ? AND deleted_at IS NULL AND is_short IS NULL
+          ORDER BY published_at DESC
+          LIMIT ?`,
+      )
+      .all(channelId, limit) as Array<{ external_id: string }>;
+    return rows.map((row) => row.external_id);
+  }
+
+  setFormats(channelId: string, formats: Map<string, boolean>): number {
+    const stmt = this.db.prepare(
+      'UPDATE videos SET is_short = ? WHERE channel_id = ? AND external_id = ?',
+    );
+    let count = 0;
+    for (const [externalId, isShort] of formats) {
+      count += Number(stmt.run(isShort ? 1 : 0, channelId, externalId).changes);
+    }
+    return count;
   }
 
   countByChannel(channelId: string): number {

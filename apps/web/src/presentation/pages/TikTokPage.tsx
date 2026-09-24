@@ -1,19 +1,15 @@
 import { Link } from 'react-router-dom';
-import { Heart, Music2, RefreshCw } from 'lucide-react';
+import { Music2, RefreshCw } from 'lucide-react';
 import {
   useCollectIntegration,
   useIntegrations,
 } from '../../application/integration/usecases/useIntegrations.ts';
 import { useTikTokOverview } from '../../application/tiktok/usecases/useTikTok.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
-import { usePrivacy } from '../hooks/usePrivacy.tsx';
-import { formatCount } from '../../domain/tiktok/entities/TikTok.ts';
-import { MASKED_TEXT } from '../../domain/privacy/entities/Privacy.ts';
-import { TikTokChart } from '../components/tiktok/TikTokChart.tsx';
-import { StatCard } from '../components/StatCard.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
 import { cn } from '../../shared/cn.ts';
+import { Block } from '../dashboard/Block.tsx';
 
 /**
  * TikTok, profil public uniquement — même mode qu'Instagram avant le passage à l'API
@@ -29,7 +25,6 @@ import { cn } from '../../shared/cn.ts';
  */
 export const TikTokPage = () => {
   const filters = useFilters();
-  const privacy = usePrivacy();
 
   const { data, isLoading } = useTikTokOverview({
     from: filters.from,
@@ -41,7 +36,6 @@ export const TikTokPage = () => {
   const collect = useCollectIntegration();
 
   const accounts = data?.accounts ?? [];
-  const totals = data?.totals;
   const tiktok = integrations?.providers.find((provider) => provider.id === 'tiktok');
 
   // Configuré (un pseudo est renseigné) mais pas encore collecté : le lien vers les
@@ -110,31 +104,11 @@ export const TikTokPage = () => {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <StatCard
-          label="Abonnés"
-          value={
-            privacy.isMasked('subscribers') ? MASKED_TEXT : formatCount(totals?.followers ?? null)
-          }
-          hint={
-            privacy.isMasked('subscribers')
-              ? 'Gain masqué'
-              : totals?.followersGained == null
-                ? 'Pas encore de point de comparaison'
-                : `${totals.followersGained >= 0 ? '+' : ''}${totals.followersGained} sur la période`
-          }
-          icon={<Music2 className="h-4 w-4" />}
-        />
-        <StatCard
-          label="Coeurs"
-          value={formatCount(totals?.hearts ?? null)}
-          hint="au dernier relevé"
-          icon={<Heart className="h-4 w-4" />}
-        />
+        <Block id="tiktok.followers" />
+        <Block id="tiktok.hearts" />
       </div>
 
-      <Card className="p-4">
-        <TikTokChart series={data?.series ?? []} />
-      </Card>
+      <Block id="tiktok.chart" />
     </div>
   );
 };

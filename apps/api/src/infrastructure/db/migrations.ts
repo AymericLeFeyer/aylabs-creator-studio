@@ -1547,6 +1547,40 @@ const migrations: Migration[] = [
       CREATE INDEX idx_discord_snapshots_fetched_at ON discord_snapshots(fetched_at);
     `,
   },
+  {
+    version: 39,
+    name: 'videos_is_short',
+    // Short ou video classique, deduit de la duree et du ratio (voir "fetchVideoFormats").
+    // Nullable : NULL veut dire "pas encore classee", et c'est ce qui fait redemander la
+    // video au passage suivant. Un defaut a 0 ferait passer tout l'historique pour des
+    // videos classiques sans que rien ne le rattrape.
+    up: `
+      ALTER TABLE videos ADD COLUMN is_short INTEGER;
+    `,
+  },
+  {
+    version: 40,
+    name: 'dashboard_widgets',
+    // Le dashboard compose : une ligne par bloc pose, designe par son identifiant de
+    // catalogue ("block_id", cote front) et jamais par une copie de ses donnees. Le bloc
+    // reste sur sa page d'origine. Unique : un bloc ne figure qu'une fois, et c'est ce qui
+    // permet a l'icone d'ajout de se lire comme un interrupteur. NULL sur les retouches =
+    // titre, description et icone d'origine. Aucune ligne a la creation : le dashboard
+    // part vide et se remplit depuis les autres ecrans.
+    up: `
+      CREATE TABLE dashboard_widgets (
+        id          TEXT PRIMARY KEY,
+        block_id    TEXT NOT NULL UNIQUE,
+        title       TEXT,
+        description TEXT,
+        icon        TEXT,
+        width       INTEGER NOT NULL DEFAULT 1 CHECK (width BETWEEN 1 AND 6),
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 /**

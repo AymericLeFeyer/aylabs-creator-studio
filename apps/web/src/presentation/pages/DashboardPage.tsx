@@ -1,258 +1,253 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { Check, LayoutDashboard, Pencil, Plus } from 'lucide-react';
 import {
-  Clapperboard,
-  Clock,
-  Eye,
-  Gift,
-  Handshake,
-  Heart,
-  PackageOpen,
-  Receipt,
-  Users,
-  Video,
-  Wallet,
-} from 'lucide-react';
-import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
-import { useChannels } from '../../application/channel/usecases/useChannels.ts';
-import { useRevenues } from '../../application/revenue/usecases/useRevenues.ts';
-import { useProducts } from '../../application/product/usecases/useProducts.ts';
-import { useVideos } from '../../application/video/usecases/useVideos.ts';
-import { useSponsorships } from '../../application/sponsorship/usecases/useSponsorships.ts';
-import { useProductionOverview } from '../../application/production/usecases/useProductions.ts';
-import { partnerPipeline } from '../../domain/partner/services/pipeline.ts';
-import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
-import { usePrivacy } from '../hooks/usePrivacy.tsx';
-import {
-  cashRevenue,
-  compareTotals,
-  moneyValue,
-} from '../../domain/analytics/services/revenueMath.ts';
-import { NATURE_LABELS } from '../../domain/category/entities/Category.ts';
-import { formatNumber, toIsoDate } from '../../shared/format.ts';
-import { StatCard } from '../components/StatCard.tsx';
-import { InKindList, VideoList } from '../components/StatCardLists.tsx';
-import { MoneyChart } from '../components/charts/MoneyChart.tsx';
-import { AudienceChart } from '../components/charts/AudienceChart.tsx';
-import { LatestVideoCard } from '../components/content/LatestVideoCard.tsx';
-import { UpcomingExpensesCard } from '../components/money/UpcomingExpensesCard.tsx';
-import { EmptyState } from '../components/EmptyState.tsx';
+  useDashboardWidgets,
+  useReorderWidgets,
+} from '../../application/dashboard/usecases/useDashboard.ts';
+import type { DashboardWidget } from '../../domain/dashboard/entities/DashboardWidget.ts';
+import { cn } from '../../shared/cn.ts';
+import { AppBarActions } from '../hooks/useAppBar.tsx';
+import { Button } from '../components/ui/button.tsx';
+import { Card } from '../components/ui/card.tsx';
+import { BLOCKS } from '../dashboard/registry.tsx';
+import { WIDGET_ICONS } from '../dashboard/widgetIcons.ts';
+import { WidgetContext, type WidgetOverrides } from '../dashboard/widgetContext.ts';
+import { WidgetToolbar } from '../dashboard/WidgetToolbar.tsx';
+import { BlockCatalogDialog } from '../dashboard/BlockCatalogDialog.tsx';
+
+/** Les classes écrites en entier : Tailwind ne voit pas une classe composée à l'exécution. */
+const LG_SPAN: Record<number, string> = {
+  1: 'lg:col-span-1',
+  2: 'lg:col-span-2',
+  3: 'lg:col-span-3',
+  4: 'lg:col-span-4',
+  5: 'lg:col-span-5',
+  6: 'lg:col-span-6',
+};
 
 /**
- * Le tableau de bord : ce qu'il faut savoir de chaque onglet, sans en ouvrir aucun.
+ * Sur mobile, deux colonnes : un grand chiffre en prend une, tout ce qui occupe au moins
+ * la moitié de l'écran large en prend deux — un graphique sur une demi-largeur de
+ * téléphone ne se lit plus.
+ */
+const spanOf = (width: number) =>
+  cn(width >= 3 ? 'col-span-2' : 'col-span-1', LG_SPAN[width] ?? LG_SPAN[1]);
+
+/** Près des bords de la fenêtre, la page défile toute seule pendant un glissement. */
+const EDGE = 64;
+const SCROLL_STEP = 14;
+
+const sameOrder = (widgets: DashboardWidget[], ids: string[]) =>
+  widgets.length === ids.length && widgets.every((widget, index) => widget.id === ids[index]);
+
+/**
+ * Le tableau de bord **composé** : il part vide, et chaque bloc de l'application peut y
+ * être posé depuis sa page (l'icône qui apparaît au survol), sans quitter sa page pour
+ * autant. La base est la seule source : les blocs, leur ordre, leur largeur et leurs
+ * retouches sont les mêmes sur tous les appareils (`useDashboardWidgets` relit toutes les
+ * 15 s et au retour sur l'onglet).
  *
- * Il ne garde que **deux graphiques** — l'argent et l'audience, côte à côte et à survol
- * synchronisé. Les répartitions, les classements de partenaires et le tableau de
- * performance vivent désormais dans les onglets Chiffre d'affaires et Contenu : les
- * empiler ici faisait une page qu'on parcourait au lieu de la lire.
+ * **Le crayon passe en édition, et l'édition se fait sur les vrais blocs** : chacun garde
+ * ses données et son rendu, surmonté d'une barre (poignée, texte, icône, largeur,
+ * retrait). Un bloc se retouche par `WidgetContext`, que `StatCard`, `CardTitle` et
+ * `BlockHeading` consultent — personne n'a à savoir qu'il est sur le dashboard.
  *
- * Ce qui reste tient en un écran et demi : les chiffres de la période, la dernière
- * sortie et ses compteurs, puis ce qui cloche (production et administratif).
+ * Le glisser-déposer est écrit à la main, comme partout dans l'app (couloirs de
+ * publication, planning) : écouteurs sur `window`, cible trouvée par `elementFromPoint`,
+ * ordre vivant en ref. Le DnD HTML5 ne marche pas au doigt sur iOS.
  */
 export const DashboardPage = () => {
-  const filters = useFilters();
-  const privacy = usePrivacy();
-  const params = useAnalyticsParams();
-  const { data, isLoading, error } = useAnalytics(params);
-  const { data: channels = [], isLoading: channelsLoading } = useChannels();
+  const { data: widgets = [], isLoading } = useDashboardWidgets();
+  const reorder = useReorderWidgets();
+  const [editing, setEditing] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
-  // Le détail des produits reçus n'est pas dans `analytics`, qui n'expose que des
-  // agrégats : on relit la liste des revenus, bornée exactement comme le dashboard.
-  const { data: revenues = [] } = useRevenues({
-    from: filters.from,
-    to: filters.to,
-    channelIds: filters.channelIds,
-  });
-  const inKindEntries = useMemo(
-    () => revenues.filter((entry) => entry.categoryNature === 'in_kind'),
-    [revenues],
-  );
+  /** L'ordre affiché pendant et juste après un glissement, avant que le cache ne suive. */
+  const [order, setOrder] = useState<string[] | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const orderRef = useRef<string[] | null>(null);
 
-  // Le pipeline n'est **pas** borné par la période : une sponso signée en mars et pas
-  // encore payée reste à encaisser en juin. C'est un état, pas un flux.
-  const { data: products = [] } = useProducts();
-  const { data: sponsorships = [] } = useSponsorships();
-  const pipeline = useMemo(
-    () => partnerPipeline(products, sponsorships, toIsoDate(new Date())),
-    [products, sponsorships],
-  );
+  // Le cache a rattrapé l'ordre lâché : la version locale n'a plus de raison d'être.
+  // Dérivé pendant le rendu, pas dans un effet (`react-hooks/set-state-in-effect`).
+  if (order && !dragId && sameOrder(widgets, order)) setOrder(null);
 
-  const { data: production } = useProductionOverview();
+  const shown = useMemo(() => {
+    if (!order) return widgets;
+    const byId = new Map(widgets.map((widget) => [widget.id, widget]));
+    return order
+      .map((id) => byId.get(id))
+      .filter((widget): widget is DashboardWidget => widget !== undefined);
+  }, [widgets, order]);
 
-  // Sans bornes de date : l'API renvoie les plus récentes en premier, et la dernière
-  // sortie n'a aucune raison de tomber dans la période affichée. Dix, parce qu'une vidéo
-  // ne se juge qu'à côté de celles qui la précèdent — et qu'à trois on butait sur la
-  // borne avant d'avoir vu la tendance.
-  const { data: latestVideos = [] } = useVideos({ channelIds: filters.channelIds, limit: 10 });
+  const startDrag = (id: string, event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const initial = widgets.map((widget) => widget.id);
+    orderRef.current = initial;
+    setOrder(initial);
+    setDragId(id);
 
-  const moneyOptions = { mode: filters.moneyMode, includeInKind: filters.includeInKind };
+    const move = (moveEvent: PointerEvent) => {
+      if (moveEvent.clientY < EDGE) window.scrollBy(0, -SCROLL_STEP);
+      else if (moveEvent.clientY > window.innerHeight - EDGE) window.scrollBy(0, SCROLL_STEP);
 
-  if (!channelsLoading && channels.length === 0) {
-    return (
-      <EmptyState
-        title="Aucune chaîne suivie"
-        description="Ajoute une première chaîne pour commencer à enregistrer tes statistiques dans le temps."
-        actionLabel="Ajouter une chaîne"
-        actionTo="/chaines"
-      />
+      const target = document
+        .elementFromPoint(moveEvent.clientX, moveEvent.clientY)
+        ?.closest<HTMLElement>('[data-widget-id]');
+      const targetId = target?.dataset.widgetId;
+      const current = orderRef.current;
+      if (!target || !targetId || targetId === id || !current) return;
+
+      // Moitié gauche : avant la cible ; moitié droite : après. Sur une rangée de grands
+      // chiffres comme sur une pile de graphiques pleine largeur, c'est le geste attendu.
+      const rect = target.getBoundingClientRect();
+      const after =
+        rect.width > window.innerWidth * 0.6
+          ? moveEvent.clientY > rect.top + rect.height / 2
+          : moveEvent.clientX > rect.left + rect.width / 2;
+      const without = current.filter((candidate) => candidate !== id);
+      const index = without.indexOf(targetId) + (after ? 1 : 0);
+      const next = [...without.slice(0, index), id, ...without.slice(index)];
+      if (next.join() !== current.join()) {
+        orderRef.current = next;
+        setOrder(next);
+      }
+    };
+
+    const end = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      const final = orderRef.current;
+      orderRef.current = null;
+      setDragId(null);
+      if (final && final.join() !== initial.join()) {
+        reorder.mutate(final, { onError: () => setOrder(null) });
+      } else {
+        setOrder(null);
+      }
+    };
+
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  };
+
+  const editButton = (compact: boolean) =>
+    editing ? (
+      <Button size={compact ? 'icon' : 'sm'} onClick={() => setEditing(false)}>
+        <Check className="h-4 w-4" />
+        {!compact && 'Terminer'}
+      </Button>
+    ) : (
+      <Button
+        size={compact ? 'icon' : 'sm'}
+        variant={compact ? 'ghost' : 'outline'}
+        onClick={() => setEditing(true)}
+        aria-label="Modifier le dashboard"
+      >
+        <Pencil className="h-4 w-4" />
+        {!compact && 'Modifier'}
+      </Button>
     );
-  }
 
   return (
     <div className="space-y-4">
-      {error && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-          {error instanceof Error ? error.message : 'Erreur de chargement des statistiques'}
+      <AppBarActions>{editButton(true)}</AppBarActions>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="hidden lg:block">
+          <h1 className="text-lg font-semibold">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            {editing
+              ? 'Glisse les blocs par leur poignée, retouche leur texte, leur icône et leur largeur.'
+              : 'Les blocs que tu as choisis, sur tous tes appareils.'}
+          </p>
         </div>
+        <div className="flex items-center gap-2">
+          {editing && (
+            <Button size="sm" variant="outline" onClick={() => setCatalogOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Ajouter des blocs
+            </Button>
+          )}
+          <span className="hidden lg:inline-flex">{editButton(false)}</span>
+        </div>
+      </div>
+
+      {!isLoading && shown.length === 0 && (
+        <Card className="flex flex-col items-center gap-3 px-6 py-16 text-center">
+          <span className="rounded-full bg-muted p-3 text-muted-foreground">
+            <LayoutDashboard className="h-6 w-6" />
+          </span>
+          <div>
+            <h2 className="font-semibold">Ton dashboard est vide</h2>
+            <p className="mt-1 max-w-md text-sm text-muted-foreground">
+              Survole n'importe quel bloc de l'application — une carte, un graphique, un tableau,
+              une ligne de Domadoo — et clique sur le « + » qui apparaît dans son coin. Il arrivera
+              ici, et restera aussi sur sa page.
+            </p>
+          </div>
+          <Button size="sm" onClick={() => setCatalogOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Parcourir les blocs
+          </Button>
+        </Card>
       )}
 
-      {isLoading && !data && (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, index) => (
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        {shown.map((widget) => {
+          const block = BLOCKS[widget.blockId];
+          // Un bloc retiré du code : ignoré à l'affichage, retirable en édition.
+          if (!block && !editing) return null;
+
+          const overrides: WidgetOverrides = {
+            title: widget.title,
+            description: widget.description,
+            icon: widget.icon ? (WIDGET_ICONS[widget.icon]?.icon ?? null) : null,
+          };
+
+          return (
             <div
-              key={index}
-              className="h-28 animate-pulse rounded-xl border border-border bg-card"
-            />
-          ))}
-        </div>
-      )}
-
-      {data && (
-        <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 2xl:grid-cols-6">
-            <StatCard
-              label={filters.moneyMode === 'profit' ? 'Bénéfices' : "Chiffre d'affaires"}
-              value={privacy.money(moneyValue(data.totals, moneyOptions), 'totals')}
-              change={privacy.change(
-                compareTotals(data.totals, data.previousTotals, (totals) =>
-                  moneyValue(totals, moneyOptions),
-                ),
-                'totals',
+              key={widget.id}
+              data-widget-id={widget.id}
+              className={cn(
+                'flex min-w-0 flex-col',
+                spanOf(widget.width),
+                dragId === widget.id && 'opacity-60',
               )}
-              hint={`dont ${privacy.money(cashRevenue(data.totals), 'cash')} encaissés`}
-              icon={<Wallet className="h-4 w-4" />}
-            />
-            <StatCard
-              label="Vues"
-              value={privacy.count(data.totals.views, 'views')}
-              change={privacy.change(
-                compareTotals(data.totals, data.previousTotals, (t) => t.views),
-                'views',
+            >
+              {editing && (
+                <WidgetToolbar
+                  widget={widget}
+                  label={block?.label ?? 'Bloc retiré de l’application'}
+                  onGripDown={(event) => startDrag(widget.id, event)}
+                />
               )}
-              icon={<Eye className="h-4 w-4" />}
-            />
-            {/* Le gain en gros, le total en petit : sur une période, ce qui se pilote
-                c'est la progression — le cumul, lui, ne bouge qu'à la marge. */}
-            <StatCard
-              label="Abonnés gagnés"
-              value={privacy.signed(data.totals.subscribersNet, 'subscribers')}
-              change={privacy.change(
-                compareTotals(data.totals, data.previousTotals, (t) => t.subscribersNet),
-                'subscribers',
-              )}
-              hint={
-                data.totals.subscribersTotal === null
-                  ? 'total inconnu'
-                  : `${privacy.count(data.totals.subscribersTotal, 'subscribers')} au total`
-              }
-              icon={<Users className="h-4 w-4" />}
-              accent={data.totals.subscribersNet < 0 ? 'var(--color-negative)' : undefined}
-            />
-            <StatCard
-              label="Heures vues"
-              value={privacy.hours(data.totals.watchHours, 'views')}
-              change={privacy.change(
-                compareTotals(data.totals, data.previousTotals, (t) => t.watchHours),
-                'views',
-              )}
-              icon={<Clock className="h-4 w-4" />}
-            />
+              <div
+                className={cn(
+                  'min-w-0 flex-1 [&>*:first-child]:h-full',
+                  editing &&
+                    'pointer-events-none select-none rounded-b-xl outline-dashed outline-1 outline-primary/50',
+                  dragId === widget.id && 'ring-2 ring-primary',
+                )}
+              >
+                <WidgetContext.Provider value={overrides}>
+                  {block ? (
+                    block.render()
+                  ) : (
+                    <Card className="p-4 text-sm text-muted-foreground">
+                      Ce bloc n'existe plus dans l'application ({widget.blockId}).
+                    </Card>
+                  )}
+                </WidgetContext.Provider>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
-            <StatCard
-              label="Vidéos publiées"
-              value={formatNumber(data.totals.videosPublished)}
-              change={compareTotals(data.totals, data.previousTotals, (t) => t.videosPublished)}
-              hint="sorties sur la période"
-              icon={<Video className="h-4 w-4" />}
-              details={<VideoList videos={data.videoPerformance} />}
-            />
-            <StatCard
-              label={NATURE_LABELS.in_kind}
-              value={formatNumber(data.totals.inKindEntries)}
-              hint={`${privacy.money(data.totals.inKindCents, 'inKind')} valorisés`}
-              icon={<Gift className="h-4 w-4" />}
-              accent={data.totals.inKindEntries > 0 ? 'var(--in-kind)' : undefined}
-              details={<InKindList entries={inKindEntries} />}
-            />
-            <StatCard
-              label="Dépenses"
-              value={privacy.money(data.totals.expenseCents, 'expenses')}
-              change={privacy.change(
-                compareTotals(data.totals, data.previousTotals, (t) => t.expenseCents),
-                'expenses',
-              )}
-              hint="déduites en mode Bénéfices"
-              icon={<Receipt className="h-4 w-4" />}
-              accent={data.totals.expenseCents > 0 ? 'var(--expense)' : undefined}
-            />
-            <StatCard
-              label="Engagement"
-              value={privacy.count(data.totals.likes, 'views')}
-              change={privacy.change(
-                compareTotals(data.totals, data.previousTotals, (t) => t.likes),
-                'views',
-              )}
-              hint={`${privacy.count(data.totals.comments, 'views')} commentaires`}
-              icon={<Heart className="h-4 w-4" />}
-            />
-
-            {/* Ces trois-là ne suivent pas la période : ce sont des états — une file,
-                un pipeline —, pas des flux. Le sous-titre le dit plutôt que de laisser
-                croire à un cumul. */}
-            <StatCard
-              label="En production"
-              value={formatNumber(production?.queue.length ?? 0)}
-              hint="vidéos pas encore publiées"
-              icon={<Clapperboard className="h-4 w-4" />}
-            />
-            <StatCard
-              label="Sponsos à encaisser"
-              value={privacy.money(pipeline.sponsorshipsPendingCents, 'sponsorships')}
-              hint={`${pipeline.sponsorshipsPending} sponso(s) non encaissée(s)`}
-              icon={<Handshake className="h-4 w-4" />}
-              accent={pipeline.sponsorshipsPendingCents > 0 ? 'var(--color-positive)' : undefined}
-            />
-            <StatCard
-              label="Produits attendus"
-              value={formatNumber(pipeline.productsPending)}
-              hint={
-                pipeline.productsLate > 0 ? `${pipeline.productsLate} en retard` : 'aucun retard'
-              }
-              icon={<PackageOpen className="h-4 w-4" />}
-              accent={pipeline.productsLate > 0 ? 'var(--color-negative)' : undefined}
-            />
-            {/* La seule carte qui regarde devant : ce qui est déjà daté et va tomber,
-                impôts en tête. Hors période, comme les deux précédentes. */}
-            <UpcomingExpensesCard />
-          </div>
-
-          {/* La dernière sortie, en pleine largeur : c'est la question qui suit
-              immédiatement les totaux — « et ma dernière vidéo, elle marche ? ». */}
-          <LatestVideoCard videos={latestVideos} />
-
-          {/* Plus de bandeaux d'alertes ici : chaque problème allume la pastille du menu
-              qui permet de le traiter, et l'écran ouvert redit en tête pourquoi. Un bloc
-              qui mêlait une déclaration d'Urssaf, un colis en retard et une vidéo en
-              pause ne disait pas où aller. */}
-
-          {/* Même abscisse, survol synchronisé : côte à côte, une bosse de vues et un
-              pic de revenus se lisent d'un seul regard. Ce sont les deux seuls
-              graphiques de cet écran — le détail vit dans les onglets. */}
-          <div className="grid gap-4 2xl:grid-cols-2">
-            <MoneyChart data={data} />
-            <AudienceChart data={data} />
-          </div>
-        </>
-      )}
+      <BlockCatalogDialog open={catalogOpen} onOpenChange={setCatalogOpen} />
     </div>
   );
 };

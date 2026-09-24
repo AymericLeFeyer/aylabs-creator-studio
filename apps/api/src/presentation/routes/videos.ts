@@ -19,6 +19,7 @@ export const videosRouter = (container: Container): Router => {
         range: query.from && query.to ? { from: query.from, to: query.to } : undefined,
         channelIds: query.channelIds,
         limit: query.limit,
+        excludeShorts: query.excludeShorts,
       }),
     );
   });

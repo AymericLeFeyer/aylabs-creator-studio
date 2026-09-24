@@ -3,6 +3,7 @@ import { TrendingDown, TrendingUp } from 'lucide-react';
 import { Card } from './ui/card.tsx';
 import { formatPercent } from '../../shared/format.ts';
 import { cn } from '../../shared/cn.ts';
+import { useWidgetOverrides } from '../dashboard/widgetContext.ts';
 
 interface StatCardProps {
   label: string;
@@ -20,7 +21,21 @@ interface StatCardProps {
   details?: ReactNode;
 }
 
-export const StatCard = ({ label, value, change, hint, icon, accent, details }: StatCardProps) => {
+export const StatCard = ({
+  label: originalLabel,
+  value,
+  change,
+  hint: originalHint,
+  icon: originalIcon,
+  accent,
+  details,
+}: StatCardProps) => {
+  // Posée sur le dashboard, la carte prend les retouches du bloc (titre, sous-titre, icône).
+  const overrides = useWidgetOverrides();
+  const label = overrides?.title ?? originalLabel;
+  const hint = overrides?.description ?? originalHint;
+  const OverrideIcon = overrides?.icon;
+  const icon = OverrideIcon ? <OverrideIcon className="h-4 w-4" /> : originalIcon;
   const hasChange = change !== undefined && change !== null && Number.isFinite(change);
   const positive = hasChange && change > 0;
 

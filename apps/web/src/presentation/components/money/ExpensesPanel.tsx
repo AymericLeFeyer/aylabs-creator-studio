@@ -11,7 +11,7 @@ import { UPCOMING_MONTHS } from '../../../domain/expense/services/upcoming.ts';
 import { formatDate } from '../../../shared/format.ts';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { Button } from '../ui/button.tsx';
-import { Card, CardHeader, CardTitle } from '../ui/card.tsx';
+import { Card, CardHeader, CardDescription, CardTitle } from '../ui/card.tsx';
 import { Checkbox } from '../ui/checkbox.tsx';
 import { Label } from '../ui/label.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
@@ -208,11 +208,11 @@ export const ExpensesPanel = () => {
           <CardHeader>
             <CardTitle>{expenses.length} dépense(s)</CardTitle>
             {showUpcoming && hasUpcoming && (
-              <p className="text-xs text-muted-foreground">
+              <CardDescription className="text-xs text-muted-foreground">
                 Les {visibleUpcoming.length} première(s) ligne(s), grisées, sont à venir d'ici{' '}
                 {UPCOMING_MONTHS} mois : déjà enregistrées, pas encore arrivées, et hors du total
                 ci-dessus.
-              </p>
+              </CardDescription>
             )}
           </CardHeader>
           <Table>

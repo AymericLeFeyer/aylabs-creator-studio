@@ -1,24 +1,6 @@
 import { useSearchParams } from 'react-router-dom';
-import { Receipt, Wallet } from 'lucide-react';
-import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
-import { useBrandStats } from '../../application/brand/usecases/useBrands.ts';
-import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
-import { usePrivacy } from '../hooks/usePrivacy.tsx';
-import {
-  cashRevenue,
-  compareTotals,
-  grossRevenue,
-  netProfit,
-} from '../../domain/analytics/services/revenueMath.ts';
-import { NATURE_LABELS } from '../../domain/category/entities/Category.ts';
-import { StatCard } from '../components/StatCard.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
-import { MoneyChart } from '../components/charts/MoneyChart.tsx';
-import { MoneyBreakdowns } from '../components/money/MoneyBreakdowns.tsx';
-import { RevenuesPanel } from '../components/money/RevenuesPanel.tsx';
-import { ExpensesPanel } from '../components/money/ExpensesPanel.tsx';
-import { RecurringExpensesPanel } from '../components/money/RecurringExpensesPanel.tsx';
-import { UpcomingExpensesCard } from '../components/money/UpcomingExpensesCard.tsx';
+import { Block } from '../dashboard/Block.tsx';
 
 const TABS = ['synthese', 'revenus', 'depenses'] as const;
 type TurnoverTab = (typeof TABS)[number];
@@ -26,24 +8,11 @@ type TurnoverTab = (typeof TABS)[number];
 /**
  * Le chiffre d'affaires en un seul écran : la synthèse, puis les deux grands livres.
  *
- * Revenus et dépenses étaient deux entrées de navigation distinctes ; ils décrivent
- * pourtant les deux moitiés de la même soustraction et se consultent l'un après
- * l'autre. Les réunir sous un onglet met le bénéfice à portée de regard des lignes qui
- * le composent. Les anciennes adresses `/revenus` et `/depenses` redirigent ici, sur
- * le bon onglet.
+ * Revenus et dépenses décrivent les deux moitiés de la même soustraction et se consultent
+ * l'un après l'autre. Les anciennes adresses `/revenus` et `/depenses` redirigent ici, sur
+ * le bon onglet. Chaque morceau est un bloc du catalogue, ajoutable au dashboard.
  */
 export const TurnoverPage = () => {
-  const filters = useFilters();
-  const privacy = usePrivacy();
-  const params = useAnalyticsParams();
-  const { data, isLoading } = useAnalytics(params);
-
-  const { data: brandStats = [] } = useBrandStats({
-    from: filters.from,
-    to: filters.to,
-    channelIds: filters.channelIds,
-  });
-
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get('onglet');
   const tab: TurnoverTab = TABS.includes(requested as TurnoverTab)
@@ -59,54 +28,14 @@ export const TurnoverPage = () => {
         </p>
       </div>
 
-      {data && (
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
-          <StatCard
-            label="Chiffre d'affaires"
-            value={privacy.money(grossRevenue(data.totals, filters.includeInKind), 'totals')}
-            change={privacy.change(
-              compareTotals(data.totals, data.previousTotals, (totals) =>
-                grossRevenue(totals, filters.includeInKind),
-              ),
-              'totals',
-            )}
-            hint={`dont ${privacy.money(cashRevenue(data.totals), 'cash')} encaissés`}
-            icon={<Wallet className="h-4 w-4" />}
-          />
-          <StatCard
-            label="Bénéfices"
-            value={privacy.money(netProfit(data.totals, filters.includeInKind), 'totals')}
-            change={privacy.change(
-              compareTotals(data.totals, data.previousTotals, (totals) =>
-                netProfit(totals, filters.includeInKind),
-              ),
-              'totals',
-            )}
-            hint="CA moins les dépenses"
-            icon={<Wallet className="h-4 w-4" />}
-          />
-          <StatCard
-            label="Dépenses"
-            value={privacy.money(data.totals.expenseCents, 'expenses')}
-            change={privacy.change(
-              compareTotals(data.totals, data.previousTotals, (t) => t.expenseCents),
-              'expenses',
-            )}
-            icon={<Receipt className="h-4 w-4" />}
-            accent={data.totals.expenseCents > 0 ? 'var(--expense)' : undefined}
-          />
-          <StatCard
-            label={NATURE_LABELS.in_kind}
-            value={privacy.money(data.totals.inKindCents, 'inKind')}
-            hint={`${data.totals.inKindEntries} produit(s) reçu(s)`}
-            icon={<Wallet className="h-4 w-4" />}
-            accent={data.totals.inKindCents > 0 ? 'var(--in-kind)' : undefined}
-          />
-          {/* Ce qui est engagé mais pas encore passé. Hors des quatre chiffres
-              précédents, qui s'arrêtent à la fin de la période. */}
-          <UpcomingExpensesCard />
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Block id="money.gross" />
+        <Block id="money.profit" />
+        <Block id="money.expenses" />
+        <Block id="money.inKindValue" />
+        {/* Ce qui est engagé mais pas encore passé, hors des quatre chiffres précédents. */}
+        <Block id="money.upcoming" />
+      </div>
 
       <Tabs
         value={tab}
@@ -119,28 +48,27 @@ export const TurnoverPage = () => {
         </TabsList>
 
         <TabsContent value="synthese" className="space-y-4">
-          {isLoading && !data && (
-            <div className="h-80 animate-pulse rounded-xl border border-border bg-card" />
-          )}
-          {data && (
-            <>
-              {/* Le même graphique que le dashboard, mais entouré ici de tout son
-                  détail : c'est la page où l'on vient comprendre une barre. */}
-              <MoneyChart data={data} />
-              <MoneyBreakdowns data={data} brandStats={brandStats} />
-            </>
-          )}
+          {/* Le même graphique que le dashboard, entouré ici de tout son détail. */}
+          <Block id="money.chart" />
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <Block id="money.revenueSplit" />
+            <Block id="money.expenseSplit" />
+            <Block id="money.channelSplit" />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Block id="money.brandRanking" />
+            <Block id="money.sponsorRanking" />
+          </div>
         </TabsContent>
 
         <TabsContent value="revenus">
-          <RevenuesPanel />
+          <Block id="money.revenues" />
         </TabsContent>
 
         <TabsContent value="depenses" className="space-y-8">
-          <ExpensesPanel />
-          {/* Les dépenses récurrentes (abonnements) engendrent les lignes du tableau
-              ci-dessus : elles se gèrent juste en dessous, plus dans les paramètres. */}
-          <RecurringExpensesPanel />
+          <Block id="money.expensesTable" />
+          {/* Les dépenses récurrentes engendrent les lignes du tableau ci-dessus. */}
+          <Block id="money.recurring" />
         </TabsContent>
       </Tabs>
     </div>

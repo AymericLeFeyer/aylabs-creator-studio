@@ -70,6 +70,11 @@ interface FiltersState {
   includeInKind: boolean;
   /** Trait vertical à chaque sortie de vidéo sur le graphique d'argent. */
   showVideos: boolean;
+  /**
+   * Shorts affichés sur `/youtube` (repères, classement, tableaux, dernières sorties).
+   * N'agit pas sur les courbes d'audience : `daily_metrics` est mesuré à la chaîne.
+   */
+  showShorts: boolean;
 }
 
 const DEFAULT_STATE: FiltersState = {
@@ -85,6 +90,7 @@ const DEFAULT_STATE: FiltersState = {
   moneyMode: 'revenue',
   includeInKind: true,
   showVideos: true,
+  showShorts: true,
 };
 
 /** Convertit un préréglage en bornes de dates concrètes. */

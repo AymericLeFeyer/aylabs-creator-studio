@@ -20,7 +20,7 @@ import { useFilters } from '../../hooks/useFilters.tsx';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { formatBucketLabel, formatMoney, formatMoneyCompact } from '../../../shared/format.ts';
 import { cn } from '../../../shared/cn.ts';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
+import { Card, CardContent, CardHeader, CardDescription, CardTitle } from '../ui/card.tsx';
 import {
   groupVideosByBucket,
   videoMarkerLines,
@@ -200,7 +200,7 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
           <p className="mt-1 text-2xl font-semibold tabular">
             {privacy.money(displayedTotal, 'totals')}
           </p>
-          <p className="text-xs text-muted-foreground">
+          <CardDescription className="text-xs text-muted-foreground">
             {privacyHiddenCount > 0 ? (
               <>
                 {privacyHiddenCount} catégorie{privacyHiddenCount > 1 ? 's' : ''} masquée
@@ -229,7 +229,7 @@ export const MoneyChart = ({ data }: MoneyChartProps) => {
                   ` · ${privacy.money(totals.expenseCents, 'expenses')} de dépenses`}
               </>
             )}
-          </p>
+          </CardDescription>
         </div>
       </CardHeader>
 

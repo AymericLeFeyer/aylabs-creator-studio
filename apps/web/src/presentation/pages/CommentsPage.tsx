@@ -4,8 +4,7 @@ import {
   useCommentCounts,
 } from '../../application/comment/usecases/useComments.ts';
 import { AppBarActions } from '../hooks/useAppBar.tsx';
-import { WallOfLove } from '../components/comments/WallOfLove.tsx';
-import { CommunityIdeas } from '../components/comments/CommunityIdeas.tsx';
+import { Block } from '../dashboard/Block.tsx';
 import { CommentsTable } from '../components/comments/CommentsTable.tsx';
 import { CommentsActions, type CommentsView } from '../components/comments/CommentsActions.tsx';
 
@@ -71,8 +70,8 @@ export const CommentsPage = () => {
         {actions(false)}
       </div>
 
-      {view === 'mur' && <WallOfLove />}
-      {view === 'propositions' && <CommunityIdeas />}
+      {view === 'mur' && <Block id="comments.wall" />}
+      {view === 'propositions' && <Block id="comments.ideas" />}
       {view === 'commentaires' && <CommentsTable counts={counts} />}
     </div>
   );
