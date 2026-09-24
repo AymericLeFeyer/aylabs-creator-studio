@@ -469,6 +469,17 @@ export const updateDashboardWidgetSchema = z.object({
   variant: z.string().max(20).nullable().optional(),
 });
 
+/** Préférences partagées : une clé courte, une valeur JSON de 8 Ko au plus. */
+export const preferenceKeySchema = z
+  .string()
+  .regex(/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/, 'Clé de préférence invalide');
+export const setPreferenceSchema = z.object({
+  value: z
+    .unknown()
+    .refine((value) => value !== undefined, 'Valeur obligatoire')
+    .refine((value) => JSON.stringify(value).length <= 8192, 'Valeur trop volumineuse'),
+});
+
 export const createPostDraftSchema = z.object({
   title: z.string().trim().min(1, 'Le titre est obligatoire').max(200),
   // 2 200 caractères : la limite d'une légende Instagram.

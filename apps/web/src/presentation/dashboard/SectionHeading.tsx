@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DashboardWidget } from '../../domain/dashboard/entities/DashboardWidget.ts';
 import { headingVariant } from '../../domain/dashboard/entities/DashboardWidget.ts';
 import { useUpdateWidget } from '../../application/dashboard/usecases/useDashboard.ts';
@@ -35,10 +35,28 @@ const ICON_CLASS = {
 export const SectionHeading = ({
   widget,
   editing,
+  autoFocus = false,
+  onFocused,
 }: {
   widget: DashboardWidget;
   editing: boolean;
+  /** Le titre vient d'être créé : on défile jusqu'à lui et on sélectionne son texte. */
+  autoFocus?: boolean;
+  onFocused?: () => void;
 }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Attendre l'identifiant réel : un texte validé sur l'identifiant provisoire partirait
+  // vers une ligne que l'API ne connaît pas encore.
+  const pending = widget.id.startsWith('pending:');
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!autoFocus || pending || !input) return;
+    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    input.focus({ preventScroll: true });
+    input.select();
+    onFocused?.();
+  }, [autoFocus, pending, onFocused]);
   const update = useUpdateWidget();
   const variant = headingVariant(widget.variant);
   const Icon = widget.icon ? (WIDGET_ICONS[widget.icon]?.icon ?? null) : null;
@@ -54,7 +72,9 @@ export const SectionHeading = ({
 
   const text = editing ? (
     <input
+      ref={inputRef}
       value={draft ?? title}
+      disabled={pending}
       placeholder="Titre de la section"
       maxLength={120}
       onChange={(event) => setDraft(event.target.value)}

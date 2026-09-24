@@ -20,14 +20,22 @@ import { createPortal } from 'react-dom';
  * porté ici n'est simplement pas affiché, et chaque page garde son propre en-tête.
  */
 const AppBarContext = createContext<HTMLElement | null>(null);
+/** Le second point d'arrivée : la barre de filtres, au large, juste avant « Collecter ». */
+const FilterBarContext = createContext<HTMLElement | null>(null);
 
 export const AppBarProvider = ({
   node,
+  filterNode,
   children,
 }: {
   node: HTMLElement | null;
+  filterNode: HTMLElement | null;
   children: ReactNode;
-}) => <AppBarContext.Provider value={node}>{children}</AppBarContext.Provider>;
+}) => (
+  <AppBarContext.Provider value={node}>
+    <FilterBarContext.Provider value={filterNode}>{children}</FilterBarContext.Provider>
+  </AppBarContext.Provider>
+);
 
 /**
  * À monter dans une page. Son contenu apparaît dans la barre d'application mobile.
@@ -37,5 +45,16 @@ export const AppBarProvider = ({
  */
 export const AppBarActions = ({ children }: { children: ReactNode }) => {
   const node = useContext(AppBarContext);
+  return node ? createPortal(children, node) : null;
+};
+
+/**
+ * À monter dans une page. Son contenu apparaît **dans la barre de filtres, au large**, à
+ * côté de « Collecter » — pour les écrans qui ont des filtres et qui ne veulent pas payer
+ * une rangée d'en-tête pour un bouton (le crayon du dashboard). Rien sur mobile : la barre
+ * de filtres y est repliée, et ces actions passent par `AppBarActions`.
+ */
+export const FilterBarActions = ({ children }: { children: ReactNode }) => {
+  const node = useContext(FilterBarContext);
   return node ? createPortal(children, node) : null;
 };

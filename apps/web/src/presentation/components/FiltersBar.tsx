@@ -34,7 +34,12 @@ const GRANULARITIES: Array<{ value: Granularity | 'auto'; label: string }> = [
  * commençait sous le pli. La collecte, elle, n'est plus ici du tout sur mobile — elle est
  * passée en action de la barre d'application, là où le pouce l'atteint.
  */
-export const FiltersBar = () => {
+export const FiltersBar = ({
+  actionsRef,
+}: {
+  /** Le point d'arrivée de `FilterBarActions` : les actions d'écran, avant la collecte. */
+  actionsRef?: (node: HTMLDivElement | null) => void;
+}) => {
   const filters = useFilters();
 
   return (
@@ -106,6 +111,7 @@ export const FiltersBar = () => {
             </Label>
           </div>
 
+          <div ref={actionsRef} className="flex items-center gap-2 empty:hidden" />
           <CollectAction />
         </div>
       </div>

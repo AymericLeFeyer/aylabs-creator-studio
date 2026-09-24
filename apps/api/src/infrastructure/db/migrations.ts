@@ -1626,6 +1626,21 @@ const migrations: Migration[] = [
          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
     `,
   },
+  {
+    version: 44,
+    name: 'app_preferences',
+    // Les preferences partagees entre appareils (la barre du bas mobile en tete) : une
+    // ligne par cle, valeur JSON. Une table cle/valeur plutot qu'une colonne par reglage :
+    // en ajouter un ne doit pas demander de migration. Celles propres a un appareil
+    // restent dans le navigateur.
+    up: `
+      CREATE TABLE app_preferences (
+        key        TEXT PRIMARY KEY,
+        value      TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 /**

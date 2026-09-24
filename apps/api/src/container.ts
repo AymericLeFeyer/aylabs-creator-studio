@@ -20,6 +20,7 @@ import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/reposi
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
 import { SqlitePostDraftRepository } from './infrastructure/postDraft/repositories/SqlitePostDraftRepository.ts';
 import { SqliteDashboardWidgetRepository } from './infrastructure/dashboard/repositories/SqliteDashboardWidgetRepository.ts';
+import { SqliteSharedPreferenceRepository } from './infrastructure/sharedPreference/repositories/SqliteSharedPreferenceRepository.ts';
 import { SqliteScriptPresetRepository } from './infrastructure/script/repositories/SqliteScriptPresetRepository.ts';
 import { SqliteShotAngleRepository } from './infrastructure/script/repositories/SqliteShotAngleRepository.ts';
 import { SqliteCommentRepository } from './infrastructure/comment/repositories/SqliteCommentRepository.ts';
@@ -105,6 +106,7 @@ export interface Container {
   ideas: SqliteIdeaRepository;
   postDrafts: SqlitePostDraftRepository;
   dashboardWidgets: SqliteDashboardWidgetRepository;
+  sharedPreferences: SqliteSharedPreferenceRepository;
   /** Les gabarits insérables dans un script. Aucun effet de bord : ils sont copiés, pas liés. */
   scriptPresets: SqliteScriptPresetRepository;
   /** Le référentiel des angles de vue, et les angles ponctuels d'une vidéo. */
@@ -226,6 +228,7 @@ export const buildContainer = (config: Config): Container => {
   const ideas = new SqliteIdeaRepository(db);
   const postDrafts = new SqlitePostDraftRepository(db);
   const dashboardWidgets = new SqliteDashboardWidgetRepository(db);
+  const sharedPreferences = new SqliteSharedPreferenceRepository(db);
   const scriptPresets = new SqliteScriptPresetRepository(db);
   const shotAngles = new SqliteShotAngleRepository(db);
   const comments = new SqliteCommentRepository(db);
@@ -303,6 +306,7 @@ export const buildContainer = (config: Config): Container => {
     ideas,
     postDrafts,
     dashboardWidgets,
+    sharedPreferences,
     scriptPresets,
     shotAngles,
     comments,

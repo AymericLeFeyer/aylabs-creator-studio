@@ -9,7 +9,7 @@ import type { DashboardWidget } from '../../domain/dashboard/entities/DashboardW
 import { isHeading, newHeadingId } from '../../domain/dashboard/entities/DashboardWidget.ts';
 import { SectionHeading } from '../dashboard/SectionHeading.tsx';
 import { cn } from '../../shared/cn.ts';
-import { AppBarActions } from '../hooks/useAppBar.tsx';
+import { AppBarActions, FilterBarActions } from '../hooks/useAppBar.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
 import { BLOCKS } from '../dashboard/registry.tsx';
@@ -64,9 +64,18 @@ export const DashboardPage = () => {
   const reorder = useReorderWidgets();
   const add = useAddWidget();
 
-  /** Un titre naît en fin de dashboard, en section pleine largeur, à renommer sur place. */
-  const addHeading = () =>
-    add.mutate({ blockId: newHeadingId(), width: 6, variant: 'h2', title: 'Nouvelle section' });
+  /**
+   * Le titre qu'on vient de créer, désigné par son `blockId` — connu avant la réponse, là où
+   * son `id` passe de provisoire à réel. Il naît en fin de dashboard, donc souvent hors de
+   * l'écran : sans défilement jusqu'à lui ni curseur dans son texte, le bouton paraissait
+   * ne rien faire.
+   */
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+  const addHeading = () => {
+    const blockId = newHeadingId();
+    setJustAdded(blockId);
+    add.mutate({ blockId, width: 6, variant: 'h2', title: 'Nouvelle section' });
+  };
   const [editing, setEditing] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
 
@@ -141,6 +150,19 @@ export const DashboardPage = () => {
     window.addEventListener('pointercancel', end);
   };
 
+  const addButtons = (
+    <>
+      <Button size="sm" variant="outline" onClick={addHeading}>
+        <Heading className="h-4 w-4" />
+        Ajouter un titre
+      </Button>
+      <Button size="sm" variant="outline" onClick={() => setCatalogOpen(true)}>
+        <Plus className="h-4 w-4" />
+        Ajouter des blocs
+      </Button>
+    </>
+  );
+
   const editButton = (compact: boolean) =>
     editing ? (
       <Button size={compact ? 'icon' : 'sm'} onClick={() => setEditing(false)}>
@@ -163,27 +185,21 @@ export const DashboardPage = () => {
     <div className="space-y-4">
       <AppBarActions>{editButton(true)}</AppBarActions>
 
-      {/* Plus de titre fixe : l'en-tête de l'écran est un titre de section comme les
-          autres (posé par la migration 43), modifiable, déplaçable, supprimable. Reste la
-          barre d'édition, alignée à droite. */}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {editing && (
-          <>
-            <p className="mr-auto hidden text-sm text-muted-foreground lg:block">
-              Glisse les éléments par leur poignée, retouche leur texte, leur icône et leur largeur.
-            </p>
-            <Button size="sm" variant="outline" onClick={addHeading}>
-              <Heading className="h-4 w-4" />
-              Ajouter un titre
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setCatalogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Ajouter des blocs
-            </Button>
-          </>
-        )}
-        <span className="hidden lg:inline-flex">{editButton(false)}</span>
-      </div>
+      {/* Aucune rangée d'en-tête : le crayon — et en édition, les deux ajouts — vivent
+          dans la barre de filtres, à côté de « Collecter » (`FilterBarActions`), au large ;
+          dans la barre d'application sur mobile. L'en-tête de l'écran est un titre de
+          section comme les autres (migration 43). */}
+      <FilterBarActions>
+        {editing && addButtons}
+        {editButton(false)}
+      </FilterBarActions>
+      {/* Sur mobile, les ajouts restent sous le pouce en défilant : collés sous la barre
+          d'application, comme au large où ils vivent dans la barre de filtres collante. */}
+      {editing && (
+        <div className="sticky top-[var(--app-header)] z-20 -mx-4 flex flex-wrap gap-2 border-b border-border bg-background px-4 py-2 lg:hidden">
+          {addButtons}
+        </div>
+      )}
 
       {!isLoading && !shown.some((widget) => !isHeading(widget.blockId)) && (
         <Card className="flex flex-col items-center gap-3 px-6 py-16 text-center">
@@ -234,7 +250,12 @@ export const DashboardPage = () => {
                     dragId === widget.id && 'ring-2 ring-primary',
                   )}
                 >
-                  <SectionHeading widget={widget} editing={editing} />
+                  <SectionHeading
+                    widget={widget}
+                    editing={editing}
+                    autoFocus={justAdded === widget.blockId}
+                    onFocused={() => setJustAdded(null)}
+                  />
                 </div>
               </div>
             );

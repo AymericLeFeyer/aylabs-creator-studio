@@ -96,6 +96,8 @@ export const AppLayout = () => {
    * aucun rendu quand il se remplit, et le portail n'aurait jamais rien à viser.
    */
   const [actionsNode, setActionsNode] = useState<HTMLDivElement | null>(null);
+  /** Même mécanique, dans la barre de filtres au large (`FilterBarActions`). */
+  const [filterActionsNode, setFilterActionsNode] = useState<HTMLDivElement | null>(null);
   const { preferences, set } = usePreferences();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -374,7 +376,7 @@ export const AppLayout = () => {
               repliée en un bouton (`FiltersSheet`), d'où l'absence de marge haute. */}
           {showFilters && (
             <div className={cn(CONTAINER, 'lg:pt-2.5')}>
-              <FiltersBar />
+              <FiltersBar actionsRef={setFilterActionsNode} />
             </div>
           )}
 
@@ -406,7 +408,7 @@ export const AppLayout = () => {
             'lg:overflow-x-visible lg:pb-6',
           )}
         >
-          <AppBarProvider node={actionsNode}>
+          <AppBarProvider node={actionsNode} filterNode={filterActionsNode}>
             <Outlet />
           </AppBarProvider>
         </main>
