@@ -205,19 +205,25 @@ export const NAV: NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);
 
 /**
  * La barre du bas par défaut, sur mobile : YouTube à gauche, le dashboard au centre, le
- * planning à droite. Réglable dans Paramètres → Général (`preferences.mobileNav`).
+ * planning à droite. Réglable dans Paramètres → Général (`preferences.mobileNav`), de
+ * `MOBILE_NAV_MIN` à `MOBILE_NAV_MAX` entrées : au-delà de cinq, les cibles deviennent trop
+ * étroites pour un pouce et les libellés illisibles.
  */
-export const DEFAULT_MOBILE_NAV: readonly [string, string, string] = ['/youtube', '/', '/planning'];
+export const DEFAULT_MOBILE_NAV: readonly string[] = ['/youtube', '/', '/planning'];
+export const MOBILE_NAV_MIN = 1;
+export const MOBILE_NAV_MAX = 5;
 
 /** Toutes les entrées de sections (menu augmenté compris), à plat. */
 export const flattenNav = (sections: NavSection[]): NavItem[] =>
   sections.flatMap((section) => section.items);
 
 /**
- * Les trois entrées de la barre du bas, résolues dans le menu **augmenté** (applications
- * externes, TikTok, Discord compris). Une adresse qui n'y est plus — une app retirée —
- * retombe sur l'entrée par défaut de la même place, puis sur le dashboard : la barre ne
- * doit jamais montrer un trou.
+ * Les entrées de la barre du bas, résolues dans le menu **augmenté** (applications
+ * externes, TikTok, Discord compris), dans l'ordre choisi. Une adresse qui n'y est plus —
+ * une app retirée — est **sautée** plutôt que remplacée : la barre rétrécit d'une case au
+ * lieu d'afficher un écran qu'on n'a pas demandé. Les doublons tombent, le compte est
+ * plafonné à `MOBILE_NAV_MAX`, et une liste vide (tout a disparu) retombe sur le défaut :
+ * la barre ne doit jamais être vide.
  */
 export const resolveMobileNav = (
   paths: readonly string[],
@@ -225,10 +231,15 @@ export const resolveMobileNav = (
   fallback: readonly string[],
 ): NavItem[] => {
   const items = flattenNav(sections);
-  const find = (path: string | undefined) => items.find((item) => item.to === path);
-  return [0, 1, 2].map(
-    (slot) => find(paths[slot]) ?? find(fallback[slot]) ?? find('/') ?? items[0]!,
-  );
+  const pick = (list: readonly string[]) =>
+    [...new Set(list)]
+      .map((path) => items.find((item) => item.to === path))
+      .filter((item): item is NavItem => item !== undefined)
+      .slice(0, MOBILE_NAV_MAX);
+  const chosen = pick(paths);
+  if (chosen.length > 0) return chosen;
+  const defaults = pick(fallback);
+  return defaults.length > 0 ? defaults : items.slice(0, 1);
 };
 
 /**

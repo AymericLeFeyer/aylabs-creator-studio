@@ -20,11 +20,11 @@ export interface AppPreferences {
   /** Cran de zoom de la grille du planning, indice dans `ZOOM_LEVELS`. */
   planningZoom: number;
   /**
-   * Les trois entrées de la barre du bas, sur mobile : gauche, centre, droite (adresses du
-   * menu). Propre à l'appareil, comme le reste des préférences : c'est le téléphone qui
+   * Les entrées de la barre du bas, sur mobile, de gauche à droite (adresses du menu, de 1
+   * à 5). Propre à l'appareil, comme le reste des préférences : c'est le téléphone qui
    * porte cette barre.
    */
-  mobileNav: [string, string, string];
+  mobileNav: string[];
 }
 
 const DEFAULTS: AppPreferences = {

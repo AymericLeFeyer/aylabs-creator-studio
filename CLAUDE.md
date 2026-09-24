@@ -2547,20 +2547,23 @@ gestuelle. Avec lui, c'est à l'application de réserver l'espace : `--bottom-na
 la hauteur des onglets, et l'en-tête collant porte un `padding-top:
 env(safe-area-inset-top)` pour ne pas passer sous l'encoche.
 
-**`--bottom-nav` est la seule source de la hauteur de la barre du bas** (`3,5 rem` plus la
-zone de sécurité), posée en variable CSS sur la racine de `AppLayout`. Trois choses en
+**`--bottom-nav` est la seule source de la hauteur de la barre du bas** (`3 rem` plus la
+zone de sécurité **rognée** : `max(inset − 0,75 rem, 0,25 rem)`, soit 22 px au lieu de 34 sur
+un iPhone à barre gestuelle — les onglets peuvent recouvrir le haut de la zone sans gêner
+le geste, comme les barres natives), posée en variable CSS sur la racine de `AppLayout`. Trois choses en
 dépendent et doivent bouger ensemble : la barre, la réserve de padding sous le contenu
 (`pb-[calc(var(--bottom-nav)+1rem)]`), et le bouton flottant qui se pose au-dessus. La
 zone de sécurité s'**ajoute** à la hauteur au lieu de s'y fondre : la fondre rapetisserait
 les onglets sur un iPhone à barre gestuelle.
 
-**Trois entrées, réglables** (`preferences.mobileNav`, Paramètres → Général →
-`MobileNavSettings`) : **YouTube à gauche, le dashboard au centre, le planning à droite**
-par défaut (`DEFAULT_MOBILE_NAV`). Tout écran du menu augmenté est proposé
+**De une à cinq entrées, réglables** (`preferences.mobileNav`, liste ordonnée ; Paramètres →
+Général → `MobileNavSettings` : choisir, déplacer, retirer, ajouter ;
+`MOBILE_NAV_MIN` / `MOBILE_NAV_MAX`) : **YouTube, dashboard, planning** par défaut
+(`DEFAULT_MOBILE_NAV`). La grille prend autant de colonnes que d'entrées. Tout écran du menu augmenté est proposé
 (`useNavSections`, le même point de composition que la barre latérale : applications
-externes, TikTok, Discord compris). `resolveMobileNav` retombe sur l'entrée par défaut de
-la place, puis sur le dashboard, quand une adresse choisie n'existe plus (une app retirée)
-— la barre ne montre jamais un trou. Préférence **locale à l'appareil**, comme le reste de
+externes, TikTok, Discord compris). `resolveMobileNav` **saute** une adresse qui n'existe
+plus (une app retirée) plutôt que de la remplacer, écarte les doublons, plafonne à cinq, et
+retombe sur le défaut si plus rien ne reste — la barre n'est jamais vide. Préférence **locale à l'appareil**, comme le reste de
 `usePreferences`. L'onglet actif porte un trait en haut. Elle ne **remplace pas** le
 tiroir, qui continue de porter **tout**.
 
@@ -3317,7 +3320,7 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   Instagram que si Discord est absent, ce qui donne Instagram → Discord → TikTok quand les
   deux sont configurés. Un écran dont la présence dépend d'une donnée suit ce patron
   plutôt que d'ajouter un `if` dans `NAV_SECTIONS`, qui doit rester une liste statique.
-- **La barre du bas prend trois écrans réglables, et le tiroir les garde aussi.** En retirer
+- **La barre du bas prend de un à cinq écrans réglables, et le tiroir les garde aussi.** En retirer
   un du tiroir sous prétexte qu'il est en bas ferait un trou dans le seul endroit qui liste
   tout.
 - **Un composant plein écran avec ses propres z-index se pose en `isolate`.** L'en-tête

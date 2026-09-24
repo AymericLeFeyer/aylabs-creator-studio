@@ -61,8 +61,16 @@ const SIDEBAR_CLOSED = '3.75rem';
  * déjà les plus durs à viser. Trois choses en dépendent — la barre, la réserve sous le
  * contenu, le bouton flottant —, d'où la variable unique.
  */
-const BOTTOM_NAV_HEIGHT = '3.5rem';
-const BOTTOM_NAV = `calc(${BOTTOM_NAV_HEIGHT} + env(safe-area-inset-bottom))`;
+const BOTTOM_NAV_HEIGHT = '3rem';
+/**
+ * La zone de sécurité, **rognée** : les 34 px d'un iPhone à barre gestuelle, ajoutés tels
+ * quels, faisaient une barre de 90 px pour trois icônes. La barre gestuelle n'occupe que le
+ * bas de cette zone ; les onglets peuvent en recouvrir le haut sans gêner le geste — c'est
+ * ce que font les barres natives. Sur un appareil sans zone (inset nul), un liseré de 4 px
+ * décolle quand même les libellés du bord.
+ */
+const BOTTOM_SAFE_AREA = 'max(calc(env(safe-area-inset-bottom) - 0.75rem), 0.25rem)';
+const BOTTOM_NAV = `calc(${BOTTOM_NAV_HEIGHT} + ${BOTTOM_SAFE_AREA})`;
 
 /**
  * La coquille de l'application : navigation à gauche, contenu à droite.
@@ -404,8 +412,8 @@ export const AppLayout = () => {
         </main>
       </div>
 
-      {/* Barre du bas, mobile seulement : trois entrées, réglables dans Paramètres →
-          Général (`preferences.mobileNav`), le dashboard au centre par défaut. Le tiroir
+      {/* Barre du bas, mobile seulement : de une à cinq entrées, réglables dans
+          Paramètres → Général (`preferences.mobileNav`), le dashboard au centre par défaut. Le tiroir
           garde **tout**, ces trois-là compris — y chercher un écran ne doit jamais donner
           un trou.
 
@@ -413,10 +421,16 @@ export const AppLayout = () => {
           DOM qui tranche, et la barre serait passée par-dessus le voile. */}
       <nav
         className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card lg:hidden"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        style={{ paddingBottom: BOTTOM_SAFE_AREA }}
         aria-label="Accès rapide"
       >
-        <div className="grid grid-cols-3" style={{ height: BOTTOM_NAV_HEIGHT }}>
+        <div
+          className="grid"
+          style={{
+            height: BOTTOM_NAV_HEIGHT,
+            gridTemplateColumns: `repeat(${mobileNav.length}, minmax(0, 1fr))`,
+          }}
+        >
           {mobileNav.map(({ to, label, short, icon: Icon, end }, slot) => (
             <NavLink
               key={`${slot}:${to}`}
