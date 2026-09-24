@@ -457,12 +457,16 @@ export const createDashboardWidgetSchema = z.object({
     .trim()
     .regex(/^[a-z0-9][a-z0-9._-]{0,99}$/i, 'Identifiant de bloc invalide'),
   width: widgetWidth.optional(),
+  title: z.string().max(120).nullable().optional(),
+  icon: z.string().max(40).nullable().optional(),
+  variant: z.string().max(20).nullable().optional(),
 });
 export const updateDashboardWidgetSchema = z.object({
   title: z.string().max(120).nullable().optional(),
   description: z.string().max(300).nullable().optional(),
   icon: z.string().max(40).nullable().optional(),
   width: widgetWidth.optional(),
+  variant: z.string().max(20).nullable().optional(),
 });
 
 export const createPostDraftSchema = z.object({

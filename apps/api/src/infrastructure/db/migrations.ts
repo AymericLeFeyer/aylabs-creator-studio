@@ -1605,6 +1605,27 @@ const migrations: Migration[] = [
       ALTER TABLE videos ADD COLUMN hidden_at TEXT;
     `,
   },
+  {
+    version: 43,
+    name: 'dashboard_widgets_variant',
+    // Les titres de section du dashboard : des lignes comme les autres ("block_id"
+    // "heading.<aleatoire>", donc autant qu'on veut malgre l'unicite), dont le texte vit
+    // dans "title", l'icone dans "icon", et le style dans cette colonne (h1, h2, h3,
+    // label, divider). Generique plutot que "heading_level" : c'est une variante
+    // d'affichage, et un futur bloc pourrait en avoir une.
+    up: `
+      ALTER TABLE dashboard_widgets ADD COLUMN variant TEXT;
+
+      -- L'en-tete fixe de l'ecran devient un titre comme les autres, en tete : modifiable,
+      -- deplacable, supprimable. Rien d'autre ne l'ecrit, il ne revient pas si on l'efface.
+      INSERT INTO dashboard_widgets
+        (id, block_id, title, description, variant, width, sort_order, created_at, updated_at)
+      VALUES
+        (lower(hex(randomblob(16))), 'heading.dashboard', 'Dashboard',
+         'Les blocs que tu as choisis, sur tous tes appareils.', 'h1', 6, 0,
+         strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+    `,
+  },
 ];
 
 /**

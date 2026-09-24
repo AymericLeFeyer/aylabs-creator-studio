@@ -19,6 +19,11 @@ export interface DashboardWidget {
   icon: string | null;
   /** Colonnes occupées sur une grille de 6, au large. */
   width: number;
+  /**
+   * Variante d'affichage, libre pour l'API. Sert aux **titres de section**
+   * (`blockId` `heading.…`) : `h1`, `h2`, `h3`, `label`, `divider`. `null` ailleurs.
+   */
+  variant: string | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -30,6 +35,10 @@ export const WIDGET_MAX_WIDTH = 6;
 export interface CreateDashboardWidgetInput {
   blockId: string;
   width?: number;
+  /** Un titre de section naît avec son texte, son icône et sa variante. */
+  title?: string | null;
+  icon?: string | null;
+  variant?: string | null;
 }
 
 export interface UpdateDashboardWidgetInput {
@@ -37,4 +46,5 @@ export interface UpdateDashboardWidgetInput {
   description?: string | null;
   icon?: string | null;
   width?: number;
+  variant?: string | null;
 }

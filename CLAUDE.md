@@ -1870,8 +1870,8 @@ Discord plutôt qu'une redirection muette.
 
 ### `dashboard` — un tableau de bord composé
 
-`DashboardWidget { id, blockId, title, description, icon, width, sortOrder }` — table
-`dashboard_widgets` (migration 40), `block_id` **unique**. CRUD nu, sans use case
+`DashboardWidget { id, blockId, title, description, icon, width, variant, sortOrder }` — table
+`dashboard_widgets` (migration 40, `variant` en migration 43), `block_id` **unique**. CRUD nu, sans use case
 (`SqliteDashboardWidgetRepository` : `findAll`, `create` — 409 si le bloc y est déjà —,
 `update`, `delete`, `reorder(ids)` qui réécrit `1..n` en transaction).
 
@@ -1919,6 +1919,21 @@ identifiant du registre fait disparaître le bloc des dashboards où il était p
   fois par semaine. Toutes les écritures sont **optimistes** et ne relisent qu'après la
   dernière en vol (même mécanique que `useUpdatePostDraft`).
 - **Sur mobile**, grille de 2 : un bloc de largeur ≥ 3 prend les deux colonnes.
+- **Titres de section** (`SectionHeading`) : des lignes comme les blocs, mais qui ne
+  désignent rien du catalogue — `blockId` `heading.<aléatoire>` (`newHeadingId`, ce qui
+  contourne l'unicité : autant de titres qu'on veut). Texte dans `title`, sous-titre dans
+  `description`, icône dans `icon`, style dans `variant` (`HEADING_VARIANTS` : `h1` grand
+  titre, `h2` section avec filet, `h3` sous-section, `label` intitulé en capitales,
+  `divider` séparateur centré entre deux filets). Ils se glissent comme les blocs, prennent
+  une largeur, et **toujours toute la largeur sur mobile**. En édition, le texte se tape
+  **sur place** (validé à la sortie du champ ou sur Entrée, Échap annule) ; la barre porte
+  en plus le choix du style. « Ajouter un titre » en pose un en fin de dashboard. Un titre
+  vide ne s'affiche pas hors édition.
+- **L'en-tête de l'écran est un titre comme les autres** : la migration 43 a posé
+  `heading.dashboard` (`h1` « Dashboard », sous-titre « Les blocs que tu as choisis… »,
+  `sort_order` 0). `DashboardPage` n'a plus de titre fixe — seulement la barre d'édition.
+  Supprimé, il ne revient pas. L'état vide (« Ton dashboard est vide ») se lit sur
+  l'absence de **blocs**, titres non comptés.
 - **Le sélecteur de la barre de filtres, sur `/`, réunit chaînes YouTube, comptes Instagram
   et TikTok** (`useFilterPicker` → `groups`), **tous cochés par défaut** : sélection vide =
   tout ; décocher part de la liste complète, revenir à la liste complète la remet à vide ;
@@ -2101,9 +2116,9 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/export`                                       | **Clé obligatoire** (`Authorization: Bearer acs_…` ou `?key=`). `{ generatedAt, youtube, instagram, tiktok, amazon, domadoo, discord }`, `null` si désactivée ou rien collecté. `Cache-Control: no-store`                                                |
 | `GET`    | `/api/export/:provider`                             | Une seule source, même clé. 404 si rien à publier                                                                                                                                                                                                        |
 | `GET`    | `/api/dashboard/widgets`                            | Les blocs du dashboard, dans l'ordre. Relu toutes les 15 s par le front |
-| `POST`   | `/api/dashboard/widgets`                            | `{ blockId, width? }` → en fin de dashboard. **409** si le bloc y est déjà |
+| `POST`   | `/api/dashboard/widgets`                            | `{ blockId, width?, title?, icon?, variant? }` → en fin de dashboard. **409** si le bloc y est déjà. Un titre de section est un `blockId` `heading.<aléatoire>` |
 | `POST`   | `/api/dashboard/widgets/reorder`                    | `{ ids }` → réécrit l'ordre `1..n`. **Déclaré avant `/:id`** |
-| `PATCH`  | `/api/dashboard/widgets/:id`                        | `{ title?, description?, icon?, width? }` — `null` rend la valeur d'origine du bloc, `width` 1–6 |
+| `PATCH`  | `/api/dashboard/widgets/:id`                        | `{ title?, description?, icon?, width?, variant? }` — `null` rend la valeur d'origine du bloc, `width` 1–6 |
 | `DELETE` | `/api/dashboard/widgets/:id`                        | Retirer du dashboard (le bloc reste sur sa page) |
 
 Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube ou d'une source de l'export.
@@ -2856,6 +2871,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 43** ajoute `dashboard_widgets.variant` (style des titres de section) et pose le titre `heading.dashboard` en tête : l'en-tête de l'écran devient modifiable.
 - **Migration 42** supprime `videos.is_short` (`DROP COLUMN`, sans reconstruction de table : aucun index ni contrainte dessus) et ajoute `videos.hidden_at`.
 - **Migration 41** remettait `videos.is_short` à `NULL` (classement abandonné depuis, voir 42).
 - **Migration 40** ajoute `dashboard_widgets` (`block_id` unique, `width` 1–6 en `CHECK`). Aucune ligne à la création : le dashboard part vide.

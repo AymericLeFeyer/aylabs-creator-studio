@@ -1,10 +1,13 @@
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Check, LayoutDashboard, Pencil, Plus } from 'lucide-react';
+import { Check, Heading, LayoutDashboard, Pencil, Plus } from 'lucide-react';
 import {
+  useAddWidget,
   useDashboardWidgets,
   useReorderWidgets,
 } from '../../application/dashboard/usecases/useDashboard.ts';
 import type { DashboardWidget } from '../../domain/dashboard/entities/DashboardWidget.ts';
+import { isHeading, newHeadingId } from '../../domain/dashboard/entities/DashboardWidget.ts';
+import { SectionHeading } from '../dashboard/SectionHeading.tsx';
 import { cn } from '../../shared/cn.ts';
 import { AppBarActions } from '../hooks/useAppBar.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -59,6 +62,11 @@ const sameOrder = (widgets: DashboardWidget[], ids: string[]) =>
 export const DashboardPage = () => {
   const { data: widgets = [], isLoading } = useDashboardWidgets();
   const reorder = useReorderWidgets();
+  const add = useAddWidget();
+
+  /** Un titre naît en fin de dashboard, en section pleine largeur, à renommer sur place. */
+  const addHeading = () =>
+    add.mutate({ blockId: newHeadingId(), width: 6, variant: 'h2', title: 'Nouvelle section' });
   const [editing, setEditing] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
 
@@ -155,27 +163,29 @@ export const DashboardPage = () => {
     <div className="space-y-4">
       <AppBarActions>{editButton(true)}</AppBarActions>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="hidden lg:block">
-          <h1 className="text-lg font-semibold">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            {editing
-              ? 'Glisse les blocs par leur poignée, retouche leur texte, leur icône et leur largeur.'
-              : 'Les blocs que tu as choisis, sur tous tes appareils.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {editing && (
+      {/* Plus de titre fixe : l'en-tête de l'écran est un titre de section comme les
+          autres (posé par la migration 43), modifiable, déplaçable, supprimable. Reste la
+          barre d'édition, alignée à droite. */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {editing && (
+          <>
+            <p className="mr-auto hidden text-sm text-muted-foreground lg:block">
+              Glisse les éléments par leur poignée, retouche leur texte, leur icône et leur largeur.
+            </p>
+            <Button size="sm" variant="outline" onClick={addHeading}>
+              <Heading className="h-4 w-4" />
+              Ajouter un titre
+            </Button>
             <Button size="sm" variant="outline" onClick={() => setCatalogOpen(true)}>
               <Plus className="h-4 w-4" />
               Ajouter des blocs
             </Button>
-          )}
-          <span className="hidden lg:inline-flex">{editButton(false)}</span>
-        </div>
+          </>
+        )}
+        <span className="hidden lg:inline-flex">{editButton(false)}</span>
       </div>
 
-      {!isLoading && shown.length === 0 && (
+      {!isLoading && !shown.some((widget) => !isHeading(widget.blockId)) && (
         <Card className="flex flex-col items-center gap-3 px-6 py-16 text-center">
           <span className="rounded-full bg-muted p-3 text-muted-foreground">
             <LayoutDashboard className="h-6 w-6" />
@@ -197,6 +207,39 @@ export const DashboardPage = () => {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         {shown.map((widget) => {
+          if (isHeading(widget.blockId)) {
+            return (
+              <div
+                key={widget.id}
+                data-widget-id={widget.id}
+                // Un titre prend toujours toute la largeur sur mobile : coupé en deux
+                // colonnes, il ne séparerait plus rien.
+                className={cn(
+                  'col-span-2 flex min-w-0 flex-col',
+                  LG_SPAN[widget.width] ?? LG_SPAN[6],
+                  dragId === widget.id && 'opacity-60',
+                )}
+              >
+                {editing && (
+                  <WidgetToolbar
+                    widget={widget}
+                    label="Titre"
+                    heading
+                    onGripDown={(event) => startDrag(widget.id, event)}
+                  />
+                )}
+                <div
+                  className={cn(
+                    editing && 'rounded-b-xl px-2 pb-2 outline-dashed outline-1 outline-primary/50',
+                    dragId === widget.id && 'ring-2 ring-primary',
+                  )}
+                >
+                  <SectionHeading widget={widget} editing={editing} />
+                </div>
+              </div>
+            );
+          }
+
           const block = BLOCKS[widget.blockId];
           // Un bloc retiré du code : ignoré à l'affichage, retirable en édition.
           if (!block && !editing) return null;

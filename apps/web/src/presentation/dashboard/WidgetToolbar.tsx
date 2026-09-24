@@ -1,7 +1,12 @@
 import { useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Columns3, GripVertical, ImageIcon, RotateCcw, Trash2, Type } from 'lucide-react';
+import { Columns3, GripVertical, Heading, ImageIcon, RotateCcw, Trash2, Type } from 'lucide-react';
 import type { DashboardWidget } from '../../domain/dashboard/entities/DashboardWidget.ts';
-import { WIDGET_WIDTHS } from '../../domain/dashboard/entities/DashboardWidget.ts';
+import {
+  HEADING_VARIANTS,
+  HEADING_VARIANT_LABELS,
+  WIDGET_WIDTHS,
+  headingVariant,
+} from '../../domain/dashboard/entities/DashboardWidget.ts';
 import {
   useRemoveWidget,
   useUpdateWidget,
@@ -43,6 +48,8 @@ interface WidgetToolbarProps {
   widget: DashboardWidget;
   /** Nom d'origine du bloc (catalogue), en repli du titre. */
   label: string;
+  /** Un titre de section : on y choisit son style, et son texte se tape sur place. */
+  heading?: boolean;
   onGripDown: (event: ReactPointerEvent<HTMLButtonElement>) => void;
 }
 
@@ -51,7 +58,7 @@ interface WidgetToolbarProps {
  * icône, largeur, retrait. Ce qu'on règle s'applique aussitôt au bloc juste en dessous —
  * les écritures sont optimistes —, si bien qu'on édite le dashboard tel qu'il sera.
  */
-export const WidgetToolbar = ({ widget, label, onGripDown }: WidgetToolbarProps) => {
+export const WidgetToolbar = ({ widget, label, heading, onGripDown }: WidgetToolbarProps) => {
   const update = useUpdateWidget();
   const remove = useRemoveWidget();
   const [textOpen, setTextOpen] = useState(false);
@@ -78,12 +85,37 @@ export const WidgetToolbar = ({ widget, label, onGripDown }: WidgetToolbarProps)
         {label}
       </span>
 
+      {heading && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className={toolButton} disabled={pending} title="Style du titre">
+              <Heading className="h-3.5 w-3.5" />
+              <span>{HEADING_VARIANT_LABELS[headingVariant(widget.variant)]}</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {HEADING_VARIANTS.map((variant) => (
+              <DropdownMenuItem
+                key={variant}
+                onSelect={() => patch({ variant })}
+                className={cn(
+                  headingVariant(widget.variant) === variant &&
+                    'bg-secondary text-secondary-foreground',
+                )}
+              >
+                {HEADING_VARIANT_LABELS[variant]}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
       <button
         type="button"
         className={toolButton}
         onClick={() => setTextOpen(true)}
         disabled={pending}
-        title="Titre et description"
+        title={heading ? 'Titre et sous-titre' : 'Titre et description'}
       >
         <Type className="h-3.5 w-3.5" />
       </button>
@@ -97,7 +129,7 @@ export const WidgetToolbar = ({ widget, label, onGripDown }: WidgetToolbarProps)
         <DropdownMenuContent align="end" className="w-64">
           <DropdownMenuItem onSelect={() => patch({ icon: null })}>
             <RotateCcw className="h-4 w-4" />
-            Icône d'origine
+            {heading ? 'Sans icône' : "Icône d'origine"}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <div className="grid grid-cols-7 gap-0.5 p-1">
@@ -156,7 +188,7 @@ export const WidgetToolbar = ({ widget, label, onGripDown }: WidgetToolbarProps)
         className={cn(toolButton, 'hover:text-destructive')}
         onClick={() => remove.mutate(widget.id)}
         disabled={pending}
-        title="Retirer du dashboard (le bloc reste sur sa page)"
+        title={heading ? 'Supprimer ce titre' : 'Retirer du dashboard (le bloc reste sur sa page)'}
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>
@@ -165,6 +197,7 @@ export const WidgetToolbar = ({ widget, label, onGripDown }: WidgetToolbarProps)
         <WidgetTextDialog
           widget={widget}
           label={label}
+          heading={heading ?? false}
           onClose={() => setTextOpen(false)}
           onSave={(input) => {
             patch(input);
@@ -184,11 +217,13 @@ export const WidgetToolbar = ({ widget, label, onGripDown }: WidgetToolbarProps)
 const WidgetTextDialog = ({
   widget,
   label,
+  heading,
   onClose,
   onSave,
 }: {
   widget: DashboardWidget;
   label: string;
+  heading: boolean;
   onClose: () => void;
   onSave: (input: { title: string | null; description: string | null }) => void;
 }) => {
@@ -200,10 +235,11 @@ const WidgetTextDialog = ({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Texte du bloc</DialogTitle>
+          <DialogTitle>{heading ? 'Texte du titre' : 'Texte du bloc'}</DialogTitle>
           <DialogDescription>
-            Ne change que le dashboard : sur sa page, « {label} » garde son texte. Laisse un champ
-            vide pour reprendre celui d'origine.
+            {heading
+              ? 'Le sous-titre s’affiche sous le titre, en plus petit. Laisse-le vide pour ne rien afficher.'
+              : `Ne change que le dashboard : sur sa page, « ${label} » garde son texte. Laisse un champ vide pour reprendre celui d'origine.`}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -225,18 +261,18 @@ const WidgetTextDialog = ({
             <Input
               id="widget-title"
               value={title}
-              placeholder={label}
+              placeholder={heading ? 'Titre de la section' : label}
               maxLength={120}
               onChange={(event) => setTitle(event.target.value)}
               autoFocus
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="widget-description">Description</Label>
+            <Label htmlFor="widget-description">{heading ? 'Sous-titre' : 'Description'}</Label>
             <Input
               id="widget-description"
               value={description}
-              placeholder="Celle d'origine"
+              placeholder={heading ? 'Aucun' : "Celle d'origine"}
               maxLength={300}
               disabled={hideDescription}
               onChange={(event) => setDescription(event.target.value)}

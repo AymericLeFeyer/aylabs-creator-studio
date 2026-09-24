@@ -1,13 +1,14 @@
 import { request } from '../../http/httpClient.ts';
 import type {
   DashboardWidget,
+  DashboardWidgetCreate,
   DashboardWidgetUpdate,
 } from '../../../domain/dashboard/entities/DashboardWidget.ts';
 
 export const dashboardApi = {
   list: () => request<DashboardWidget[]>('/api/dashboard/widgets'),
 
-  create: (input: { blockId: string; width?: number }) =>
+  create: (input: DashboardWidgetCreate) =>
     request<DashboardWidget>('/api/dashboard/widgets', { method: 'POST', body: input }),
 
   update: (id: string, input: DashboardWidgetUpdate) =>

@@ -15,6 +15,7 @@ interface WidgetRow {
   description: string | null;
   icon: string | null;
   width: number;
+  variant: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -27,6 +28,7 @@ const toDomain = (row: WidgetRow): DashboardWidget => ({
   description: row.description,
   icon: row.icon,
   width: row.width,
+  variant: row.variant,
   sortOrder: row.sort_order,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -67,10 +69,21 @@ export class SqliteDashboardWidgetRepository implements DashboardWidgetRepositor
       .get() as { next: number };
     this.db
       .prepare(
-        `INSERT INTO dashboard_widgets (id, block_id, width, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO dashboard_widgets
+           (id, block_id, title, icon, variant, width, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, input.blockId, input.width ?? 1, next, now, now);
+      .run(
+        id,
+        input.blockId,
+        input.title ?? null,
+        input.icon ?? null,
+        input.variant ?? null,
+        input.width ?? 1,
+        next,
+        now,
+        now,
+      );
     return this.findById(id);
   }
 
@@ -82,7 +95,7 @@ export class SqliteDashboardWidgetRepository implements DashboardWidgetRepositor
     this.db
       .prepare(
         `UPDATE dashboard_widgets
-            SET title = ?, description = ?, icon = ?, width = ?, updated_at = ?
+            SET title = ?, description = ?, icon = ?, width = ?, variant = ?, updated_at = ?
           WHERE id = ?`,
       )
       .run(
@@ -90,6 +103,7 @@ export class SqliteDashboardWidgetRepository implements DashboardWidgetRepositor
         pick(input.description, current.description),
         pick(input.icon, current.icon),
         pick(input.width, current.width),
+        pick(input.variant, current.variant),
         new Date().toISOString(),
         id,
       );

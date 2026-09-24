@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { dashboardApi } from '../../../infrastructure/dashboard/api/dashboardApi.ts';
 import type {
   DashboardWidget,
+  DashboardWidgetCreate,
   DashboardWidgetUpdate,
 } from '../../../domain/dashboard/entities/DashboardWidget.ts';
 import { queryKeys } from '../../queryKeys.ts';
@@ -60,17 +61,18 @@ const useWidgetMutation = <TVariables, TData>(
 
 export const useAddWidget = () =>
   useWidgetMutation(
-    (input: { blockId: string; width?: number }) => dashboardApi.create(input),
+    (input: DashboardWidgetCreate) => dashboardApi.create(input),
     (widgets, input) => [
       ...widgets,
       {
         // Identifiant provisoire : remplacé à la relecture, jamais envoyé à l'API.
         id: `pending:${input.blockId}`,
         blockId: input.blockId,
-        title: null,
+        title: input.title ?? null,
         description: null,
-        icon: null,
+        icon: input.icon ?? null,
         width: input.width ?? 1,
+        variant: input.variant ?? null,
         sortOrder: widgets.length + 1,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
