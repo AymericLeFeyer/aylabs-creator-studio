@@ -196,6 +196,7 @@ export const BLOCKS: Record<string, BlockDefinition> = {
   // --- TikTok ---
   'tiktok.followers': metric('Abonnés TikTok', 'TikTok', () => <social.TikTokFollowersCard />),
   'tiktok.hearts': metric('Coeurs', 'TikTok', () => <social.TikTokHeartsCard />),
+  'tiktok.videos': metric('Publications TikTok', 'TikTok', () => <social.TikTokVideosCard />),
   'tiktok.latest': panel('Dernières vidéos TikTok', 'TikTok', FULL, () => (
     <social.TikTokLatestVideos />
   )),

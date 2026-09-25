@@ -1,4 +1,4 @@
-import { Heart, Music2, Users, Wifi } from 'lucide-react';
+import { Clapperboard, Heart, Music2, Users, Wifi } from 'lucide-react';
 import {
   useDiscordHistory,
   useIntegrations,
@@ -336,6 +336,46 @@ export const TikTokHeartsCard = () => {
               value: formatTikTokCount(account.latestSnapshot?.heartCount ?? null),
             }))}
             note="Total public du profil (toutes vidéos), pas le gain de la période."
+          />
+        ) : undefined
+      }
+    />
+  );
+};
+
+/**
+ * Le total vient du profil (`videoCount`, vidéos privées exclues) : c'est le seul chiffre
+ * exact, `tiktok_videos` n'archivant que les dix dernières à chaque relevé. La période,
+ * elle, se compte dans ces vidéos archivées — juste tant qu'on publie moins de dix vidéos
+ * entre deux relevés quotidiens, et seulement depuis la première collecte.
+ */
+export const TikTokVideosCard = () => {
+  const { data } = useTikTokData();
+  const counts = data?.accounts
+    .map((account) => account.latestSnapshot?.videoCount)
+    .filter((count): count is number => count != null);
+  const total = counts?.length ? counts.reduce((sum, count) => sum + count, 0) : null;
+  const period = data?.totals.videos ?? 0;
+  return (
+    <StatCard
+      label="Publications TikTok"
+      value={formatTikTokCount(total)}
+      hint={`${period > 0 ? '+' : ''}${period} publiée${period > 1 ? 's' : ''} sur la période`}
+      icon={<Clapperboard className="h-4 w-4" />}
+      details={
+        data ? (
+          <StatDetails
+            title={data.accounts.length > 1 ? 'Par compte, au dernier relevé' : 'Au dernier relevé'}
+            rows={data.accounts.map((account) => ({
+              key: account.id,
+              label: `@${account.username}`,
+              color: account.color,
+              sub: account.latestSnapshot
+                ? `relevé du ${formatDate(account.latestSnapshot.date)}`
+                : 'aucun relevé',
+              value: formatTikTokCount(account.latestSnapshot?.videoCount ?? null),
+            }))}
+            note={`${periodLabel(data)} Total public du profil, vidéos privées exclues. Les publications de la période sont comptées depuis la première collecte.`}
           />
         ) : undefined
       }

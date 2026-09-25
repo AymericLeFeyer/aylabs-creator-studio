@@ -14,6 +14,19 @@ export interface AmazonCredentials {
 }
 
 /**
+ * « l•••••r@gmail.com, 22 caractères » — assez pour reconnaître une adresse ou y voir des
+ * guillemets parasites, sans l'écrire en clair dans le dernier statut de la source.
+ */
+const describeLogin = (login: string): string => {
+  const at = login.lastIndexOf('@');
+  const local = at > 0 ? login.slice(0, at) : login;
+  const masked =
+    local.length <= 2 ? local : `${local[0]}${'•'.repeat(local.length - 2)}${local.at(-1)}`;
+  const quoted = /^["'`]|["'`]$/.test(login) ? ', entouré de guillemets' : '';
+  return `« ${masked}${at > 0 ? login.slice(at) : ''} », ${login.length} caractères${quoted}`;
+};
+
+/**
  * Le tableau de bord d'Amazon Partenaires, lu dans un navigateur.
  *
  * Amazon n'expose **aucune API** pour les gains d'un compte Partenaires (PA-API ne parle
@@ -55,11 +68,26 @@ export class AmazonScraper {
       await email.fill(credentials.login);
       await email.press('Enter');
 
+      // `/ax/claim/intent` = « Cet e-mail est nouveau pour nous » : Amazon ne connaît pas
+      // l'identifiant envoyé et propose d'ouvrir un compte. L'erreur montre ce qui a été
+      // réellement envoyé (masqué) : des guillemets recopiés dans une variable
+      // d'environnement ou une autre adresse que celle du compte Partenaires ne se voient
+      // pas autrement.
+      await Promise.race([
+        page.locator('#ap_password').waitFor({ state: 'visible', timeout: 20_000 }),
+        page.waitForURL(/\/ax\/claim\/intent/, { timeout: 20_000 }),
+      ]).catch(() => undefined);
+      if (page.url().includes('/ax/claim/intent')) {
+        throw upstream(
+          `Amazon ne connaît pas l’identifiant envoyé (${describeLogin(credentials.login)}) et propose de créer un compte. Vérifie AMAZON_LOGIN : l’adresse du compte Partenaires, sans guillemets.`,
+        );
+      }
+
       // `#ap_password` et non `input[name=password]` : la page de l'e-mail porte déjà un
       // champ mot de passe caché (indice d'autoremplissage).
       const password = await visible(
         '#ap_password',
-        'page du mot de passe introuvable — adresse inconnue d’Amazon, ou captcha',
+        `page du mot de passe introuvable pour ${describeLogin(credentials.login)} — adresse refusée, ou captcha`,
       );
       await password.fill(credentials.password);
       await password.press('Enter');

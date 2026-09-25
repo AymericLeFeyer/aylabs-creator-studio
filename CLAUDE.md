@@ -1554,7 +1554,9 @@ les expose pas publiquement), juste `videos` (FLUX, compté par bucket) et `foll
 
 Écran `/tiktok` (nav conditionnelle, voir `withTikTok` dans `presentation/navigation.ts` —
 n'apparaît que si un profil est configuré, même règle que `withDiscord`) : cartes Abonnés
-(+ gain), Coeurs, Vidéos ; `TikTokChart` (onglets Abonnés / Vidéos, même schéma que
+(+ gain), Coeurs, **Publications** (bloc `tiktok.videos`, `TikTokVideosCard` : total = somme des
+`videoCount` du dernier relevé — le seul chiffre exact, `tiktok_videos` n'archivant que les dix
+dernières ; « +N sur la période » compté dans `tiktok_videos`, donc depuis la première collecte) ; `TikTokChart` (onglets Abonnés / Vidéos, même schéma que
 `DomadooChart`) ; **dernières vidéos** en carrousel (`LatestTikTokCard`, bloc `tiktok.latest` : les 10 dernières **hors période** — `TikTokOverview.latestVideos` —, vues/j'aime/commentaires/partages du dernier relevé, « — » tant que `statsAt` est `null`), même `LatestCarousel` que YouTube et Instagram. Paramètres → TikTok
 (`TikTokSettingsPage`) reprend `ProviderCredentialsCard provider="tiktok"` et la liste des
 comptes (archiver/supprimer) — exactement l'ancien `InstagramSettingsPage` d'avant l'API
@@ -2237,7 +2239,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/`                 | `DashboardPage`        | **Composé et vide par défaut** : les blocs posés depuis les autres écrans (icône « + » au survol), en grille de 6. Crayon = édition WYSIWYG (glisser, texte, icône, largeur, retrait), catalogue complet. Sélecteur : chaînes YouTube + comptes Instagram + TikTok, tous cochés par défaut. Voir le domaine `dashboard` |
 | `/youtube`          | `ContentPage`          | Titré **« YouTube »**. 3 cartes **hors période** (abonnés, vues et vidéos au total, dernier relevé de chaque chaîne), puis 6 cartes d'audience, graphique d'audience, classement + tableau de performance par vidéo — que de la mesure, sur la période. Les **dix dernières sorties** se masquent une à une (œil barré), la liste des masquées est derrière « Masquées »                                                                                                                        |
 | `/instagram`        | `InstagramPage`        | **API Graph**, toujours au jour : alerte de jeton, chiffres clés (Stories, Abonnés, Publications, Portée, Interactions), **dernières publications** (`LatestPostCard` : les 10 dernières hors période — `InstagramOverview.latestMedia` —, aux chevrons ou au glissement, avec vues/portée/j'aime/commentaires/partages/enregistrements), courbes d'abonnés et de portée liées, graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications (vues/portée/j'aime/commentaires/enregistrements au clic)                                                                                |
-| `/tiktok`           | `TikTokPage`            | **Profil public seulement**, toujours au jour : cartes Abonnés/Coeurs, **dernières vidéos** (carrousel hors période avec leurs stats, comme Instagram), graphique en onglets (Abonnés, Vidéos). N'apparaît dans le menu que si un profil est configuré (Paramètres → Audience → TikTok)                                                                                                                                                |
+| `/tiktok`           | `TikTokPage`            | **Profil public seulement**, toujours au jour : cartes Abonnés/Coeurs/Publications, **dernières vidéos** (carrousel hors période avec leurs stats, comme Instagram), graphique en onglets (Abonnés, Vidéos). N'apparaît dans le menu que si un profil est configuré (Paramètres → Audience → TikTok)                                                                                                                                                |
 | `/discord`          | `DiscordPage`          | Membres, membres en ligne (le nom du serveur n'est plus qu'en sous-titre), dernier relevé, bouton Collecter. **Aucune série** : Discord ne renvoie que des compteurs courants. N'apparaît dans le menu que si un serveur est configuré (Paramètres → Audience → Discord)                                                                                                                                       |
 | `/achievements`     | `AchievementsPage`     | Derniers paliers, prochains paliers, records (trois blocs), puis une courbe par chaîne/compte et par métrique, en onglets par plateforme (`?plateforme=`). Hors période, sans barre de filtres |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
@@ -3803,6 +3805,10 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   chemin et le titre de la page : c'est ce qui distingue un captcha d'un mot de passe refusé
   ou d'un nouveau remaniement. Ne jamais viser `input[name=password]` : la page de l'e-mail
   porte déjà un champ mot de passe caché (indice d'autoremplissage).
+  **`/ax/claim/intent` (« Cet e-mail est nouveau pour nous ») veut dire qu'Amazon ne connaît
+  pas l'identifiant envoyé** : ce n'est ni un captcha ni un blocage. L'erreur affiche
+  l'identifiant masqué (`describeLogin` : initiale, domaine, longueur, guillemets) — des
+  guillemets recopiés dans une variable Portainer y sont envoyés tels quels.
 - **Jamais d'espace insécable littéral dans une source.** `no-irregular-whitespace` le
   refuse et il est invisible à la relecture — et un outil d'édition qui convertit ` `
   en caractère réel le réintroduit sans prévenir. `browser.ts` construit sa regex par

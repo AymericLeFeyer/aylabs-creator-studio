@@ -103,9 +103,10 @@ export const TikTokPage = () => {
         </Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <Block id="tiktok.followers" />
         <Block id="tiktok.hearts" />
+        <Block id="tiktok.videos" />
       </div>
 
       <Block id="tiktok.latest" />
