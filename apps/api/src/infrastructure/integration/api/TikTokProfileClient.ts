@@ -43,16 +43,55 @@ interface UserDetailScope {
       heart?: number;
       videoCount?: number;
     };
-    // Présent sur certaines réponses, vide sur d'autres — la plupart des profils testés
-    // ne le portent pas : la liste des vidéos vient alors des lectures déjà archivées,
-    // rafraîchies une à une, comme le repli d'Instagram sans jeton.
+    // Toujours vide en pratique (vérifié le 2026-09-25, y compris sur des comptes à plus
+    // de mille vidéos) : la liste vient du widget intégré, voir `fetchRecentVideos`.
     itemList?: UniversalVideoItem[];
   };
 }
 
 interface UniversalData {
-  __DEFAULT_SCOPE__?: { 'webapp.user-detail'?: UserDetailScope };
+  __DEFAULT_SCOPE__?: {
+    'webapp.user-detail'?: UserDetailScope;
+    'webapp.video-detail'?: { statusCode?: number; itemInfo?: { itemStruct?: UniversalVideoItem } };
+  };
 }
+
+/** Une vidéo telle que le widget intégré la rend : ni date, ni j'aime, mais les vues. */
+interface EmbedVideo {
+  id?: string;
+  desc?: string;
+  coverUrl?: string;
+  originCoverUrl?: string;
+  playCount?: number;
+  privateItem?: boolean;
+}
+
+interface EmbedState {
+  source?: { data?: Record<string, { videoList?: EmbedVideo[] }> };
+}
+
+const UNIVERSAL_DATA = /<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/i;
+const EMBED_STATE = /<script id="__FRONTITY_CONNECT_STATE__"[^>]*>([\s\S]*?)<\/script>/i;
+
+/**
+ * L'instant de publication **encodé dans l'identifiant** : les 32 bits de poids fort d'un
+ * identifiant de vidéo TikTok sont un horodatage Unix en secondes. C'est le repli quand la
+ * page de la vidéo ne répond pas — le widget, lui, ne donne aucune date.
+ */
+const postedAtFromId = (id: string): string | null => {
+  try {
+    const seconds = Number(BigInt(id) >> 32n);
+    return seconds > 1_400_000_000 ? new Date(seconds * 1000).toISOString() : null;
+  } catch {
+    return null;
+  }
+};
+
+const HEADERS = {
+  'User-Agent': DESKTOP_UA,
+  'Accept-Language': 'en-US,en;q=0.9',
+  Accept: 'text/html,application/xhtml+xml',
+};
 
 interface UniversalVideoItem {
   id?: string;
@@ -82,11 +121,7 @@ export class TikTokProfileClient {
     const response = await fetch(
       `https://www.tiktok.com/@${encodeURIComponent(username)}?lang=en`,
       {
-        headers: {
-          'User-Agent': DESKTOP_UA,
-          'Accept-Language': 'en-US,en;q=0.9',
-          Accept: 'text/html,application/xhtml+xml',
-        },
+        headers: HEADERS,
         signal: AbortSignal.timeout(15_000),
       },
     );
@@ -94,9 +129,7 @@ export class TikTokProfileClient {
       throw upstream(`Profil TikTok @${username} illisible (réponse ${response.status})`);
 
     const html = await response.text();
-    const match = /<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/i.exec(
-      html,
-    );
+    const match = UNIVERSAL_DATA.exec(html);
     if (!match) {
       throw upstream(
         `Compteurs absents de la page TikTok @${username} : le rendu du site a changé de forme.`,
@@ -115,14 +148,15 @@ export class TikTokProfileClient {
       );
     }
 
-    const recentVideos: TikTokPublicVideo[] = (info.itemList ?? []).flatMap(
+    const uniqueId = info.user?.uniqueId ?? username;
+    const listed: TikTokPublicVideo[] = (info.itemList ?? []).flatMap(
       (item): TikTokPublicVideo[] => {
         if (!item.id || !item.createTime) return [];
         return [
           {
             id: item.id,
             description: item.desc || null,
-            permalink: `https://www.tiktok.com/@${info.user?.uniqueId ?? username}/video/${item.id}`,
+            permalink: `https://www.tiktok.com/@${uniqueId}/video/${item.id}`,
             thumbnailUrl: item.video?.dynamicCover ?? item.video?.cover ?? null,
             postedAt: new Date(item.createTime * 1000).toISOString(),
             views: item.stats?.playCount ?? null,
@@ -134,16 +168,89 @@ export class TikTokProfileClient {
       },
     );
 
+    // `itemList` est vide en pratique : le widget intégré prend le relais. Son échec ne
+    // fait jamais échouer le relevé du compte, les compteurs du profil sont déjà là.
+    const recentVideos = listed.length > 0 ? listed : await this.fetchRecentVideos(uniqueId);
+
     return {
-      username: info.user?.uniqueId ?? username,
+      username: uniqueId,
       fullName: info.user?.nickname || null,
       profilePicture: info.user?.avatarLarger ?? info.user?.avatarMedium ?? null,
       followers: info.stats?.followerCount ?? null,
       following: info.stats?.followingCount ?? null,
       hearts: info.stats?.heartCount ?? info.stats?.heart ?? null,
+      videoCount: info.stats?.videoCount ?? null,
       source: 'json',
       approximate: false,
       recentVideos,
     };
+  }
+
+  /**
+   * Les 10 dernières vidéos, par le **widget « profil intégré »** (`/embed/@pseudo`) : la
+   * seule page publique qui les liste sans signature ni navigateur — l'API interne
+   * (`/api/post/item_list`) répond vide sans jeton signé, et `itemList` du profil aussi.
+   *
+   * Le widget ne donne que l'identifiant, la description, la miniature et les vues. Chaque
+   * vidéo est donc complétée par **sa propre page** (j'aime, commentaires, partages, heure
+   * exacte). Dix lectures une fois par jour : c'est le rythme de la collecte TikTok
+   * (`shouldSkip`). Une page qui échoue garde les vues du widget et la date tirée de
+   * l'identifiant ; un compteur absent ne remplace jamais un chiffre connu
+   * (`COALESCE` de `upsertVideo`).
+   */
+  private async fetchRecentVideos(username: string): Promise<TikTokPublicVideo[]> {
+    let listed: EmbedVideo[];
+    try {
+      const response = await fetch(
+        `https://www.tiktok.com/embed/@${encodeURIComponent(username)}`,
+        { headers: HEADERS, signal: AbortSignal.timeout(15_000) },
+      );
+      const match = EMBED_STATE.exec(await response.text());
+      const state = match ? (JSON.parse(match[1]!) as EmbedState) : null;
+      listed = state?.source?.data?.[`/embed/@${username}`]?.videoList ?? [];
+    } catch (error) {
+      console.warn(`[tiktok] widget @${username} illisible :`, (error as Error).message);
+      return [];
+    }
+
+    const videos: TikTokPublicVideo[] = [];
+    for (const item of listed) {
+      if (!item.id || item.privateItem) continue;
+      const detail = await this.fetchVideoDetail(username, item.id);
+      const postedAt = detail?.createTime
+        ? new Date(detail.createTime * 1000).toISOString()
+        : postedAtFromId(item.id);
+      if (!postedAt) continue;
+      videos.push({
+        id: item.id,
+        description: detail?.desc || item.desc || null,
+        permalink: `https://www.tiktok.com/@${username}/video/${item.id}`,
+        thumbnailUrl: item.coverUrl ?? item.originCoverUrl ?? null,
+        postedAt,
+        views: detail?.stats?.playCount ?? item.playCount ?? null,
+        likes: detail?.stats?.diggCount ?? null,
+        comments: detail?.stats?.commentCount ?? null,
+        shares: detail?.stats?.shareCount ?? null,
+      });
+    }
+    return videos;
+  }
+
+  /** La page d'une vidéo : ses compteurs et son heure de publication. `null` si illisible. */
+  private async fetchVideoDetail(username: string, id: string): Promise<UniversalVideoItem | null> {
+    try {
+      const response = await fetch(
+        `https://www.tiktok.com/@${encodeURIComponent(username)}/video/${id}?lang=en`,
+        { headers: HEADERS, signal: AbortSignal.timeout(15_000) },
+      );
+      const match = UNIVERSAL_DATA.exec(await response.text());
+      if (!match) return null;
+      const detail = (JSON.parse(match[1]!) as UniversalData).__DEFAULT_SCOPE__?.[
+        'webapp.video-detail'
+      ];
+      return (detail?.statusCode ?? 0) === 0 ? (detail?.itemInfo?.itemStruct ?? null) : null;
+    } catch {
+      return null;
+    }
   }
 }

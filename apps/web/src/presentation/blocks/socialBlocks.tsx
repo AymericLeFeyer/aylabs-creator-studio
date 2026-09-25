@@ -347,7 +347,15 @@ export const TikTokHeartsCard = () => {
 export const TikTokLatestVideos = () => {
   const { data } = useTikTokData();
   if (!data) return <BlockSkeleton className="h-28" />;
-  if (data.latestVideos.length === 0) return null;
+  // Pas de retour à vide muet : un bloc qui disparaît se lit comme un bloc qui n'existe pas.
+  if (data.latestVideos.length === 0) {
+    return data.accounts.length === 0 ? null : (
+      <Card className="p-4 text-sm text-muted-foreground">
+        Aucune vidéo TikTok relevée pour l’instant : les dix dernières arrivent avec la prochaine
+        collecte du profil (une par jour, ou « Collecter » en haut de l’écran).
+      </Card>
+    );
+  }
   return <LatestTikTokCard videos={data.latestVideos} accounts={data.accounts} />;
 };
 

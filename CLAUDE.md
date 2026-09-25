@@ -1724,14 +1724,21 @@ NOCASE` — TikTok n'a pas d'identifiant numérique lisible depuis la page publi
 le relevé du jour dans `tiktok_account_snapshots`. D'où la courbe d'abonnés de `/tiktok`
 et l'export, sans rien de plus.
 
-**Les vidéos récentes** (`TikTokPublicProfile.recentVideos`, depuis `userInfo.itemList` du
-même JSON) sont archivées dans `tiktok_videos` avec leurs compteurs du moment
-(`upsertVideo` écrit vidéo et statistiques en un seul bloc — pas de second appel
-d'insights à orchestrer comme sur Instagram). **`itemList` est présent sur certains
-profils, vide sur la plupart** des comptes testés : son absence ne fait pas échouer le
-relevé, elle laisse seulement `tiktok_videos` sans nouvelle ligne ce jour-là. Faute de
-total de vidéos fiable, `TikTokSnapshot.videoCount` retombe sur le nombre de vidéos
-**listées** (`recentVideos.length`, ou `null` si aucune) — un plancher, pas un total exact.
+**Les vidéos récentes** (`TikTokPublicProfile.recentVideos`) sont archivées dans
+`tiktok_videos` avec leurs compteurs du moment (`upsertVideo`, vidéo et statistiques en un
+seul bloc ; `COALESCE` : un compteur absent n'efface jamais un chiffre connu).
+**`userInfo.itemList` est toujours vide** (vérifié le 2026-09-25, y compris sur des comptes
+à plus de mille vidéos), et l'API interne `/api/post/item_list` répond vide sans jeton
+signé. La liste vient donc du **widget « profil intégré »** (`/embed/@pseudo`, bloc
+`__FRONTITY_CONNECT_STATE__` → `videoList`) : les 10 dernières, avec identifiant,
+description, miniature et vues. Chacune est complétée par **sa propre page**
+(`webapp.video-detail` : j'aime, commentaires, partages, heure exacte) — dix lectures,
+une fois par jour. Une page qui échoue garde les vues du widget et la date **tirée de
+l'identifiant** (ses 32 bits de poids fort sont un horodatage Unix, `postedAtFromId`).
+Le widget en panne ne fait pas échouer le relevé du compte. Les miniatures sont des URL
+signées qui expirent en quelques jours : la collecte quotidienne les renouvelle pour les
+dix dernières, les seules affichées. `TikTokSnapshot.videoCount` vient de
+`stats.videoCount` du profil, le vrai total (vidéos privées exclues).
 
 L'instantané du relevé garde `source` (toujours `'json'`) et `videosListed` pour le
 diagnostic (aucun écran ne les lit). L'instantané `tiktok` ne garde qu'un résumé et les

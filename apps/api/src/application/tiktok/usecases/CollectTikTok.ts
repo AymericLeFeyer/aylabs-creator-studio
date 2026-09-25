@@ -47,7 +47,7 @@ export class CollectTikTok implements TikTokProfileSink {
       followersCount: profile.followers,
       followingCount: profile.following,
       heartCount: profile.hearts,
-      videoCount: profile.recentVideos.length > 0 ? profile.recentVideos.length : null,
+      videoCount: profile.videoCount,
     });
 
     for (const video of profile.recentVideos) {

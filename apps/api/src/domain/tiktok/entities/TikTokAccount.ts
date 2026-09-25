@@ -84,6 +84,8 @@ export interface TikTokPublicProfile {
   followers: number | null;
   following: number | null;
   hearts: number | null;
+  /** Le total annoncé par le profil (`stats.videoCount`), vidéos privées exclues. */
+  videoCount: number | null;
   source: 'json';
   approximate: boolean;
   recentVideos: TikTokPublicVideo[];
