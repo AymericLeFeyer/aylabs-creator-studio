@@ -35,9 +35,13 @@ export class ManageExternalApps {
 
   update(id: string, input: UpdateExternalAppInput): ExternalAppView {
     const existing = this.repo.findById(id);
-    // Vider l'adresse d'une app `link` la rendrait impossible à ouvrir.
-    if (existing?.kind === 'link' && input.url === null) {
-      throw badRequest('L’adresse est obligatoire pour cette application.');
+    // Vider les deux adresses d'une app `link` la rendrait impossible à ouvrir.
+    if (existing?.kind === 'link') {
+      const url = input.url === undefined ? existing.url : input.url;
+      const localUrl = input.localUrl === undefined ? existing.localUrl : input.localUrl;
+      if (!url && !localUrl) {
+        throw badRequest('Une adresse, externe ou locale, est obligatoire pour cette application.');
+      }
     }
     return this.toView(this.repo.update(id, input), this.todoBaseUrl());
   }

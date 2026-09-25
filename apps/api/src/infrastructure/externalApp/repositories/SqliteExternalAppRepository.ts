@@ -16,6 +16,7 @@ interface Row {
   kind: ExternalAppKind;
   name: string;
   url: string | null;
+  local_url: string | null;
   icon: ExternalAppIcon;
   section: ExternalAppSection;
   enabled: number;
@@ -29,6 +30,7 @@ const toDomain = (row: Row): ExternalApp => ({
   kind: row.kind,
   name: row.name,
   url: row.url,
+  localUrl: row.local_url,
   icon: row.icon,
   section: row.section,
   enabled: row.enabled === 1,
@@ -72,14 +74,15 @@ export class SqliteExternalAppRepository implements ExternalAppRepository {
     this.db
       .prepare(
         `INSERT INTO external_apps
-           (id, kind, name, url, icon, section, enabled, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, kind, name, url, local_url, icon, section, enabled, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.kind,
         input.name,
         input.url ?? null,
+        input.localUrl ?? null,
         input.icon ?? (input.kind === 'todo' ? 'list-checks' : 'app-window'),
         input.section ?? 'production',
         input.enabled === false ? 0 : 1,
@@ -104,6 +107,7 @@ export class SqliteExternalAppRepository implements ExternalAppRepository {
 
     if (input.name !== undefined) set('name', input.name);
     if (input.url !== undefined) set('url', input.url);
+    if (input.localUrl !== undefined) set('local_url', input.localUrl);
     if (input.icon !== undefined) set('icon', input.icon);
     if (input.section !== undefined) set('section', input.section);
     if (input.enabled !== undefined) set('enabled', input.enabled ? 1 : 0);

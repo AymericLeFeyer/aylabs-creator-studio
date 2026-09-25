@@ -1665,6 +1665,56 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 46,
+    name: 'amazon_snapshots',
+    // L'historique d'Amazon Partenaires : un releve par jour, comme "domadoo_snapshots",
+    // pour que Affiliations -> Amazon navigue dans le passe ("integration_snapshots" ne
+    // garde que le dernier). Difference de nature avec Domadoo : ce sont des cumuls DU
+    // MOIS EN COURS, remis a zero le 1er par Amazon - le dernier releve d'un mois vaut son
+    // total. Montants en CENTIMES. Le taux de conversion n'est pas stocke : c'est un ratio,
+    // recalcule sur n'importe quelle periode.
+    //
+    // Le dernier releve deja collecte est repris, pour que l'ecran ne parte pas vide.
+    up: `
+      CREATE TABLE amazon_snapshots (
+        date                   TEXT PRIMARY KEY,
+        clicks                 INTEGER,
+        items_ordered          INTEGER,
+        items_shipped          INTEGER,
+        items_returned         INTEGER,
+        shipped_revenue_cents  INTEGER,
+        earnings_cents         INTEGER,
+        waiting_payments_cents INTEGER,
+        created_at             TEXT NOT NULL
+      );
+
+      INSERT INTO amazon_snapshots
+        (date, clicks, items_ordered, items_shipped, items_returned, shipped_revenue_cents,
+         earnings_cents, waiting_payments_cents, created_at)
+      SELECT substr(fetched_at, 1, 10),
+             json_extract(data, '$.thisMonth.clicks'),
+             json_extract(data, '$.thisMonth.itemsOrdered'),
+             json_extract(data, '$.thisMonth.itemsShipped'),
+             json_extract(data, '$.thisMonth.itemsReturned'),
+             CAST(round(json_extract(data, '$.thisMonth.sumItemsShipped') * 100) AS INTEGER),
+             CAST(round(json_extract(data, '$.thisMonth.earnings') * 100) AS INTEGER),
+             CAST(round(json_extract(data, '$.waitingPayments') * 100) AS INTEGER),
+             strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      FROM integration_snapshots
+      WHERE key = 'amazon' AND data IS NOT NULL AND fetched_at IS NOT NULL;
+    `,
+  },
+  {
+    version: 47,
+    name: 'external_apps_local_url',
+    // L'adresse d'une app sur le reseau local, a cote de "url" (l'adresse externe). Le
+    // navigateur choisit : ouvert par une IP privee, il prend la locale ; par un nom de
+    // domaine, l'externe. Facultative : une app n'a souvent qu'une seule adresse.
+    up: `
+      ALTER TABLE external_apps ADD COLUMN local_url TEXT;
+    `,
+  },
 ];
 
 /**

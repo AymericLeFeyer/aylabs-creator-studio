@@ -71,6 +71,8 @@ export const queryKeys = {
   exportKeys: () => ['exportKeys'] as const,
   /** Affiliations → Domadoo : l'historique reconstruit depuis la collecte horaire. */
   domadooOverview: (params: unknown) => ['domadooOverview', params] as const,
+  /** Affiliations → Amazon : l'historique reconstruit depuis la collecte horaire. */
+  amazonOverview: (params: unknown) => ['amazonOverview', params] as const,
   /** Discord : un point par collecte, sans reconstruction. */
   discordHistory: (params: unknown) => ['discordHistory', params] as const,
 

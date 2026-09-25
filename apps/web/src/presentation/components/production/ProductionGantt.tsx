@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronUp, DollarSign, Package } from 'lucide-react';
 import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from 'date-fns';
@@ -45,6 +45,10 @@ const ZOOM: Record<Zoom, { label: string; before: number; after: number; cell: n
  * pendant le premier rendu, avant que la mesure soit disponible.
  */
 const TITLE_WIDTH = 224;
+
+/** Le point de rupture `lg` de Tailwind, lu une fois à l'ouverture. */
+const isLargeScreen = (): boolean =>
+  typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
 
 /** Au-delà, le planning prend toute la page avant même qu'on ait vu la file d'attente. */
 const COLLAPSED_ROWS = 5;
@@ -139,7 +143,9 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
   const privacy = usePrivacy();
   const sponsorMoney = (cents: number) => privacy.money(cents, 'sponsorships');
   const productMoney = (cents: number) => privacy.money(cents, 'inKind');
-  const [zoom, setZoom] = useState<Zoom>('month');
+  // Sur mobile, 4 mois et rien à régler : le sélecteur est masqué, faute de place pour
+  // lui à côté du titre, et une fenêtre de 2 mois sur 390 px ne montre que quelques jours.
+  const [zoom, setZoom] = useState<Zoom>(() => (isLargeScreen() ? 'month' : 'quarter'));
   const [expanded, setExpanded] = useState(false);
   const { data: channels = [] } = useChannels();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -209,7 +215,8 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
    * passés, et il fallait faire défiler pour trouver le présent — exactement ce qu'on
    * vient chercher. Le décalage retranche la colonne des titres, qui ne défile pas.
    */
-  useEffect(() => {
+  const hasRows = planned.length > 0;
+  useLayoutEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
     // Mesurée et non supposée : la colonne change de largeur avec la taille d'écran, et
@@ -217,18 +224,23 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
     const titleWidth = titleRef.current?.offsetWidth ?? TITLE_WIDTH;
     const visibleWidth = container.clientWidth - titleWidth;
     container.scrollLeft = Math.max(0, todayOffset - visibleWidth / 2);
-  }, [zoom, todayOffset]);
+    // `hasRows` : au premier rendu les vidéos ne sont souvent pas encore chargées, le
+    // conteneur n'existe pas, et sans cette dépendance l'effet ne se rejouait jamais —
+    // le Gantt s'ouvrait alors sur sa borne gauche, deux mois dans le passé.
+  }, [zoom, todayOffset, hasRows]);
 
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between gap-3 pb-3">
         <div>
           <CardTitle>Planning</CardTitle>
-          <CardDescription className="text-sm text-muted-foreground">
+          {/* Descriptif, légende et période : au large seulement. Sur un téléphone ils
+              repoussaient la grille sous le pli, et on vient y chercher les barres. */}
+          <CardDescription className="hidden text-sm text-muted-foreground lg:block">
             Du début du travail à la date de sortie visée. La couleur est l'état, le logo la chaîne.
           </CardDescription>
           {/* Légende : la couleur ne se devine pas, et elle a changé de sens. */}
-          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <div className="mt-1.5 hidden flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground lg:flex">
             {PRODUCTION_STATUSES.map((status) => (
               <span key={status} className="flex items-center gap-1.5">
                 <span
@@ -241,7 +253,7 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-1 rounded-lg bg-muted p-1 text-sm">
+        <div className="hidden items-center gap-1 rounded-lg bg-muted p-1 text-sm lg:flex">
           {(Object.keys(ZOOM) as Zoom[]).map((key) => (
             <button
               key={key}

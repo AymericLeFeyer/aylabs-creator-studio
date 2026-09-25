@@ -1642,14 +1642,23 @@ passage suivant.
 
 ### `externalApp` — des applications ouvertes dans le studio
 
-`ExternalApp { id, kind, name, url, icon, section, enabled, sortOrder }` — table
-`external_apps` (migration 29). `ExternalAppView` y ajoute `frameUrl`.
+`ExternalApp { id, kind, name, url, localUrl, icon, section, enabled, sortOrder }` — table
+`external_apps` (migration 29, `local_url` en migration 47). `ExternalAppView` y ajoute `frameUrl`.
 
 Le besoin : piloter l'app Todo (et d'autres) **sans quitter le studio**, depuis une entrée
 du menu qui ouvre `/apps/:id` — une **iframe pleine hauteur, sans `sandbox`** : on s'y
 connecte, on coche, on glisse comme d'habitude. Le studio n'y lit ni n'y écrit rien.
 
-- `kind` : `todo` (au plus une, index unique partiel) ou `link` (adresse obligatoire).
+- `kind` : `todo` (au plus une, index unique partiel) ou `link` (une adresse au moins,
+  externe ou locale).
+- **Deux adresses** : `url` (externe, nom de domaine) et `localUrl` (réseau local,
+  facultative). **C'est le navigateur qui choisit** (`resolveFrameUrl`, domaine front) :
+  studio ouvert par une IP privée, `localhost` ou un nom sans domaine public
+  (`isLocalHostname` : `10.`, `172.16–31.`, `192.168.`, `*.local`, `*.lan`, `*.home.arpa`,
+  nom sans point) → `localUrl` ; sinon `frameUrl`. Chacune retombe sur l'autre quand elle
+  manque. L'API ne peut pas trancher : derrière nginx, elle ignore par quelle adresse le
+  navigateur l'a jointe. Le formulaire complète `http://` sur une adresse locale,
+  `https://` sur une externe.
 - `section` : la **famille du menu** (`production | audience | revenus | entreprise`).
   `withExternalApps` (`navigation.ts`) ajoute l'entrée **après** les écrans du studio de
   cette famille, retrouvée par son libellé (`EXTERNAL_APP_SECTIONS`). `NAV_SECTIONS` reste
@@ -1867,6 +1876,37 @@ Domadoo et ne représentaient pas l'activité. Onglet « Clics (30 j) » : `clic
 barres, **toujours sur les 30 derniers jours locaux** quelle que soit la période (seconde
 lecture de `useDomadooOverview` dans `DomadooChartBlock`) — la fenêtre de Domadoo
 lui-même, celle où l'on juge l'effet d'une vidéo sur ses liens.
+
+#### L'historique Amazon (`/affiliations` → onglet Amazon)
+
+Table `amazon_snapshots` (migration 46, PK `date`) : **un relevé par jour**, écrit par
+`CollectIntegrations.collectAmazon()` à chaque collecte réussie (le dernier passage du jour
+écrase le précédent), en **centimes**. La migration a repris le dernier instantané de
+`integration_snapshots`, pour que l'onglet ne parte pas vide.
+
+**Différence de nature avec Domadoo, et c'est tout le piège** : Amazon ne donne que le
+**cumul du mois en cours**, remis à zéro le 1er — pas un total depuis toujours. Le dernier
+relevé d'un mois vaut donc son total (`findMonthEnds`, `AmazonOverview.months`), et le gain
+d'un jour se lit par différence avec le relevé précédent **du même mois** (`gainBetween`) ;
+quand un relevé ouvre un nouveau mois, son cumul entier compte (ce qui s'est passé entre le
+dernier relevé du mois d'avant et sa fin est perdu). Le **tout premier relevé** de
+l'historique ne sert que de base (sauf un 1er du mois) : les séries de la période restent
+vides tant qu'il n'y en a pas deux. Le taux de conversion n'est pas stocké : c'est un ratio,
+recalculé (`commandés / clics`) sur chaque bucket et chaque période, jamais moyenné.
+
+`GetAmazonOverview.execute({ from, to, granularity })` → `{ series, totals, previousTotals,
+months, current, firstSnapshotDate }` ; `months` et `current` (le mois du dernier relevé,
+avec `waitingPaymentsCents`) sont **hors période**. Port `AmazonSnapshotRepository`
+(`upsert`, `findInRange`, `findBefore`, `findMonthEnds`, `findFirstDate`).
+
+Écran (`AmazonTab`) : 6 cartes **du mois** tel qu'Amazon l'annonce (gains, clics,
+commandés, conversion, ventes expédiées, paiements en attente — l'historique des mois au
+survol), 3 cartes **de la période** (gains, clics, conversion, avec variation), graphique à
+onglets (`AmazonChart` : Par mois, Gains, Clics, Conversion — la journée au-delà de 92 jours
+passe à la semaine), entonnoir « Du clic à la commission » et tableau mois par mois. Tout
+est bloc (`amazon.month.*`, `amazon.period.*`, `amazon.waiting`, `amazon.chart`,
+`amazon.funnel`, `amazon.months` ; liste dans `blocks/amazonMetrics.ts`). Montants masqués
+sous `affiliation`.
 
 #### Le tableau de bord Discord (`/discord`)
 
@@ -2160,6 +2200,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `PATCH`  | `/api/affiliate-platforms/:id`                      | Modifier / archiver. `brandIds` absent = marques inchangées                                                                                                                                                                                              |
 | `DELETE` | `/api/affiliate-platforms/:id`                      | Supprimer ; les revenus rattachés sont **détachés**                                                                                                                                                                                                      |
 | `GET`    | `/api/domadoo/overview`                             | Historique Domadoo reconstruit depuis `domadoo_snapshots`. Params `from`, `to` (obligatoires), `granularity`. Ne collecte jamais rien — relit ce que `POST /api/integrations/domadoo/collect` a déjà écrit                                             |
+| `GET`    | `/api/amazon/overview`                              | Historique Amazon reconstruit depuis `amazon_snapshots` (cumuls **du mois**, remis à zéro le 1er). Params `from`, `to` (obligatoires), `granularity`. `months` et `current` hors période |
 | `GET`    | `/api/legal/bookmarks`                              | Liens utiles de l'écran Légal. Param `includeArchived`                                                                                                                                                                                                   |
 | `POST`   | `/api/legal/bookmarks`                              | Créer. `url` doit être **absolue** (le front complète le `https://` manquant)                                                                                                                                                                            |
 | `PATCH`  | `/api/legal/bookmarks/:id`                          | Modifier / réordonner                                                                                                                                                                                                                                    |
@@ -2182,7 +2223,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/planning/slots/:id/unapprove`                 | Défaire : la session part, le créneau redevient mobile                                                                                                                                                                                                   |
 | `GET`    | `/api/planning/todo-tasks/today`                    | `?today=` (jour local). `{ connected, error, tasks }` : tâches Todo **ouvertes** du jour, retard compris — la pastille de l'entrée Todo. Déclaré avant `/todo-tasks/:id/…`                                                                               |
 | `GET`    | `/api/external-apps`                                | Applications externes du menu, avec `frameUrl` (adresse réellement ouverte)                                                                                                                                                                              |
-| `POST`   | `/api/external-apps`                                | `{ kind: 'todo' \| 'link', name, url?, icon?, section?, enabled? }`. `url` obligatoire pour `link`. 409 sur une seconde app `todo`                                                                                                                       |
+| `POST`   | `/api/external-apps`                                | `{ kind: 'todo' \| 'link', name, url?, localUrl?, icon?, section?, enabled? }`. `url` ou `localUrl` obligatoire pour `link`. 409 sur une seconde app `todo`                                                                                                                       |
 | `PATCH`  | `/api/external-apps/:id`                            | Modifier (nom, adresse, icône, famille, `enabled`, `sortOrder`). Vider l'adresse d'une app `link` → 400                                                                                                                                                  |
 | `DELETE` | `/api/external-apps/:id`                            | Retirer du menu (l'app elle-même n'est pas touchée)                                                                                                                                                                                                      |
 | `POST`   | `/api/planning/todo-tasks/:id/complete`             | Coche la tâche **dans Todo**. `/uncomplete` la décoche. 204                                                                                                                                                                                              |
@@ -2250,7 +2291,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / **Notes** (plusieurs, en fichiers)                                                                                                                                                                                                           |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                    |
 | `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                                                                                                |
-| `/affiliations`     | `AffiliationsPage`     | Deux onglets (`?onglet=`) : **Domadoo** (collecté tout seul dès que la source est renseignée — 6 cartes, graphique en deux onglets : Solde + Commissions en attente sur la période, Clics sur les 30 derniers jours) et **Plateformes** (4 cartes, `PlatformsPanel`, rattachées à la main). Ex-`/plateformes`, qui redirige ici                                                                                                                                     |
+| `/affiliations`     | `AffiliationsPage`     | Trois onglets (`?onglet=`) : **Amazon** (mois en cours, période, graphique en onglets, entonnoir, mois par mois), **Domadoo** (collecté tout seul dès que la source est renseignée — 6 cartes, graphique en deux onglets : Solde + Commissions en attente sur la période, Clics sur les 30 derniers jours) et **Plateformes** (4 cartes, `PlatformsPanel`, rattachées à la main). Ex-`/plateformes`, qui redirige ici                                                                                                                                     |
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, **Dépenses** (table + dépenses récurrentes, `RecurringExpensesPanel`)                                                                                                                                                                                             |
 | `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                                                                                                                                                                                                                              |
 | `/apps/:id`         | `ExternalAppPage`      | Une **application externe** en iframe, pleine hauteur (Recharger, Nouvel onglet). L'entrée vit dans la famille de menu choisie                                                                                                                                                                                                                                                |
@@ -2900,7 +2941,7 @@ période**, et leur sous-titre le dit.
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
-| `useIntegrations`, `useUpdateIntegration`, `useCollectIntegration`, `useExportKeys`, `useCreateExportKey`, `useDeleteExportKey`, `useDomadooOverview`                                                                                                                                                                          | `application/integration/usecases/useIntegrations.ts`   | Sources de l'export et clés d'accès. `useUpdateIntegration` sert aussi `ProviderCredentialsCard`, monté hors de Paramètres → API (Instagram, Affiliation, Discord). `useDomadooOverview` alimente `/affiliations` → Domadoo                          |
+| `useIntegrations`, `useUpdateIntegration`, `useCollectIntegration`, `useExportKeys`, `useCreateExportKey`, `useDeleteExportKey`, `useDomadooOverview`, `useAmazonOverview`                                                                                                                                                                          | `application/integration/usecases/useIntegrations.ts`   | Sources de l'export et clés d'accès. `useUpdateIntegration` sert aussi `ProviderCredentialsCard`, monté hors de Paramètres → API (Instagram, Affiliation, Discord). `useDomadooOverview` / `useAmazonOverview` alimentent `/affiliations` → Domadoo / Amazon                          |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
 
@@ -2993,6 +3034,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 47** ajoute `external_apps.local_url` (adresse sur le réseau local, choisie par le navigateur).
+- **Migration 46** ajoute `amazon_snapshots` (PK `date`, cumuls du mois en centimes) et y reprend l'instantané Amazon d'`integration_snapshots` (`json_extract`).
 - **Migration 43** ajoute `dashboard_widgets.variant` (style des titres de section) et pose le titre `heading.dashboard` en tête : l'en-tête de l'écran devient modifiable.
 - **Migration 42** supprime `videos.is_short` (`DROP COLUMN`, sans reconstruction de table : aucun index ni contrainte dessus) et ajoute `videos.hidden_at`.
 - **Migration 41** remettait `videos.is_short` à `NULL` (classement abandonné depuis, voir 42).
@@ -3439,6 +3482,12 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   `pb-[calc(var(--bottom-nav)+1rem)]` en insérant les espaces qu'exige CSS. Un style en
   ligne aurait en revanche battu le `lg:pb-6` qui annule cette réserve sur grand écran —
   c'est pour ça que la réserve passe par une classe et pas par `style`.
+- **Sur mobile, le Gantt s'ouvre sur « 4 mois », sans descriptif, légende ni sélecteur de
+  période** (`hidden lg:*`, zoom initial lu une fois par `isLargeScreen`) : ils repoussaient
+  la grille sous le pli. **Le centrage sur aujourd'hui dépend aussi de `hasRows`** : les
+  vidéos arrivent après le premier rendu, le conteneur n'existait pas encore, et l'effet ne
+  se rejouait jamais — le Gantt restait collé deux mois dans le passé (surtout sur mobile,
+  cache froid). `useLayoutEffect`, pour poser le défilement avant la première peinture.
 - **Le planning s'ouvre centré sur aujourd'hui.** `ProductionGantt` pose `scrollLeft` au montage et à chaque changement de zoom, en retranchant la largeur de la colonne des titres (`TITLE_WIDTH`). Sans ça il s'ouvrait collé à sa borne gauche, sur des jours passés. Les fenêtres couvrent donc volontairement du passé (`before` : 14, 30 ou 60 jours) pour qu'on puisse reculer. La colonne des titres est `sticky left-0` : en défilant vers le futur, on doit continuer de savoir de quelle vidéo est la barre qu'on regarde.
 - **Le badge de statut d'une carte de file est un menu, pas une étiquette**
   (`ProductionStatusMenu`). C'était un badge mort : on lisait « Idée » sur une vidéo qu'on

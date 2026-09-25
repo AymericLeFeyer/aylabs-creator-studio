@@ -9,6 +9,7 @@ import {
 } from '../../application/externalApp/usecases/useExternalApps.ts';
 import { usePlanningSettings } from '../../application/planning/usecases/usePlanning.ts';
 import {
+  resolveFrameUrl,
   EXTERNAL_APP_SECTIONS,
   externalAppPath,
   type ExternalApp,
@@ -36,11 +37,15 @@ import {
   SelectValue,
 } from '../components/ui/select.tsx';
 
-/** Le `https://` manquant est complété, comme pour Todo et Home Assistant. */
-const normalizeUrl = (raw: string): string | null => {
+/**
+ * Le schéma manquant est complété, comme pour Todo et Home Assistant : `https://` pour une
+ * adresse externe, `http://` pour une locale — une app du réseau local a rarement un
+ * certificat.
+ */
+const normalizeUrl = (raw: string, scheme: 'https' | 'http' = 'https'): string | null => {
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  return /^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return /^https?:\/\//.test(trimmed) ? trimmed : `${scheme}://${trimmed}`;
 };
 
 /**
@@ -74,6 +79,7 @@ const MenuAppsCard = () => {
   const create = useCreateExternalApp();
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
+  const [localUrl, setLocalUrl] = useState('');
 
   const hasTodo = apps.some((app) => app.kind === 'todo');
 
@@ -122,13 +128,15 @@ const MenuAppsCard = () => {
           onSubmit={(event) => {
             event.preventDefault();
             const target = normalizeUrl(url);
-            if (!name.trim() || !target) return;
+            const local = normalizeUrl(localUrl, 'http');
+            if (!name.trim() || (!target && !local)) return;
             create.mutate(
-              { kind: 'link', name: name.trim(), url: target },
+              { kind: 'link', name: name.trim(), url: target, localUrl: local },
               {
                 onSuccess: () => {
                   setName('');
                   setUrl('');
+                  setLocalUrl('');
                 },
               },
             );
@@ -144,15 +152,20 @@ const MenuAppsCard = () => {
               className="sm:w-44"
             />
             <Input
-              placeholder="https://…"
+              placeholder="Adresse externe (https://…)"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
+            />
+            <Input
+              placeholder="Adresse locale (facultative)"
+              value={localUrl}
+              onChange={(event) => setLocalUrl(event.target.value)}
             />
             <Button
               type="submit"
               size="sm"
               className="shrink-0"
-              disabled={!name.trim() || !url.trim() || create.isPending}
+              disabled={!name.trim() || (!url.trim() && !localUrl.trim()) || create.isPending}
             >
               <Plus className="h-4 w-4" />
               Ajouter
@@ -277,36 +290,56 @@ const AppRow = ({ app }: { app: ExternalApp }) => {
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <Label className="text-xs">Adresse</Label>
-        <Input
-          key={`url-${app.updatedAt}`}
-          defaultValue={app.url ?? ''}
-          className="h-8"
-          placeholder={
-            app.kind === 'todo'
-              ? todoBase
-                ? `Comme la connexion : ${todoBase}`
-                : 'Adresse de l’app Todo'
-              : 'https://…'
-          }
-          onBlur={(event) => {
-            const value = normalizeUrl(event.target.value);
-            // Une app `link` sans adresse n'ouvrirait rien : le champ vidé est ignoré.
-            if (value === null && app.kind === 'link') return;
-            if (value !== app.url) patch({ url: value });
-          }}
-        />
-        {app.kind === 'todo' && (
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Adresse externe</Label>
+          <Input
+            key={`url-${app.updatedAt}`}
+            defaultValue={app.url ?? ''}
+            className="h-8"
+            placeholder={
+              app.kind === 'todo'
+                ? todoBase
+                  ? `Comme la connexion : ${todoBase}`
+                  : 'Adresse de l’app Todo'
+                : 'https://…'
+            }
+            onBlur={(event) => {
+              const value = normalizeUrl(event.target.value);
+              // Une app `link` sans aucune adresse n'ouvrirait rien : le champ vidé est ignoré.
+              if (value === null && app.kind === 'link' && !app.localUrl) return;
+              if (value !== app.url) patch({ url: value });
+            }}
+          />
+          {app.kind === 'todo' && (
+            <p className="text-xs text-muted-foreground">
+              Vide : la même que la connexion ci-contre. Renseigne-la si l’API du studio joint Todo
+              par une adresse interne (réseau Docker) que ton navigateur ne voit pas.
+            </p>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Adresse locale</Label>
+          <Input
+            key={`local-${app.updatedAt}`}
+            defaultValue={app.localUrl ?? ''}
+            className="h-8"
+            placeholder="http://192.168.…"
+            onBlur={(event) => {
+              const value = normalizeUrl(event.target.value, 'http');
+              if (value === null && app.kind === 'link' && !app.url) return;
+              if (value !== app.localUrl) patch({ localUrl: value });
+            }}
+          />
           <p className="text-xs text-muted-foreground">
-            Vide : la même que la connexion ci-contre. Renseigne-la si l’API du studio joint Todo
-            par une adresse interne (réseau Docker) que ton navigateur ne voit pas.
+            Ouverte à la place de l’externe quand le studio l’est depuis ton réseau (192.168…,
+            localhost). Depuis un nom de domaine, c’est l’externe.
           </p>
-        )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        {app.frameUrl ? (
+        {resolveFrameUrl(app) ? (
           <Link
             to={externalAppPath(app)}
             className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"

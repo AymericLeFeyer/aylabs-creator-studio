@@ -14,12 +14,26 @@ export interface AmazonCredentials {
 }
 
 /**
- * Un numéro de téléphone s'écrit de mille façons (« 06 12 34 56 78 », « +33.6… ») ; le
- * champ unifié d'Amazon attend des chiffres, avec ou sans indicatif. Une adresse e-mail
- * passe telle quelle.
+ * L'identifiant du compte, tel qu'Amazon l'attend.
+ *
+ * Le formulaire « unifié » n'a qu'un seul champ : il passe de lui-même en mode téléphone
+ * (sélecteur d'indicatif, FR +33 par défaut sur amazon.fr) dès qu'on y tape des chiffres,
+ * et reconnaît un numéro international (`+33…`) tel quel. Un numéro s'écrit de mille
+ * façons (« 06 12 34 56 78 », « 0033 6… ») : on le ramène à des chiffres, et `00` devient
+ * `+`. Tout le reste est refusé avant d'ouvrir un navigateur.
  */
-const normalizeLogin = (login: string): string =>
-  login.includes('@') ? login : login.replace(/[\s.\-()]/g, '');
+type AmazonLogin = { kind: 'email' | 'phone'; value: string };
+
+export const parseAmazonLogin = (raw: string): AmazonLogin => {
+  // Des guillemets recopiés dans une variable Portainer sont envoyés tels quels.
+  const login = raw.trim().replace(/^(["'`])(.*)\1$/, '$2');
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(login)) return { kind: 'email', value: login };
+  const phone = login.replace(/[\s.\-()/]/g, '').replace(/^00/, '+');
+  if (/^\+?\d{6,15}$/.test(phone)) return { kind: 'phone', value: phone };
+  throw upstream(
+    `Identifiant Amazon invalide (${describeLogin(login)}) : ni une adresse e-mail, ni un numéro de téléphone.`,
+  );
+};
 
 /**
  * « l•••••r@gmail.com, 22 caractères » — assez pour reconnaître une adresse ou y voir des
@@ -72,11 +86,18 @@ export class AmazonScraper {
       // `#ap_email_login` et son bouton n'a plus d'identifiant. L'ancien `#ap_email`
       // reste accepté, et chaque étape se valide par Entrée plutôt que par un bouton
       // dont l'identifiant peut encore changer.
-      const email = await visible('#ap_email_login, #ap_email', 'champ e-mail introuvable');
-      await email.fill(normalizeLogin(credentials.login));
-      await email.press('Enter');
+      const login = parseAmazonLogin(credentials.login);
+      const claim = await visible('#ap_email_login, #ap_email', 'champ identifiant introuvable');
+      if (login.kind === 'email') {
+        await claim.fill(login.value);
+      } else {
+        // Frappé touche par touche et non `fill()` : c'est la frappe qui fait basculer le
+        // champ en mode téléphone (indicatif, `claimType=phoneNumber`).
+        await claim.pressSequentially(login.value, { delay: 30 });
+      }
+      await claim.press('Enter');
 
-      // `/ax/claim/intent` = « Cet e-mail est nouveau pour nous » : Amazon ne connaît pas
+      // `/ax/claim/intent` = « Cet e-mail (ou ce numéro) est nouveau pour nous » : Amazon ne connaît pas
       // l'identifiant envoyé et propose d'ouvrir un compte. L'erreur montre ce qui a été
       // réellement envoyé (masqué) : des guillemets recopiés dans une variable
       // d'environnement ou une autre adresse que celle du compte Partenaires ne se voient
@@ -95,7 +116,7 @@ export class AmazonScraper {
       // champ mot de passe caché (indice d'autoremplissage).
       const password = await visible(
         '#ap_password',
-        `page du mot de passe introuvable pour ${describeLogin(credentials.login)} — adresse refusée, ou captcha`,
+        `page du mot de passe introuvable pour ${describeLogin(credentials.login)} — identifiant refusé, ou captcha`,
       );
       await password.fill(credentials.password);
       await password.press('Enter');

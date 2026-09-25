@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { AppWindow, ExternalLink, RotateCw, Settings } from 'lucide-react';
 import { useExternalApps } from '../../application/externalApp/usecases/useExternalApps.ts';
+import { resolveFrameUrl } from '../../domain/externalApp/entities/ExternalApp.ts';
 import { AppBarActions } from '../hooks/useAppBar.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
@@ -36,7 +37,9 @@ export const ExternalAppPage = () => {
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
 
-  if (!app || !app.frameUrl) {
+  const frameUrl = app ? resolveFrameUrl(app) : null;
+
+  if (!app || !frameUrl) {
     return (
       <Card className="space-y-3 p-6 text-center">
         <AppWindow className="mx-auto h-8 w-8 text-muted-foreground" />
@@ -70,7 +73,7 @@ export const ExternalAppPage = () => {
         {compact ? <span className="sr-only">Recharger</span> : 'Recharger'}
       </Button>
       <Button variant="ghost" size={compact ? 'icon' : 'sm'} asChild>
-        <a href={app.frameUrl!} target="_blank" rel="noreferrer" title="Ouvrir dans un onglet">
+        <a href={frameUrl} target="_blank" rel="noreferrer" title="Ouvrir dans un onglet">
           <ExternalLink className={compact ? 'h-5 w-5' : 'h-4 w-4'} />
           {compact ? <span className="sr-only">Ouvrir dans un onglet</span> : 'Nouvel onglet'}
         </a>
@@ -91,7 +94,7 @@ export const ExternalAppPage = () => {
           marges de la page amputeraient une app pensée pour la largeur d'un téléphone. */}
       <iframe
         key={reloadKey}
-        src={app.frameUrl}
+        src={frameUrl}
         title={app.name}
         allow="clipboard-read; clipboard-write; fullscreen"
         className="-mx-3 min-h-0 w-[calc(100%+1.5rem)] flex-1 border-y border-border bg-background sm:-mx-5 sm:w-[calc(100%+2.5rem)] lg:mx-0 lg:w-full lg:rounded-xl lg:border"

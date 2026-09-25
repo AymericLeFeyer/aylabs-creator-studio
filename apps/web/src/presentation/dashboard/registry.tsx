@@ -15,6 +15,13 @@ import {
   DomadooSalesBlock,
 } from '../blocks/domadooBlocks.tsx';
 import { DOMADOO_ROWS, DOMADOO_WINDOWS } from '../blocks/domadooRows.ts';
+import {
+  AmazonChartBlock,
+  AmazonFunnelBlock,
+  AmazonMetricCard,
+  AmazonMonthsBlock,
+} from '../blocks/amazonBlocks.tsx';
+import { AMAZON_METRICS } from '../blocks/amazonMetrics.ts';
 import { PRODUCTION_COPY } from '../blocks/productionCopy.ts';
 import { UpcomingExpensesCard } from '../components/money/UpcomingExpensesCard.tsx';
 import { RevenuesPanel } from '../components/money/RevenuesPanel.tsx';
@@ -112,6 +119,18 @@ const productionBlocks = (format: ProductionFormat): Record<string, BlockDefinit
     },
   };
 };
+
+const amazonBlocks = Object.fromEntries(
+  AMAZON_METRICS.map((metric): [string, BlockDefinition] => [
+    `amazon.${metric.id}`,
+    {
+      label: `Amazon · ${metric.label}`,
+      group: 'Affiliations',
+      width: METRIC,
+      render: () => <AmazonMetricCard metricId={metric.id} />,
+    },
+  ]),
+);
 
 const domadooBlocks = Object.fromEntries(
   DOMADOO_ROWS.map((row): [string, BlockDefinition] => [
@@ -266,6 +285,14 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     <DomadooSalesBlock />
   )),
   ...domadooBlocks,
+  'amazon.chart': panel('Évolution Amazon', 'Affiliations', FULL, () => <AmazonChartBlock />),
+  'amazon.funnel': panel('Amazon · Du clic à la commission', 'Affiliations', HALF, () => (
+    <AmazonFunnelBlock />
+  )),
+  'amazon.months': panel('Amazon · Mois par mois', 'Affiliations', HALF, () => (
+    <AmazonMonthsBlock />
+  )),
+  ...amazonBlocks,
   'affiliation.total': metric('Total affiliations', 'Affiliations', () => (
     <partner.AffiliationTotalCard />
   )),

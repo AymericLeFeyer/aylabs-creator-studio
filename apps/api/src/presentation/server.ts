@@ -38,6 +38,7 @@ import { tiktokRouter } from './routes/tiktok.ts';
 import { achievementsRouter } from './routes/achievements.ts';
 import { integrationsRouter } from './routes/integrations.ts';
 import { domadooRouter } from './routes/domadoo.ts';
+import { amazonRouter } from './routes/amazon.ts';
 import { discordRouter } from './routes/discord.ts';
 import { externalAppsRouter } from './routes/externalApps.ts';
 import { exportRouter } from './routes/export.ts';
@@ -95,6 +96,7 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/achievements', achievementsRouter(container));
   app.use('/api/integrations', integrationsRouter(container));
   app.use('/api/domadoo', domadooRouter(container));
+  app.use('/api/amazon', amazonRouter(container));
   app.use('/api/discord', discordRouter(container));
   app.use('/api/external-apps', externalAppsRouter(container));
   // La seule route protégée par une clé : elle est faite pour être lue depuis une autre

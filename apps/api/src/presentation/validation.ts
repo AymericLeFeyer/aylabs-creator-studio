@@ -601,6 +601,7 @@ const externalAppUrl = z
 const externalAppFields = {
   name: z.string().trim().min(1, 'Le nom est obligatoire').max(40),
   url: externalAppUrl,
+  localUrl: externalAppUrl,
   icon: z.enum(EXTERNAL_APP_ICONS).optional(),
   section: z.enum(EXTERNAL_APP_SECTIONS).optional(),
   enabled: z.boolean().optional(),
@@ -612,8 +613,8 @@ const externalAppFields = {
  */
 export const createExternalAppSchema = z
   .object({ kind: z.enum(['todo', 'link']), ...externalAppFields })
-  .refine((input) => input.kind === 'todo' || Boolean(input.url), {
-    message: 'L’adresse est obligatoire',
+  .refine((input) => input.kind === 'todo' || Boolean(input.url || input.localUrl), {
+    message: 'Une adresse, externe ou locale, est obligatoire',
     path: ['url'],
   });
 
@@ -1168,6 +1169,9 @@ export const domadooQuerySchema = z.object({
   to: isoDate,
   granularity: z.enum(['day', 'week', 'month']).default('day'),
 });
+
+/** Fenêtre de l'écran Affiliations → Amazon : la même que Domadoo. */
+export const amazonQuerySchema = domadooQuerySchema;
 
 /** Fenêtre de l'historique Discord : pas de granularité, chaque relevé est déjà un point. */
 export const discordHistoryQuerySchema = z.object({

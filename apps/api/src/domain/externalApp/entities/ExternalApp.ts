@@ -13,7 +13,8 @@
  *   connexion quand `url` est vide, et son entrée de menu porte la **pastille des tâches
  *   du jour**. Une seule par base (index unique partiel) : deux entrées « Tâches » ne
  *   diraient rien de plus.
- * - `link` — n'importe quelle autre page à embarquer. Adresse obligatoire.
+ * - `link` — n'importe quelle autre page à embarquer. Une adresse au moins, externe ou
+ *   locale.
  */
 export type ExternalAppKind = 'todo' | 'link';
 
@@ -42,6 +43,14 @@ export interface ExternalApp {
    * une adresse interne au réseau Docker, le navigateur par son adresse publique.
    */
   url: string | null;
+  /**
+   * Adresse sur le réseau local (`http://192.168.1.20:3000`), facultative. C'est le
+   * **navigateur** qui choisit (`resolveFrameUrl`, côté front) : ouvert par une IP privée
+   * ou `localhost`, le studio charge celle-ci ; ouvert par un nom de domaine, il charge
+   * `url` (l'adresse externe). L'API ne peut pas trancher : elle ne sait pas par quelle
+   * adresse le navigateur l'a jointe derrière nginx.
+   */
+  localUrl: string | null;
   icon: ExternalAppIcon;
   section: ExternalAppSection;
   /** Décochée, l'app n'apparaît plus dans le menu, sans perdre son réglage. */
@@ -61,6 +70,7 @@ export interface CreateExternalAppInput {
   kind: ExternalAppKind;
   name: string;
   url?: string | null;
+  localUrl?: string | null;
   icon?: ExternalAppIcon;
   section?: ExternalAppSection;
   enabled?: boolean;

@@ -5,6 +5,7 @@ import {
   type IntegrationProvider,
 } from '../../../domain/integration/entities/Integration.ts';
 import type {
+  AmazonExport,
   DomadooExport,
   DomadooSale,
   DiscordExport,
@@ -15,6 +16,7 @@ import type {
   TikTokProfileSink,
 } from '../../../domain/integration/repositories/IntegrationCollectors.ts';
 import type { DomadooSnapshotRepository } from '../../../domain/integration/repositories/DomadooSnapshotRepository.ts';
+import type { AmazonSnapshotRepository } from '../../../domain/integration/repositories/AmazonSnapshotRepository.ts';
 import type { DiscordSnapshotRepository } from '../../../domain/integration/repositories/DiscordSnapshotRepository.ts';
 import { round2 } from '../../../domain/integration/services/localeNumber.ts';
 import { badRequest, conflict } from '../../../shared/errors.ts';
@@ -66,6 +68,7 @@ export class CollectIntegrations {
   private readonly tiktok: TikTokProfileSink;
   private readonly domadooSnapshots: DomadooSnapshotRepository;
   private readonly discordSnapshots: DiscordSnapshotRepository;
+  private readonly amazonSnapshots: AmazonSnapshotRepository;
   private readonly running = new Set<string>();
 
   constructor(
@@ -75,6 +78,7 @@ export class CollectIntegrations {
     tiktok: TikTokProfileSink,
     domadooSnapshots: DomadooSnapshotRepository,
     discordSnapshots: DiscordSnapshotRepository,
+    amazonSnapshots: AmazonSnapshotRepository,
   ) {
     this.repo = repo;
     this.manage = manage;
@@ -82,6 +86,7 @@ export class CollectIntegrations {
     this.tiktok = tiktok;
     this.domadooSnapshots = domadooSnapshots;
     this.discordSnapshots = discordSnapshots;
+    this.amazonSnapshots = amazonSnapshots;
   }
 
   /** Toutes les sources actives et configurées, l'une après l'autre. */
@@ -138,7 +143,7 @@ export class CollectIntegrations {
     return this.run(provider, provider, () => {
       switch (provider) {
         case 'amazon':
-          return this.collectors.amazon.fetch({
+          return this.collectAmazon({
             login: values.login!,
             password: values.password!,
             otpSecret: values.otpSecret ?? null,
@@ -203,6 +208,29 @@ export class CollectIntegrations {
       fetchedAt: new Date().toISOString(),
       members: data.members,
       membersOnline: data.members_online,
+    });
+    return data;
+  }
+
+  /**
+   * Un relevé de plus dans `amazon_snapshots`, un par jour (le dernier passage écrase le
+   * précédent) : c'est ce qui permet à Affiliations → Amazon de naviguer dans le passé.
+   */
+  private async collectAmazon(credentials: {
+    login: string;
+    password: string;
+    otpSecret: string | null;
+  }): Promise<AmazonExport> {
+    const data = await this.collectors.amazon.fetch(credentials);
+    this.amazonSnapshots.upsert({
+      date: today(),
+      clicks: data.thisMonth.clicks,
+      itemsOrdered: data.thisMonth.itemsOrdered,
+      itemsShipped: data.thisMonth.itemsShipped,
+      itemsReturned: data.thisMonth.itemsReturned,
+      shippedRevenueCents: toCents(data.thisMonth.sumItemsShipped),
+      earningsCents: toCents(data.thisMonth.earnings),
+      waitingPaymentsCents: toCents(data.waitingPayments),
     });
     return data;
   }

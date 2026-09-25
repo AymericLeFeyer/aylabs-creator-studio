@@ -77,6 +77,8 @@ import { ManageExternalApps } from './application/externalApp/usecases/ManageExt
 import { ManageIntegrations } from './application/integration/usecases/ManageIntegrations.ts';
 import { CollectIntegrations } from './application/integration/usecases/CollectIntegrations.ts';
 import { GetDomadooOverview } from './application/integration/usecases/GetDomadooOverview.ts';
+import { GetAmazonOverview } from './application/integration/usecases/GetAmazonOverview.ts';
+import { SqliteAmazonSnapshotRepository } from './infrastructure/integration/repositories/SqliteAmazonSnapshotRepository.ts';
 import { GetExport } from './application/integration/usecases/GetExport.ts';
 import { ManageTodoTasks } from './application/todoApp/usecases/ManageTodoTasks.ts';
 import { SqliteTodoPlacementRepository } from './infrastructure/todoApp/repositories/SqliteTodoPlacementRepository.ts';
@@ -194,6 +196,8 @@ export interface Container {
   collectIntegrations: CollectIntegrations;
   /** L'écran Affiliations → Domadoo : séries et totaux reconstruits depuis l'historique. */
   getDomadooOverview: GetDomadooOverview;
+  /** L'écran Affiliations → Amazon : séries, mois et totaux reconstruits depuis l'historique. */
+  getAmazonOverview: GetAmazonOverview;
   /** L'historique Discord : un point par collecte, sans transformation. */
   discordSnapshots: DiscordSnapshotRepository;
   /** Ce que lit Home Assistant sur `/api/export`. Ne collecte jamais rien. */
@@ -270,6 +274,7 @@ export const buildContainer = (config: Config): Container => {
   const integrations = new SqliteIntegrationRepository(db);
   const domadooSnapshots = new SqliteDomadooSnapshotRepository(db);
   const discordSnapshots = new SqliteDiscordSnapshotRepository(db);
+  const amazonSnapshots = new SqliteAmazonSnapshotRepository(db);
   const manageIntegrations = new ManageIntegrations(
     integrations,
     new SqliteExportKeyRepository(db),
@@ -397,9 +402,11 @@ export const buildContainer = (config: Config): Container => {
       collectTikTok,
       domadooSnapshots,
       discordSnapshots,
+      amazonSnapshots,
     ),
     discordSnapshots,
     getDomadooOverview: new GetDomadooOverview(domadooSnapshots),
+    getAmazonOverview: new GetAmazonOverview(amazonSnapshots),
     getExport: new GetExport(integrations, manageIntegrations),
     manageTodoTasks,
     // L'adresse de l'app Todo retombe sur celle de sa connexion : relue à chaque appel,

@@ -1,11 +1,13 @@
 import { Link, useSearchParams } from 'react-router-dom';
-import { RefreshCw, Wallet } from 'lucide-react';
+import { RefreshCw, ShoppingCart, Wallet } from 'lucide-react';
 import {
+  useAmazonOverview,
   useCollectIntegration,
   useDomadooOverview,
   useIntegrations,
 } from '../../application/integration/usecases/useIntegrations.ts';
 import type { DomadooExport } from '../../domain/integration/entities/DomadooOverview.ts';
+import { integrationStatus } from '../../domain/integration/entities/Integration.ts';
 import { formatDate, formatDateTime } from '../../shared/format.ts';
 import { cn } from '../../shared/cn.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
@@ -16,7 +18,7 @@ import { Card } from '../components/ui/card.tsx';
 import { Block } from '../dashboard/Block.tsx';
 import { DomadooWindowCard } from '../blocks/domadooBlocks.tsx';
 
-const TABS = ['domadoo', 'plateformes'] as const;
+const TABS = ['domadoo', 'amazon', 'plateformes'] as const;
 type AffiliationsTab = (typeof TABS)[number];
 
 /**
@@ -45,8 +47,8 @@ export const AffiliationsPage = () => {
         <div className="hidden lg:block">
           <h1 className="text-lg font-semibold">Affiliations</h1>
           <p className="text-sm text-muted-foreground">
-            Domadoo, collecté automatiquement, et les autres plateformes rattachées à la main sur
-            chaque revenu.
+            Domadoo et Amazon, collectés automatiquement, et les autres plateformes rattachées à la
+            main sur chaque revenu.
           </p>
         </div>
         <PeriodPicker />
@@ -58,11 +60,16 @@ export const AffiliationsPage = () => {
       >
         <TabsList>
           <TabsTrigger value="domadoo">Domadoo</TabsTrigger>
+          <TabsTrigger value="amazon">Amazon</TabsTrigger>
           <TabsTrigger value="plateformes">Plateformes</TabsTrigger>
         </TabsList>
 
         <TabsContent value="domadoo" className="space-y-4">
           <DomadooTab from={filters.from} to={filters.to} />
+        </TabsContent>
+
+        <TabsContent value="amazon" className="space-y-4">
+          <AmazonTab from={filters.from} to={filters.to} />
         </TabsContent>
 
         <TabsContent value="plateformes" className="space-y-4">
@@ -152,6 +159,83 @@ const DomadooTab = ({ from, to }: { from: string; to: string }) => {
       </div>
 
       <Block id="domadoo.sales" />
+    </div>
+  );
+};
+
+/**
+ * Amazon Partenaires, lu dans son tableau de bord à chaque passage horaire. Amazon ne
+ * donne que le **mois en cours** : les cartes du haut le reprennent tel quel (exact, hors
+ * période), les suivantes et le graphique reconstruisent la période par différence de
+ * relevés quotidiens.
+ */
+const AmazonTab = ({ from, to }: { from: string; to: string }) => {
+  const { data: integrations } = useIntegrations();
+  const amazon = integrations?.providers.find((provider) => provider.id === 'amazon');
+  const { data: overview } = useAmazonOverview({ from, to, granularity: 'day' });
+  const collect = useCollectIntegration();
+
+  if (integrations && !amazon?.configured) {
+    return (
+      <Card className="space-y-3 p-6 text-center">
+        <ShoppingCart className="mx-auto h-8 w-8 text-muted-foreground" />
+        <p className="text-sm font-medium">Amazon n'est pas configuré</p>
+        <p className="mx-auto max-w-lg text-sm text-muted-foreground">
+          Renseigne tes identifiants Amazon Partenaires : clics, commandes et gains du mois sont
+          relevés chaque heure, et l'onglet se remplit tout seul.
+        </p>
+        <Button asChild size="sm">
+          <Link to="/parametres?onglet=affiliation">Configurer Amazon</Link>
+        </Button>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {overview?.firstSnapshotDate
+            ? `Historique depuis le ${formatDate(overview.firstSnapshotDate)}`
+            : "Aucun relevé pour l'instant : le premier passage de la collecte horaire l'écrira."}
+          {amazon?.lastUpdate && ` · dernier relevé le ${formatDateTime(amazon.lastUpdate)}`}
+          {amazon && integrationStatus(amazon) === 'error' && (
+            <span className="text-[var(--negative)]"> · dernier échec : {amazon.lastError}</span>
+          )}
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={collect.isPending}
+          onClick={() => collect.mutate('amazon')}
+          title="Environ 20 secondes : un navigateur se connecte au compte"
+        >
+          <RefreshCw className={cn('h-4 w-4', collect.isPending && 'animate-spin')} />
+          {collect.isPending ? 'Collecte…' : 'Collecter'}
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        <Block id="amazon.month.earnings" />
+        <Block id="amazon.month.clicks" />
+        <Block id="amazon.month.ordered" />
+        <Block id="amazon.month.conversion" />
+        <Block id="amazon.month.shippedRevenue" />
+        <Block id="amazon.waiting" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <Block id="amazon.period.earnings" />
+        <Block id="amazon.period.clicks" />
+        <Block id="amazon.period.conversion" />
+      </div>
+
+      <Block id="amazon.chart" />
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <Block id="amazon.funnel" />
+        <Block id="amazon.months" />
+      </div>
     </div>
   );
 };

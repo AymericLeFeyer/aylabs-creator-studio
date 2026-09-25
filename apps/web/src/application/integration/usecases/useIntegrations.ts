@@ -5,6 +5,10 @@ import {
   type DomadooOverviewParams,
 } from '../../../infrastructure/integration/api/domadooApi.ts';
 import {
+  amazonApi,
+  type AmazonOverviewParams,
+} from '../../../infrastructure/integration/api/amazonApi.ts';
+import {
   discordApi,
   type DiscordHistoryParams,
 } from '../../../infrastructure/integration/api/discordApi.ts';
@@ -46,8 +50,8 @@ export const useUpdateIntegration = () =>
 
 /**
  * Quatre exceptions à la règle du dessus : le relevé du profil TikTok **écrit dans le
- * module TikTok** (compte et relevé du jour), celui de Domadoo ajoute un point à son
- * historique, Discord de même, et une collecte Instagram (déclenchée depuis
+ * module TikTok** (compte et relevé du jour), ceux de Domadoo et d'Amazon ajoutent un
+ * point à leur historique, Discord de même, et une collecte Instagram (déclenchée depuis
  * `/instagram`, pas depuis cette liste) touche elle aussi son propre module — leurs
  * écrans doivent donc repartir aussi.
  */
@@ -59,6 +63,8 @@ export const useCollectIntegration = () => {
       void queryClient.invalidateQueries({ queryKey: ['integrations'] });
       if (provider === 'domadoo')
         void queryClient.invalidateQueries({ queryKey: ['domadooOverview'] });
+      if (provider === 'amazon')
+        void queryClient.invalidateQueries({ queryKey: ['amazonOverview'] });
       if (provider === 'discord')
         void queryClient.invalidateQueries({ queryKey: ['discordHistory'] });
       if (provider === 'instagram') {
@@ -81,6 +87,15 @@ export const useDomadooOverview = (params: DomadooOverviewParams) =>
     queryKey: queryKeys.domadooOverview(params),
     queryFn: () => domadooApi.overview(params),
     staleTime: 60_000,
+  });
+
+/** L'historique Amazon Partenaires, pour l'onglet Affiliations → Amazon. */
+export const useAmazonOverview = (params: AmazonOverviewParams) =>
+  useQuery({
+    queryKey: queryKeys.amazonOverview(params),
+    queryFn: () => amazonApi.overview(params),
+    staleTime: 60_000,
+    placeholderData: (previous) => previous,
   });
 
 /** L'historique Discord, un point par collecte. */
