@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-24
+> Dernière mise à jour : 2026-09-25
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -103,7 +103,7 @@ Les deux applications suivent la même découpe.
 apps/api/src/
 ├── domain/          channel, metrics, category, revenue, expense, video, analytics,
 │                    brand, production, product, sponsorship, idea, postDraft, legal, integration,
-│                    todoApp, externalApp, dashboard
+│                    todoApp, externalApp, dashboard, branding
 │   └── <domaine>/{entities,repositories,services}    # repositories = interfaces seules
 ├── application/<domaine>/usecases/
 ├── infrastructure/
@@ -1943,6 +1943,44 @@ identifiant du registre fait disparaître le bloc des dashboards où il était p
 - **Non ajoutables** (outils plein écran, pas des blocs) : grille du planning, couloirs de
   publications, fiche d'une production, tableau de tri des commentaires, paramètres.
 
+### `branding` — le nom et le logo de l'application
+
+`Branding { name, logoVersion, updatedAt }` — table `app_branding`, **ligne unique**
+(`id = 'default'`, migration 45), plus `app_branding_icons (key, data BLOB)`. La vue
+ajoute `displayName` (le nom, défaut `DEFAULT_APP_NAME` = « Creator Studio » compris).
+Réglé dans Paramètres → Général → **Personnalisation** (`BrandingSettings`).
+
+**En base et non dans le navigateur, parce que le manifeste PWA en dépend** : il est
+désormais **servi par l'API** (`GET /api/branding/manifest`, `buildManifest`,
+`domain/branding/services/manifest.ts`) et `index.html` y pointe. Le fichier statique
+`public/manifest.webmanifest` a été **supprimé** — deux manifestes finiraient par se
+contredire. Toutes ses adresses sont **absolues** (servi sous `/api/branding/`, un chemin
+relatif y résoudrait `start_url`), et `id` reste `/` : le changer ferait de l'app
+installée une seconde application pour Android.
+
+- **Les icônes sont produites par le navigateur** (`renderLogoIcons`, canevas) : cinq PNG
+  (`BRANDING_ICON_KEYS` : `favicon-32`, `icon-192`, `icon-512`, `maskable-512` sur blanc
+  à 60 %, `apple-180` sur blanc à 80 %), envoyés en base64. L'API n'embarque aucune
+  bibliothèque d'image (contrainte : rien à compiler) ; elle vérifie la **signature PNG**
+  (422 sinon) et range les octets. Le logo est **contenu**, jamais rogné.
+- **`logoVersion` change à chaque dépôt** et part dans l'adresse (`?v=`) : l'icône d'une
+  version est servie `immutable`, un nouveau logo est une nouvelle adresse.
+  `brandingIconUrl` / `iconUrl` (dupliqués) rendent l'icône livrée avec le front quand
+  `logoVersion` est `null`, et `/api/branding/icons/:key` **redirige** vers elle (302)
+  plutôt que de répondre 404 à une adresse restée en cache.
+- **Côté page**, `applyBranding` (`presentation/branding/`) réécrit titre de l'onglet,
+  favicons (en gardant l'adresse d'origine dans `data-default-href`), `apple-touch-icon`
+  et `apple-mobile-web-app-title`. Appelé **avant le premier rendu** depuis un reflet
+  local (`acs.branding`, `brandingCache.ts`, aussi `initialData` de `useBranding`) — sinon
+  chaque chargement montrerait « Creator Studio » le temps que l'API réponde — puis par
+  `AppLayout` à chaque changement. La barre latérale lit logo et nom directement.
+- **Limite assumée sur une app déjà installée** : Android met à jour icône et nom de
+  lui-même (en heures ou jours) en relisant le manifeste ; **iOS ne relit jamais** — il faut
+  retirer l'app de l'écran d'accueil et l'ajouter à nouveau. L'écran le dit.
+- Le routeur est monté **avant** le `express.json({ limit: '1mb' })` global, avec sa propre
+  limite de 8 Mo : cinq PNG en base64 dépassent vite le mégaoctet, et le parseur global
+  répondrait 413 avant de l'atteindre.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -2120,6 +2158,12 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/dashboard/widgets/reorder`                    | `{ ids }` → réécrit l'ordre `1..n`. **Déclaré avant `/:id`** |
 | `PATCH`  | `/api/dashboard/widgets/:id`                        | `{ title?, description?, icon?, width?, variant? }` — `null` rend la valeur d'origine du bloc, `width` 1–6 |
 | `DELETE` | `/api/dashboard/widgets/:id`                        | Retirer du dashboard (le bloc reste sur sa page) |
+| `GET`    | `/api/branding`                                     | `{ name, logoVersion, updatedAt, displayName }` |
+| `PATCH`  | `/api/branding`                                     | `{ name }` — `null` ou `""` rend le nom par défaut, 40 caractères max |
+| `PUT`    | `/api/branding/logo`                                | `{ icons: { 'favicon-32', 'icon-192', 'icon-512', 'maskable-512', 'apple-180' } }`, PNG en base64 (préfixe `data:` admis). 422 si ce n'est pas un PNG. Limite 8 Mo |
+| `DELETE` | `/api/branding/logo`                                | Retire le logo : les icônes livrées avec le front reprennent |
+| `GET`    | `/api/branding/manifest`                            | **Le manifeste PWA**, construit à chaque lecture (`no-cache`). Référencé par `index.html` |
+| `GET`    | `/api/branding/icons/:key`                          | Le PNG (`?v=` → `immutable`), ou 302 vers l'icône livrée sans logo. **Sans extension** : nginx servirait un `.png` depuis le disque |
 
 Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube ou d'une source de l'export.
 
@@ -2144,7 +2188,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, **Dépenses** (table + dépenses récurrentes, `RecurringExpensesPanel`)                                                                                                                                                                                             |
 | `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                                                                                                                                                                                                                              |
 | `/apps/:id`         | `ExternalAppPage`      | Une **application externe** en iframe, pleine hauteur (Recharger, Nouvel onglet). L'entrée vit dans la famille de menu choisie                                                                                                                                                                                                                                                |
-| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en **liste verticale groupée comme le menu** (`?onglet=`) : Général (`general`), Production (`planning`, `script`, `etapes`), Audience (`youtube`, `instagram` — accueille désormais le pseudo public suivi —, `discord`), Revenus (`chiffre-affaires` = catégories, `marques`, `affiliation` = identifiants Amazon/Domadoo), Entreprise (`societe`), API (`api` — export, clés, sélection des chaînes/comptes exportés), Applications externes (`applications`). Sur mobile, un seul bouton déroulant |
+| `/parametres`       | `SettingsPage`         | **Tous les réglages**, en **liste verticale groupée comme le menu** (`?onglet=`) : Général (`general`, `personnalisation` = nom et logo), Production (`planning`, `script`, `etapes`), Audience (`youtube`, `instagram` — accueille désormais le pseudo public suivi —, `discord`), Revenus (`chiffre-affaires` = catégories, `marques`, `affiliation` = identifiants Amazon/Domadoo), Entreprise (`societe`), API (`api` — export, clés, sélection des chaînes/comptes exportés), Applications externes (`applications`). Sur mobile, un seul bouton déroulant |
 
 **Les réglages sont rangés dans les familles du menu, en liste verticale** et non en
 onglets : onze onglets passaient à la ligne dans un ordre qui ne disait rien. `GROUPS`
@@ -2534,10 +2578,13 @@ défilement, donc les en-têtes collants continuent de s'accrocher à la fenêtr
 `visible` à partir de `lg`, où les panneaux des `StatCard` débordent volontairement du
 conteneur — les rogner les couperait en deux sur la première et la dernière colonne.
 
-**Les filtres se replient en un seul bouton sur mobile** (`FiltersSheet`) : dépliés, les
-cinq réglages occupaient quatre lignes, soit la moitié de la hauteur utile, et l'écran
-commençait sous le pli. Le déclencheur affiche **l'état qui compte** — la période et le
-nombre de chaînes —, le reste vit dans une modale qui monte **les mêmes composants** que
+**Sur mobile, les filtres sont une icône de la barre d'application** (`FiltersSheet`,
+monté par `AppLayout` à côté de la collecte, sur les écrans à filtres) : dépliés, les cinq
+réglages occupaient quatre lignes ; repliés en un bouton pleine largeur sous la barre
+d'application, ils prenaient encore un bloc en haut de chaque écran — retiré le
+2026-09-25, `FiltersBar` n'est plus monté sous `lg`. Le défaut convient presque toujours ;
+la période et les chaînes retenues se lisent dans l'infobulle de l'icône et en tête de la
+modale, qui monte **les mêmes composants** que
 le grand écran (`PeriodPicker`, `ChannelPicker`) : un second jeu de contrôles tactiles
 aurait fini par se contredire avec le premier. La collecte est sortie de `FiltersBar` dans
 `CollectAction`, monté **deux fois** — en bouton dans la barre, en icône dans la barre
@@ -2776,6 +2823,7 @@ période**, et leur sous-titre le dit.
 | `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`           | Commentaires archivés, leur tri et leur collecte                                                                                                    |
 | `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                                                                                                                                                         | idem                                                    | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                                                                            |
 | `useExternalApps`, `useCreateExternalApp`, `useUpdateExternalApp`, `useDeleteExternalApp`, `useTodayTodos`                                                                                                                                                                                                                     | `application/externalApp/usecases/useExternalApps.ts`   | Applications externes du menu ; tâches Todo du jour (pastille, **relue chaque minute** : ce qu'on coche dans l'iframe ne passe pas par le studio)   |
+| `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
 | `useIntegrations`, `useUpdateIntegration`, `useCollectIntegration`, `useExportKeys`, `useCreateExportKey`, `useDeleteExportKey`, `useDomadooOverview`                                                                                                                                                                          | `application/integration/usecases/useIntegrations.ts`   | Sources de l'export et clés d'accès. `useUpdateIntegration` sert aussi `ProviderCredentialsCard`, monté hors de Paramètres → API (Instagram, Affiliation, Discord). `useDomadooOverview` alimente `/affiliations` → Domadoo                          |
@@ -2941,6 +2989,14 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 
 ## Points d'attention
 
+- **`useLocalStorage` est partagé par clé** (`useSyncExternalStore` + abonnés par clé +
+  événement `storage`). Il tenait un `useState` par instance : Paramètres → Général écrivait
+  `preferences.mobileNav`, mais `AppLayout` gardait sa propre copie, et la barre du bas ne
+  suivait qu'après un rechargement. Toute préférence lue à deux endroits en dépendait.
+- **Jamais `crypto.randomUUID()` côté front.** Il n'existe qu'en contexte sécurisé (https,
+  localhost) : ouvert en `http://<vps>:port`, il vaut `undefined` et l'appel lève sans rien
+  afficher — c'est ce qui rendait « Ajouter un titre » du dashboard inopérant sur
+  l'ordinateur. `newHeadingId` passe par `crypto.getRandomValues`, disponible partout.
 - **Jamais `onCreated?.(await create.mutateAsync(payload))`.** Un appel optionnel
   court-circuite **aussi l'évaluation de ses arguments** : quand `onCreated` n'est pas
   passé, la mutation n'est jamais lancée, aucune requête ne part, et le code enchaîne sur
@@ -3672,18 +3728,19 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
 
 ## PWA
 
-L'application s'installe sur l'écran d'accueil et se lance sans barre d'adresse. Trois
-fichiers, tous dans `apps/web/public/` (donc copiés tels quels dans `dist` par Vite) :
+L'application s'installe sur l'écran d'accueil et se lance sans barre d'adresse. Le
+**manifeste est servi par l'API** (`/api/branding/manifest`, voir le domaine `branding`) :
+il porte le nom et le logo réglés dans l'app. Le reste vit dans `apps/web/public/` (donc
+copié tel quel dans `dist` par Vite) :
 
 | Fichier                  | Rôle                                           |
 | ------------------------ | ---------------------------------------------- |
-| `manifest.webmanifest`   | Nom, icônes, `display: standalone`, raccourcis |
 | `sw.js`                  | Service worker, écrit à la main                |
 | `icon-*.png`, `favicon*` | Le jeu d'icônes, dérivé d'un seul PNG source   |
 
 ### Les icônes
 
-Toutes générées depuis **un seul PNG 256×256** (l'emoji 🎥 de Microsoft Teams), par un
+Les icônes **par défaut** (sans logo personnalisé), toutes générées depuis **un seul PNG 256×256** (l'emoji 🎥 de Microsoft Teams), par un
 script Pillow ponctuel — il n'y a pas de chaîne de génération dans le build, une icône ne
 changeant qu'une fois tous les deux ans.
 
@@ -3739,16 +3796,17 @@ un contexte non sécurisé ou une navigation privée ne doit pas empêcher l'app
 
 ### Ce que nginx doit garantir
 
-`nginx.conf` porte trois règles sans lesquelles la PWA se met à jour mal ou pas du tout :
+`nginx.conf` porte les règles sans lesquelles la PWA se met à jour mal ou pas du tout :
 
-- `location = /sw.js`, `= /index.html`, `= /manifest.webmanifest` → `no-cache,
-must-revalidate`. Un service worker figé par un cache HTTP d'un an rendrait
-  l'application impossible à mettre à jour sans vider le navigateur à la main.
-- `default_type application/manifest+json;` **dans le `location = /manifest.webmanifest`**,
-  pour que le manifeste ne sorte pas en `application/octet-stream` sur une version de
-  nginx qui ignore l'extension.
+- `location = /sw.js`, `= /index.html` → `no-cache, must-revalidate`. Un service worker
+  figé par un cache HTTP d'un an rendrait l'application impossible à mettre à jour sans
+  vider le navigateur à la main. (Le manifeste, servi par l'API, pose lui-même son
+  `no-cache` et son type `application/manifest+json`.)
+- `location ^~ /api/` : sans le `^~`, la règle en expression régulière des icônes
+  (`\.(png|ico)$`) passe **avant** un simple préfixe, et une image demandée à l'API serait
+  cherchée sur le disque. Les icônes de l'API n'ont de toute façon pas d'extension.
 
-  **Surtout pas un bloc `types` au niveau `server`.** La directive `types` _remplace_ la
+  **Jamais de bloc `types` au niveau `server`.** La directive `types` _remplace_ la
   table MIME héritée du contexte `http` (`include mime.types`) au lieu de la compléter :
   plus de `text/html`, plus de `text/css`, plus d'`application/javascript`. Tout part en
   `application/octet-stream` et le navigateur **télécharge la page** au lieu de

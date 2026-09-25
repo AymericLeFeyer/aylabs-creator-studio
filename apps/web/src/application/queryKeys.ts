@@ -36,6 +36,8 @@ export const queryKeys = {
   postDraftSummary: () => ['postDrafts', 'summary'] as const,
   // Aucune autre racine ne la croise : poser un bloc ne change aucune donnée.
   dashboardWidgets: () => ['dashboardWidgets'] as const,
+  // Le nom et le logo : ne croise aucune autre racine.
+  branding: () => ['branding'] as const,
   scriptPresets: (includeArchived: boolean) => ['scriptPresets', includeArchived] as const,
   shotAngles: (includeArchived: boolean) => ['shotAngles', includeArchived] as const,
   productionShotAngles: (id: string) => ['productionShotAngles', id] as const,

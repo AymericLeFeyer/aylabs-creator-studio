@@ -1641,6 +1641,30 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 45,
+    name: 'app_branding',
+    // Le nom et le logo de l'application, regles dans Parametres -> Personnalisation.
+    // Ligne unique, comme "company". "name" NULL = le nom par defaut ; "logo_version" NULL
+    // = pas de logo, les icones livrees avec le front servent. Les icones sont des PNG deja
+    // redimensionnes par le navigateur (canvas) : l'API n'a aucune dependance d'image a
+    // compiler, elle les range et les ressert tels quels.
+    up: `
+      CREATE TABLE app_branding (
+        id           TEXT PRIMARY KEY CHECK (id = 'default'),
+        name         TEXT,
+        logo_version TEXT,
+        updated_at   TEXT NOT NULL
+      );
+      INSERT INTO app_branding (id, updated_at)
+      VALUES ('default', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
+      CREATE TABLE app_branding_icons (
+        key  TEXT PRIMARY KEY,
+        data BLOB NOT NULL
+      );
+    `,
+  },
 ];
 
 /**

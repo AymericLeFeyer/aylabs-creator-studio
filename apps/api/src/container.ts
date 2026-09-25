@@ -20,6 +20,7 @@ import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/reposi
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
 import { SqlitePostDraftRepository } from './infrastructure/postDraft/repositories/SqlitePostDraftRepository.ts';
 import { SqliteDashboardWidgetRepository } from './infrastructure/dashboard/repositories/SqliteDashboardWidgetRepository.ts';
+import { SqliteBrandingRepository } from './infrastructure/branding/repositories/SqliteBrandingRepository.ts';
 import { SqliteSharedPreferenceRepository } from './infrastructure/sharedPreference/repositories/SqliteSharedPreferenceRepository.ts';
 import { SqliteScriptPresetRepository } from './infrastructure/script/repositories/SqliteScriptPresetRepository.ts';
 import { SqliteShotAngleRepository } from './infrastructure/script/repositories/SqliteShotAngleRepository.ts';
@@ -107,6 +108,7 @@ export interface Container {
   postDrafts: SqlitePostDraftRepository;
   dashboardWidgets: SqliteDashboardWidgetRepository;
   sharedPreferences: SqliteSharedPreferenceRepository;
+  branding: SqliteBrandingRepository;
   /** Les gabarits insérables dans un script. Aucun effet de bord : ils sont copiés, pas liés. */
   scriptPresets: SqliteScriptPresetRepository;
   /** Le référentiel des angles de vue, et les angles ponctuels d'une vidéo. */
@@ -229,6 +231,7 @@ export const buildContainer = (config: Config): Container => {
   const postDrafts = new SqlitePostDraftRepository(db);
   const dashboardWidgets = new SqliteDashboardWidgetRepository(db);
   const sharedPreferences = new SqliteSharedPreferenceRepository(db);
+  const branding = new SqliteBrandingRepository(db);
   const scriptPresets = new SqliteScriptPresetRepository(db);
   const shotAngles = new SqliteShotAngleRepository(db);
   const comments = new SqliteCommentRepository(db);
@@ -307,6 +310,7 @@ export const buildContainer = (config: Config): Container => {
     postDrafts,
     dashboardWidgets,
     sharedPreferences,
+    branding,
     scriptPresets,
     shotAngles,
     comments,

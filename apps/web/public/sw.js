@@ -27,13 +27,15 @@
  */
 
 /** Change à chaque évolution de la logique ci-dessous : l'ancien cache est alors purgé. */
-const CACHE = 'creator-studio-v1';
+const CACHE = 'creator-studio-v2';
 
 /**
  * La coquille minimale, mise en cache à l'installation.
  * Uniquement des chemins **stables** : aucun nom de fichier haché ne peut figurer ici.
  */
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
+// Le manifeste n'y est plus : l'API le construit (`/api/branding/manifest`), et `/api/*`
+// n'est jamais mis en cache — un nom changé doit se voir.
+const SHELL = ['/', '/index.html', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

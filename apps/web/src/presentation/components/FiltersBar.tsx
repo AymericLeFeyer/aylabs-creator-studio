@@ -7,7 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { PeriodPicker } from './filters/PeriodPicker.tsx';
 import { ContextualEntityPicker } from './filters/ContextualEntityPicker.tsx';
 import { CollectAction } from './filters/CollectAction.tsx';
-import { FiltersSheet } from './filters/FiltersSheet.tsx';
 import { cn } from '../../shared/cn.ts';
 
 const GRANULARITIES: Array<{ value: Granularity | 'auto'; label: string }> = [
@@ -29,10 +28,8 @@ const GRANULARITIES: Array<{ value: Granularity | 'auto'; label: string }> = [
  * Application : elle se règle une fois et ne change plus, alors que tout ce qui reste
  * ici se change plusieurs fois par session.
  *
- * **Sur mobile, elle se replie en un seul bouton** (`FiltersSheet`) : les cinq réglages
- * dépliés y occupaient quatre lignes, soit la moitié de la hauteur utile, et l'écran
- * commençait sous le pli. La collecte, elle, n'est plus ici du tout sur mobile — elle est
- * passée en action de la barre d'application, là où le pouce l'atteint.
+ * **Grand écran seulement.** Sur mobile, elle n'est pas montée du tout : les filtres y
+ * sont une icône de la barre d'application (`FiltersSheet`), à côté de la collecte.
  */
 export const FiltersBar = ({
   actionsRef,
@@ -43,12 +40,8 @@ export const FiltersBar = ({
   const filters = useFilters();
 
   return (
-    <div className="flex flex-col gap-2 pb-2.5">
-      <div className="lg:hidden">
-        <FiltersSheet />
-      </div>
-
-      <div className="hidden flex-wrap items-center gap-x-3 gap-y-2 lg:flex">
+    <div className="pb-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <PeriodPicker />
         <ContextualEntityPicker />
 

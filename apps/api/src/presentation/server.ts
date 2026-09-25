@@ -23,6 +23,7 @@ import { ideasRouter } from './routes/ideas.ts';
 import { postDraftsRouter } from './routes/postDrafts.ts';
 import { dashboardRouter } from './routes/dashboard.ts';
 import { preferencesRouter } from './routes/preferences.ts';
+import { brandingRouter } from './routes/branding.ts';
 import {
   productionShotAnglesRouter,
   scriptPresetsRouter,
@@ -50,6 +51,8 @@ export const createServer = (container: Container): express.Express => {
       origin: container.config.corsOrigins.includes('*') ? true : container.config.corsOrigins,
     }),
   );
+  // Avant le parseur global : ce routeur reçoit des logos, et pose sa propre limite.
+  app.use('/api/branding', brandingRouter(container));
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/health', (_req, res) => {

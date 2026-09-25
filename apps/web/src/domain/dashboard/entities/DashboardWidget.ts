@@ -45,8 +45,15 @@ export const HEADING_PREFIX = 'heading.';
 
 export const isHeading = (blockId: string): boolean => blockId.startsWith(HEADING_PREFIX);
 
+/**
+ * `crypto.getRandomValues` et non `crypto.randomUUID` : ce dernier n'existe que dans un
+ * contexte sécurisé (https ou localhost). Ouvert en `http://<vps>:port`, il vaut
+ * `undefined`, l'appel lève, et « Ajouter un titre » ne faisait rien — sans erreur visible.
+ */
 export const newHeadingId = (): string =>
-  `${HEADING_PREFIX}${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+  `${HEADING_PREFIX}${Array.from(crypto.getRandomValues(new Uint8Array(8)), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('')}`;
 
 export const HEADING_VARIANTS = ['h1', 'h2', 'h3', 'label', 'divider'] as const;
 export type HeadingVariant = (typeof HEADING_VARIANTS)[number];

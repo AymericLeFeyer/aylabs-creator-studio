@@ -21,7 +21,9 @@
     <!-- iOS ignore le manifeste pour l'icône de l'écran d'accueil : il lui faut celle-ci,
          opaque (la transparence y serait composée sur du noir). -->
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Servi par l'API, construit depuis le nom et le logo réglés dans Paramètres →
+         Personnalisation. Adresse absolue : ses propres liens le sont aussi. -->
+    <link rel="manifest" href="/api/branding/manifest" />
 
     <meta
       name="description"

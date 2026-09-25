@@ -12,6 +12,7 @@ import {
   Link2,
   ListOrdered,
   Music2,
+  Palette,
   SlidersHorizontal,
   Tags,
   Wallet,
@@ -48,6 +49,7 @@ import { ApiSettingsPage } from './ApiSettingsPage.tsx';
 import { ExternalAppsSettingsPage } from './ExternalAppsSettingsPage.tsx';
 import { PrivacySettings } from '../components/PrivacySettings.tsx';
 import { MobileNavSettings } from '../components/settings/MobileNavSettings.tsx';
+import { BrandingSettings } from '../components/settings/BrandingSettings.tsx';
 import { cn } from '../../shared/cn.ts';
 
 interface SettingsEntry {
@@ -89,6 +91,12 @@ const GROUPS: SettingsGroup[] = [
     label: 'Général',
     entries: [
       { id: 'general', label: 'Affichage', icon: SlidersHorizontal, render: () => <AppSettings /> },
+      {
+        id: 'personnalisation',
+        label: 'Personnalisation',
+        icon: Palette,
+        render: () => <BrandingSettings />,
+      },
     ],
   },
   {

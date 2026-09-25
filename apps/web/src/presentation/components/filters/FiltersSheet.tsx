@@ -17,7 +17,6 @@ import {
 import { PeriodPicker } from './PeriodPicker.tsx';
 import { EntityPicker } from './EntityPicker.tsx';
 import { pickerSummary, useFilterPicker } from './useFilterPicker.ts';
-import { cn } from '../../../shared/cn.ts';
 
 const GRANULARITIES: Array<{ value: Granularity | 'auto'; label: string }> = [
   { value: 'auto', label: 'Auto' },
@@ -46,15 +45,16 @@ const Row = ({
 );
 
 /**
- * Les filtres sur mobile : **un bouton, et tout le reste dans une modale**.
+ * Les filtres sur mobile : **une icône dans la barre d'application, et tout le reste dans
+ * une modale**.
  *
  * Dépliée, la barre occupait quatre lignes sur un téléphone — période, chaînes, pas
  * d'agrégation, interrupteur, case à cocher — soit la moitié de la hauteur utile, pour
- * des réglages qu'on change quelques fois par séance. L'écran commençait sous le pli.
- *
- * Le déclencheur affiche **l'état qui compte** : la période, et le nombre de chaînes
- * retenues quand ce n'est pas « toutes ». C'est ce qu'on vient vérifier d'un coup d'œil
- * avant de lire un chiffre — le pas d'agrégation ou la case des produits reçus, non.
+ * des réglages qu'on change quelques fois par séance. Repliée en un bouton pleine largeur
+ * sous la barre d'application, elle prenait encore un bloc entier en haut de chaque
+ * écran. Elle n'est plus qu'une icône, à côté de la collecte : le défaut (30 derniers
+ * jours, toutes les chaînes) convient la plupart du temps, et la période active se lit
+ * dans l'infobulle et en tête de la modale.
  *
  * Les contrôles à l'intérieur sont **exactement les mêmes composants** que sur grand
  * écran : un second jeu, adapté au tactile, aurait fini par se contredire avec le premier
@@ -66,33 +66,28 @@ export const FiltersSheet = () => {
   const [open, setOpen] = useState(false);
 
   const entityLabel = pickerSummary(picker).label;
+  const period = `${formatDate(filters.from)} – ${formatDate(filters.to)}`;
   const entityRowLabel = picker.noun.charAt(0).toUpperCase() + picker.noun.slice(1);
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon"
+        className="shrink-0"
         onClick={() => setOpen(true)}
-        className={cn(
-          'flex w-full items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-left',
-          'transition-colors active:bg-accent',
-        )}
+        aria-label={`Filtres : ${period}, ${entityLabel}`}
+        title={`${period} · ${entityLabel}`}
       >
-        <SlidersHorizontal className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">
-            {formatDate(filters.from)} – {formatDate(filters.to)}
-          </span>
-          <span className="block truncate text-xs text-muted-foreground">{entityLabel}</span>
-        </span>
-      </button>
+        <SlidersHorizontal className="h-5 w-5" />
+      </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Filtres</DialogTitle>
             <DialogDescription>
-              Ils pilotent tous les écrans, pas seulement celui-ci.
+              {period} · {entityLabel}. Ils pilotent tous les écrans, pas seulement celui-ci.
             </DialogDescription>
           </DialogHeader>
 

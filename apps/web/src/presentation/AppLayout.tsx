@@ -10,11 +10,15 @@ import { CompactTooltip } from './components/CompactTooltip.tsx';
 import { FiltersBar } from './components/FiltersBar.tsx';
 import { RunningTimerBar } from './components/production/RunningTimerBar.tsx';
 import { CollectAction } from './components/filters/CollectAction.tsx';
+import { FiltersSheet } from './components/filters/FiltersSheet.tsx';
 import { AppBarProvider } from './hooks/useAppBar.tsx';
 import { useNavBadges } from './hooks/useNavBadges.ts';
 import { NavBadgePill } from './components/NavBadgePill.tsx';
 import { useProduction } from '../application/production/usecases/useProductions.ts';
 import { FORMAT_ROUTES } from '../domain/production/entities/Production.ts';
+import { useBranding } from '../application/branding/usecases/useBranding.ts';
+import { brandingIconUrl, DEFAULT_APP_NAME } from '../domain/branding/entities/Branding.ts';
+import { applyBranding } from './branding/applyBranding.ts';
 import { cn } from '../shared/cn.ts';
 
 /** Largeur du contenu, généreuse sur grand écran : les graphiques côte à côte en ont besoin. */
@@ -107,6 +111,14 @@ export const AppLayout = () => {
    * tête pourquoi (`PageAlerts`).
    */
   const badges = useNavBadges();
+
+  /**
+   * Le nom et le logo (Paramètres → Personnalisation). Reportés sur l'onglet et les
+   * icônes à chaque changement ; la barre latérale les lit directement.
+   */
+  const { data: branding } = useBranding();
+  const appName = branding?.displayName ?? DEFAULT_APP_NAME;
+  useEffect(() => applyBranding(branding), [branding]);
 
   /*
    * `--app-header` : la hauteur réelle de l'en-tête collant, mesurée et posée sur la
@@ -210,8 +222,12 @@ export const AppLayout = () => {
   const sidebarContent = ({ compact }: { compact: boolean }) => (
     <div className="flex h-full flex-col gap-1 p-2">
       <div className={cn('flex items-center gap-2 px-1 py-2', compact && 'justify-center px-0')}>
-        <img src="/icon-192.png" alt="" className="h-6 w-6 shrink-0" />
-        {!compact && <span className="truncate font-semibold">Creator Studio</span>}
+        <img
+          src={brandingIconUrl(branding, 'icon-192')}
+          alt=""
+          className="h-6 w-6 shrink-0 object-contain"
+        />
+        {!compact && <span className="truncate font-semibold">{appName}</span>}
       </div>
 
       <nav aria-label="Navigation principale" className="flex flex-1 flex-col overflow-y-auto">
@@ -368,14 +384,16 @@ export const AppLayout = () => {
                 est posée d'office là où elle a un sens — les écrans à filtres —, les
                 autres écrans y déposent les leurs. */}
             <div ref={setActionsNode} className="flex shrink-0 items-center gap-0.5" />
+            {showFilters && <FiltersSheet />}
             {showFilters && <CollectAction compact />}
           </div>
 
           {/* La barre de filtres occupe l'en-tête : période et chaînes restent sous la
-              main quand on descend dans un long tableau. Sur mobile elle est déjà
-              repliée en un bouton (`FiltersSheet`), d'où l'absence de marge haute. */}
+              main quand on descend dans un long tableau. Grand écran seulement : sur
+              mobile, les filtres sont l'icône de la barre d'application juste au-dessus
+              (`FiltersSheet`), et ne prennent plus aucune ligne. */}
           {showFilters && (
-            <div className={cn(CONTAINER, 'lg:pt-2.5')}>
+            <div className={cn(CONTAINER, 'hidden pt-2.5 lg:block')}>
               <FiltersBar actionsRef={setFilterActionsNode} />
             </div>
           )}

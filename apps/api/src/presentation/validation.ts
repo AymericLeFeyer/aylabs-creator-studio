@@ -1174,3 +1174,40 @@ export const discordHistoryQuerySchema = z.object({
   from: isoDate,
   to: isoDate,
 });
+
+/** Le nom de l'application. Vide ou `null` rend le nom par défaut. */
+export const updateBrandingSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .max(40)
+    .nullable()
+    .transform((value) => value || null),
+});
+
+/**
+ * Un PNG en base64, avec ou sans préfixe `data:image/png;base64,`. La signature est
+ * vérifiée à la réception : une icône illisible casserait l'onglet et l'écran d'accueil
+ * sans le moindre message.
+ */
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const pngSchema = z
+  .string()
+  .max(3_000_000)
+  .transform((value) =>
+    Uint8Array.from(Buffer.from(value.replace(/^data:image\/png;base64,/, ''), 'base64')),
+  )
+  .refine(
+    (bytes) => PNG_SIGNATURE.every((byte, index) => bytes[index] === byte),
+    'Image PNG attendue',
+  );
+
+export const setBrandingLogoSchema = z.object({
+  icons: z.object({
+    'favicon-32': pngSchema,
+    'icon-192': pngSchema,
+    'icon-512': pngSchema,
+    'maskable-512': pngSchema,
+    'apple-180': pngSchema,
+  }),
+});
