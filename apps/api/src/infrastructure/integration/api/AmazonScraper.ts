@@ -31,29 +31,54 @@ export class AmazonScraper {
       const page = await browser.newPage();
       await page.goto(REPORTING_URL);
 
-      await page.fill('#ap_email', credentials.login);
-      await page.click('#continue');
-      await page.fill('#ap_password', credentials.password);
-      await page.click('#signInSubmit');
+      /**
+       * Attend un champ visible, sinon lève une erreur qui dit **où** on s'est arrêté :
+       * l'adresse et le titre de la page suffisent presque toujours à distinguer un
+       * captcha, un mot de passe refusé ou une page remaniée.
+       */
+      const visible = async (selector: string, step: string, timeout = 20_000) => {
+        const locator = page.locator(selector).first();
+        try {
+          await locator.waitFor({ state: 'visible', timeout });
+        } catch {
+          const where = `${new URL(page.url()).pathname} — « ${await page.title().catch(() => '?')} »`;
+          throw upstream(`Amazon : ${step} (page ${where}).`);
+        }
+        return locator;
+      };
+
+      // Depuis septembre 2026, la connexion « unifiée » d'Amazon nomme le champ
+      // `#ap_email_login` et son bouton n'a plus d'identifiant. L'ancien `#ap_email`
+      // reste accepté, et chaque étape se valide par Entrée plutôt que par un bouton
+      // dont l'identifiant peut encore changer.
+      const email = await visible('#ap_email_login, #ap_email', 'champ e-mail introuvable');
+      await email.fill(credentials.login);
+      await email.press('Enter');
+
+      // `#ap_password` et non `input[name=password]` : la page de l'e-mail porte déjà un
+      // champ mot de passe caché (indice d'autoremplissage).
+      const password = await visible(
+        '#ap_password',
+        'page du mot de passe introuvable — adresse inconnue d’Amazon, ou captcha',
+      );
+      await password.fill(credentials.password);
+      await password.press('Enter');
 
       if (credentials.otpSecret) {
+        const otp = await visible(
+          '#auth-mfa-otpcode',
+          'le code de double authentification n’a pas été demandé — mot de passe refusé, captcha, ou méthode par défaut sur SMS au lieu de l’application',
+        );
         // Calculé au dernier moment : un code a trente secondes de vie.
-        await page.waitForSelector('#auth-mfa-otpcode', { timeout: 20_000 }).catch(() => {
-          throw upstream(
-            'Amazon n’a pas demandé le code de double authentification : vérifie que la méthode par défaut est l’application et non le SMS.',
-          );
-        });
-        await page.fill('#auth-mfa-otpcode', totp(credentials.otpSecret));
-        await page.click('#auth-signin-button');
+        await otp.fill(totp(credentials.otpSecret));
+        await otp.press('Enter');
       }
 
-      await page
-        .waitForSelector('#ac-report-commission-commision-clicks', { timeout: 30_000 })
-        .catch(() => {
-          throw upstream(
-            'Tableau de bord Amazon introuvable après la connexion : identifiants refusés, captcha, ou page modifiée.',
-          );
-        });
+      await visible(
+        '#ac-report-commission-commision-clicks',
+        'tableau de bord introuvable après la connexion — identifiants ou code refusés, captcha, ou page modifiée',
+        30_000,
+      );
 
       const read = async (selector: string) =>
         parseLocaleNumber(cleanText(await page.textContent(selector)));

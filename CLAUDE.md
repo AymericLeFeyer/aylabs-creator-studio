@@ -3795,6 +3795,14 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   valeur reste publiée. Pour Amazon, la double authentification doit avoir l'**application**
   comme méthode par défaut (pas le SMS) et `AMAZON_SECRET_KEY` est la clé base32, pas un
   code à six chiffres.
+- **Amazon a changé sa page de connexion (septembre 2026, connexion « unifiée »).** Le champ
+  e-mail est devenu `#ap_email_login` (l'ancien `#ap_email` n'existe plus — c'était le
+  `page.fill: Timeout … waiting for locator('#ap_email')`) et son bouton n'a plus
+  d'identifiant. `AmazonScraper` accepte les deux noms et valide chaque étape par **Entrée**
+  plutôt que par un bouton. Chaque attente passe par `visible()`, qui rapporte l'étape, le
+  chemin et le titre de la page : c'est ce qui distingue un captcha d'un mot de passe refusé
+  ou d'un nouveau remaniement. Ne jamais viser `input[name=password]` : la page de l'e-mail
+  porte déjà un champ mot de passe caché (indice d'autoremplissage).
 - **Jamais d'espace insécable littéral dans une source.** `no-irregular-whitespace` le
   refuse et il est invisible à la relecture — et un outil d'édition qui convertit ` `
   en caractère réel le réintroduit sans prévenir. `browser.ts` construit sa regex par
