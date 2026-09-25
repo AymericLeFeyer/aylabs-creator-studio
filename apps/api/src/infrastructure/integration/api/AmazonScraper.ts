@@ -14,6 +14,14 @@ export interface AmazonCredentials {
 }
 
 /**
+ * Un numéro de téléphone s'écrit de mille façons (« 06 12 34 56 78 », « +33.6… ») ; le
+ * champ unifié d'Amazon attend des chiffres, avec ou sans indicatif. Une adresse e-mail
+ * passe telle quelle.
+ */
+const normalizeLogin = (login: string): string =>
+  login.includes('@') ? login : login.replace(/[\s.\-()]/g, '');
+
+/**
  * « l•••••r@gmail.com, 22 caractères » — assez pour reconnaître une adresse ou y voir des
  * guillemets parasites, sans l'écrire en clair dans le dernier statut de la source.
  */
@@ -65,7 +73,7 @@ export class AmazonScraper {
       // reste accepté, et chaque étape se valide par Entrée plutôt que par un bouton
       // dont l'identifiant peut encore changer.
       const email = await visible('#ap_email_login, #ap_email', 'champ e-mail introuvable');
-      await email.fill(credentials.login);
+      await email.fill(normalizeLogin(credentials.login));
       await email.press('Enter');
 
       // `/ax/claim/intent` = « Cet e-mail est nouveau pour nous » : Amazon ne connaît pas
@@ -79,7 +87,7 @@ export class AmazonScraper {
       ]).catch(() => undefined);
       if (page.url().includes('/ax/claim/intent')) {
         throw upstream(
-          `Amazon ne connaît pas l’identifiant envoyé (${describeLogin(credentials.login)}) et propose de créer un compte. Vérifie AMAZON_LOGIN : l’adresse du compte Partenaires, sans guillemets.`,
+          `Amazon ne connaît pas l’identifiant envoyé (${describeLogin(credentials.login)}) et propose de créer un compte. Vérifie AMAZON_LOGIN : l’e-mail ou le numéro de téléphone réellement rattaché au compte Partenaires, sans guillemets.`,
         );
       }
 

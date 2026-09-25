@@ -3809,6 +3809,9 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   pas l'identifiant envoyé** : ce n'est ni un captcha ni un blocage. L'erreur affiche
   l'identifiant masqué (`describeLogin` : initiale, domaine, longueur, guillemets) — des
   guillemets recopiés dans une variable Portainer y sont envoyés tels quels.
+  Cas rencontré : un compte Partenaires rattaché à un **numéro de téléphone** et non à
+  l'e-mail. `AMAZON_LOGIN` accepte les deux (`normalizeLogin` retire espaces, points et
+  tirets d'un numéro ; un e-mail passe tel quel).
 - **Jamais d'espace insécable littéral dans une source.** `no-irregular-whitespace` le
   refuse et il est invisible à la relecture — et un outil d'édition qui convertit ` `
   en caractère réel le réintroduit sans prévenir. `browser.ts` construit sa regex par

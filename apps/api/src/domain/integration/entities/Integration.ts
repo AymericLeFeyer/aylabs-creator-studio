@@ -102,11 +102,11 @@ export const PROVIDERS: ProviderDefinition[] = [
     fields: [
       {
         key: 'login',
-        label: 'E-mail du compte',
+        label: 'E-mail ou téléphone du compte',
         secret: false,
         envVar: 'AMAZON_LOGIN',
         optional: false,
-        hint: 'Celui du compte Partenaires, sur partenaires.amazon.fr.',
+        hint: 'L’identifiant qui mène au mot de passe sur partenaires.amazon.fr : l’e-mail, ou le numéro de téléphone si le compte y est rattaché (+33 6… ou 06…).',
       },
       {
         key: 'password',
