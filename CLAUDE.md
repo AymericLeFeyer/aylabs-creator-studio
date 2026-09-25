@@ -325,8 +325,9 @@ Affichés par `StepAveragesCard`, colonne de droite de `/production` et `/shorts
 `upcomingReleases` (le détail de la carte) lisent **toutes** les vidéos du format dont la
 sortie visée est aujourd'hui ou plus tard, **terminées comprises** — une vidéo prête en
 avance sort quand même ce jour-là. Elles le lisaient dans `queue`, qui exclut les `done`, et
-la carte annonçait la vidéo suivante. Seule exclusion : une vidéo déjà en ligne avant sa
-date (`videoDate < aujourd'hui`).
+la carte annonçait la vidéo suivante. **Seule la date visée compte, jamais `videoDate`** :
+une vidéo programmée sur YouTube est collectée avec sa date d'**upload**, et l'écarter sur
+`videoDate < aujourd'hui` faisait sauter les vidéos terminées et programmées.
 
 `GetProductionOverview.execute(format?)` borne **la file, tous les chiffres et les
 créneaux** au format demandé — y compris « Temps cette semaine », qui filtre les sessions de

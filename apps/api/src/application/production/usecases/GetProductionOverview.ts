@@ -134,17 +134,16 @@ export class GetProductionOverview {
   /**
    * Les sorties à venir, **terminées comprises** : une vidéo prête avant sa date sort quand
    * même ce jour-là, et « prochaine sortie » ne veut pas dire « prochaine à produire ».
-   * Seule exception : une vidéo déjà en ligne (sortie rattachée, datée d'avant aujourd'hui)
-   * est sortie en avance, elle n'est plus « à venir ». Triées par date visée.
+   * Triées par date visée.
+   *
+   * **La date visée est la seule qui compte, jamais celle de la vidéo rattachée.** Une
+   * vidéo *programmée* sur YouTube est collectée avec sa date d'**upload**, pas celle de sa
+   * mise en ligne : l'écarter parce que `videoDate` est passée faisait sauter précisément
+   * les vidéos terminées et programmées — la carte annonçait alors la suivante.
    */
   private upcomingReleases(now: IsoDate, productions: ProductionView[]): ProductionView[] {
     return productions
-      .filter(
-        (production) =>
-          production.plannedDate !== null &&
-          production.plannedDate >= now &&
-          !(production.videoDate !== null && production.videoDate < now),
-      )
+      .filter((production) => production.plannedDate !== null && production.plannedDate >= now)
       .sort((a, b) => a.plannedDate!.localeCompare(b.plannedDate!) || a.sortOrder - b.sortOrder);
   }
 
