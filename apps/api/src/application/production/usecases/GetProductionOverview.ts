@@ -113,16 +113,39 @@ export class GetProductionOverview {
       .filter((slot) => slot.date <= weekEnd)
       .reduce((total, slot) => total + slotMinutes(slot), 0);
 
+    const upcomingReleases = this.upcomingReleases(
+      now,
+      format ? all.filter((p) => p.format === format) : all,
+    );
+
     return {
       queue,
+      upcomingReleases,
       nextId: next?.id ?? null,
       alerts: this.buildAlerts(now, fullQueue, all),
       upcomingSlots,
       weekLoadMinutes,
-      stats: this.buildStats(now, queue, format, all),
+      stats: this.buildStats(now, queue, format, all, upcomingReleases),
       ...this.buildTimeAverages(format ? all.filter((p) => p.format === format) : all),
       running: this.times.findRunning(),
     };
+  }
+
+  /**
+   * Les sorties à venir, **terminées comprises** : une vidéo prête avant sa date sort quand
+   * même ce jour-là, et « prochaine sortie » ne veut pas dire « prochaine à produire ».
+   * Seule exception : une vidéo déjà en ligne (sortie rattachée, datée d'avant aujourd'hui)
+   * est sortie en avance, elle n'est plus « à venir ». Triées par date visée.
+   */
+  private upcomingReleases(now: IsoDate, productions: ProductionView[]): ProductionView[] {
+    return productions
+      .filter(
+        (production) =>
+          production.plannedDate !== null &&
+          production.plannedDate >= now &&
+          !(production.videoDate !== null && production.videoDate < now),
+      )
+      .sort((a, b) => a.plannedDate!.localeCompare(b.plannedDate!) || a.sortOrder - b.sortOrder);
   }
 
   /**
@@ -214,6 +237,7 @@ export class GetProductionOverview {
     queue: ProductionView[],
     format: ProductionFormat | undefined,
     all: ProductionView[],
+    upcomingReleases: ProductionView[],
   ): ProductionStats {
     const formats = new Map(all.map((production) => [production.id, production.format]));
     const weekEnd = addDays(now, 6);
@@ -221,7 +245,7 @@ export class GetProductionOverview {
     const dated = queue
       .filter((production) => production.plannedDate !== null)
       .sort((a, b) => (a.plannedDate! < b.plannedDate! ? -1 : 1));
-    const nextRelease = dated.find((production) => production.plannedDate! >= now) ?? null;
+    const nextRelease = upcomingReleases[0] ?? null;
 
     // Chaque vidéo se mesure à SES étapes (`stepIds`) : une étape ajoutée après sa
     // création ne doit pas faire reculer son avancement.

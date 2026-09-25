@@ -58,6 +58,8 @@ export interface StepTimeAverage {
 
 export interface ProductionOverview {
   queue: Production[];
+  /** Sorties datées d'aujourd'hui ou plus tard, **terminées comprises**, par date visée. */
+  upcomingReleases: Production[];
   /** La prochaine à travailler : la première de la file qui n'est pas en pause. */
   nextId: string | null;
   alerts: ProductionAlert[];

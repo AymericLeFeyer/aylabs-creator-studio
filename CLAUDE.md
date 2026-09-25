@@ -321,6 +321,13 @@ bornés au format. Une vidéo ne compte pour une étape que si l'étape y est **
 bas pendant toute sa préparation. Seules les sessions comptent, jamais les créneaux prévus.
 Affichés par `StepAveragesCard`, colonne de droite de `/production` et `/shorts`.
 
+**« Prochaine sortie » n'est pas « prochaine à produire »** : `stats.nextRelease` et
+`upcomingReleases` (le détail de la carte) lisent **toutes** les vidéos du format dont la
+sortie visée est aujourd'hui ou plus tard, **terminées comprises** — une vidéo prête en
+avance sort quand même ce jour-là. Elles le lisaient dans `queue`, qui exclut les `done`, et
+la carte annonçait la vidéo suivante. Seule exclusion : une vidéo déjà en ligne avant sa
+date (`videoDate < aujourd'hui`).
+
 `GetProductionOverview.execute(format?)` borne **la file, tous les chiffres et les
 créneaux** au format demandé — y compris « Temps cette semaine », qui filtre les sessions de
 travail par le format de leur production (publiées comprises : on a pu travailler cette
@@ -1869,8 +1876,10 @@ n'a rien à voir avec les identifiants ou l'instantané d'export, et un dépôt 
 les deux répondrait à deux questions différentes.
 
 **Le graphique (`DomadooChart`) montre des états, pas les gains.** Onglet « Solde et en
-attente » : `balanceCents` et `waitingSalesCents` en deux courbes sur un même axe (deux
-montants d'un même compte) — ce que le compte vaut et ce qui le rejoindra à la validation.
+attente » : `balanceCents` (en bas) et `waitingSalesCents` en **barres empilées** — la
+hauteur est le **total théorique** du compte, repris en pied d'infobulle. La légende est
+cliquable : une série masquée quitte la pile **et** le total, qui ne compte que ce qui
+est affiché.
 Les gains par jour qui tenaient ce rôle ne bougeaient qu'au rythme des validations de
 Domadoo et ne représentaient pas l'activité. Onglet « Clics (30 j) » : `clicksGained` en
 barres, **toujours sur les 30 derniers jours locaux** quelle que soit la période (seconde

@@ -167,14 +167,8 @@ const ProgressCard = ({ format }: FormatProps) => {
 const NextReleaseCard = ({ format }: FormatProps) => {
   const { data: overview } = useProductionOverview(format);
   const stats = overview?.stats;
-  const today = localToday();
-  const upcoming = useMemo(
-    () =>
-      (overview?.queue ?? [])
-        .filter((production) => production.plannedDate !== null && production.plannedDate >= today)
-        .sort(byPlannedDate),
-    [overview, today],
-  );
+  // Terminées comprises : une vidéo prête avant sa date sort quand même ce jour-là.
+  const upcoming = overview?.upcomingReleases ?? [];
   const undated = (overview?.queue ?? []).filter((production) => !production.plannedDate).length;
   return (
     <StatCard

@@ -1,15 +1,5 @@
 import { useMemo, useState } from 'react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { DomadooSeriesPoint } from '../../../domain/integration/entities/DomadooOverview.ts';
 import { formatBucketLabel, formatMoney, formatNumber } from '../../../shared/format.ts';
 import { cn } from '../../../shared/cn.ts';
@@ -23,6 +13,8 @@ const MONEY_LINES = [
   { key: 'waiting', label: 'Commissions en attente', color: 'var(--expense)' },
 ] as const;
 
+type MoneyKey = (typeof MONEY_LINES)[number]['key'];
+
 const CLICKS_COLOR = 'var(--primary)';
 
 type Tab = 'money' | 'clicks';
@@ -31,7 +23,7 @@ const TABS: Array<{ id: Tab; label: string; hint: string }> = [
   {
     id: 'money',
     label: 'Solde et en attente',
-    hint: 'Solde du compte et commissions des ventes pas encore validées, sur la période',
+    hint: 'Solde et commissions en attente empilés : la barre entière est le total théorique',
   },
   { id: 'clicks', label: 'Clics (30 j)', hint: 'Clics par jour sur les 30 derniers jours' },
 ];
@@ -39,12 +31,11 @@ const TABS: Array<{ id: Tab; label: string; hint: string }> = [
 /**
  * Les deux lectures de l'historique Domadoo.
  *
- * **Argent** : deux ÉTATS, en courbes sur un même axe — le **solde** (ce qui est acquis et
- * dû) et les **commissions en attente** (ce qui le rejoindra à la validation). Les deux
- * ensemble disent ce que le compte vaut et ce qui arrive ; les gains par jour, qui
- * tenaient ce rôle avant, ne bougeaient qu'au rythme des validations de Domadoo et ne
- * représentaient pas l'activité. Même échelle — ce sont deux montants d'un même compte —,
- * donc un seul axe.
+ * **Argent** : deux ÉTATS en barres **empilées** — le **solde** (ce qui est acquis et dû)
+ * en bas, les **commissions en attente** (ce qui le rejoindra à la validation) au-dessus.
+ * La hauteur de la barre est le total théorique du compte ; la légende masque ou
+ * réaffiche chaque série. Les gains par jour, qui tenaient ce rôle avant, ne bougeaient
+ * qu'au rythme des validations de Domadoo et ne représentaient pas l'activité.
  *
  * **Clics** : un FLUX, en barres, **toujours sur les 30 derniers jours** quelle que soit la
  * période choisie : c'est la fenêtre de Domadoo lui-même, et celle où l'on juge l'effet
@@ -106,8 +97,16 @@ const axisProps = (granularity: Granularity) => ({
 });
 
 /**
- * Masqué comme n'importe quel montant d'affiliation : `0`, pas une courbe retirée — un
- * trou dans une série dont le total resterait connu se lirait aussi bien qu'une valeur.
+ * Solde et commissions en attente **empilés** : la hauteur de la barre est le total
+ * théorique du compte — ce qu'il vaudra une fois les ventes en attente validées —, et
+ * chaque segment dit d'où il vient.
+ *
+ * La légende est cliquable : un clic masque ou réaffiche une série. Masquée, elle est
+ * retirée des barres **et** du total de l'infobulle, qui ne compte que ce qui est affiché —
+ * sinon la barre et le chiffre annoncé au-dessus ne tomberaient plus d'accord.
+ *
+ * Confidentialité : `0`, pas une série retirée — un trou dans une pile dont le total
+ * resterait connu se lirait aussi bien qu'une valeur.
  */
 const MoneyChart = ({
   series,
@@ -118,6 +117,9 @@ const MoneyChart = ({
 }) => {
   const privacy = usePrivacy();
   const masked = privacy.isMasked('affiliation');
+  const [hidden, setHidden] = useState<ReadonlySet<MoneyKey>>(() => new Set());
+  const visible = MONEY_LINES.filter((line) => !hidden.has(line.key));
+
   const rows = useMemo(() => {
     const euros = (value: number | null): number | null =>
       masked ? 0 : value === null ? null : value / 100;
@@ -128,16 +130,13 @@ const MoneyChart = ({
     }));
   }, [series, masked]);
 
-  // Le domaine se calcule sur les valeurs connues : un domaine en texte (« dataMin - 5 »)
-  // part en NaN dès qu'un point vaut `null`.
-  const domain = useMemo((): [number, number] => {
-    const values = rows
-      .flatMap((row) => [row.balance, row.waiting])
-      .filter((value): value is number => value !== null);
-    if (values.length === 0) return [0, 1];
-    const max = Math.max(...values);
-    return [0, Math.max(1, Math.ceil(max * 1.1))];
-  }, [rows]);
+  const toggle = (key: MoneyKey) =>
+    setHidden((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   if (rows.every((row) => row.balance === null && row.waiting === null)) {
     return (
@@ -149,75 +148,97 @@ const MoneyChart = ({
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        {MONEY_LINES.map((line) => (
-          <span key={line.key} className="flex items-center gap-1.5 text-muted-foreground">
-            <span
-              className="h-0.5 w-4 rounded-full"
-              style={{ backgroundColor: line.color }}
-              aria-hidden
-            />
-            {line.label}
-          </span>
-        ))}
+      <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs">
+        {MONEY_LINES.map((line) => {
+          const off = hidden.has(line.key);
+          return (
+            <button
+              key={line.key}
+              type="button"
+              onClick={() => toggle(line.key)}
+              aria-pressed={!off}
+              title={off ? 'Afficher' : 'Masquer'}
+              className={cn(
+                'flex items-center gap-1.5 rounded px-1.5 py-0.5 transition-colors hover:bg-muted',
+                off ? 'text-muted-foreground/60 line-through' : 'text-muted-foreground',
+              )}
+            >
+              <span
+                className="h-2.5 w-2.5 rounded-sm"
+                style={{ backgroundColor: off ? 'var(--border)' : line.color }}
+                aria-hidden
+              />
+              {line.label}
+            </button>
+          );
+        })}
       </div>
       <ResponsiveContainer width="100%" height={260}>
-        <LineChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis {...axisProps(granularity)} />
           <YAxis
-            domain={domain}
             tickFormatter={(value: number) => formatMoney(value * 100)}
             tick={{ fontSize: 11 }}
             stroke="var(--muted-foreground)"
             width={64}
           />
           <Tooltip
-            cursor={{ stroke: 'var(--border)' }}
+            cursor={{ fill: 'var(--muted)', opacity: 0.4 }}
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
+              const values = visible.map((line) => {
+                const value = payload.find((entry) => entry.dataKey === line.key)?.value;
+                return { line, value: typeof value === 'number' ? value : null };
+              });
+              const known = values.filter((entry) => entry.value !== null);
+              const total = known.reduce((sum, entry) => sum + entry.value!, 0);
               return (
                 <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
                   <p className="mb-1 text-[11px] text-muted-foreground">
                     {formatBucketLabel(String(label), granularity)}
                   </p>
-                  {MONEY_LINES.map((line) => {
-                    const value = payload.find((entry) => entry.dataKey === line.key)?.value;
-                    return (
-                      <p key={line.key} className="flex items-center justify-between gap-4">
-                        <span className="flex items-center gap-1.5 text-muted-foreground">
-                          <span
-                            className="h-2 w-2 rounded-full"
-                            style={{ backgroundColor: line.color }}
-                            aria-hidden
-                          />
-                          {line.label}
-                        </span>
-                        <span className="font-semibold tabular text-popover-foreground">
-                          {typeof value !== 'number'
-                            ? '—'
-                            : privacy.money(Math.round(value * 100), 'affiliation')}
-                        </span>
-                      </p>
-                    );
-                  })}
+                  {values.map(({ line, value }) => (
+                    <p key={line.key} className="flex items-center justify-between gap-4">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <span
+                          className="h-2 w-2 rounded-sm"
+                          style={{ backgroundColor: line.color }}
+                          aria-hidden
+                        />
+                        {line.label}
+                      </span>
+                      <span className="font-semibold tabular text-popover-foreground">
+                        {value === null
+                          ? '—'
+                          : privacy.money(Math.round(value * 100), 'affiliation')}
+                      </span>
+                    </p>
+                  ))}
+                  {visible.length > 1 && known.length > 0 && (
+                    <p className="mt-1 flex items-center justify-between gap-4 border-t border-border pt-1">
+                      <span className="text-muted-foreground">Total théorique</span>
+                      <span className="font-semibold tabular text-popover-foreground">
+                        {privacy.money(Math.round(total * 100), 'affiliation')}
+                      </span>
+                    </p>
+                  )}
                 </div>
               );
             }}
           />
-          {/* `connectNulls` : un jour sans nouveau relevé ne doit pas briser la courbe. */}
-          {MONEY_LINES.map((line) => (
-            <Line
+          {/* Le solde en bas : c'est l'acquis, l'en-attente s'y ajoute. Seul le segment du
+              haut est arrondi, pour que la pile se lise comme une seule barre. */}
+          {visible.map((line, index) => (
+            <Bar
               key={line.key}
-              type="monotone"
               dataKey={line.key}
-              stroke={line.color}
-              strokeWidth={2}
-              dot={false}
-              connectNulls
+              stackId="money"
+              fill={line.color}
+              radius={index === visible.length - 1 ? [3, 3, 0, 0] : 0}
             />
           ))}
-        </LineChart>
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );

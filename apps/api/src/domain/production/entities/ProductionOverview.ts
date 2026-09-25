@@ -54,7 +54,7 @@ export interface ProductionStats {
   dueThisWeek: number;
   /** Sorties visées déjà dépassées, hors vidéos terminées. */
   late: number;
-  /** Prochaine sortie visée, `null` si plus rien n'est daté. */
+  /** Prochaine sortie visée (terminée ou non), `null` si plus rien n'est daté. */
   nextRelease: { id: string; title: string; date: IsoDate } | null;
   /** Temps déjà enregistré sur les 7 derniers jours, chronomètre en cours compris. */
   weekTrackedMinutes: number;
@@ -86,6 +86,8 @@ export interface StepTimeAverage {
 export interface ProductionOverview {
   /** Vidéos encore à faire, dans l'ordre manuel. */
   queue: ProductionView[];
+  /** Sorties datées d'aujourd'hui ou plus tard, **terminées comprises**, par date visée. */
+  upcomingReleases: ProductionView[];
   /** La prochaine à travailler : la première de la file qui n'est pas en pause. */
   nextId: string | null;
   alerts: ProductionAlert[];
