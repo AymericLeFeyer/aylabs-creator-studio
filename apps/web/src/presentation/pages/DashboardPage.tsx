@@ -12,7 +12,7 @@ import { cn } from '../../shared/cn.ts';
 import { AppBarActions, FilterBarActions } from '../hooks/useAppBar.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
-import { BLOCKS } from '../dashboard/registry.tsx';
+import { resolveBlock } from '../dashboard/registry.tsx';
 import { WIDGET_ICONS } from '../dashboard/widgetIcons.ts';
 import { WidgetContext, type WidgetOverrides } from '../dashboard/widgetContext.ts';
 import { WidgetToolbar } from '../dashboard/WidgetToolbar.tsx';
@@ -261,7 +261,7 @@ export const DashboardPage = () => {
             );
           }
 
-          const block = BLOCKS[widget.blockId];
+          const block = resolveBlock(widget.blockId);
           // Un bloc retiré du code : ignoré à l'affichage, retirable en édition.
           if (!block && !editing) return null;
 

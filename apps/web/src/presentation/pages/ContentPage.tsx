@@ -1,7 +1,8 @@
 import { useProductionOverview } from '../../application/production/usecases/useProductions.ts';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { Block } from '../dashboard/Block.tsx';
-import { useAnalyticsData } from '../blocks/blockData.ts';
+import { channelBlockId } from '../dashboard/registry.tsx';
+import { useAnalyticsData, useLifetimeChannels } from '../blocks/blockData.ts';
 
 /**
  * Tout ce qui concerne les vidéos déjà sorties, sur la période choisie en haut.
@@ -18,6 +19,7 @@ import { useAnalyticsData } from '../blocks/blockData.ts';
 export const ContentPage = () => {
   const { data, isLoading } = useAnalyticsData();
   const { data: overview } = useProductionOverview();
+  const lifetimeChannels = useLifetimeChannels();
 
   const periodCount = data?.videoPerformance.length ?? 0;
   const catalogCount = data?.catalogPerformance?.length ?? 0;
@@ -37,9 +39,16 @@ export const ContentPage = () => {
       {/* Les chiffres de la chaîne, hors période : où elle en est aujourd'hui. Une rangée
           à part, pour qu'on ne lise pas « 12 400 vues » d'un côté et « 1,2 M » de l'autre
           comme deux mesures de la même chose. */}
-      <div className="grid grid-cols-3 gap-3">
-        <Block id="youtube.lifetime.subscribers" />
-        <Block id="youtube.lifetime.views" />
+      {/* Une carte par chaîne et non une somme : additionner les abonnés de deux chaînes
+          compte deux fois la même personne. Chacune est un bloc à part. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {lifetimeChannels.flatMap((channel) => [
+          <Block
+            key={`${channel.id}:subscribers`}
+            id={channelBlockId(channel.id, 'subscribers')}
+          />,
+          <Block key={`${channel.id}:views`} id={channelBlockId(channel.id, 'views')} />,
+        ])}
         <Block id="youtube.lifetime.videos" />
       </div>
 

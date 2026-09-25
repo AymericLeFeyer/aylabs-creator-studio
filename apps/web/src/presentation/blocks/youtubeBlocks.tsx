@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Clapperboard, Clock, Eye, Heart, Library, TrendingUp, Users, Video } from 'lucide-react';
 import { useChannels } from '../../application/channel/usecases/useChannels.ts';
 import { useVideos } from '../../application/video/usecases/useVideos.ts';
+import { useAchievements } from '../../application/achievement/usecases/useAchievements.ts';
 import type { AnalyticsResult } from '../../domain/analytics/entities/Analytics.ts';
 import { compareTotals } from '../../domain/analytics/services/revenueMath.ts';
 import { formatDate, formatNumber } from '../../shared/format.ts';
@@ -14,6 +15,7 @@ import { AudienceChart } from '../components/charts/AudienceChart.tsx';
 import { VideoPerformanceChart } from '../components/charts/VideoPerformanceChart.tsx';
 import { VideoPerformanceTable } from '../components/charts/VideoPerformanceTable.tsx';
 import { LatestVideoCard } from '../components/content/LatestVideoCard.tsx';
+import { nextMilestone } from '../components/achievements/achievementFormat.ts';
 import { useAnalyticsData } from './blockData.ts';
 import { BlockSkeleton } from './BlockSkeleton.tsx';
 
@@ -462,6 +464,93 @@ export const YouTubeLifetimeVideosCard = () => {
           format={formatNumber}
           note="Vidéos publiques de la chaîne, Shorts et directs compris."
         />
+      }
+    />
+  );
+};
+
+export type ChannelLifetimeMetric = 'subscribers' | 'views';
+
+/**
+ * Le compteur **d'une seule chaîne**, tel qu'au dernier relevé : abonnés ou vues depuis
+ * toujours. Une carte par chaîne plutôt qu'une somme — additionner les abonnés de deux
+ * chaînes compte deux fois la même personne, et une somme de vues ne dit rien de l'une ni
+ * de l'autre. Chacune est un bloc à part (`youtube.channel.<id>.<métrique>`).
+ *
+ * Le panneau de survol reprend les achievements de la courbe : le dernier palier franchi,
+ * le prochain et ce qu'il manque.
+ */
+export const YouTubeChannelLifetimeCard = ({
+  channelId,
+  metric,
+}: {
+  channelId: string;
+  metric: ChannelLifetimeMetric;
+}) => {
+  const privacy = usePrivacy();
+  const { data: channels = [] } = useChannels();
+  const { data: achievements } = useAchievements();
+  const channel = channels.find((candidate) => candidate.id === channelId);
+  const snapshot = channel?.latestSnapshot ?? null;
+  const value =
+    snapshot === null
+      ? null
+      : metric === 'subscribers'
+        ? snapshot.subscribers
+        : snapshot.totalViews;
+  const track = achievements?.tracks.find(
+    (candidate) => candidate.id === `youtube:${channelId}:${metric}`,
+  );
+  const last = track?.milestones.filter((milestone) => milestone.reachedAt).at(-1);
+  const next = track ? nextMilestone(track) : null;
+  const target = metric === 'subscribers' ? 'subscribers' : 'views';
+  const label = metric === 'subscribers' ? 'Abonnés' : 'Vues au total';
+
+  if (channels.length > 0 && !channel) return null;
+  return (
+    <StatCard
+      label={channel ? `${label} · ${channel.name}` : label}
+      value={value === null ? '—' : privacy.count(value, target)}
+      hint={snapshot ? `relevé du ${formatDate(snapshot.date)}` : 'aucun relevé'}
+      icon={
+        metric === 'subscribers' ? (
+          <Users className="h-4 w-4" />
+        ) : (
+          <TrendingUp className="h-4 w-4" />
+        )
+      }
+      details={
+        privacy.isMasked(target) ? undefined : (
+          <StatDetails
+            title={channel?.name}
+            rows={[
+              ...(last
+                ? [
+                    {
+                      key: 'last',
+                      label: `Dernier palier : ${last.title}`,
+                      value: formatDate(last.reachedAt!),
+                    },
+                  ]
+                : []),
+              ...(next
+                ? [
+                    {
+                      key: 'next',
+                      label: `Prochain : ${next.milestone.title}`,
+                      sub: `${Math.round(next.progress * 100)} % du chemin depuis le précédent`,
+                      value: `encore ${formatNumber(next.remaining)}`,
+                    },
+                  ]
+                : []),
+            ]}
+            note={
+              metric === 'subscribers'
+                ? 'Compteur public de YouTube : au-delà de 1 000, il est arrondi à trois chiffres. Tous les paliers dans Audience → Achievements.'
+                : 'Compteur public de YouTube, exact. Tous les paliers dans Audience → Achievements.'
+            }
+          />
+        )
       }
     />
   );

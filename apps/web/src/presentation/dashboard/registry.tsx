@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { ProductionFormat } from '../../domain/production/entities/Production.ts';
+import type { Channel } from '../../domain/channel/entities/Channel.ts';
 import * as yt from '../blocks/youtubeBlocks.tsx';
 import * as money from '../blocks/moneyBlocks.tsx';
 import * as partner from '../blocks/partnerBlocks.tsx';
@@ -7,6 +8,7 @@ import * as social from '../blocks/socialBlocks.tsx';
 import * as prod from '../blocks/productionBlocks.tsx';
 import * as legal from '../blocks/legalBlocks.tsx';
 import * as comment from '../blocks/commentBlocks.tsx';
+import * as achievement from '../blocks/achievementBlocks.tsx';
 import {
   DomadooChartBlock,
   DomadooMetricCard,
@@ -148,10 +150,10 @@ export const BLOCKS: Record<string, BlockDefinition> = {
   'youtube.catalogViews': metric('Vues du catalogue', 'YouTube', () => (
     <yt.YouTubeCatalogViewsCard />
   )),
-  'youtube.lifetime.subscribers': metric('Abonnés (au total)', 'YouTube', () => (
+  'youtube.lifetime.subscribers': metric('Abonnés (toutes chaînes cumulées)', 'YouTube', () => (
     <yt.YouTubeLifetimeSubscribersCard />
   )),
-  'youtube.lifetime.views': metric('Vues au total', 'YouTube', () => (
+  'youtube.lifetime.views': metric('Vues au total (toutes chaînes cumulées)', 'YouTube', () => (
     <yt.YouTubeLifetimeViewsCard />
   )),
   'youtube.lifetime.videos': metric('Vidéos au total', 'YouTube', () => (
@@ -200,6 +202,17 @@ export const BLOCKS: Record<string, BlockDefinition> = {
   'discord.members': metric('Membres Discord', 'Discord', () => <social.DiscordMembersCard />),
   'discord.online': metric('En ligne sur Discord', 'Discord', () => <social.DiscordOnlineCard />),
   'discord.chart': panel('Évolution Discord', 'Discord', HALF, () => <social.DiscordChartBlock />),
+
+  // --- Achievements ---
+  'achievements.recent': panel('Derniers paliers franchis', 'Achievements', HALF, () => (
+    <achievement.AchievementsRecentBlock />
+  )),
+  'achievements.next': panel('Prochains paliers', 'Achievements', HALF, () => (
+    <achievement.AchievementsNextBlock />
+  )),
+  'achievements.records': panel('Records', 'Achievements', FULL, () => (
+    <achievement.AchievementsRecordsBlock />
+  )),
 
   // --- Commentaires ---
   'comments.toSort': metric('Commentaires à trier', 'Commentaires', () => (
@@ -314,3 +327,46 @@ export const BLOCKS: Record<string, BlockDefinition> = {
   'legal.bookmarks': panel('Liens utiles', 'Légal', FULL, () => <legal.LegalBookmarksBlock />),
   'legal.table': panel('Tableau mensuel', 'Légal', FULL, () => <legal.LegalTableBlock />),
 };
+
+/**
+ * Les blocs **par chaîne** : abonnés et vues au total d'une seule chaîne. Leur identifiant
+ * porte celui de la chaîne (`youtube.channel.<id>.subscribers`), si bien qu'ils ne
+ * peuvent pas vivre dans `BLOCKS`, liste fixe : `resolveBlock` les reconnaît au motif.
+ * Supprimer la chaîne fait disparaître le bloc du dashboard (il se rend vide), sans erreur.
+ */
+const CHANNEL_METRICS = {
+  subscribers: 'Abonnés',
+  views: 'Vues au total',
+} as const;
+type ChannelMetric = keyof typeof CHANNEL_METRICS;
+
+const CHANNEL_BLOCK = /^youtube\.channel\.(.+)\.(subscribers|views)$/;
+
+export const channelBlockId = (channelId: string, kind: ChannelMetric) =>
+  `youtube.channel.${channelId}.${kind}`;
+
+/** Sans nom (dashboard), le libellé reste générique : la carte affiche la chaîne elle-même. */
+const channelBlock = (channelId: string, kind: ChannelMetric, name?: string): BlockDefinition =>
+  metric(
+    name ? `${CHANNEL_METRICS[kind]} · ${name}` : `${CHANNEL_METRICS[kind]} (une chaîne)`,
+    'YouTube',
+    () => <yt.YouTubeChannelLifetimeCard channelId={channelId} metric={kind} />,
+  );
+
+/** Le bloc d'un identifiant : le catalogue fixe, puis les motifs par chaîne. */
+export const resolveBlock = (id: string): BlockDefinition | undefined => {
+  if (BLOCKS[id]) return BLOCKS[id];
+  const match = CHANNEL_BLOCK.exec(id);
+  return match ? channelBlock(match[1]!, match[2] as ChannelMetric) : undefined;
+};
+
+/** Les blocs par chaîne à proposer dans le catalogue, une paire par chaîne active. */
+export const channelBlocks = (channels: Channel[]): Array<[string, BlockDefinition]> =>
+  channels
+    .filter((channel) => !channel.isArchived)
+    .flatMap((channel) =>
+      (Object.keys(CHANNEL_METRICS) as ChannelMetric[]).map((kind): [string, BlockDefinition] => [
+        channelBlockId(channel.id, kind),
+        channelBlock(channel.id, kind, channel.name),
+      ]),
+    );

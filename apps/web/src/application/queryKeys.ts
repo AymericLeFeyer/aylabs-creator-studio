@@ -38,6 +38,8 @@ export const queryKeys = {
   dashboardWidgets: () => ['dashboardWidgets'] as const,
   // Le nom et le logo : ne croise aucune autre racine.
   branding: () => ['branding'] as const,
+  // Recalculés à la lecture : aucune écriture ne les invalide.
+  achievements: () => ['achievements'] as const,
   scriptPresets: (includeArchived: boolean) => ['scriptPresets', includeArchived] as const,
   shotAngles: (includeArchived: boolean) => ['shotAngles', includeArchived] as const,
   productionShotAngles: (id: string) => ['productionShotAngles', id] as const,

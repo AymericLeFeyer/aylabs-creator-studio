@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
 import { useBrandStats } from '../../application/brand/usecases/useBrands.ts';
+import { useChannels } from '../../application/channel/usecases/useChannels.ts';
 import { useInstagramOverview } from '../../application/instagram/usecases/useInstagram.ts';
 import { useTikTokOverview } from '../../application/tiktok/usecases/useTikTok.ts';
 import { useProducts } from '../../application/product/usecases/useProducts.ts';
@@ -20,6 +21,24 @@ import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
  * Ce fichier n'exporte aucun composant (`react-refresh/only-export-components`).
  */
 export const useAnalyticsData = () => useAnalytics(useAnalyticsParams());
+
+/**
+ * Les chaînes actives retenues par les filtres : une carte « Abonnés » et une carte
+ * « Vues au total » par chaîne sur `/youtube`, plutôt qu'une somme.
+ */
+export const useLifetimeChannels = () => {
+  const filters = useFilters();
+  const { data: channels = [] } = useChannels();
+  return useMemo(
+    () =>
+      channels.filter(
+        (channel) =>
+          !channel.isArchived &&
+          (filters.channelIds.length === 0 || filters.channelIds.includes(channel.id)),
+      ),
+    [channels, filters.channelIds],
+  );
+};
 
 export const useBrandStatsData = () => {
   const filters = useFilters();

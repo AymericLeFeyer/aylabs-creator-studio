@@ -10,7 +10,8 @@ import {
 } from '../components/ui/dialog.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { AddToDashboardButton } from './AddToDashboard.tsx';
-import { BLOCKS } from './registry.tsx';
+import { useChannels } from '../../application/channel/usecases/useChannels.ts';
+import { BLOCKS, channelBlocks } from './registry.tsx';
 
 /**
  * Tout le catalogue, rangé par page d'origine, pour ajouter un bloc **sans quitter le
@@ -27,17 +28,18 @@ export const BlockCatalogDialog = ({
 }) => {
   const [query, setQuery] = useState('');
   const { data: widgets = [] } = useDashboardWidgets();
+  const { data: channels = [] } = useChannels();
 
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const map = new Map<string, Array<[string, (typeof BLOCKS)[string]]>>();
-    for (const entry of Object.entries(BLOCKS)) {
+    for (const entry of [...Object.entries(BLOCKS), ...channelBlocks(channels)]) {
       const [, block] = entry;
       if (needle && !`${block.label} ${block.group}`.toLowerCase().includes(needle)) continue;
       map.set(block.group, [...(map.get(block.group) ?? []), entry]);
     }
     return [...map.entries()];
-  }, [query]);
+  }, [query, channels]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

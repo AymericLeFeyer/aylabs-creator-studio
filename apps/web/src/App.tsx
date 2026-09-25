@@ -13,6 +13,7 @@ import { PlanningPage } from './presentation/pages/PlanningPage.tsx';
 import { InstagramPage } from './presentation/pages/InstagramPage.tsx';
 import { TikTokPage } from './presentation/pages/TikTokPage.tsx';
 import { DiscordPage } from './presentation/pages/DiscordPage.tsx';
+import { AchievementsPage } from './presentation/pages/AchievementsPage.tsx';
 import { ProductionDetailPage } from './presentation/pages/ProductionDetailPage.tsx';
 import { ProductsPage } from './presentation/pages/ProductsPage.tsx';
 import { SponsorsPage } from './presentation/pages/SponsorsPage.tsx';
@@ -60,6 +61,7 @@ export const App = () => (
               <Route path="instagram" element={<InstagramPage />} />
               <Route path="tiktok" element={<TikTokPage />} />
               <Route path="discord" element={<DiscordPage />} />
+              <Route path="achievements" element={<AchievementsPage />} />
               <Route path="commentaires" element={<CommentsPage />} />
               <Route path="planning" element={<PlanningPage />} />
               {/* Un seul écran pour les deux files. La clé force un remontage en passant

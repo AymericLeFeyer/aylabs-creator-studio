@@ -71,6 +71,8 @@ import { SqliteExternalAppRepository } from './infrastructure/externalApp/reposi
 import { SqliteTikTokRepository } from './infrastructure/tiktok/repositories/SqliteTikTokRepository.ts';
 import { CollectTikTok } from './application/tiktok/usecases/CollectTikTok.ts';
 import { GetTikTokOverview } from './application/tiktok/usecases/GetTikTokOverview.ts';
+import { GetAchievements } from './application/achievement/usecases/GetAchievements.ts';
+import { SqliteAchievementSourceRepository } from './infrastructure/achievement/repositories/SqliteAchievementSourceRepository.ts';
 import { ManageExternalApps } from './application/externalApp/usecases/ManageExternalApps.ts';
 import { ManageIntegrations } from './application/integration/usecases/ManageIntegrations.ts';
 import { CollectIntegrations } from './application/integration/usecases/CollectIntegrations.ts';
@@ -180,6 +182,7 @@ export interface Container {
   /** Écrit le relevé public TikTok dans les tables du module — appelé par `collectIntegrations`. */
   collectTikTok: CollectTikTok;
   getTikTokOverview: GetTikTokOverview;
+  getAchievements: GetAchievements;
   /** `null` tant qu'aucune clé API YouTube n'est configurée. */
   youtubeData: YouTubeDataClient | null;
   /**
@@ -373,6 +376,7 @@ export const buildContainer = (config: Config): Container => {
     getInstagramOverview: new GetInstagramOverview(instagramAccounts, instagramData),
     collectTikTok,
     getTikTokOverview: new GetTikTokOverview(tiktokAccounts, tiktokAccounts),
+    getAchievements: new GetAchievements(new SqliteAchievementSourceRepository(db)),
     getPreviousPublication: new GetPreviousPublication(productions, videos, channels, {
       youtubeApiKey: config.youtubeApiKey,
       gcpClientId: config.gcpClientId,

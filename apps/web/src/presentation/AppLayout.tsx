@@ -41,6 +41,8 @@ const ROUTES_WITHOUT_FILTERS = [
   '/sponsors',
   '/affiliations',
   '/discord',
+  // Des paliers de toute une vie : aucune période ne s'y applique.
+  '/achievements',
   '/legal',
   // Une app embarquée a sa propre interface : une barre de période au-dessus d'elle ne
   // piloterait rien.

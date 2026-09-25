@@ -7,6 +7,7 @@ import {
   Images,
   Instagram,
   Link2,
+  Trophy,
   MessagesSquare,
   Music2,
   ScrollText,
@@ -106,6 +107,9 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: MessagesSquare,
         end: false,
       },
+      // En dernier : ce n'est pas un écran de travail, c'est celui qu'on ouvre pour
+      // regarder le chemin parcouru.
+      { to: '/achievements', label: 'Achievements', short: 'Paliers', icon: Trophy, end: false },
     ],
   },
   {
@@ -264,6 +268,7 @@ const TITLES: Array<[string, string]> = [
   ['/tiktok', 'TikTok'],
   ['/discord', 'Discord'],
   ['/commentaires', 'Commentaires'],
+  ['/achievements', 'Achievements'],
   ['/produits', 'Produits'],
   ['/sponsors', 'Sponsors'],
   ['/affiliations', 'Affiliations'],

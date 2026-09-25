@@ -1,5 +1,5 @@
 import { Addable } from './AddToDashboard.tsx';
-import { BLOCKS } from './registry.tsx';
+import { resolveBlock } from './registry.tsx';
 
 /**
  * Un bloc sur sa **page d'origine** : le bloc du catalogue, avec l'icône qui l'ajoute au
@@ -7,7 +7,7 @@ import { BLOCKS } from './registry.tsx';
  * que tout ce qu'on voit dans l'app est, par construction, ajoutable au dashboard.
  */
 export const Block = ({ id, className }: { id: string; className?: string }) => {
-  const definition = BLOCKS[id];
+  const definition = resolveBlock(id);
   if (!definition) {
     if (import.meta.env.DEV) console.warn(`[dashboard] bloc inconnu : ${id}`);
     return null;

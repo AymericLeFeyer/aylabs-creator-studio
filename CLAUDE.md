@@ -103,7 +103,7 @@ Les deux applications suivent la même découpe.
 apps/api/src/
 ├── domain/          channel, metrics, category, revenue, expense, video, analytics,
 │                    brand, production, product, sponsorship, idea, postDraft, legal, integration,
-│                    todoApp, externalApp, dashboard, branding
+│                    todoApp, externalApp, dashboard, branding, achievement
 │   └── <domaine>/{entities,repositories,services}    # repositories = interfaces seules
 ├── application/<domaine>/usecases/
 ├── infrastructure/
@@ -1990,6 +1990,45 @@ installée une seconde application pour Android.
   limite de 8 Mo : cinq PNG en base64 dépassent vite le mégaoctet, et le parseur global
   répondrait 413 avant de l'atteindre.
 
+### `achievement` — les paliers franchis
+
+Écran **Audience → Achievements** (`/achievements`). Rien n'est stocké : `GetAchievements`
+**recalcule tout à chaque lecture** depuis l'historique (port `AchievementSourceRepository`,
+lectures seules, chaînes et comptes archivés exclus). Un palier franchi apparaît dès la
+collecte suivante, et rien ne peut diverger des autres écrans.
+
+`AchievementTrack { id, platform, entityId, entityName, entityColor, metric, label, unit,
+current, historyStart, partialHistory, series, milestones }` — une courbe cumulée **par
+chaîne ou par compte, jamais sommée** (additionner les abonnés de deux chaînes compte deux
+fois la même personne ; « première vidéo » n'a de sens que pour une chaîne). `Milestone
+{ threshold, title, reachedAt, before }`. `AchievementRecord { metric, title, value, unit,
+date, detail }` : meilleure journée de vues, record d'abonnés en un jour, vidéo la plus vue,
+**seuils du Programme Partenaire** (1 000 abonnés **et** 4 000 h sur 365 jours glissants, le
+même jour), meilleure portée Instagram, record de stories en un jour, publication la plus
+aimée, vidéo TikTok la plus vue. Paliers : `THRESHOLDS` (API seulement ; le front affiche
+les titres reçus).
+
+Trois façons de rebâtir une courbe (`domain/achievement/services/milestones.ts`, pures) :
+
+| Fonction        | Pour                                              | Valeur de départ (`start`)                       |
+| --------------- | ------------------------------------------------- | ------------------------------------------------ |
+| `cumulateFlux`  | abonnés YouTube (OAuth), vues, AdSense            | recalée sur le **dernier relevé** (`anchor`)     |
+| `fromSnapshots` | abonnés YouTube publics, Instagram, TikTok, coeurs | le premier relevé                                |
+| `countItems`    | vidéos, publications, stories                     | total annoncé − éléments connus (les plus anciens manquent) |
+
+**La valeur de départ décide du « avant », pas le premier point** : un palier déjà atteint
+par `start` a été franchi **avant l'historique** (`before`, affiché « avant le … »), jamais
+daté du premier relevé — ce serait une date fausse. `partialHistory` = `start > 0` pour un
+flux recalé, toujours vrai pour des relevés, vrai pour les stories (archivées depuis la
+première collecte) et pour AdSense si la chaîne publiait avant le rattrapage.
+
+Côté front : `AchievementTrackCard` (courbe, point à chaque palier franchi, ligne du
+prochain en pointillés, grille de badges : acquis, prochain avec sa progression, le
+suivant), et trois **blocs** ajoutables (`achievements.recent`, `.next`, `.records`).
+**Confidentialité** : un palier révèle un ordre de grandeur, donc une métrique masquée
+(`METRIC_MASKS` : abonnés, vues, coeurs, AdSense) masque sa courbe, ses paliers et ses
+records. Vidéos, publications et stories ne sont jamais masquées.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -2167,6 +2206,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/dashboard/widgets/reorder`                    | `{ ids }` → réécrit l'ordre `1..n`. **Déclaré avant `/:id`** |
 | `PATCH`  | `/api/dashboard/widgets/:id`                        | `{ title?, description?, icon?, width?, variant? }` — `null` rend la valeur d'origine du bloc, `width` 1–6 |
 | `DELETE` | `/api/dashboard/widgets/:id`                        | Retirer du dashboard (le bloc reste sur sa page) |
+| `GET`    | `/api/achievements`                                 | `{ tracks, records }` recalculés depuis tout l'historique. Aucun paramètre : hors période |
 | `GET`    | `/api/branding`                                     | `{ name, logoVersion, updatedAt, displayName }` |
 | `PATCH`  | `/api/branding`                                     | `{ name }` — `null` ou `""` rend le nom par défaut, 40 caractères max |
 | `PUT`    | `/api/branding/logo`                                | `{ icons: { 'favicon-32', 'icon-192', 'icon-512', 'maskable-512', 'apple-180' } }`, PNG en base64 (préfixe `data:` admis). 422 si ce n'est pas un PNG. Limite 8 Mo |
@@ -2185,6 +2225,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/instagram`        | `InstagramPage`        | **API Graph**, toujours au jour : alerte de jeton, chiffres clés (Stories, Abonnés, Publications, Portée, Interactions), **dernières publications** (`LatestPostCard` : les 10 dernières hors période — `InstagramOverview.latestMedia` —, aux chevrons ou au glissement, avec vues/portée/j'aime/commentaires/partages/enregistrements), courbes d'abonnés et de portée liées, graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications (vues/portée/j'aime/commentaires/enregistrements au clic)                                                                                |
 | `/tiktok`           | `TikTokPage`            | **Profil public seulement**, toujours au jour : cartes Abonnés/Coeurs/Vidéos, graphique en onglets (Abonnés, Vidéos), dernières vidéos. N'apparaît dans le menu que si un profil est configuré (Paramètres → Audience → TikTok)                                                                                                                                                |
 | `/discord`          | `DiscordPage`          | Membres, membres en ligne (le nom du serveur n'est plus qu'en sous-titre), dernier relevé, bouton Collecter. **Aucune série** : Discord ne renvoie que des compteurs courants. N'apparaît dans le menu que si un serveur est configuré (Paramètres → Audience → Discord)                                                                                                                                       |
+| `/achievements`     | `AchievementsPage`     | Derniers paliers, prochains paliers, records (trois blocs), puis une courbe par chaîne/compte et par métrique, en onglets par plateforme (`?plateforme=`). Hors période, sans barre de filtres |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
@@ -2838,6 +2879,7 @@ période**, et leur sous-titre le dit.
 | `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`           | Commentaires archivés, leur tri et leur collecte                                                                                                    |
 | `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                                                                                                                                                         | idem                                                    | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                                                                            |
 | `useExternalApps`, `useCreateExternalApp`, `useUpdateExternalApp`, `useDeleteExternalApp`, `useTodayTodos`                                                                                                                                                                                                                     | `application/externalApp/usecases/useExternalApps.ts`   | Applications externes du menu ; tâches Todo du jour (pastille, **relue chaque minute** : ce qu'on coche dans l'iframe ne passe pas par le studio)   |
+| `useAchievements` | `application/achievement/usecases/useAchievements.ts` | Paliers et records. Relu au focus ; aucune écriture ne l'invalide (`['achievements']`) |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
@@ -3268,6 +3310,15 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Rattacher une vidéo force la chaîne** du revenu ou de la dépense (une vidéo appartient à une seule chaîne), et changer de chaîne détache la vidéo. `VideoSelect` garde en tête de liste la vidéo déjà rattachée même si elle sort du filtre courant, sinon une édition l'effacerait silencieusement.
 - **Un nouveau bloc s'écrit dans `presentation/blocks/`, s'enregistre dans `BLOCKS` et se monte par `<Block id>`**, jamais en direct dans la page : sinon il n'est pas ajoutable au dashboard. Il doit être **autonome** (ses données par `blockData.ts`, ses modales avec lui) et porter son titre par `CardTitle`, `StatCard` ou `BlockHeading`, sinon il ne se renomme pas. Un bloc qui contient deux cartes titrées marque la seconde `secondary`, ou se découpe en deux blocs (c'est ce qui a été fait pour les répartitions et les deux graphiques Instagram liés).
 - **Un identifiant de `BLOCKS` est un contrat stocké en base.** Le renommer vide silencieusement les dashboards qui l'avaient posé.
+- **Des blocs par chaîne existent hors de `BLOCKS`** : `youtube.channel.<id>.subscribers`
+  et `.views` (abonnés et vues au total **d'une seule chaîne**, `YouTubeChannelLifetimeCard`).
+  `BLOCKS` étant une liste fixe, **toute lecture passe par `resolveBlock(id)`** (`Block`,
+  `DashboardPage`), qui essaie le catalogue puis le motif, et le catalogue d'ajout y ajoute
+  `channelBlocks(channels)`. Ne jamais relire `BLOCKS[id]` directement : les blocs par
+  chaîne disparaîtraient. `/youtube` en monte une paire par chaîne retenue
+  (`useLifetimeChannels`) : **une somme d'abonnés entre chaînes ne veut rien dire**. Les
+  anciennes cartes cumulées (`youtube.lifetime.subscribers` / `.views`) restent déclarées
+  pour les dashboards qui les portent, libellées « toutes chaînes cumulées ».
 - **Le bloc des dernières sorties porte les DIX dernières, une à la fois** (`LatestVideoCard`, alimenté par `useVideos({ limit: 10 })`, carrousel commun `LatestCarousel` avec `LatestPostCard` : chevrons **et glissement au doigt ou à la souris**, seuil de 48 px, le clic qui suit un glissement est avalé pour ne pas ouvrir le lien). Une vidéo ne se juge pas dans l'absolu : 12 000 vues ne veulent rien dire tant qu'on ne sait pas ce que les deux précédentes ont fait. Elles défilent aux chevrons plutôt que de s'afficher côte à côte — la comparaison se fait alors sur les mêmes cases, au même endroit, ce que trois colonnes rétrécies rendraient impossible. Les chevrons **s'arrêtent aux bornes** au lieu de boucler (trois éléments se parcourent en deux clics, et un enroulement ferait repartir de la plus récente sans qu'on l'ait demandé), et le rang « 2 / 3 » est écrit entre eux. Le recadrage quand la liste rétrécit — un changement de chaîne dans les filtres — est **dérivé pendant le rendu**, jamais dans un effet : `react-hooks/set-state-in-effect` refuse l'autre.
 - **Ce bloc ignore la période** (sans bornes de date) : « ma dernière vidéo marche comment » ne se pose pas dans une fenêtre de temps, et une période de 7 jours viderait le bloc précisément quand on vient le lire. Ses compteurs sont des **cumuls depuis la sortie** : ils ne s'additionnent pas avec les totaux affichés juste au-dessus, qui comptent aussi les vidéos plus anciennes. `stats.updatedAt` à `null` affiche « — » partout plutôt qu'une série de zéros.
 - **`/youtube` (ex-`/contenu`) ne porte que de la mesure** : ce qui n'est pas encore publié se pilote sur `/production` et `/shorts`, la dernière sortie se lit sur le dashboard. Y remettre une file ou un fil de sorties ferait trois endroits où lire la même chose.
