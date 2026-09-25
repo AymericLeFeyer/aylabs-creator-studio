@@ -3111,7 +3111,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   doubles, et sans accents — comme le reste du fichier. **Le piège vaut pour tout SQL écrit
   dans un template literal**, y compris les requêtes des dépôts (`VIEW_SQL` de
   `SqliteTimeEntryRepository` est tombé dedans).
-- **Logos de marque** : Lucide n'en a aucun. `DiscordIcon` (`components/icons/`) est le logo officiel, écrit comme une icône Lucide (mêmes props, `currentColor`) et transtypé en `LucideIcon` pour entrer dans le menu et les réglages. Pas de couleur de marque imposée : dans le menu, une seule icône en couleur se lirait comme une alerte.
+- **Logos de marque** : Lucide n'en a aucun. `DiscordIcon` (`components/icons/`) est le logo en **contour** (SVG Repo n° 447163, grille 24 × 24), écrit comme une icône Lucide (mêmes props, trait `currentColor`, `strokeWidth` du parent) et transtypé en `LucideIcon` pour entrer dans le menu et les réglages. Pas de couleur de marque imposée : dans le menu, une seule icône en couleur se lirait comme une alerte.
 - **Contraste calculé, pas choisi** : `shared/contrast.ts` (`readableTextColor`) prend une couleur de fond libre et renvoie le blanc ou l'encre du thème, selon le meilleur **ratio WCAG réel** des deux. Les couleurs de chaîne sont libres — un vert clair et un bleu nuit peuvent cohabiter, et écrire en blanc sur les deux rend le premier illisible.
 
 ## Points d'attention
