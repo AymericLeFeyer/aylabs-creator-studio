@@ -5,10 +5,12 @@ import {
   useIntegrations,
 } from '../../application/integration/usecases/useIntegrations.ts';
 import type { DomadooExport } from '../../domain/integration/entities/DomadooOverview.ts';
+import { localToday, shiftDate } from '../../application/planning/usecases/usePlanning.ts';
 import { formatDateTime, formatNumber } from '../../shared/format.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
 import { usePrivacy } from '../hooks/usePrivacy.tsx';
 import { StatCard } from '../components/StatCard.tsx';
+import { StatDetails, type DetailRow } from '../components/StatDetails.tsx';
 import { DomadooChart } from '../components/domadoo/DomadooChart.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -68,18 +70,74 @@ const useFormatRow = () => {
 export const DomadooMetricCard = ({ rowId }: { rowId: string }) => {
   const format = useFormatRow();
   const { snapshot, lastUpdate } = useDomadooSnapshot();
+  const privacy = usePrivacy();
   const row = DOMADOO_ROWS.find((candidate) => candidate.id === rowId);
   if (!row) return null;
   const Icon = ICONS[row.icon];
+
+  // Ce qui éclaire le chiffre, selon sa nature : les ventes qui font l'« en attente », les
+  // quatre montants du compte pour un solde, sinon le même champ sur l'autre fenêtre.
+  const pendingSales = (snapshot?.lastSales ?? []).filter((sale) => !sale.approved);
+  const rows: DetailRow[] =
+    row.field === 'waitingSales' || row.field === 'waitingSalesTotal'
+      ? pendingSales.map((sale) => ({
+          key: sale.id,
+          label: `Vente n° ${sale.id}`,
+          sub: [
+            formatDateTime(sale.date),
+            sale.order !== null &&
+              `commande de ${privacy.money(Math.round(sale.order * 100), 'affiliation')}`,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+          value:
+            sale.commission === null
+              ? '—'
+              : privacy.money(Math.round(sale.commission * 100), 'affiliation'),
+        }))
+      : row.window === 'total' && ACCOUNT_FIELDS.includes(row.field)
+        ? DOMADOO_ROWS.filter(
+            (candidate) => candidate.window === 'total' && ACCOUNT_FIELDS.includes(candidate.field),
+          ).map((candidate) => ({
+            key: candidate.id,
+            label: candidate.label,
+            value: format(candidate, snapshot),
+            tone: candidate.id === row.id ? 'warning' : undefined,
+          }))
+        : DOMADOO_ROWS.filter(
+            (candidate) => candidate.field === row.field && candidate.window !== row.window,
+          ).map((candidate) => ({
+            key: candidate.id,
+            label: DOMADOO_WINDOWS[candidate.window],
+            value: format(candidate, snapshot),
+          }));
+
   return (
     <StatCard
       label={`Domadoo · ${row.label}`}
       value={format(row, snapshot)}
       hint={`${DOMADOO_WINDOWS[row.window]}${lastUpdate ? ` · relevé le ${formatDateTime(lastUpdate)}` : ''}`}
       icon={<Icon className="h-4 w-4" />}
+      details={
+        <StatDetails
+          title={row.help}
+          rows={rows}
+          empty={
+            row.field === 'waitingSales' || row.field === 'waitingSalesTotal'
+              ? 'Aucune vente en attente dans le dernier relevé.'
+              : undefined
+          }
+          note={`Chiffre calculé par Domadoo lui-même (${DOMADOO_WINDOWS[row.window].toLowerCase()}), pas par la période choisie. ${
+            lastUpdate ? `Relevé le ${formatDateTime(lastUpdate)}.` : 'Jamais relevé.'
+          }`}
+        />
+      }
     />
   );
 };
+
+/** Les montants du compte, qui s'éclairent l'un l'autre : gagné, versé, dû. */
+const ACCOUNT_FIELDS = ['earnings', 'payments', 'waitingPayments', 'balance'];
 
 /**
  * Une des deux fenêtres que Domadoo calcule lui-même (30 derniers jours, total), telle
@@ -122,16 +180,27 @@ export const DomadooChartBlock = () => {
     to: filters.to,
     granularity: 'day',
   });
+  // Les clics ont leur propre fenêtre, fixe : les 30 derniers jours, jour local.
+  const today = localToday();
+  const { data: last30 } = useDomadooOverview({
+    from: shiftDate(today, -29),
+    to: today,
+    granularity: 'day',
+  });
   return (
     <Card className="space-y-2 p-4">
       <BlockHeading
         title="Évolution Domadoo"
-        description="Sur la période choisie — distincte des deux fenêtres fixes que Domadoo calcule."
+        description="Solde et commissions en attente sur la période choisie ; clics sur les 30 derniers jours."
       />
       {isLoading && !overview ? (
         <BlockSkeleton className="h-64 border-0" />
       ) : (
-        <DomadooChart series={overview?.series ?? []} granularity="day" />
+        <DomadooChart
+          series={overview?.series ?? []}
+          clicksSeries={last30?.series ?? []}
+          granularity="day"
+        />
       )}
     </Card>
   );

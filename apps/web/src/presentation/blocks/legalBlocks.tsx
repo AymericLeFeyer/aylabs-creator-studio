@@ -30,6 +30,7 @@ import {
   TableRow,
 } from '../components/ui/table.tsx';
 import { StatCard } from '../components/StatCard.tsx';
+import { StatDetails } from '../components/StatDetails.tsx';
 import { LegalBookmarks } from '../components/legal/LegalBookmarks.tsx';
 import { useWidgetOverrides } from '../dashboard/widgetContext.ts';
 import { BlockSkeleton } from './BlockSkeleton.tsx';
@@ -86,15 +87,51 @@ export const CompanyBlock = () => {
   );
 };
 
+/** « 2026-03 » → « mars 2026 ». */
+const monthLabel = (month: string) =>
+  new Date(`${month}-01T00:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
 export const LegalDoneCard = () => {
   const { data } = useLegalOverview();
   const totals = data?.totals;
+  // Obligation par obligation : laquelle traîne se voit tout de suite.
+  const perObligation = useMemo(() => {
+    const rows = new Map<string, { label: string; done: number; expected: number }>();
+    for (const month of data?.months ?? []) {
+      for (const item of month.items) {
+        const row = rows.get(item.obligationId) ?? { label: item.label, done: 0, expected: 0 };
+        row.expected += 1;
+        if (item.checked) row.done += 1;
+        rows.set(item.obligationId, row);
+      }
+    }
+    return [...rows.entries()].map(([id, row]) => ({ id, ...row }));
+  }, [data]);
+  const months = data?.months ?? [];
   return (
     <StatCard
       label="Cases cochées"
       value={totals ? `${formatNumber(totals.done)} / ${formatNumber(totals.expected)}` : '…'}
       hint="depuis la création"
       icon={<CheckCircle2 className="h-4 w-4" />}
+      details={
+        <StatDetails
+          title="Par obligation"
+          rows={perObligation.map((row) => ({
+            key: row.id,
+            label: row.label,
+            value: `${formatNumber(row.done)} / ${formatNumber(row.expected)}`,
+            tone: row.done < row.expected ? 'warning' : undefined,
+          }))}
+          max={10}
+          empty="Aucune obligation active."
+          note={
+            months.length > 0
+              ? `Une case par obligation et par mois, de ${monthLabel(months.at(-1)!.month)} à ${monthLabel(months[0]!.month)}. Une obligation archivée ne compte plus.`
+              : undefined
+          }
+        />
+      }
       accent={
         totals && totals.done === totals.expected && totals.expected > 0
           ? 'var(--positive)'
@@ -107,12 +144,37 @@ export const LegalDoneCard = () => {
 export const LegalLateCard = () => {
   const { data } = useLegalOverview();
   const late = data?.totals.late ?? 0;
+  const lateItems = useMemo(
+    () =>
+      (data?.months ?? [])
+        .flatMap((month) =>
+          month.items
+            .filter((item) => item.status === 'late')
+            .map((item) => ({ month: month.month, item })),
+        )
+        .sort((a, b) => a.item.dueDate.localeCompare(b.item.dueDate)),
+    [data],
+  );
   return (
     <StatCard
       label="Obligations en retard"
       value={data ? formatNumber(late) : '…'}
       hint={late === 0 ? 'tout est à jour' : 'échéances dépassées'}
       icon={<ListChecks className="h-4 w-4" />}
+      details={
+        <StatDetails
+          title="Échéances dépassées, la plus ancienne d'abord"
+          rows={lateItems.map(({ month, item }) => ({
+            key: `${item.obligationId}:${month}`,
+            label: item.label,
+            sub: `${monthLabel(month)} · échéance le ${formatDate(item.dueDate)}`,
+            tone: 'danger',
+          }))}
+          max={8}
+          empty="Tout est à jour."
+          note="Une obligation sans jour limite n'est en retard qu'une fois son mois terminé."
+        />
+      }
       accent={late > 0 ? 'var(--negative)' : undefined}
     />
   );

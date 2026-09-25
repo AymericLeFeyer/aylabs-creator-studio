@@ -20,7 +20,24 @@ export interface DomadooRow {
   label: string;
   kind: 'count' | 'money';
   icon: 'click' | 'sale' | 'money' | 'balance';
+  /** Ce que le chiffre veut dire, tel que Domadoo le calcule : le panneau de survol. */
+  help: string;
 }
+
+/** Une définition par champ : les deux fenêtres parlent de la même chose. */
+const HELP: Record<string, string> = {
+  clicks: 'Clics sur tes liens Domadoo, chaque visite comptée.',
+  uniquesClicks: 'Clics dédoublonnés : une même personne ne compte qu’une fois.',
+  approvedSales: 'Commandes validées par Domadoo : la commission est acquise.',
+  waitingSales:
+    'Commandes passées via tes liens mais pas encore validées (délai de rétractation, retours).',
+  earnings: 'Commissions des ventes validées.',
+  waitingSalesTotal:
+    'Somme des commissions des ventes en attente, tirée du relevé quotidien des ventes. Elle rejoindra les gains à la validation.',
+  payments: 'Ce que Domadoo t’a déjà versé.',
+  waitingPayments: 'Gains validés, en attente de versement.',
+  balance: 'Solde du compte affilié : ce qui te reste dû.',
+};
 
 const row = (
   window: DomadooWindow,
@@ -28,7 +45,15 @@ const row = (
   label: string,
   kind: DomadooRow['kind'],
   icon: DomadooRow['icon'],
-): DomadooRow => ({ id: `${window}.${field}`, window, field, label, kind, icon });
+): DomadooRow => ({
+  id: `${window}.${field}`,
+  window,
+  field,
+  label,
+  kind,
+  icon,
+  help: HELP[field] ?? '',
+});
 
 export const DOMADOO_ROWS: DomadooRow[] = [
   row('last30days', 'clicks', 'Clics', 'count', 'click'),

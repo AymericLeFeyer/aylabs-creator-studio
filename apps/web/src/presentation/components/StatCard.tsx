@@ -78,7 +78,7 @@ export const StatCard = ({
       {details && (
         // Centré sous la carte plutôt qu'aligné à un bord : la même classe convient à
         // la première comme à la dernière colonne de la grille.
-        <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 w-72 max-w-[90vw] -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-xs opacity-0 shadow-lg transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+        <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 w-80 max-w-[90vw] -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-xs opacity-0 shadow-lg transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           {details}
         </div>
       )}

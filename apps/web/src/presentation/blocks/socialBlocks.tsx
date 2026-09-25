@@ -6,10 +6,11 @@ import {
 import { formatCount } from '../../domain/instagram/entities/Instagram.ts';
 import { formatCount as formatTikTokCount } from '../../domain/tiktok/entities/TikTok.ts';
 import { MASKED_TEXT } from '../../domain/privacy/entities/Privacy.ts';
-import { formatNumber } from '../../shared/format.ts';
+import { formatDate, formatDateTime, formatNumber } from '../../shared/format.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
 import { usePrivacy } from '../hooks/usePrivacy.tsx';
 import { StatCard } from '../components/StatCard.tsx';
+import { StatDetails } from '../components/StatDetails.tsx';
 import { Card } from '../components/ui/card.tsx';
 import { InstagramChart } from '../components/instagram/InstagramChart.tsx';
 import { FollowersCard, ReachCard } from '../components/instagram/InstagramLinkedCharts.tsx';
@@ -23,6 +24,18 @@ import { BlockSkeleton } from './BlockSkeleton.tsx';
 
 // --- Instagram ------------------------------------------------------------------------
 
+/** Le meilleur jour d'une série : « 12 le 4 sept. ». */
+const peak = <T extends { date: string }>(series: T[], pick: (point: T) => number | null) => {
+  const best = series.reduce<T | null>(
+    (top, point) => ((pick(point) ?? 0) > (top ? (pick(top) ?? 0) : 0) ? point : top),
+    null,
+  );
+  return best ? `${formatNumber(pick(best) ?? 0)} le ${formatDate(best.date)}` : '—';
+};
+
+const periodLabel = (data: { from: string; to: string }) =>
+  `Du ${formatDate(data.from)} au ${formatDate(data.to)}.`;
+
 export const InstagramStoriesCard = () => {
   const { data } = useInstagramData();
   const totals = data?.totals;
@@ -34,6 +47,34 @@ export const InstagramStoriesCard = () => {
         totals
           ? `${totals.storiesPerDay} par jour · ${totals.activeDays} jour(s) avec au moins une`
           : 'Archivées à la collecte horaire'
+      }
+      details={
+        data ? (
+          <StatDetails
+            title="Le rythme des stories"
+            rows={[
+              { key: 'total', label: 'Stories publiées', value: formatNumber(data.totals.stories) },
+              {
+                key: 'perDay',
+                label: 'Par jour',
+                sub: 'rapporté à tous les jours de la période',
+                value: String(data.totals.storiesPerDay),
+              },
+              { key: 'perWeek', label: 'Par semaine', value: String(data.totals.storiesPerWeek) },
+              {
+                key: 'active',
+                label: 'Jours avec au moins une',
+                value: `${data.totals.activeDays} / ${data.totals.days}`,
+              },
+              { key: 'peak', label: 'Meilleur jour', value: peak(data.series, (p) => p.stories) },
+            ]}
+            note={`${periodLabel(data)} ${
+              data.firstStoryDate
+                ? `Archivées depuis le ${formatDate(data.firstStoryDate)} : avant, un zéro veut dire « pas collecté », pas « rien publié ».`
+                : "Aucune story archivée pour l'instant."
+            } Une story ne vit que 24 h dans l'API.`}
+          />
+        ) : undefined
       }
     />
   );
@@ -55,6 +96,27 @@ export const InstagramFollowersCard = () => {
             ? 'Pas encore de point de comparaison'
             : `${totals.followersGained >= 0 ? '+' : ''}${totals.followersGained} sur la période`
       }
+      details={
+        data ? (
+          <StatDetails
+            title={data.accounts.length > 1 ? 'Par compte, au dernier relevé' : 'Au dernier relevé'}
+            rows={data.accounts.map((account) => ({
+              key: account.id,
+              label: `@${account.username}`,
+              color: account.color,
+              sub: account.latestSnapshot
+                ? `relevé du ${formatDate(account.latestSnapshot.date)}`
+                : 'aucun relevé',
+              value: privacy.count(account.latestSnapshot?.followersCount ?? 0, 'subscribers'),
+            }))}
+            note={`${periodLabel(data)} Le gain compare le dernier relevé de la période à celui d'avant son début${
+              data.previousTotals?.followersGained != null
+                ? ` · période précédente : ${privacy.signed(data.previousTotals.followersGained, 'subscribers')}`
+                : ''
+            }.`}
+          />
+        ) : undefined
+      }
     />
   );
 };
@@ -74,6 +136,28 @@ export const InstagramPostsCard = () => {
       label="Publications"
       value={formatCount(profilePosts ?? data?.totals.posts ?? null)}
       hint={`${formatCount(data?.totals.posts ?? 0)} parue(s) sur la période`}
+      details={
+        data ? (
+          <StatDetails
+            title="Publications du profil, au dernier relevé"
+            rows={[
+              ...data.accounts.map((account) => ({
+                key: account.id,
+                label: `@${account.username}`,
+                color: account.color,
+                value: formatCount(account.latestSnapshot?.mediaCount ?? null),
+              })),
+              {
+                key: 'period',
+                label: 'Parues sur la période',
+                sub: `meilleur jour : ${peak(data.series, (p) => p.posts)}`,
+                value: formatNumber(data.totals.posts),
+              },
+            ]}
+            note={`${periodLabel(data)} Le grand chiffre est le total du profil ; les stories n'y comptent pas.`}
+          />
+        ) : undefined
+      }
     />
   );
 };
@@ -85,6 +169,26 @@ export const InstagramReachCard = () => {
       label="Portée"
       value={formatCount(data?.totals.reach ?? null)}
       hint="comptes touchés sur la période"
+      details={
+        data ? (
+          <StatDetails
+            title="Comptes touchés"
+            rows={[
+              {
+                key: 'perDay',
+                label: 'Par jour en moyenne',
+                value:
+                  data.totals.reach == null
+                    ? '—'
+                    : formatNumber(Math.round(data.totals.reach / Math.max(1, data.totals.days))),
+              },
+              { key: 'peak', label: 'Meilleur jour', value: peak(data.series, (p) => p.reach) },
+              { key: 'views', label: 'Vues', value: formatCount(data.totals.views) },
+            ]}
+            note={`${periodLabel(data)} Somme des portées quotidiennes : un même compte touché deux jours de suite compte deux fois. Meta ne garde que 90 jours.`}
+          />
+        ) : undefined
+      }
     />
   );
 };
@@ -96,6 +200,31 @@ export const InstagramInteractionsCard = () => {
       label="Interactions"
       value={formatCount(data?.totals.totalInteractions ?? null)}
       hint="j’aime, commentaires, partages, enregistrements"
+      details={
+        data ? (
+          <StatDetails
+            title="Interactions du compte"
+            rows={[
+              {
+                key: 'perDay',
+                label: 'Par jour en moyenne',
+                value:
+                  data.totals.totalInteractions == null
+                    ? '—'
+                    : formatNumber(
+                        Math.round(data.totals.totalInteractions / Math.max(1, data.totals.days)),
+                      ),
+              },
+              {
+                key: 'peak',
+                label: 'Meilleur jour',
+                value: peak(data.series, (p) => p.totalInteractions),
+              },
+            ]}
+            note={`${periodLabel(data)} Total de Meta (« total_interactions ») : j'aime, commentaires, partages et enregistrements, publications, reels et stories confondus.`}
+          />
+        ) : undefined
+      }
     />
   );
 };
@@ -163,6 +292,23 @@ export const TikTokFollowersCard = () => {
             : `${totals.followersGained >= 0 ? '+' : ''}${totals.followersGained} sur la période`
       }
       icon={<Music2 className="h-4 w-4" />}
+      details={
+        data ? (
+          <StatDetails
+            title={data.accounts.length > 1 ? 'Par compte, au dernier relevé' : 'Au dernier relevé'}
+            rows={data.accounts.map((account) => ({
+              key: account.id,
+              label: `@${account.username}`,
+              color: account.color,
+              sub: account.latestSnapshot
+                ? `relevé du ${formatDate(account.latestSnapshot.date)}`
+                : 'aucun relevé',
+              value: privacy.count(account.latestSnapshot?.followersCount ?? 0, 'subscribers'),
+            }))}
+            note={`${periodLabel(data)} Relevé une fois par jour sur le profil public. Le gain compare le dernier relevé de la période à celui d'avant son début.`}
+          />
+        ) : undefined
+      }
     />
   );
 };
@@ -175,6 +321,23 @@ export const TikTokHeartsCard = () => {
       value={formatTikTokCount(data?.totals.hearts ?? null)}
       hint="au dernier relevé"
       icon={<Heart className="h-4 w-4" />}
+      details={
+        data ? (
+          <StatDetails
+            title="Coeurs reçus depuis toujours"
+            rows={data.accounts.map((account) => ({
+              key: account.id,
+              label: `@${account.username}`,
+              color: account.color,
+              sub: account.latestSnapshot
+                ? `relevé du ${formatDate(account.latestSnapshot.date)}`
+                : 'aucun relevé',
+              value: formatTikTokCount(account.latestSnapshot?.heartCount ?? null),
+            }))}
+            note="Total public du profil (toutes vidéos), pas le gain de la période."
+          />
+        ) : undefined
+      }
     />
   );
 };
@@ -203,6 +366,37 @@ const useDiscordData = () => {
   return (discord?.data ?? null) as DiscordData | null;
 };
 
+const useDiscordLastUpdate = () => {
+  const { data } = useIntegrations();
+  return data?.providers.find((provider) => provider.id === 'discord')?.lastUpdate ?? null;
+};
+
+const DiscordDetails = ({ payload, note }: { payload: DiscordData | null; note: string }) => {
+  const lastUpdate = useDiscordLastUpdate();
+  return (
+    <StatDetails
+      title={payload?.name ?? 'Serveur Discord'}
+      rows={[
+        {
+          key: 'members',
+          label: 'Membres',
+          value: payload?.members != null ? formatNumber(payload.members) : '—',
+        },
+        {
+          key: 'online',
+          label: 'En ligne',
+          sub:
+            payload?.members && payload.members_online != null
+              ? `${Math.round((payload.members_online / payload.members) * 100)} % des membres`
+              : undefined,
+          value: payload?.members_online != null ? formatNumber(payload.members_online) : '—',
+        },
+      ]}
+      note={`${note} ${lastUpdate ? `Dernier relevé : ${formatDateTime(lastUpdate)}.` : 'Jamais relevé.'}`}
+    />
+  );
+};
+
 export const DiscordMembersCard = () => {
   const payload = useDiscordData();
   return (
@@ -211,6 +405,12 @@ export const DiscordMembersCard = () => {
       value={payload?.members != null ? formatNumber(payload.members) : '—'}
       hint="total du serveur"
       icon={<Users className="h-4 w-4" />}
+      details={
+        <DiscordDetails
+          payload={payload}
+          note="Compteurs de l'invitation publique du serveur, relevés chaque heure."
+        />
+      }
     />
   );
 };
@@ -223,6 +423,12 @@ export const DiscordOnlineCard = () => {
       value={payload?.members_online != null ? formatNumber(payload.members_online) : '—'}
       hint="connectés au dernier relevé"
       icon={<Wifi className="h-4 w-4" />}
+      details={
+        <DiscordDetails
+          payload={payload}
+          note="Une photo à l'instant du relevé : le nombre varie d'une heure à l'autre."
+        />
+      }
     />
   );
 };

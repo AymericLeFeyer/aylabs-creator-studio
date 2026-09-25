@@ -14,17 +14,24 @@ import {
   useProductionOverview,
   useProductions,
   useProductionSteps,
+  useTimeEntries,
 } from '../../application/production/usecases/useProductions.ts';
+import { localToday, shiftDate } from '../../application/planning/usecases/usePlanning.ts';
 import { useDeleteIdea } from '../../application/idea/usecases/useIdeas.ts';
 import type { Idea } from '../../domain/idea/entities/Idea.ts';
 import type { Production, ProductionFormat } from '../../domain/production/entities/Production.ts';
-import { progressCounts } from '../../domain/production/entities/Production.ts';
+import {
+  progressCounts,
+  STATUS_COLORS,
+  STATUS_LABELS,
+} from '../../domain/production/entities/Production.ts';
 import type { ProductionStep } from '../../domain/production/entities/ProductionStep.ts';
-import { formatDuration } from '../../domain/production/entities/TimeEntry.ts';
+import { entryMinutes, formatDuration } from '../../domain/production/entities/TimeEntry.ts';
 import { formatDate, formatNumber, toIsoDate } from '../../shared/format.ts';
 import { cn } from '../../shared/cn.ts';
 import { usePreferences } from '../hooks/usePreferences.ts';
 import { StatCard } from '../components/StatCard.tsx';
+import { StatDetails, type DetailRow } from '../components/StatDetails.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.tsx';
 import { ProductionCard } from '../components/production/ProductionCard.tsx';
@@ -54,82 +61,314 @@ const suffix = (format: ProductionFormat) => (format === 'short' ? ' · shorts' 
 
 export type ProductionStatKey = 'inQueue' | 'progress' | 'next' | 'week' | 'late' | 'paused';
 
-/** Les six chiffres de la file. Aucun ne dépend d'une période : ce sont des états. */
-export const ProductionStatCard = ({ format, stat }: FormatProps & { stat: ProductionStatKey }) => {
-  const { data: overview } = useProductionOverview(format);
-  const stats = overview?.stats;
-  const tail = suffix(format);
+/** Une vidéo de la file en ligne de détail : pastille de statut, titre, avancement. */
+const productionRow = (production: Production, sub?: string): DetailRow => {
+  const { done, total } = progressCounts(production);
+  return {
+    key: production.id,
+    label: production.title,
+    color: STATUS_COLORS[production.status],
+    sub: sub ?? STATUS_LABELS[production.status],
+    value: total > 0 ? `${Math.round((done / total) * 100)} %` : '—',
+  };
+};
 
+const byPlannedDate = (a: Production, b: Production) =>
+  (a.plannedDate ?? '9999').localeCompare(b.plannedDate ?? '9999');
+
+/**
+ * Les six chiffres de la file. Aucun ne dépend d'une période : ce sont des états. Chacun
+ * déplie **les vidéos qu'il compte**, lues dans la même file que l'API a comptée.
+ */
+export const ProductionStatCard = ({ format, stat }: FormatProps & { stat: ProductionStatKey }) => {
   switch (stat) {
     case 'inQueue':
-      return (
-        <StatCard
-          label="En cours"
-          value={stats ? String(stats.inQueue) : PENDING}
-          hint={stats ? `${stats.inProgress} attaquée(s)${tail}` : undefined}
-          icon={<Clapperboard className="h-4 w-4" />}
-        />
-      );
+      return <InQueueCard format={format} />;
     case 'progress':
-      return (
-        <StatCard
-          label="Avancement moyen"
-          value={stats ? `${Math.round(stats.averageProgress * 100)} %` : PENDING}
-          hint={`étapes et tâches cochées${tail}`}
-          icon={<ListChecks className="h-4 w-4" />}
-        />
-      );
+      return <ProgressCard format={format} />;
     case 'next':
-      return (
-        <StatCard
-          label="Prochaine sortie"
-          value={stats?.nextRelease ? formatDate(stats.nextRelease.date) : '—'}
-          hint={stats?.nextRelease?.title ?? 'aucune date posée'}
-          icon={<Rocket className="h-4 w-4" />}
-        />
-      );
+      return <NextReleaseCard format={format} />;
     case 'week':
-      return (
-        <StatCard
-          label="Temps cette semaine"
-          value={stats ? formatDuration(stats.weekTrackedMinutes) : PENDING}
-          hint={`${formatLoad(overview?.weekLoadMinutes ?? 0)} planifié${tail}`}
-          icon={<Timer className="h-4 w-4" />}
-          accent={stats && stats.weekTrackedMinutes > 0 ? 'var(--positive)' : undefined}
-        />
-      );
+      return <WeekTimeCard format={format} />;
     case 'late':
-      return (
-        <StatCard
-          label="En retard"
-          value={stats ? String(stats.late) : PENDING}
-          hint={stats ? `${stats.dueThisWeek} à sortir cette semaine${tail}` : undefined}
-          icon={<CalendarClock className="h-4 w-4" />}
-          accent={stats && stats.late > 0 ? 'var(--negative)' : undefined}
-        />
-      );
+      return <LateCard format={format} />;
     case 'paused':
-      return (
-        <StatCard
-          label="Bloquées"
-          value={stats ? String(stats.paused) : PENDING}
-          hint={`en attente de quelqu'un d'autre${tail}`}
-          icon={<Pause className="h-4 w-4" />}
-          accent={stats && stats.paused > 0 ? 'var(--expense)' : undefined}
-        />
-      );
+      return <PausedCard format={format} />;
   }
+};
+
+const InQueueCard = ({ format }: FormatProps) => {
+  const { data: overview } = useProductionOverview(format);
+  const stats = overview?.stats;
+  const queue = overview?.queue ?? [];
+  return (
+    <StatCard
+      label="En cours"
+      value={stats ? String(stats.inQueue) : PENDING}
+      hint={stats ? `${stats.inProgress} attaquée(s)${suffix(format)}` : undefined}
+      icon={<Clapperboard className="h-4 w-4" />}
+      details={
+        <StatDetails
+          title="Pas encore publiées, dans l'ordre de la file"
+          rows={queue.map((production) =>
+            productionRow(
+              production,
+              [
+                STATUS_LABELS[production.status],
+                production.plannedDate && `sortie le ${formatDate(production.plannedDate)}`,
+              ]
+                .filter(Boolean)
+                .join(' · '),
+            ),
+          )}
+          max={8}
+          empty="La file est vide."
+          note={`« Attaquées » = au statut « ${STATUS_LABELS.in_progress} ». Les idées et les vidéos en pause comptent dans la file.`}
+        />
+      }
+    />
+  );
+};
+
+const ProgressCard = ({ format }: FormatProps) => {
+  const { data: overview } = useProductionOverview(format);
+  const stats = overview?.stats;
+  const queue = useMemo(
+    () =>
+      [...(overview?.queue ?? [])].sort((a, b) => {
+        const pa = progressCounts(a);
+        const pb = progressCounts(b);
+        return pb.done / (pb.total || 1) - pa.done / (pa.total || 1);
+      }),
+    [overview],
+  );
+  return (
+    <StatCard
+      label="Avancement moyen"
+      value={stats ? `${Math.round(stats.averageProgress * 100)} %` : PENDING}
+      hint={`étapes et tâches cochées${suffix(format)}`}
+      icon={<ListChecks className="h-4 w-4" />}
+      details={
+        <StatDetails
+          title="Vidéo par vidéo"
+          rows={queue.map((production) => {
+            const { done, total } = progressCounts(production);
+            return productionRow(production, `${done} sur ${total} coché(s)`);
+          })}
+          max={8}
+          empty="La file est vide."
+          note="Moyenne simple des vidéos de la file. Chaque étape et chaque tâche compte pour un point : une étape à cinq tâches en vaut six."
+        />
+      }
+    />
+  );
+};
+
+const NextReleaseCard = ({ format }: FormatProps) => {
+  const { data: overview } = useProductionOverview(format);
+  const stats = overview?.stats;
+  const today = localToday();
+  const upcoming = useMemo(
+    () =>
+      (overview?.queue ?? [])
+        .filter((production) => production.plannedDate !== null && production.plannedDate >= today)
+        .sort(byPlannedDate),
+    [overview, today],
+  );
+  const undated = (overview?.queue ?? []).filter((production) => !production.plannedDate).length;
+  return (
+    <StatCard
+      label="Prochaine sortie"
+      value={stats?.nextRelease ? formatDate(stats.nextRelease.date) : '—'}
+      hint={stats?.nextRelease?.title ?? 'aucune date posée'}
+      icon={<Rocket className="h-4 w-4" />}
+      details={
+        <StatDetails
+          title="Les prochaines sorties prévues"
+          rows={upcoming.map((production) =>
+            productionRow(
+              production,
+              `${formatDate(production.plannedDate!)} · ${STATUS_LABELS[production.status]}`,
+            ),
+          )}
+          empty="Aucune sortie datée à venir."
+          note={
+            undated > 0
+              ? `${undated} vidéo(s) de la file sans date de sortie.`
+              : 'Toutes les vidéos de la file ont une date.'
+          }
+        />
+      }
+    />
+  );
+};
+
+/**
+ * Les sessions des 7 derniers jours, regroupées par vidéo. Relues à part : l'aperçu n'en
+ * donne que le total, et c'est « sur quoi est parti ce temps » qu'on vient chercher.
+ */
+const WeekTimeCard = ({ format }: FormatProps) => {
+  const { data: overview } = useProductionOverview(format);
+  const stats = overview?.stats;
+  const today = localToday();
+  const { data: entries = [] } = useTimeEntries({ from: shiftDate(today, -6), to: today });
+  const { data: productions = [] } = useProductions();
+  const rows = useMemo(() => {
+    const byId = new Map(productions.map((production) => [production.id, production]));
+    const totals = new Map<string, number>();
+    for (const entry of entries) {
+      const production = byId.get(entry.productionId);
+      if (production && production.format !== format) continue;
+      totals.set(entry.productionId, (totals.get(entry.productionId) ?? 0) + entryMinutes(entry));
+    }
+    return [...totals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([id, minutes]): DetailRow => {
+        const production = byId.get(id);
+        return {
+          key: id,
+          label: production?.title ?? 'Vidéo supprimée',
+          color: production ? STATUS_COLORS[production.status] : undefined,
+          sub: production ? STATUS_LABELS[production.status] : undefined,
+          value: formatDuration(minutes),
+        };
+      });
+  }, [entries, productions, format]);
+  return (
+    <StatCard
+      label="Temps cette semaine"
+      value={stats ? formatDuration(stats.weekTrackedMinutes) : PENDING}
+      hint={`${formatLoad(overview?.weekLoadMinutes ?? 0)} planifié${suffix(format)}`}
+      icon={<Timer className="h-4 w-4" />}
+      accent={stats && stats.weekTrackedMinutes > 0 ? 'var(--positive)' : undefined}
+      details={
+        <StatDetails
+          title="Temps passé sur les 7 derniers jours, par vidéo"
+          rows={rows}
+          max={8}
+          empty="Aucune session enregistrée sur les 7 derniers jours."
+          note={`Sessions chronométrées ou saisies, chronomètre en cours compris. « Planifié » : les créneaux posés sur la semaine (${formatLoad(overview?.weekLoadMinutes ?? 0)}).`}
+        />
+      }
+    />
+  );
+};
+
+const LateCard = ({ format }: FormatProps) => {
+  const { data: overview } = useProductionOverview(format);
+  const stats = overview?.stats;
+  const today = localToday();
+  const weekEnd = shiftDate(today, 6);
+  const queue = overview?.queue ?? [];
+  const late = queue
+    .filter((production) => production.plannedDate !== null && production.plannedDate < today)
+    .sort(byPlannedDate);
+  const dueSoon = queue
+    .filter(
+      (production) =>
+        production.plannedDate !== null &&
+        production.plannedDate >= today &&
+        production.plannedDate <= weekEnd,
+    )
+    .sort(byPlannedDate);
+  return (
+    <StatCard
+      label="En retard"
+      value={stats ? String(stats.late) : PENDING}
+      hint={stats ? `${stats.dueThisWeek} à sortir cette semaine${suffix(format)}` : undefined}
+      icon={<CalendarClock className="h-4 w-4" />}
+      accent={stats && stats.late > 0 ? 'var(--negative)' : undefined}
+      details={
+        <StatDetails
+          title="Sortie visée dépassée, pas encore publiées"
+          rows={[
+            ...late.map((production) => ({
+              ...productionRow(
+                production,
+                `prévue le ${formatDate(production.plannedDate!)} · ${STATUS_LABELS[production.status]}`,
+              ),
+              tone: 'danger' as const,
+            })),
+            ...dueSoon.map((production) =>
+              productionRow(
+                production,
+                `à sortir le ${formatDate(production.plannedDate!)} · cette semaine`,
+              ),
+            ),
+          ]}
+          max={8}
+          empty="Rien en retard, rien à sortir cette semaine."
+          note="En rouge, les retards ; ensuite, ce qui doit sortir dans les 7 jours."
+        />
+      }
+    />
+  );
+};
+
+const PausedCard = ({ format }: FormatProps) => {
+  const { data: overview } = useProductionOverview(format);
+  const stats = overview?.stats;
+  const paused = (overview?.queue ?? []).filter((production) => production.status === 'paused');
+  return (
+    <StatCard
+      label="Bloquées"
+      value={stats ? String(stats.paused) : PENDING}
+      hint={`en attente de quelqu'un d'autre${suffix(format)}`}
+      icon={<Pause className="h-4 w-4" />}
+      accent={stats && stats.paused > 0 ? 'var(--expense)' : undefined}
+      details={
+        <StatDetails
+          title="En pause, et pourquoi"
+          rows={paused.map((production) =>
+            productionRow(
+              production,
+              [
+                production.pausedReason || 'raison non précisée',
+                production.pausedAt && `depuis le ${formatDate(production.pausedAt)}`,
+              ]
+                .filter(Boolean)
+                .join(' · '),
+            ),
+          )}
+          empty="Aucune vidéo bloquée."
+        />
+      }
+    />
+  );
 };
 
 /** Toute la file, tous formats : la carte « En production » d'avant le dashboard composé. */
 export const ProductionQueueCountCard = () => {
   const { data: production } = useProductionOverview();
+  const queue = production?.queue ?? [];
+  const byFormat = (['video', 'short'] as const).map((format) => ({
+    format,
+    items: queue.filter((item) => item.format === format),
+  }));
   return (
     <StatCard
       label="En production"
-      value={formatNumber(production?.queue.length ?? 0)}
+      value={formatNumber(queue.length)}
       hint="vidéos et shorts pas encore publiés"
       icon={<Clapperboard className="h-4 w-4" />}
+      details={
+        <StatDetails
+          title="Par format et par statut"
+          rows={byFormat.map(({ format, items }) => ({
+            key: format,
+            label: format === 'short' ? 'Shorts & Réels' : 'Vidéos',
+            sub: (['idea', 'in_progress', 'paused'] as const)
+              .map((status) => {
+                const count = items.filter((item) => item.status === status).length;
+                return count > 0 ? `${count} ${STATUS_LABELS[status].toLowerCase()}` : null;
+              })
+              .filter(Boolean)
+              .join(' · '),
+            value: formatNumber(items.length),
+          }))}
+          empty="La file est vide."
+        />
+      }
     />
   );
 };

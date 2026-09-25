@@ -1850,6 +1850,15 @@ Port dédié plutôt qu'une extension d'`IntegrationRepository` : `DomadooSnapsh
 n'a rien à voir avec les identifiants ou l'instantané d'export, et un dépôt qui mélangerait
 les deux répondrait à deux questions différentes.
 
+**Le graphique (`DomadooChart`) montre des états, pas les gains.** Onglet « Solde et en
+attente » : `balanceCents` et `waitingSalesCents` en deux courbes sur un même axe (deux
+montants d'un même compte) — ce que le compte vaut et ce qui le rejoindra à la validation.
+Les gains par jour qui tenaient ce rôle ne bougeaient qu'au rythme des validations de
+Domadoo et ne représentaient pas l'activité. Onglet « Clics (30 j) » : `clicksGained` en
+barres, **toujours sur les 30 derniers jours locaux** quelle que soit la période (seconde
+lecture de `useDomadooOverview` dans `DomadooChartBlock`) — la fenêtre de Domadoo
+lui-même, celle où l'on juge l'effet d'une vidéo sur ses liens.
+
 #### Le tableau de bord Discord (`/discord`)
 
 Écran minimal (`DiscordPage`) : nom du serveur, membres, membres en ligne, heure du
@@ -2184,7 +2193,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / **Notes** (plusieurs, en fichiers)                                                                                                                                                                                                           |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                    |
 | `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                                                                                                |
-| `/affiliations`     | `AffiliationsPage`     | Deux onglets (`?onglet=`) : **Domadoo** (collecté tout seul dès que la source est renseignée — 6 cartes, graphique Gains/Solde) et **Plateformes** (4 cartes, `PlatformsPanel`, rattachées à la main). Ex-`/plateformes`, qui redirige ici                                                                                                                                     |
+| `/affiliations`     | `AffiliationsPage`     | Deux onglets (`?onglet=`) : **Domadoo** (collecté tout seul dès que la source est renseignée — 6 cartes, graphique en deux onglets : Solde + Commissions en attente sur la période, Clics sur les 30 derniers jours) et **Plateformes** (4 cartes, `PlatformsPanel`, rattachées à la main). Ex-`/plateformes`, qui redirige ici                                                                                                                                     |
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, **Dépenses** (table + dépenses récurrentes, `RecurringExpensesPanel`)                                                                                                                                                                                             |
 | `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                                                                                                                                                                                                                              |
 | `/apps/:id`         | `ExternalAppPage`      | Une **application externe** en iframe, pleine hauteur (Recharger, Nouvel onglet). L'entrée vit dans la famille de menu choisie                                                                                                                                                                                                                                                |
@@ -2770,7 +2779,13 @@ d'agrégation, puis l'interrupteur CA / Bénéfices, la case « Produits reçus 
 
 Ces réglages pilotent **tous** les graphiques et toutes les cartes : les laisser dans l'un des graphiques obligeait à remonter pour changer d'avis. Le titre du graphique d'argent suit l'interrupteur, il ne le porte plus. L'onglet Application lit le nombre de sorties via `useAnalytics(useAnalyticsParams())` — même clé de cache que le dashboard, donc requête partagée et non dupliquée.
 
-Deux cartes déplient un panneau au survol (prop `details` de `StatCard`, ouvert aussi au clavier via `focus-within`) : « Vidéos publiées » montre les miniatures des sorties, « Produits reçus » la liste des produits et leur valeur. Le détail des produits ne vient pas d'`analytics`, qui n'expose que des agrégats, mais de `useRevenues` borné **exactement** comme le dashboard — sans quoi le panneau contredirait le total juste au-dessus.
+**Toutes les cartes chiffrées déplient un panneau au survol** (prop `details` de `StatCard`, ouvert aussi au clavier et au toucher via `focus-within`) : **ce qui fait que le chiffre est ce qu'il est**. Un compteur dit combien, jamais lesquels — « 3 paiements en attente » ne dit pas qui relancer. Le contenu passe par `StatDetails` (`components/StatDetails.tsx`), une seule grammaire pour tous : titre, lignes (`DetailRow` : pastille de couleur, sous-ligne, `operator` `+`/`−`/`=` pour une ligne de calcul, `tone` pour un retard), total, note grise. Trois familles :
+
+- **un calcul** : CA et bénéfices déroulent `revenueMath` catégorie par catégorie (`byCategory`, `byExpenseCategory`), abonnés gagnés = nouveaux − désabonnements, vues du catalogue = vues − vues des sorties ;
+- **une liste** : les lignes exactes que la carte compte (paiements en attente, sponsos à livrer, produits attendus, vidéos en retard ou bloquées avec leur raison, obligations légales en retard, ventes Domadoo en attente…) ;
+- **une répartition** : par chaîne, par compte, par plateforme, par statut, par obligation.
+
+Chaque panneau **retombe sur le chiffre de sa carte** : mêmes bornes, mêmes chaînes, même prédicat (`productInPeriod`, `sponsorshipInPeriod`, `productIsOutstanding`…), même masquage (`revenueMaskKey` par catégorie). Le total d'affiliation est **recompté depuis les revenus** et non lu dans `platform.earnedCents`, qui ignore le filtre de chaînes. Le temps de la semaine relit les sessions (`useTimeEntries`, 7 jours locaux) : l'aperçu n'en donne que le total. Le détail des produits reçus vient de `useRevenues` borné **exactement** comme le dashboard. **Une nouvelle `StatCard` doit porter son `details`.**
 
 La carte « Abonnés gagnés » met le **gain** en grand et le total en sous-titre : sur une période, ce qui se pilote est la progression, pas un cumul qui ne bouge qu'à la marge.
 
