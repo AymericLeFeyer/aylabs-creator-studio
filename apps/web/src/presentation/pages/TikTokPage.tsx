@@ -108,6 +108,8 @@ export const TikTokPage = () => {
         <Block id="tiktok.hearts" />
       </div>
 
+      <Block id="tiktok.latest" />
+
       <Block id="tiktok.chart" />
     </div>
   );

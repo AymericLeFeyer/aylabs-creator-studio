@@ -78,6 +78,8 @@ export interface TikTokOverview {
   totals: TikTokTotals;
   previousTotals: TikTokTotals;
   videos: TikTokVideo[];
+  /** Les 10 dernières vidéos, **hors période** (comptes filtrés seulement). */
+  latestVideos: TikTokVideo[];
 }
 
 export interface TikTokCollectResult {

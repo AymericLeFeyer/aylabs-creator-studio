@@ -72,6 +72,9 @@ export class GetTikTokOverview {
       totals,
       previousTotals,
       videos: this.data.findVideos({ ...filter, limit: 100 }),
+      // Hors période, comme `latestMedia` sur Instagram : « ma dernière vidéo marche
+      // comment » ne se pose pas dans une fenêtre de temps.
+      latestVideos: this.data.findVideos({ accountIds, limit: 10 }),
     };
   }
 

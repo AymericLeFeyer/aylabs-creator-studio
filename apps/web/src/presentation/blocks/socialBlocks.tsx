@@ -17,6 +17,7 @@ import { FollowersCard, ReachCard } from '../components/instagram/InstagramLinke
 import { PostsCalendar } from '../components/instagram/PostsCalendar.tsx';
 import { LatestPostCard } from '../components/instagram/LatestPostCard.tsx';
 import { TikTokChart } from '../components/tiktok/TikTokChart.tsx';
+import { LatestTikTokCard } from '../components/tiktok/LatestTikTokCard.tsx';
 import { DiscordChart } from '../components/discord/DiscordChart.tsx';
 import { BlockHeading } from '../dashboard/BlockHeading.tsx';
 import { useInstagramData, useTikTokData } from './blockData.ts';
@@ -340,6 +341,14 @@ export const TikTokHeartsCard = () => {
       }
     />
   );
+};
+
+/** Hors période (`latestVideos`) : « ma dernière vidéo marche comment ». */
+export const TikTokLatestVideos = () => {
+  const { data } = useTikTokData();
+  if (!data) return <BlockSkeleton className="h-28" />;
+  if (data.latestVideos.length === 0) return null;
+  return <LatestTikTokCard videos={data.latestVideos} accounts={data.accounts} />;
 };
 
 export const TikTokChartBlock = () => {
