@@ -267,7 +267,21 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
           </p>
         ) : (
           <>
-            <div ref={scrollRef} className="overflow-x-auto">
+            {/* `isolate` : les z-index ci-dessous (10 à 50) ne valent QUE dans le Gantt.
+                Sans contexte d'empilement propre, ils entraient en concurrence avec ceux de
+                l'application — en-tête collant et barre du bas (30), voile du tiroir (40) —,
+                et en faisant défiler la page, les titres et la ligne des dates passaient
+                par-dessus l'en-tête, pendant que les panneaux de survol des cartes du
+                dessus (30) passaient sous le Gantt. Même correction que `PlanningGrid`.
+
+                Le conteneur défile aussi **verticalement**, borné en hauteur : un `sticky`
+                ne colle qu'à l'ancêtre qui défile réellement, et tant que le Gantt suivait
+                la page, la ligne des dates partait avec les premières vidéos dès qu'on
+                dépliait la liste. */}
+            <div
+              ref={scrollRef}
+              className="relative isolate max-h-[min(70vh,44rem)] overflow-auto overscroll-x-contain"
+            >
               <div className="min-w-max">
                 {/* En-tête : le lundi porte l'étiquette, les autres jours le numéro. */}
                 {/* L'ordre d'empilement du Gantt, du fond vers la surface : barres (10),

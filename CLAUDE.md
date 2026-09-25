@@ -2029,6 +2029,13 @@ suivant), et trois **blocs** ajoutables (`achievements.recent`, `.next`, `.recor
 (`METRIC_MASKS` : abonnés, vues, coeurs, AdSense) masque sa courbe, ses paliers et ses
 records. Vidéos, publications et stories ne sont jamais masquées.
 
+**Des comptes peuvent être exclus** (« uniquement ma chaîne principale ») par le bouton
+« Comptes » de l'écran (`AchievementAccountsPicker`). L'exclusion est une **préférence
+partagée entre appareils** (`achievements.hiddenEntities`, liste de `plateforme:id`) et
+vaut pour l'écran **et** les trois blocs : tous lisent `useVisibleAchievements`, jamais
+`useAchievements` directement. On retient les **exclus** et non les retenus : un compte
+connecté demain apparaît de lui-même. L'API renvoie toujours tout.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -2879,7 +2886,8 @@ période**, et leur sous-titre le dit.
 | `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`           | Commentaires archivés, leur tri et leur collecte                                                                                                    |
 | `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                                                                                                                                                         | idem                                                    | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                                                                            |
 | `useExternalApps`, `useCreateExternalApp`, `useUpdateExternalApp`, `useDeleteExternalApp`, `useTodayTodos`                                                                                                                                                                                                                     | `application/externalApp/usecases/useExternalApps.ts`   | Applications externes du menu ; tâches Todo du jour (pastille, **relue chaque minute** : ce qu'on coche dans l'iframe ne passe pas par le studio)   |
-| `useAchievements` | `application/achievement/usecases/useAchievements.ts` | Paliers et records. Relu au focus ; aucune écriture ne l'invalide (`['achievements']`) |
+| `useSharedPreference(key, fallback, parse)` | `application/sharedPreference/usecases/useSharedPreference.ts` | Une préférence **partagée entre appareils** (`/api/preferences`, table `app_preferences`). `parse` valide la valeur, sinon `fallback`. Écriture optimiste. `['sharedPreferences']` ne croise aucune racine |
+| `useAchievements`, `useVisibleAchievements` | `application/achievement/usecases/useAchievements.ts` | Paliers et records. Relu au focus ; aucune écriture ne l'invalide (`['achievements']`) |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
@@ -3042,6 +3050,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
   doubles, et sans accents — comme le reste du fichier. **Le piège vaut pour tout SQL écrit
   dans un template literal**, y compris les requêtes des dépôts (`VIEW_SQL` de
   `SqliteTimeEntryRepository` est tombé dedans).
+- **Logos de marque** : Lucide n'en a aucun. `DiscordIcon` (`components/icons/`) est le logo officiel, écrit comme une icône Lucide (mêmes props, `currentColor`) et transtypé en `LucideIcon` pour entrer dans le menu et les réglages. Pas de couleur de marque imposée : dans le menu, une seule icône en couleur se lirait comme une alerte.
 - **Contraste calculé, pas choisi** : `shared/contrast.ts` (`readableTextColor`) prend une couleur de fond libre et renvoie le blanc ou l'encre du thème, selon le meilleur **ratio WCAG réel** des deux. Les couleurs de chaîne sont libres — un vert clair et un bleu nuit peuvent cohabiter, et écrire en blanc sur les deux rend le premier illisible.
 
 ## Points d'attention
@@ -3406,6 +3415,13 @@ todayColumn * cell + cell / 2`), pas à son bord gauche. Au bord, il tombe exact
   précisément sur les vidéos en cours. Les pastilles de créneau ont été **retirées** : un
   point par créneau sur une barre colorée ne se lisait pas, et le Gantt ne reçoit plus les
   créneaux. Ne jamais poser deux calques du Gantt au même niveau.
+  **Ces z-index ne valent que dans le Gantt** : son conteneur de défilement porte `isolate`.
+  Sans lui, ils entraient en concurrence avec ceux de l'application (en-tête collant et
+  barre du bas en 30, voile du tiroir en 40) — les titres et la ligne des dates passaient
+  par-dessus l'en-tête en faisant défiler la page, et les panneaux de survol des cartes du
+  dessus passaient sous le Gantt. Même règle que `PlanningGrid`. Le conteneur défile aussi
+  **verticalement** (`max-h-[min(70vh,44rem)]`) : c'est ce qui fait coller la ligne des
+  dates une fois la liste dépliée — un `sticky` n'accroche qu'à l'ancêtre qui défile.
 - **La largeur de la colonne des titres se mesure, elle ne se suppose pas.** Elle est plus
   étroite sur mobile (`w-36` contre `w-56`), sinon elle mangeait 224 px sur un écran de
   390 et il ne restait rien pour les barres. `TITLE_WIDTH` ne sert plus que de repli avant

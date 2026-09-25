@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Medal } from 'lucide-react';
-import { useAchievements } from '../../application/achievement/usecases/useAchievements.ts';
+import { useVisibleAchievements } from '../../application/achievement/usecases/useAchievements.ts';
 import type { AchievementTrack } from '../../domain/achievement/entities/Achievement.ts';
 import { formatDate } from '../../shared/format.ts';
 import { usePrivacy } from '../hooks/usePrivacy.tsx';
@@ -25,7 +25,7 @@ import { BlockSkeleton } from './BlockSkeleton.tsx';
 /** Les courbes que la confidentialité laisse voir : un palier révèle un ordre de grandeur. */
 const useVisibleTracks = () => {
   const privacy = usePrivacy();
-  const { data, isLoading } = useAchievements();
+  const { data, isLoading } = useVisibleAchievements();
   const tracks = useMemo(
     () =>
       (data?.tracks ?? []).filter((track) => {
@@ -126,7 +126,7 @@ export const AchievementsNextBlock = () => {
 
 export const AchievementsRecordsBlock = () => {
   const privacy = usePrivacy();
-  const { data, isLoading } = useAchievements();
+  const { data, isLoading } = useVisibleAchievements();
   if (isLoading) return <BlockSkeleton className="h-40" />;
   const records = (data?.records ?? []).filter((record) => {
     const mask = METRIC_MASKS[record.metric];

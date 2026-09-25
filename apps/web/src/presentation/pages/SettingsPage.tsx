@@ -6,7 +6,6 @@ import {
   CalendarClock,
   ChevronDown,
   FileText,
-  Hash,
   Instagram,
   KeyRound,
   Link2,
@@ -48,6 +47,7 @@ import { CompanyPage } from './CompanyPage.tsx';
 import { ApiSettingsPage } from './ApiSettingsPage.tsx';
 import { ExternalAppsSettingsPage } from './ExternalAppsSettingsPage.tsx';
 import { PrivacySettings } from '../components/PrivacySettings.tsx';
+import { DiscordIcon } from '../components/icons/DiscordIcon.tsx';
 import { MobileNavSettings } from '../components/settings/MobileNavSettings.tsx';
 import { BrandingSettings } from '../components/settings/BrandingSettings.tsx';
 import { cn } from '../../shared/cn.ts';
@@ -123,7 +123,7 @@ const GROUPS: SettingsGroup[] = [
         render: () => <InstagramSettingsPage />,
       },
       { id: 'tiktok', label: 'TikTok', icon: Music2, render: () => <TikTokSettingsPage /> },
-      { id: 'discord', label: 'Discord', icon: Hash, render: () => <DiscordSettingsPage /> },
+      { id: 'discord', label: 'Discord', icon: DiscordIcon, render: () => <DiscordSettingsPage /> },
     ],
   },
   {

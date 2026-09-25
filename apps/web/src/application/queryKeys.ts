@@ -40,6 +40,8 @@ export const queryKeys = {
   branding: () => ['branding'] as const,
   // Recalculés à la lecture : aucune écriture ne les invalide.
   achievements: () => ['achievements'] as const,
+  // Préférences partagées entre appareils (`/api/preferences`) : ne croise aucune racine.
+  sharedPreferences: () => ['sharedPreferences'] as const,
   scriptPresets: (includeArchived: boolean) => ['scriptPresets', includeArchived] as const,
   shotAngles: (includeArchived: boolean) => ['shotAngles', includeArchived] as const,
   productionShotAngles: (id: string) => ['productionShotAngles', id] as const,

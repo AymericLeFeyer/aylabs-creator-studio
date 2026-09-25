@@ -3,7 +3,6 @@ import {
   CalendarClock,
   Gift,
   Handshake,
-  Hash,
   Images,
   Instagram,
   Link2,
@@ -22,6 +21,7 @@ import {
   type ExternalApp,
 } from '../domain/externalApp/entities/ExternalApp.ts';
 import { externalAppIcon } from './externalAppIcons.ts';
+import { DiscordIcon } from './components/icons/DiscordIcon.tsx';
 
 export interface NavItem {
   /** L'adresse, et **l'identifiant** de l'entrée. */
@@ -199,7 +199,7 @@ export const withDiscord = (sections: NavSection[], configured: boolean): NavSec
     const index =
       tiktokIndex >= 0 ? tiktokIndex : section.items.findIndex((item) => item.to === '/instagram');
     const items = [...section.items];
-    items.splice(index + 1, 0, { to: '/discord', label: 'Discord', icon: Hash, end: false });
+    items.splice(index + 1, 0, { to: '/discord', label: 'Discord', icon: DiscordIcon, end: false });
     return { ...section, items };
   });
 };

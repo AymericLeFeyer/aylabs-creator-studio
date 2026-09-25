@@ -1,5 +1,6 @@
 import { useSearchParams } from 'react-router-dom';
-import { useAchievements } from '../../application/achievement/usecases/useAchievements.ts';
+import { useVisibleAchievements } from '../../application/achievement/usecases/useAchievements.ts';
+import { AchievementAccountsPicker } from '../components/achievements/AchievementAccountsPicker.tsx';
 import type { AchievementPlatform } from '../../domain/achievement/entities/Achievement.ts';
 import { Block } from '../dashboard/Block.tsx';
 import { AchievementTrackCard } from '../components/achievements/AchievementTrackCard.tsx';
@@ -17,7 +18,7 @@ import { BlockSkeleton } from '../blocks/BlockSkeleton.tsx';
  * dessous, une courbe par chaîne et par métrique, rangées par plateforme en onglets.
  */
 export const AchievementsPage = () => {
-  const { data, isLoading } = useAchievements();
+  const { data, all, isLoading } = useVisibleAchievements();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const tracks = data?.tracks ?? [];
@@ -29,12 +30,19 @@ export const AchievementsPage = () => {
 
   return (
     <div className="space-y-4">
-      <div className="hidden lg:block">
-        <h1 className="text-lg font-semibold">Achievements</h1>
-        <p className="text-sm text-muted-foreground">
-          Les paliers franchis, reconstruits depuis tout l’historique collecté. Un palier acquis
-          avant le début de l’historique est marqué « avant le … » : on sait qu’il l’est, pas quand.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="hidden lg:block">
+          <h1 className="text-lg font-semibold">Achievements</h1>
+          <p className="text-sm text-muted-foreground">
+            Les paliers franchis, reconstruits depuis tout l’historique collecté. Un palier acquis
+            avant le début de l’historique est marqué « avant le … » : on sait qu’il l’est, pas
+            quand.
+          </p>
+        </div>
+        {/* Visible aussi sur mobile, où le bloc titre disparaît : poussé à droite. */}
+        <div className="ml-auto">
+          <AchievementAccountsPicker />
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -45,6 +53,10 @@ export const AchievementsPage = () => {
 
       {isLoading ? (
         <BlockSkeleton className="h-64" />
+      ) : !active && (all?.tracks.length ?? 0) > 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          Tous les comptes sont exclus : recoche-en un dans « Comptes ».
+        </p>
       ) : !active ? (
         <EmptyState
           title="Aucun historique pour l'instant"
