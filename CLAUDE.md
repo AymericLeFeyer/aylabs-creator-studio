@@ -2191,7 +2191,8 @@ plus », retirable en édition.
 échelle commune entre des abonnés et des euros, et elle ne révèle aucune valeur masquée) :
 courbes dans le temps (`GoalsProgressChart`, abscisse en temps numérique), barres du jour
 face au temps écoulé (`GoalsBarChart`), un anneau par objectif (`GoalsDonuts`), anneaux
-concentriques (`GoalsRadialChart`). Le mode est une préférence **de l'appareil**
+concentriques (`GoalsRadialChart` — **toucher un anneau** ou sa ligne de légende l'isole et
+affiche au centre son % **et sa valeur réelle** ; un clic et non un survol, pour le tactile). Le mode est une préférence **de l'appareil**
 (`acs.goalsChartMode`). Les objectifs `upcoming` n'y figurent pas.
 **Confidentialité** : `goalMask(metric)` → valeurs en `•••` dans la liste.
 
@@ -2748,8 +2749,8 @@ l'en-tête ; c'est désormais une page de tuiles, voir `MobileMenu`), au lieu d'
 horizontalement.
 
 **Les écrans sont groupés par famille** (`NAV_SECTIONS`, `presentation/navigation.ts`) :
-le dashboard **hors famille** en tête, puis **Production** (Planning, Vidéos, Shorts &
-Réels, Publications), **Audience** (YouTube, Instagram, Commentaires, Succès — plus TikTok et
+le dashboard **et Succès, hors famille**, en tête, puis **Production** (Planning, Vidéos, Shorts &
+Réels, Publications), **Audience** (YouTube, Instagram, Commentaires — plus TikTok et
 Discord, conditionnels, voir plus bas), **Revenus** (Produits, Sponsors, Affiliations,
 Chiffre d'affaires) et **Entreprise** (Légal). À neuf entrées, une liste à plat obligeait à lire
 tous les libellés pour en trouver un — rien ne disait que « Contenu » et « Instagram »
@@ -2778,9 +2779,9 @@ n'importe quel site — et celui du menu mobile aussi.
 
 **Les familles du menu se replient** (clic sur l'intitulé, chevron au survol). L'état est
 une préférence **de l'appareil** (`preferences.collapsedNavSections`, on retient les
-**repliées** : une famille ajoutée plus tard arrive dépliée), commune à la barre latérale
-et au menu mobile. Repliée, une famille garde visible **l'écran ouvert** s'il en fait
-partie, et sa pastille fait la **somme** de celles qu'elle cache. La barre repliée sur ses
+**repliées** : une famille ajoutée plus tard arrive dépliée), pour **la barre latérale
+seulement** — le menu mobile en tuiles montre toujours tout. Repliée, une famille garde
+visible **l'écran ouvert** s'il en fait partie, et sa pastille fait la **somme** de celles qu'elle cache. La barre repliée sur ses
 icônes n'a pas de familles repliables (un filet suffit).
 
 **La somme des pastilles** (`sumBadges`, `navBadges.ts`) : poids d'une pastille =

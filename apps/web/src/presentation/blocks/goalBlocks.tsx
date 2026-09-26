@@ -105,7 +105,7 @@ const DESCRIPTIONS: Record<ChartMode, string> = {
   lines: 'La progression de chaque objectif depuis son départ : 100 % = cible atteinte.',
   bars: 'Où en est chaque objectif aujourd’hui ; la barre grise est le temps écoulé.',
   donuts: 'Un anneau par objectif, le pourcentage atteint au centre.',
-  radial: 'Tous les objectifs en anneaux concentriques.',
+  radial: 'Tous les objectifs en anneaux concentriques : touche-en un pour voir sa valeur.',
 };
 
 /**

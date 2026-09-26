@@ -72,7 +72,12 @@ export interface NavSection {
 export const NAV_SECTIONS: NavSection[] = [
   {
     label: null,
-    items: [{ to: '/', label: 'Dashboard', icon: BarChart3, end: true }],
+    items: [
+      { to: '/', label: 'Dashboard', icon: BarChart3, end: true },
+      // Avec le dashboard, hors famille : objectifs et paliers traversent toutes les
+      // plateformes et l'argent, ils n'appartiennent pas plus à l'Audience qu'aux Revenus.
+      { to: '/achievements', label: 'Succès', short: 'Succès', icon: Trophy, end: false },
+    ],
   },
   {
     label: 'Production',
@@ -107,9 +112,6 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: MessagesSquare,
         end: false,
       },
-      // En dernier : ce n'est pas un écran de travail, c'est celui qu'on ouvre pour
-      // regarder le chemin parcouru.
-      { to: '/achievements', label: 'Succès', short: 'Succès', icon: Trophy, end: false },
     ],
   },
   {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -19,6 +19,7 @@ import {
 } from 'recharts';
 import { goalTitle, type GoalView } from '../../../domain/goal/entities/Goal.ts';
 import { formatDate } from '../../../shared/format.ts';
+import { cn } from '../../../shared/cn.ts';
 import { useGoalValue } from './goalFormat.ts';
 
 /**
@@ -29,7 +30,8 @@ import { useGoalValue } from './goalFormat.ts';
  * - **courbes** : la progression dans le temps, depuis le départ de chaque objectif ;
  * - **barres** : où en est chacun aujourd'hui, face au temps écoulé ;
  * - **camemberts** : un anneau par objectif, le pourcentage au centre ;
- * - **anneaux** : tous les objectifs en cercles concentriques.
+ * - **anneaux** : tous les objectifs en cercles concentriques ; toucher un anneau affiche
+ *   sa valeur réelle en plus du pourcentage.
  *
  * L'abscisse des courbes est un **temps numérique** et non une catégorie : les séries n'ont
  * pas les mêmes dates.
@@ -285,9 +287,23 @@ export const GoalsDonuts = ({ goals }: { goals: GoalView[] }) => {
   );
 };
 
+/** La valeur réelle d'un objectif (« 2 190 / 3 000 »), `•••` si sa métrique est masquée. */
+const GoalValueText = ({ goal, className }: { goal: GoalView; className?: string }) => {
+  const value = useGoalValue(goal);
+  return (
+    <span className={className}>
+      {value(goal.current)} / {value(goal.targetValue)}
+    </span>
+  );
+};
+
 /**
  * Tous les objectifs en anneaux concentriques, comme les cercles d'activité d'une montre :
  * d'un coup d'œil, lequel est bouclé et lequel traîne. Plafonné à 100 % par anneau.
+ *
+ * **Toucher un anneau** (ou sa ligne de légende) l'isole : les autres s'estompent, et le
+ * centre affiche son pourcentage **et sa valeur réelle**. Retoucher le même le relâche.
+ * Un clic plutôt qu'un survol : sur téléphone, il n'y a pas de survol.
  */
 export const GoalsRadialChart = ({
   goals,
@@ -296,57 +312,93 @@ export const GoalsRadialChart = ({
   goals: GoalView[];
   height?: number;
 }) => {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   if (goals.length === 0) return <EmptyChart height={height} />;
+  const selected = goals.find((goal) => goal.id === selectedId) ?? null;
+  const toggle = (id: string) => setSelectedId((current) => (current === id ? null : id));
   const rows = goals.map((goal) => ({
     id: goal.id,
     name: goalTitle(goal),
     value: Math.min(100, currentPct(goal)),
     real: currentPct(goal),
     fill: goal.color,
+    opacity: selected && selected.id !== goal.id ? 0.25 : 1,
   }));
   return (
     <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <ResponsiveContainer width="100%" height={height}>
-        <RadialBarChart
-          data={rows}
-          innerRadius="22%"
-          outerRadius="100%"
-          startAngle={90}
-          endAngle={-270}
-          barCategoryGap="18%"
-        >
-          <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-          <RadialBar
-            dataKey="value"
-            background={{ fill: 'var(--muted)' }}
-            cornerRadius={8}
-            isAnimationActive={false}
-          />
-          <Tooltip
-            content={({ active, payload }) => {
-              if (!active || !payload?.length) return null;
-              const row = payload[0]!.payload as (typeof rows)[number];
-              return (
-                <div className={tooltipBox}>
-                  <p className="font-medium">{row.name}</p>
-                  <p className="tabular">{row.real} %</p>
-                </div>
-              );
-            }}
-          />
-        </RadialBarChart>
-      </ResponsiveContainer>
-      <ul className="space-y-1.5 text-xs">
-        {rows.map((row) => (
-          <li key={row.id} className="flex items-center gap-2">
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: row.fill }}
-            />
-            <span className="min-w-0 flex-1 truncate">{row.name}</span>
-            <span className="font-semibold tabular">{row.real} %</span>
-          </li>
-        ))}
+      <div className="relative" style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RadialBarChart
+            data={rows}
+            innerRadius="38%"
+            outerRadius="100%"
+            startAngle={90}
+            endAngle={-270}
+            barCategoryGap="18%"
+          >
+            <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+            <RadialBar
+              dataKey="value"
+              background={{ fill: 'var(--muted)' }}
+              cornerRadius={8}
+              isAnimationActive={false}
+              className="cursor-pointer"
+              onClick={(_data: unknown, index: number) => {
+                const row = rows[index];
+                if (row) toggle(row.id);
+              }}
+            >
+              {rows.map((row) => (
+                <Cell key={row.id} fill={row.fill} fillOpacity={row.opacity} />
+              ))}
+            </RadialBar>
+          </RadialBarChart>
+        </ResponsiveContainer>
+        {/* Le trou du centre : le détail de l'anneau touché. */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          {selected ? (
+            <div className="flex max-w-[34%] flex-col items-center text-center">
+              <span className="text-xl font-semibold tabular" style={{ color: selected.color }}>
+                {Math.round(currentPct(selected))} %
+              </span>
+              <GoalValueText goal={selected} className="text-[11px] font-medium tabular" />
+            </div>
+          ) : (
+            <span className="max-w-[30%] text-center text-[11px] text-muted-foreground">
+              Touche un anneau
+            </span>
+          )}
+        </div>
+      </div>
+      <ul className="space-y-1 text-xs">
+        {goals.map((goal, index) => {
+          const row = rows[index]!;
+          const active = selected?.id === goal.id;
+          return (
+            <li key={goal.id}>
+              <button
+                type="button"
+                onClick={() => toggle(goal.id)}
+                aria-pressed={active}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted',
+                  active && 'bg-muted',
+                  selected && !active && 'opacity-50',
+                )}
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: row.fill }}
+                />
+                <span className="min-w-0 flex-1 truncate">{row.name}</span>
+                {active && (
+                  <GoalValueText goal={goal} className="shrink-0 tabular text-muted-foreground" />
+                )}
+                <span className="shrink-0 font-semibold tabular">{row.real} %</span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

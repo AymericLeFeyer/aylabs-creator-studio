@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { ChevronDown, Monitor, Moon, Settings, Sun, X, type LucideIcon } from 'lucide-react';
+import { Monitor, Moon, Settings, Sun, X, type LucideIcon } from 'lucide-react';
 import type { NavItem, NavSection } from '../navigation.ts';
-import { sumBadges, type NavBadge } from '../navBadges.ts';
+import type { NavBadge } from '../navBadges.ts';
 import { cn } from '../../shared/cn.ts';
 import { Button } from './ui/button.tsx';
 import { NavBadgePill } from './NavBadgePill.tsx';
@@ -14,8 +14,6 @@ interface MobileMenuProps {
   sections: NavSection[];
   badges: Record<string, NavBadge>;
   isItemActive: (to: string, isActive: boolean) => boolean;
-  collapsedSections: string[];
-  onToggleSection: (label: string) => void;
   logoUrl: string;
   appName: string;
 }
@@ -37,9 +35,9 @@ const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; icon: Lucide
  * est `inert` et `invisible` (la visibilité ne bascule qu'en fin de transition), donc hors
  * du clavier et des lecteurs d'écran.
  *
- * Les familles se replient comme dans la barre latérale, avec **la même préférence** :
- * une famille repliée sur l'ordinateur l'est aussi ici, et sa pastille fait la somme de
- * celles qu'elle cache.
+ * Les familles **ne se replient pas** ici, contrairement à la barre latérale : tout tient
+ * sur un écran de tuiles, et une famille repliée sur l'ordinateur ne doit pas cacher un
+ * écran sur le téléphone.
  */
 export const MobileMenu = ({
   open,
@@ -47,8 +45,6 @@ export const MobileMenu = ({
   sections,
   badges,
   isItemActive,
-  collapsedSections,
-  onToggleSection,
   logoUrl,
   appName,
 }: MobileMenuProps) => {
@@ -127,42 +123,16 @@ export const MobileMenu = ({
         className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-4"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}
       >
-        {sections.map((section) => {
-          const collapsed = section.label !== null && collapsedSections.includes(section.label);
-          return (
-            <section key={section.label ?? 'top'} className="space-y-2">
-              {section.label && (
-                <button
-                  type="button"
-                  onClick={() => onToggleSection(section.label!)}
-                  aria-expanded={!collapsed}
-                  className="flex w-full items-center gap-2 px-1 text-[0.7rem] font-semibold tracking-wide text-muted-foreground uppercase"
-                >
-                  <span>{section.label}</span>
-                  {collapsed && (
-                    <NavBadgePill
-                      badge={sumBadges(
-                        badges,
-                        section.items.map((item) => item.to),
-                      )}
-                    />
-                  )}
-                  <ChevronDown
-                    className={cn(
-                      'ml-auto h-4 w-4 transition-transform duration-200',
-                      collapsed && '-rotate-90',
-                    )}
-                  />
-                </button>
-              )}
-              {!collapsed && (
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                  {section.items.map(tile)}
-                </div>
-              )}
-            </section>
-          );
-        })}
+        {sections.map((section) => (
+          <section key={section.label ?? 'top'} className="space-y-2">
+            {section.label && (
+              <p className="px-1 text-[0.7rem] font-semibold tracking-wide text-muted-foreground uppercase">
+                {section.label}
+              </p>
+            )}
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{section.items.map(tile)}</div>
+          </section>
+        ))}
 
         <section className="grid grid-cols-3 gap-2 border-t border-border pt-4 sm:grid-cols-4">
           {tile({ to: '/parametres', label: 'Paramètres', icon: Settings, end: false })}

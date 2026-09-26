@@ -180,8 +180,8 @@ export const AppLayout = () => {
 
   const collapsed = preferences.sidebarCollapsed;
   /**
-   * Les familles repliées, retenues d'une visite à l'autre (`collapsedNavSections`) et
-   * communes à la barre latérale et au menu mobile. Repliée, une famille garde visible
+   * Les familles repliées, retenues d'une visite à l'autre (`collapsedNavSections`). Barre
+   * latérale seulement : le menu mobile en tuiles montre toujours tout. Repliée, une famille garde visible
    * **l'écran ouvert** s'il en fait partie, et sa pastille fait la somme de celles qu'elle
    * cache.
    */
@@ -383,8 +383,6 @@ export const AppLayout = () => {
         sections={navSections}
         badges={badges}
         isItemActive={isItemActive}
-        collapsedSections={collapsedSections}
-        onToggleSection={toggleSection}
         logoUrl={logoUrl}
         appName={appName}
       />
