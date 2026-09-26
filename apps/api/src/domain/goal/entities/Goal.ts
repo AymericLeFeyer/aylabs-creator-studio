@@ -265,8 +265,6 @@ export interface GoalView extends Goal {
   progress: number | null;
   /** La part du temps écoulé, entre 0 et 1 : ce que `progress` devrait valoir pour tenir. */
   elapsed: number;
-  /** Où mènerait le rythme récent à l'échéance. `null` si l'historique ne le dit pas. */
-  projected: number | null;
   achievedAt: string | null;
   status: GoalStatus;
   /** Du départ à aujourd'hui (ou à l'échéance), un point par jour. */

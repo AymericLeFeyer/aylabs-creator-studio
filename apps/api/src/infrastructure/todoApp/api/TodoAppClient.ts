@@ -1,10 +1,11 @@
 import type { TodoTag, TodoTask } from '../../../domain/todoApp/entities/TodoTask.ts';
 import type {
+  NewTodoTask,
   TodoTaskQuery,
   TodoTaskSource,
 } from '../../../domain/todoApp/repositories/TodoRepository.ts';
 import type { IsoDate } from '../../../shared/dates.ts';
-import { notFound, upstream } from '../../../shared/errors.ts';
+import { AppError, notFound, upstream } from '../../../shared/errors.ts';
 
 interface RawTask {
   id: string;
@@ -92,6 +93,20 @@ export class TodoAppClient implements TodoTaskSource {
     }
     const result = await this.call<{ tasks: RawTask[] }>(`/api/tasks?${params.toString()}`);
     return (result?.tasks ?? []).map(toTask);
+  }
+
+  async getTask(id: string): Promise<TodoTask | null> {
+    try {
+      return toTask(await this.call<RawTask>(`/api/tasks/${encodeURIComponent(id)}`));
+    } catch (error) {
+      if (error instanceof AppError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  /** `201` créée, `200` si l'`externalId` est déjà connu de Todo : les deux rendent la tâche. */
+  async createTask(input: NewTodoTask): Promise<TodoTask> {
+    return toTask(await this.call<RawTask>('/api/tasks', { method: 'POST', body: input }));
   }
 
   async complete(id: string): Promise<void> {

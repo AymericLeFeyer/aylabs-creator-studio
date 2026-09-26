@@ -1740,6 +1740,23 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 49,
+    name: 'todo_links',
+    // Ce que le studio a pose dans l'app Todo (sortie d'une video, case du tableau legal),
+    // par cle metier. La ligne n'est jamais supprimee : une tache effacee a la main dans
+    // Todo ne doit pas revenir a la synchro suivante. "done" est le dernier etat connu des
+    // deux cotes, et c'est lui qui dit lequel a bouge depuis (synchro dans les deux sens).
+    up: `
+      CREATE TABLE todo_links (
+        key        TEXT PRIMARY KEY,
+        task_id    TEXT NOT NULL,
+        done       INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 /**

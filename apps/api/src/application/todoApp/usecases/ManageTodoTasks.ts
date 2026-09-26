@@ -131,7 +131,11 @@ export class ManageTodoTasks {
     if (Object.keys(patch).length > 0) this.connection.update(patch);
   }
 
-  private client(): TodoTaskSource | null {
+  /**
+   * Le client Todo, ou `null` quand aucune adresse n'est configurée. Public pour la
+   * synchro (`SyncStudioTodos`) : la clé reste déchiffrée ici et nulle part ailleurs.
+   */
+  client(): TodoTaskSource | null {
     const stored = this.connection.get();
     const baseUrl = this.env.baseUrl ?? stored.baseUrl;
     if (!baseUrl) return null;
@@ -270,6 +274,11 @@ export class ManageTodoTasks {
       const start = toMinutes(placement.startTime);
       return { date: placement.date, start, end: Math.min(24 * 60, start + placement.minutes) };
     });
+  }
+
+  /** Les tags de la connexion : ce qui fait apparaître une tâche dans le planning. */
+  tags(): string[] {
+    return this.connection.get().tags;
   }
 
   // --- Écritures ------------------------------------------------------------

@@ -1,32 +1,43 @@
 import { useState } from 'react';
-import { Plus, Target } from 'lucide-react';
+import {
+  BarChart3,
+  CircleDot,
+  LineChart as LineChartIcon,
+  PieChart as PieChartIcon,
+  Plus,
+  Target,
+  type LucideIcon,
+} from 'lucide-react';
 import { useGoals } from '../../application/goal/usecases/useGoals.ts';
 import { goalTitle } from '../../domain/goal/entities/Goal.ts';
-import { formatDate } from '../../shared/format.ts';
+import { cn } from '../../shared/cn.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select.tsx';
 import { GoalDialog } from '../components/goals/GoalDialog.tsx';
-import { GoalChart, GoalsProgressChart } from '../components/goals/GoalCharts.tsx';
-import { GoalProgressBar, GoalRow, GoalStatusBadge } from '../components/goals/GoalRow.tsx';
-import { percent, useGoalValue } from '../components/goals/goalFormat.ts';
+import {
+  GoalsBarChart,
+  GoalsDonuts,
+  GoalsProgressChart,
+  GoalsRadialChart,
+} from '../components/goals/GoalCharts.tsx';
+import { GoalRow } from '../components/goals/GoalRow.tsx';
+import { useLocalStorage } from '../hooks/useLocalStorage.ts';
 import { BlockHeading } from '../dashboard/BlockHeading.tsx';
+import { useWidgetOverrides } from '../dashboard/widgetContext.ts';
 import { BlockSkeleton } from './BlockSkeleton.tsx';
 
 /**
- * Les blocs des objectifs (Succès, en tête) : la liste, le graphique commun, et un bloc
- * par objectif (`goals.goal.<id>`, reconnu au motif par `resolveBlock`). Chacun porte sa
- * propre modale : posé sur le dashboard, il se gère sans revenir sur Succès.
+ * Les blocs des objectifs (Succès, en tête) : la liste et le graphique commun. La liste
+ * porte sa modale **sur Succès seulement** : sur le dashboard, un objectif se regarde, il
+ * ne se crée ni ne se modifie (`WidgetContext` non nul = posé sur le dashboard).
  */
+
+/** Le bloc est posé sur le dashboard : lecture seule. */
+const useOnDashboard = () => useWidgetOverrides() !== null;
 
 export const GoalsListBlock = () => {
   const { data: goals = [], isLoading } = useGoals();
+  const onDashboard = useOnDashboard();
   const [dialog, setDialog] = useState<{ open: boolean; id: string | null }>({
     open: false,
     id: null,
@@ -42,17 +53,21 @@ export const GoalsListBlock = () => {
         title="Objectifs"
         description="La barre avance avec la valeur ; le trait marque le temps écoulé."
         aside={
-          <Button size="sm" onClick={() => setDialog({ open: true, id: null })}>
-            <Plus className="h-4 w-4" />
-            Nouvel objectif
-          </Button>
+          !onDashboard && (
+            <Button size="sm" onClick={() => setDialog({ open: true, id: null })}>
+              <Plus className="h-4 w-4" />
+              Nouvel objectif
+            </Button>
+          )
         }
       />
       {goals.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-6 text-center">
           <Target className="h-6 w-6 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
-            Aucun objectif pour l'instant : choisis une propriété, une échéance, une cible.
+            {onDashboard
+              ? 'Aucun objectif pour l’instant : ils se créent depuis Audience → Succès.'
+              : 'Aucun objectif pour l’instant : choisis une propriété, une échéance, une cible.'}
           </p>
         </div>
       ) : (
@@ -61,140 +76,106 @@ export const GoalsListBlock = () => {
             <GoalRow
               key={goal.id}
               goal={goal}
-              onEdit={() => setDialog({ open: true, id: goal.id })}
+              onEdit={onDashboard ? undefined : () => setDialog({ open: true, id: goal.id })}
             />
           ))}
         </ul>
       )}
-      <GoalDialog
-        open={dialog.open}
-        onOpenChange={(open) => setDialog((current) => ({ ...current, open }))}
-        goal={editing}
-      />
+      {!onDashboard && (
+        <GoalDialog
+          open={dialog.open}
+          onOpenChange={(open) => setDialog((current) => ({ ...current, open }))}
+          goal={editing}
+        />
+      )}
     </Card>
   );
 };
 
-const ALL = '__all__';
+type ChartMode = 'lines' | 'bars' | 'donuts' | 'radial';
 
+const MODES: Array<{ id: ChartMode; label: string; icon: LucideIcon }> = [
+  { id: 'lines', label: 'Courbes', icon: LineChartIcon },
+  { id: 'bars', label: 'Barres', icon: BarChart3 },
+  { id: 'donuts', label: 'Camemberts', icon: PieChartIcon },
+  { id: 'radial', label: 'Anneaux', icon: CircleDot },
+];
+
+const DESCRIPTIONS: Record<ChartMode, string> = {
+  lines: 'La progression de chaque objectif depuis son départ : 100 % = cible atteinte.',
+  bars: 'Où en est chaque objectif aujourd’hui ; la barre grise est le temps écoulé.',
+  donuts: 'Un anneau par objectif, le pourcentage atteint au centre.',
+  radial: 'Tous les objectifs en anneaux concentriques.',
+};
+
+/**
+ * Tous les objectifs ensemble, en pourcentage de complétion, sous quatre formes au choix.
+ * Le mode est une **préférence de l'appareil** (`acs.goalsChartMode`) : on choisit une
+ * lecture et on s'y tient, sur Succès comme sur le dashboard.
+ */
 export const GoalsChartBlock = () => {
   const { data: goals = [], isLoading } = useGoals();
-  const [selected, setSelected] = useState(ALL);
-  const goal = goals.find((item) => item.id === selected) ?? null;
+  const [stored, setMode] = useLocalStorage<ChartMode>('acs.goalsChartMode', 'lines');
+  const mode = MODES.some((item) => item.id === stored) ? stored : 'lines';
+  // Un objectif pas encore commencé n'a rien à montrer en pourcentage.
+  const started = goals.filter((goal) => goal.status !== 'upcoming');
 
   if (isLoading) return <BlockSkeleton />;
   return (
     <Card className="space-y-3 p-4">
       <BlockHeading
         title="Progression des objectifs"
-        description={
-          goal
-            ? `Du ${formatDate(goal.startDate)} au ${formatDate(goal.endDate)} : la courbe, la cible, la trajectoire idéale en pointillés fins et la prévision.`
-            : 'Tous les objectifs en pourcentage de complétion : 100 % = cible atteinte.'
-        }
+        description={DESCRIPTIONS[mode]}
         aside={
-          goals.length > 0 && (
-            <Select value={goal ? goal.id : ALL} onValueChange={setSelected}>
-              <SelectTrigger className="h-8 w-56 max-w-full text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>Tous les objectifs (%)</SelectItem>
-                {goals.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {goalTitle(item)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )
+          <div
+            className="flex rounded-md border border-border p-0.5"
+            role="group"
+            aria-label="Affichage"
+          >
+            {MODES.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                title={label}
+                aria-label={label}
+                aria-pressed={mode === id}
+                onClick={() => setMode(id)}
+                className={cn(
+                  'rounded p-1.5 transition-colors',
+                  mode === id
+                    ? 'bg-secondary text-secondary-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <Icon className="h-4 w-4" />
+              </button>
+            ))}
+          </div>
         }
       />
       {goals.length === 0 ? (
         <p className="py-10 text-center text-sm text-muted-foreground">
           Ajoute un objectif pour suivre sa progression ici.
         </p>
-      ) : goal ? (
-        <GoalChart goal={goal} />
+      ) : mode === 'bars' ? (
+        <GoalsBarChart goals={started} />
+      ) : mode === 'donuts' ? (
+        <GoalsDonuts goals={started} />
+      ) : mode === 'radial' ? (
+        <GoalsRadialChart goals={started} />
       ) : (
         <>
-          <GoalsProgressChart goals={goals} />
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-            {goals.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-                onClick={() => setSelected(item.id)}
-              >
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
-                {goalTitle(item)}
-              </button>
+          <GoalsProgressChart goals={started} />
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {started.map((goal) => (
+              <span key={goal.id} className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: goal.color }} />
+                {goalTitle(goal)}
+              </span>
             ))}
           </div>
         </>
       )}
-    </Card>
-  );
-};
-
-/** Un seul objectif : de quoi le poser en grand sur le dashboard. */
-export const GoalBlock = ({ goalId }: { goalId: string }) => {
-  const { data: goals, isLoading } = useGoals();
-  const [editing, setEditing] = useState(false);
-  const goal = goals?.find((item) => item.id === goalId);
-  if (isLoading) return <BlockSkeleton />;
-  if (!goal) {
-    return (
-      <Card className="p-4 text-sm text-muted-foreground">
-        Cet objectif a été supprimé : retire le bloc du dashboard.
-      </Card>
-    );
-  }
-  return <GoalCard goal={goal} editing={editing} setEditing={setEditing} />;
-};
-
-const GoalCard = ({
-  goal,
-  editing,
-  setEditing,
-}: {
-  goal: NonNullable<ReturnType<typeof useGoals>['data']>[number];
-  editing: boolean;
-  setEditing: (open: boolean) => void;
-}) => {
-  const value = useGoalValue(goal);
-  return (
-    <Card className="space-y-3 p-4">
-      <BlockHeading
-        title={goalTitle(goal)}
-        description={[goal.entityName, `jusqu'au ${formatDate(goal.endDate)}`]
-          .filter(Boolean)
-          .join(' · ')}
-        aside={
-          <div className="flex items-center gap-2">
-            <GoalStatusBadge goal={goal} />
-            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
-              Modifier
-            </Button>
-          </div>
-        }
-      />
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="text-2xl font-semibold tabular">{percent(goal.progress)}</p>
-        <p className="text-right text-xs tabular text-muted-foreground">
-          {value(goal.current)} / {value(goal.targetValue)}
-          {goal.projected !== null && goal.status !== 'achieved' && (
-            <>
-              <br />
-              prévu {value(goal.projected)}
-            </>
-          )}
-        </p>
-      </div>
-      <GoalProgressBar goal={goal} />
-      <GoalChart goal={goal} height={180} />
-      <GoalDialog open={editing} onOpenChange={setEditing} goal={goal} />
     </Card>
   );
 };

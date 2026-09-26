@@ -8,8 +8,6 @@ import { PLATFORM_LABELS, PLATFORMS } from '../components/achievements/achieveme
 import { EmptyState } from '../components/EmptyState.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { BlockSkeleton } from '../blocks/BlockSkeleton.tsx';
-import { useGoals } from '../../application/goal/usecases/useGoals.ts';
-import { goalBlockId } from '../dashboard/registry.tsx';
 
 /**
  * **Succès** (ex-Achievements — l'adresse `/achievements` et les identifiants de blocs
@@ -25,7 +23,6 @@ import { goalBlockId } from '../dashboard/registry.tsx';
  */
 export const AchievementsPage = () => {
   const { data, all, isLoading } = useVisibleAchievements();
-  const { data: goals = [] } = useGoals();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const tracks = data?.tracks ?? [];
@@ -56,13 +53,6 @@ export const AchievementsPage = () => {
         <Block id="goals.list" />
         <Block id="goals.chart" />
       </div>
-      {goals.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {goals.map((goal) => (
-            <Block key={goal.id} id={goalBlockId(goal.id)} />
-          ))}
-        </div>
-      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Block id="achievements.recent" />

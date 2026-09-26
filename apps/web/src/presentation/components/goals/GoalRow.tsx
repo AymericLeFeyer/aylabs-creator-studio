@@ -98,10 +98,6 @@ export const GoalRow = ({
         <span className="min-w-0 truncate">{subtitle}</span>
         <span className="tabular">
           {value(goal.current)} / {value(goal.targetValue)}
-          {goal.status !== 'achieved' &&
-            goal.status !== 'missed' &&
-            goal.projected !== null &&
-            ` · prévu ${value(goal.projected)}`}
           {goal.achievedAt && ` · atteint le ${formatDate(goal.achievedAt)}`}
         </span>
       </div>

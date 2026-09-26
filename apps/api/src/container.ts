@@ -87,6 +87,8 @@ import { ManageTodoTasks } from './application/todoApp/usecases/ManageTodoTasks.
 import { SqliteTodoPlacementRepository } from './infrastructure/todoApp/repositories/SqliteTodoPlacementRepository.ts';
 import { SqliteTodoConnectionRepository } from './infrastructure/todoApp/repositories/SqliteTodoConnectionRepository.ts';
 import { TodoAppClient } from './infrastructure/todoApp/api/TodoAppClient.ts';
+import { SqliteTodoLinkRepository } from './infrastructure/todoApp/repositories/SqliteTodoLinkRepository.ts';
+import { SyncStudioTodos } from './application/todoApp/usecases/SyncStudioTodos.ts';
 
 export interface Container {
   db: DatabaseSync;
@@ -212,6 +214,11 @@ export interface Container {
    * point où la clé API de Todo est chiffrée ou déchiffrée.
    */
   manageTodoTasks: ManageTodoTasks;
+  /**
+   * Ce que le studio pose seul dans Todo : « surveiller la sortie » le jour d'une vidéo,
+   * et les cases du tableau légal (synchronisées dans les deux sens).
+   */
+  syncStudioTodos: SyncStudioTodos;
 }
 
 /** Assemble les implémentations concrètes derrière les interfaces du domaine. */
@@ -299,6 +306,16 @@ export const buildContainer = (config: Config): Container => {
     { baseUrl: config.todoBaseUrl, apiKey: config.todoApiKey },
     (baseUrl, apiKey) => new TodoAppClient(baseUrl, apiKey),
   );
+  const getLegalOverview = new GetLegalOverview(company, legalObligations);
+  const syncStudioTodos = new SyncStudioTodos({
+    todoTasks: manageTodoTasks,
+    links: new SqliteTodoLinkRepository(db),
+    productions,
+    videos,
+    legalOverview: getLegalOverview,
+    legalObligations,
+    timeZone: config.timeZone,
+  });
 
   return {
     db,
@@ -370,7 +387,7 @@ export const buildContainer = (config: Config): Container => {
       manageTodoTasks,
     ),
     syncRecurringExpenses,
-    getLegalOverview: new GetLegalOverview(company, legalObligations),
+    getLegalOverview,
     collectMetrics: new CollectMetrics(channels, metrics, videos, {
       youtubeApiKey: config.youtubeApiKey,
       gcpClientId: config.gcpClientId,
@@ -415,6 +432,7 @@ export const buildContainer = (config: Config): Container => {
     getAmazonOverview: new GetAmazonOverview(amazonSnapshots),
     getExport: new GetExport(integrations, manageIntegrations),
     manageTodoTasks,
+    syncStudioTodos,
     // L'adresse de l'app Todo retombe sur celle de sa connexion : relue à chaque appel,
     // pour qu'un changement de connexion se voie dans le menu sans redémarrer.
     manageExternalApps: new ManageExternalApps(

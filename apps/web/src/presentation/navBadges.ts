@@ -232,3 +232,37 @@ export const publicationBadge = (summary: PostDraftSummary, today: string): NavB
     ],
   };
 };
+
+/**
+ * Le poids d'une pastille dans une somme : son nombre, **1** pour une pastille qui n'est
+ * pas un compte (« -3 » jours de publications — un nombre négatif ne doit rien
+ * soustraire, c'est un point à traiter) ou pour un simple point, 0 si rien ne s'affiche.
+ */
+export const badgeWeight = (badge: NavBadge | undefined): number => {
+  if (!badge || (badge.count === 0 && badge.reasons.length === 0)) return 0;
+  if (badge.text !== undefined || badge.count === 0) return 1;
+  return badge.count;
+};
+
+const TONE_RANK: Record<BadgeTone, number> = { neutral: 0, warning: 1, danger: 2 };
+
+/**
+ * La somme de plusieurs pastilles : une famille repliée du menu, ou le bouton du menu
+ * mobile. La couleur est celle de la pire, les raisons sont réunies. `undefined` quand il
+ * n'y a rien à montrer.
+ */
+export const sumBadges = (
+  badges: Record<string, NavBadge>,
+  routes: string[],
+): NavBadge | undefined => {
+  const present = routes.map((to) => badges[to]).filter((badge) => badgeWeight(badge) > 0);
+  if (present.length === 0) return undefined;
+  return {
+    count: present.reduce((total, badge) => total + badgeWeight(badge), 0),
+    tone: present.reduce<BadgeTone>(
+      (worst, badge) => (TONE_RANK[badge!.tone] > TONE_RANK[worst] ? badge!.tone : worst),
+      'neutral',
+    ),
+    reasons: present.flatMap((badge) => badge!.reasons),
+  };
+};

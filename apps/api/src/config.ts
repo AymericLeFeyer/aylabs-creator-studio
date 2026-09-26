@@ -43,6 +43,12 @@ export interface Config {
    */
   todoBaseUrl: string | null;
   todoApiKey: string | null;
+  /**
+   * Le fuseau de l'utilisateur, pour les rares écritures qui décident seules d'un jour
+   * sans navigateur pour le donner (les tâches Todo posées par la synchro). Le conteneur
+   * tourne en UTC : sans lui, une vidéo du jour serait « d'hier » jusqu'à 2 h du matin.
+   */
+  timeZone: string;
 }
 
 export const loadConfig = (): Config => ({
@@ -64,4 +70,5 @@ export const loadConfig = (): Config => ({
   integrationEnv: Object.fromEntries(INTEGRATION_ENV_VARS.map((key) => [key, optional(key)])),
   todoBaseUrl: optional('TODO_BASE_URL')?.replace(/\/+$/, '') ?? null,
   todoApiKey: optional('TODO_API_KEY'),
+  timeZone: optional('APP_TIMEZONE') ?? 'Europe/Paris',
 });

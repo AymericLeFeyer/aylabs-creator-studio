@@ -10,8 +10,6 @@ import * as legal from '../blocks/legalBlocks.tsx';
 import * as comment from '../blocks/commentBlocks.tsx';
 import * as achievement from '../blocks/achievementBlocks.tsx';
 import * as goal from '../blocks/goalBlocks.tsx';
-import type { GoalView } from '../../domain/goal/entities/Goal.ts';
-import { goalTitle } from '../../domain/goal/entities/Goal.ts';
 import {
   DomadooChartBlock,
   DomadooMetricCard,
@@ -389,32 +387,12 @@ const channelBlock = (channelId: string, kind: ChannelMetric, name?: string): Bl
     () => <yt.YouTubeChannelLifetimeCard channelId={channelId} metric={kind} />,
   );
 
-/**
- * Un bloc **par objectif** (`goals.goal.<id>`), sur le même principe que les blocs par
- * chaîne : l'identifiant porte celui de l'objectif. Supprimer l'objectif laisse un bloc qui
- * le dit, retirable depuis l'édition du dashboard.
- */
-const GOAL_BLOCK = /^goals\.goal\.(.+)$/;
-
-export const goalBlockId = (goalId: string) => `goals.goal.${goalId}`;
-
-const goalBlock = (goalId: string, title?: string): BlockDefinition =>
-  panel(title ? `Objectif · ${title}` : 'Objectif', 'Succès', 2, () => (
-    <goal.GoalBlock goalId={goalId} />
-  ));
-
-/** Le bloc d'un identifiant : le catalogue fixe, puis les motifs par chaîne et par objectif. */
+/** Le bloc d'un identifiant : le catalogue fixe, puis les motifs par chaîne. */
 export const resolveBlock = (id: string): BlockDefinition | undefined => {
   if (BLOCKS[id]) return BLOCKS[id];
-  const channel = CHANNEL_BLOCK.exec(id);
-  if (channel) return channelBlock(channel[1]!, channel[2] as ChannelMetric);
-  const goalMatch = GOAL_BLOCK.exec(id);
-  return goalMatch ? goalBlock(goalMatch[1]!) : undefined;
+  const match = CHANNEL_BLOCK.exec(id);
+  return match ? channelBlock(match[1]!, match[2] as ChannelMetric) : undefined;
 };
-
-/** Un bloc par objectif, à proposer dans le catalogue. */
-export const goalBlocks = (goals: GoalView[]): Array<[string, BlockDefinition]> =>
-  goals.map((item) => [goalBlockId(item.id), goalBlock(item.id, goalTitle(item))]);
 
 /** Les blocs par chaîne à proposer dans le catalogue, une paire par chaîne active. */
 export const channelBlocks = (channels: Channel[]): Array<[string, BlockDefinition]> =>

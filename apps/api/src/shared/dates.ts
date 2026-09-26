@@ -10,6 +10,15 @@ export const toIsoDate = (d: Date): IsoDate => {
 
 export const today = (): IsoDate => toIsoDate(new Date());
 
+/** Le jour calendaire dans un fuseau donné (`Europe/Paris`), quel que soit celui du serveur. */
+export const todayIn = (timeZone: string): IsoDate =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+
 export const parseIsoDate = (s: IsoDate): Date => new Date(`${s}T00:00:00.000Z`);
 
 export const addDays = (s: IsoDate, days: number): IsoDate => {

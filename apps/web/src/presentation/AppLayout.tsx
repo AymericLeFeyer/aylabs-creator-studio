@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
-import { Menu, PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
+import { ChevronDown, Menu, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react';
 import { DEFAULT_MOBILE_NAV, resolveMobileNav, pageTitle, type NavItem } from './navigation.ts';
 import { usePreferences } from './hooks/usePreferences.ts';
 import { useNavSections } from './hooks/useNavSections.ts';
@@ -14,6 +14,8 @@ import { FiltersSheet } from './components/filters/FiltersSheet.tsx';
 import { AppBarProvider } from './hooks/useAppBar.tsx';
 import { useNavBadges } from './hooks/useNavBadges.ts';
 import { NavBadgePill } from './components/NavBadgePill.tsx';
+import { MobileMenu } from './components/MobileMenu.tsx';
+import { sumBadges } from './navBadges.ts';
 import { useProduction } from '../application/production/usecases/useProductions.ts';
 import { FORMAT_ROUTES } from '../domain/production/entities/Production.ts';
 import { useBranding } from '../application/branding/usecases/useBranding.ts';
@@ -177,6 +179,26 @@ export const AppLayout = () => {
   );
 
   const collapsed = preferences.sidebarCollapsed;
+  /**
+   * Les familles repliées, retenues d'une visite à l'autre (`collapsedNavSections`) et
+   * communes à la barre latérale et au menu mobile. Repliée, une famille garde visible
+   * **l'écran ouvert** s'il en fait partie, et sa pastille fait la somme de celles qu'elle
+   * cache.
+   */
+  const collapsedSections = preferences.collapsedNavSections;
+  const toggleSection = (label: string) =>
+    set({
+      collapsedNavSections: collapsedSections.includes(label)
+        ? collapsedSections.filter((item) => item !== label)
+        : [...collapsedSections, label],
+    });
+  /** Le bouton du menu mobile : la somme de toutes les pastilles. */
+  const totalBadge = sumBadges(
+    badges,
+    navSections.flatMap((section) => section.items.map((item) => item.to)),
+  );
+  const closeMobile = useCallback(() => setMobileOpen(false), []);
+  const logoUrl = brandingIconUrl(branding, 'icon-192');
   const title =
     externalApps.find((app) => app.id === openAppId)?.name ?? pageTitle(location.pathname);
   const showFilters = !ROUTES_WITHOUT_FILTERS.some((route) => location.pathname.startsWith(route));
@@ -223,31 +245,69 @@ export const AppLayout = () => {
   /** Le contenu de la barre, identique en colonne fixe et en tiroir mobile. */
   const sidebarContent = ({ compact }: { compact: boolean }) => (
     <div className="flex h-full flex-col gap-1 p-2">
-      <div className={cn('flex items-center gap-2 px-1 py-2', compact && 'justify-center px-0')}>
-        <img
-          src={brandingIconUrl(branding, 'icon-192')}
-          alt=""
-          className="h-6 w-6 shrink-0 object-contain"
-        />
+      {/* Le logo ramène au dashboard, comme sur n'importe quel site. */}
+      <NavLink
+        to="/"
+        end
+        aria-label={compact ? `${appName} — Dashboard` : undefined}
+        title="Dashboard"
+        className={cn(
+          'flex items-center gap-2 rounded-md px-1 py-2 hover:bg-muted',
+          compact && 'justify-center px-0',
+        )}
+      >
+        <img src={logoUrl} alt="" className="h-6 w-6 shrink-0 object-contain" />
         {!compact && <span className="truncate font-semibold">{appName}</span>}
-      </div>
+      </NavLink>
 
       <nav aria-label="Navigation principale" className="flex flex-1 flex-col overflow-y-auto">
-        {navSections.map((section) => (
-          <div key={section.label ?? 'top'} className="flex flex-col gap-0.5">
-            {/* Repliée, la barre n'a pas la largeur d'un intitulé : le titre de famille
-                devient un simple filet, qui suffit à dire « on change de sujet ». */}
-            {section.label &&
-              (compact ? (
-                <hr className="mx-2 my-1.5 border-border" />
-              ) : (
-                <p className="px-2.5 pt-3 pb-1 text-[0.68rem] font-semibold tracking-wide text-muted-foreground uppercase">
-                  {section.label}
-                </p>
-              ))}
-            {section.items.map((item) => navLink(item, { compact }))}
-          </div>
-        ))}
+        {navSections.map((section) => {
+          // Barre repliée sur ses icônes : pas de famille repliable, un filet suffit.
+          const folded =
+            !compact && section.label !== null && collapsedSections.includes(section.label);
+          const items = folded
+            ? section.items.filter((item) =>
+                isItemActive(
+                  item.to,
+                  matchPath({ path: item.to, end: item.end }, location.pathname) !== null,
+                ),
+              )
+            : section.items;
+          return (
+            <div key={section.label ?? 'top'} className="flex flex-col gap-0.5">
+              {/* Repliée, la barre n'a pas la largeur d'un intitulé : le titre de famille
+                  devient un simple filet, qui suffit à dire « on change de sujet ». */}
+              {section.label &&
+                (compact ? (
+                  <hr className="mx-2 my-1.5 border-border" />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(section.label!)}
+                    aria-expanded={!folded}
+                    className="group/section flex items-center gap-1.5 rounded-md px-2.5 pt-3 pb-1 text-[0.68rem] font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
+                  >
+                    <span>{section.label}</span>
+                    {folded && (
+                      <NavBadgePill
+                        badge={sumBadges(
+                          badges,
+                          section.items.map((item) => item.to),
+                        )}
+                      />
+                    )}
+                    <ChevronDown
+                      className={cn(
+                        'ml-auto h-3.5 w-3.5 opacity-0 transition-[transform,opacity] group-hover/section:opacity-100',
+                        folded && '-rotate-90 opacity-100',
+                      )}
+                    />
+                  </button>
+                ))}
+              {items.map((item) => navLink(item, { compact }))}
+            </div>
+          );
+        })}
       </nav>
 
       {/* Le pied : ce qui se règle une fois, hors du fil du travail. Le thème avant
@@ -320,28 +380,19 @@ export const AppLayout = () => {
         </button>
       </aside>
 
-      {/* Tiroir mobile : même barre, posée par-dessus le contenu. */}
-      {mobileOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
-            onClick={() => setMobileOpen(false)}
-            aria-hidden
-          />
-          <aside className="fixed inset-y-0 left-0 z-50 w-60 border-r border-border bg-card lg:hidden">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-1 top-1"
-              onClick={() => setMobileOpen(false)}
-              aria-label="Fermer le menu"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            {sidebarContent({ compact: false })}
-          </aside>
-        </>
-      )}
+      {/* Mobile : une page de tuiles qui glisse depuis la gauche (`MobileMenu`), et non la
+          barre latérale en tiroir. */}
+      <MobileMenu
+        open={mobileOpen}
+        onClose={closeMobile}
+        sections={navSections}
+        badges={badges}
+        isItemActive={isItemActive}
+        collapsedSections={collapsedSections}
+        onToggleSection={toggleSection}
+        logoUrl={logoUrl}
+        appName={appName}
+      />
 
       <div
         className="transition-[padding] lg:pl-[var(--sidebar-width)]"
@@ -379,7 +430,11 @@ export const AppLayout = () => {
               onClick={() => setMobileOpen(true)}
               aria-label="Ouvrir le menu"
             >
-              <Menu className="h-5 w-5" />
+              <span className="relative">
+                <Menu className="h-5 w-5" />
+                {/* La somme de toutes les pastilles : ce qui attend, où que ce soit. */}
+                <NavBadgePill badge={totalBadge} className="absolute -right-2.5 -top-2" />
+              </span>
             </Button>
             <span className="min-w-0 flex-1 truncate text-base font-semibold">{title}</span>
             {/* Les actions de l'écran, portées ici par `AppBarActions`. La collecte y

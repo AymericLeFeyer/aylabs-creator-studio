@@ -1,12 +1,7 @@
 import type { GoalStatus, GoalUnit, GoalView } from '../../../domain/goal/entities/Goal.ts';
 import { MASKED_TEXT } from '../../../domain/privacy/entities/Privacy.ts';
 import { usePrivacy, type PrivacyTarget } from '../../hooks/usePrivacy.tsx';
-import {
-  formatMoney,
-  formatMoneyCompact,
-  formatNumber,
-  formatNumberCompact,
-} from '../../../shared/format.ts';
+import { formatMoney, formatNumber } from '../../../shared/format.ts';
 
 /**
  * Ce qui se partage entre les blocs et le formulaire des objectifs. Ce fichier n'exporte
@@ -19,9 +14,6 @@ export const formatGoalValue = (value: number, unit: GoalUnit): string =>
     : unit === 'hours'
       ? `${formatNumber(value)} h`
       : formatNumber(value);
-
-export const formatGoalAxis = (value: number, unit: GoalUnit): string =>
-  unit === 'cents' ? formatMoneyCompact(value) : formatNumberCompact(value);
 
 /** Une valeur stockée (centimes pour l'argent) vers ce qu'on tape dans le champ (euros). */
 export const toFieldValue = (value: number, unit: GoalUnit): string =>

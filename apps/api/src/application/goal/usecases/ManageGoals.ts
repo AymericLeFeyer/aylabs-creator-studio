@@ -29,8 +29,9 @@ import { badRequest } from '../../../shared/errors.ts';
 import { today as serverToday } from '../../../shared/dates.ts';
 
 /**
- * Les objectifs : le CRUD, la lecture enrichie (valeur actuelle, progression, prévision,
- * série) et l'aperçu du formulaire. `today` vient du navigateur quand il est fourni — le
+ * Les objectifs : le CRUD, la lecture enrichie (valeur actuelle, progression, série) et
+ * l'aperçu du formulaire — seul endroit où vit la prévision : elle sert à choisir une
+ * cible, pas à juger l'objectif une fois posé. `today` vient du navigateur quand il est fourni — le
  * serveur est en UTC, et un objectif qui se termine « aujourd'hui » à 23 h à Paris ne doit
  * pas passer pour échu.
  */
@@ -165,7 +166,6 @@ export class ManageGoals {
       currentDate: last?.date ?? null,
       progress,
       elapsed,
-      projected: started ? projectAt(curve, today, goal.endDate).projected : null,
       achievedAt: reached,
       status,
       series: started ? dailySeries(curve, goal.startDate, horizon) : [],

@@ -1648,6 +1648,39 @@ vidéos doivent être connues pour que le rattachement se pose du premier coup).
 est **avalé** : les métriques sont déjà écrites, et les commentaires se rattrapent au
 passage suivant.
 
+#### Ce que le studio pose tout seul dans Todo (`SyncStudioTodos`)
+
+Le studio ne fait pas que lire Todo : il y **crée** deux sortes de tâches, par
+`POST /api/tasks` avec un `externalId` `acs:<clé>` (Todo rend la tâche existante au lieu
+d'en créer une seconde — un POST rejoué est sans danger).
+
+| Clé                              | Tâche                                               | Échéance          |
+| -------------------------------- | --------------------------------------------------- | ----------------- |
+| `release:production:<id>`        | « Surveiller la sortie de « X » » (15 min)           | `plannedDate`     |
+| `release:video:<id>`             | idem, vidéo collectée **sans** fiche de production  | `videos.date`     |
+| `legal:<obligation>:<AAAA-MM>`   | « Urssaf (septembre 2026) », notes de l'obligation  | `dueDate` du mois |
+
+- **Sorties** : posées **le jour même** (sortie visée = aujourd'hui), jamais à l'avance —
+  une date visée bouge souvent, et une tâche posée trop tôt resterait au mauvais jour.
+  Une vidéo rattachée à une production n'est couverte que par la clé de la production.
+  Limite connue : une vidéo **programmée** sur une chaîne OAuth est collectée à sa date
+  d'upload ; sans fiche de production, sa tâche tombe ce jour-là.
+- **Légal** : les cases **non cochées** du mois en cours, et celles du mois précédent
+  encore **en retard**. **Synchronisées dans les deux sens** : cocher la tâche dans Todo
+  coche la case (au passage suivant), cocher la case termine la tâche (**tout de suite**,
+  `legalChanged` appelé par les routes `/api/legal/checks`, échec avalé).
+- **`todo_links`** (migration 49) retient chaque tâche posée, **sans jamais être vidée** :
+  une tâche supprimée à la main dans Todo ne revient pas. `done` y est le **dernier état
+  commun** : le côté qui s'en écarte a bougé, l'autre suit. Sans cette mémoire, rouvrir la
+  tâche dans Todo serait aussitôt défait par la case cochée, ou l'inverse. Une tâche
+  supprimée dans Todo (`getTask` → `null`) laisse la case vivre sa vie.
+- Tourne **à la fin de chaque passage du cron** (après la collecte : les vidéos du jour
+  viennent d'être écrites), et au démarrage. Verrou en mémoire. Sans Todo connecté, rien.
+- **« Aujourd'hui » vient de `APP_TIMEZONE`** (défaut `Europe/Paris`, `todayIn`) : aucun
+  navigateur n'est là pour le donner, et le conteneur est en UTC.
+- Les tâches portent le **premier tag** de la connexion Todo, s'il y en a : c'est ce qui les
+  fait apparaître dans le planning quand il filtre par tag.
+
 ### `externalApp` — des applications ouvertes dans le studio
 
 `ExternalApp { id, kind, name, url, localUrl, icon, section, enabled, sortOrder }` — table
@@ -2101,7 +2134,7 @@ connecté demain apparaît de lui-même. L'API renvoie toujours tout.
 `Goal { id, title, metric, entityId, startDate, endDate, startValue, targetValue, color,
 sortOrder }` — table `goals` (migration 48). `GoalView` y ajoute `category`, `metricLabel`,
 `unit`, `entityName`, `entityColor`, `current`, `currentDate`, `progress`, `elapsed`,
-`projected`, `achievedAt`, `status` et `series`.
+`achievedAt`, `status` et `series`.
 
 **L'objectif est stocké, sa progression ne l'est pas** : comme les paliers, elle se
 recalcule à chaque lecture depuis l'historique (`ManageGoals`, port
@@ -2133,7 +2166,9 @@ bénéfice. Discord : le dernier relevé de chaque jour.
 quotidienne des **90 derniers jours** (`PROJECTION_WINDOW_DAYS`), prolongée de la valeur
 d'aujourd'hui à l'échéance ; `null` sous 7 jours d'historique. Le formulaire l'**arrondit**
 (`roundForecast`, deux chiffres significatifs) quand on clique le bouton graphique à côté de
-la cible — un point de départ, pas une cible imposée.
+la cible — un point de départ, pas une cible imposée. **La prévision ne vit que dans le
+formulaire** (`/preview`) : `GoalView` ne la porte pas, et aucun bloc ne l'affiche une fois
+l'objectif posé — elle sert à se donner une idée, pas à juger l'objectif ensuite.
 
 `status` : `upcoming` (départ futur), `achieved` (cible atteinte — `achievedAt`, même
 échéance passée), `missed`, sinon `on_track` si `progress ≥ elapsed` (part du temps
@@ -2147,13 +2182,22 @@ repères, pas des écritures. Le formulaire convertit (`toFieldValue` / `fromFie
 
 Front : `GoalDialog` (catégorie → propriété → chaîne/compte → début + valeur relevée →
 échéance → cible + prévision → nom facultatif), `GoalRow` (barre + **trait du temps
-écoulé** : barre devant le trait = en avance), `GoalsProgressChart` (tous, en % — abscisse
-en temps numérique, les séries n'ont pas les mêmes dates), `GoalChart` (un seul : réel,
-cible, trajectoire idéale en pointillés fins, prévision en tirets). Blocs `goals.list`,
-`goals.chart`, et **un bloc par objectif** `goals.goal.<id>` reconnu au motif par
-`resolveBlock` (comme `youtube.channel.<id>.*`) et proposé au catalogue par `goalBlocks`.
-**Confidentialité** : `goalMask(metric)` → valeurs en `•••`, et le graphique d'un objectif
-masqué retombe sur le pourcentage.
+écoulé** : barre devant le trait = en avance). **Deux blocs seulement**, `goals.list` et
+`goals.chart` : le bloc par objectif (`goals.goal.<id>`) et le graphique individuel en
+valeur ont été **retirés** — un dashboard qui en portait un affiche « Ce bloc n'existe
+plus », retirable en édition.
+
+`goals.chart` propose **quatre modes**, tous en **pourcentage de complétion** (la seule
+échelle commune entre des abonnés et des euros, et elle ne révèle aucune valeur masquée) :
+courbes dans le temps (`GoalsProgressChart`, abscisse en temps numérique), barres du jour
+face au temps écoulé (`GoalsBarChart`), un anneau par objectif (`GoalsDonuts`), anneaux
+concentriques (`GoalsRadialChart`). Le mode est une préférence **de l'appareil**
+(`acs.goalsChartMode`). Les objectifs `upcoming` n'y figurent pas.
+**Confidentialité** : `goalMask(metric)` → valeurs en `•••` dans la liste.
+
+**Sur le dashboard, les blocs d'objectifs sont en lecture seule** : ni « Nouvel objectif »,
+ni crayon, ni « Modifier », ni modale montée (`useOnDashboard` = `WidgetContext` non nul).
+On crée et on corrige depuis Succès seulement.
 
 ### `analytics`
 
@@ -2359,7 +2403,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/instagram`        | `InstagramPage`        | **API Graph**, toujours au jour : alerte de jeton, chiffres clés (Stories, Abonnés, Publications, Portée, Interactions), **dernières publications** (`LatestPostCard` : les 10 dernières hors période — `InstagramOverview.latestMedia` —, aux chevrons ou au glissement, avec vues/portée/j'aime/commentaires/partages/enregistrements), courbes d'abonnés et de portée liées, graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications (vues/portée/j'aime/commentaires/enregistrements au clic)                                                                                |
 | `/tiktok`           | `TikTokPage`            | **Profil public seulement**, toujours au jour : cartes Abonnés/Coeurs/Publications, **dernières vidéos** (carrousel hors période avec leurs stats, comme Instagram), graphique en onglets (Abonnés, Vidéos). N'apparaît dans le menu que si un profil est configuré (Paramètres → Audience → TikTok)                                                                                                                                                |
 | `/discord`          | `DiscordPage`          | Membres, membres en ligne (le nom du serveur n'est plus qu'en sous-titre), dernier relevé, bouton Collecter. **Aucune série** : Discord ne renvoie que des compteurs courants. N'apparaît dans le menu que si un serveur est configuré (Paramètres → Audience → Discord)                                                                                                                                       |
-| `/achievements`     | `AchievementsPage`     | Titré **« Succès »**. En tête les **objectifs** (liste, graphique commun, un bloc par objectif), puis derniers paliers, prochains paliers, records (trois blocs), puis une courbe par chaîne/compte et par métrique, en onglets par plateforme (`?plateforme=`). Hors période, sans barre de filtres |
+| `/achievements`     | `AchievementsPage`     | Titré **« Succès »**. En tête les **objectifs** (liste, graphique commun en quatre modes), puis derniers paliers, prochains paliers, records (trois blocs), puis une courbe par chaîne/compte et par métrique, en onglets par plateforme (`?plateforme=`). Hors période, sans barre de filtres |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
@@ -2700,7 +2744,7 @@ au-dessus se lirait comme un filtre qui ne marche pas. Le filtrage propre à l'�
 d'onglets horizontale. Trois raisons : la liste des écrans peut grandir sans se disputer
 la largeur avec la barre de filtres ; l'écran actif se repère à sa position plutôt qu'à
 sa couleur ; et sur mobile la même barre devient un **tiroir** (bouton hamburger dans
-l'en-tête, overlay + `Échap` par clic sur le fond), au lieu d'une rangée qui défile
+l'en-tête ; c'est désormais une page de tuiles, voir `MobileMenu`), au lieu d'une rangée qui défile
 horizontalement.
 
 **Les écrans sont groupés par famille** (`NAV_SECTIONS`, `presentation/navigation.ts`) :
@@ -2728,6 +2772,31 @@ entrées groupées : un ordre libre à plat n'a pas d'équivalent en familles, e
 qui permet de le retrouver sans lire ; un menu qui ne bouge pas s'apprend une fois. Le
 réglage, la préférence et `orderedNav` ont été supprimés ; une valeur `navOrder` restée
 dans `localStorage` est simplement ignorée.
+
+**Le logo en haut de la barre latérale mène au dashboard** (`NavLink to="/"`), comme sur
+n'importe quel site — et celui du menu mobile aussi.
+
+**Les familles du menu se replient** (clic sur l'intitulé, chevron au survol). L'état est
+une préférence **de l'appareil** (`preferences.collapsedNavSections`, on retient les
+**repliées** : une famille ajoutée plus tard arrive dépliée), commune à la barre latérale
+et au menu mobile. Repliée, une famille garde visible **l'écran ouvert** s'il en fait
+partie, et sa pastille fait la **somme** de celles qu'elle cache. La barre repliée sur ses
+icônes n'a pas de familles repliables (un filet suffit).
+
+**La somme des pastilles** (`sumBadges`, `navBadges.ts`) : poids d'une pastille =
+son nombre, **1** pour une pastille-texte (« -3 » jours de publications ne soustrait
+rien, c'est un point à traiter) ou un simple point, 0 si rien ne s'affiche
+(`badgeWeight`). Couleur = la pire. Posée sur une famille repliée et sur le **bouton du
+menu mobile** (toutes les entrées).
+
+**Sur mobile, le menu est une page entière de tuiles** (`MobileMenu`), plus la barre
+latérale en tiroir : une liste de quinze lignes de 36 px se vise mal au pouce, des tuiles
+de trois par rangée tiennent sur un écran. Il glisse depuis la gauche et les tuiles
+apparaissent en cascade (`transitionDelay` par rang, `motion-reduce` coupe tout). **Toujours
+monté** pour que la fermeture s'anime aussi : fermé, il est `inert`, `aria-hidden` et
+`invisible` (la visibilité fait partie de la transition, elle ne bascule qu'à la fin).
+`Échap` referme, le défilement de la page est bloqué pendant qu'il la couvre. Paramètres et
+le thème sont en pied.
 
 **Sur mobile, l'en-tête devient une barre d'application** : bouton du menu, **titre de
 l'écran** (`pageTitle`, dérivé de l'adresse — faire remonter un titre depuis chaque page
@@ -3000,7 +3069,7 @@ période**, et leur sous-titre le dit.
 | `useProductionNotes`, `useCreateProductionNote`, `useUpdateProductionNote`, `useDeleteProductionNote`                                                                                                                                                                                                                          | `application/production/usecases/useProductionNotes.ts` | Notes d'une vidéo. La modification écrit dans le cache (`setQueryData`) au lieu d'invalider : le contenu s'enregistre pendant la frappe             |
 | `useRecurringExpenses`, `useCreateRecurringExpense`, `useUpdateRecurringExpense`, `useDeleteRecurringExpense`                                                                                                                                                                                                                  | `application/expense/usecases/useExpenses.ts`           | Règles de dépense récurrente                                                                                                                        |
 | `useUpcomingExpenses`, `useUpcomingRevenues`, `useUpcomingRange`                                                                                                                                                                                                                                                               | `application/expense/usecases/useUpcoming.ts`           | Ce qui est daté en avant (demain → +3 mois)                                                                                                         |
-| `usePreferences`                                                                                                                                                                                                                                                                                                               | `presentation/hooks/usePreferences.ts`                  | Menu replié, file compacte, zoom du planning (`planningZoom`), todos du planning repliés (`planningTodosCollapsed`). Persisté en localStorage       |
+| `usePreferences`                                                                                                                                                                                                                                                                                                               | `presentation/hooks/usePreferences.ts`                  | Menu replié, familles du menu repliées (`collapsedNavSections`), file compacte, zoom du planning (`planningZoom`), todos du planning repliés (`planningTodosCollapsed`). Persisté en localStorage       |
 | `usePrivacy` / `PrivacyProvider`                                                                                                                                                                                                                                                                                               | `presentation/hooks/usePrivacy.tsx`                     | Ce qui est masqué, et les formateurs qui l'appliquent. Persisté en localStorage (`acs.privacy`)                                                     |
 | `AppBarActions` / `AppBarProvider`                                                                                                                                                                                                                                                                                             | `presentation/hooks/useAppBar.tsx`                      | Portail vers les actions de la barre d'application mobile                                                                                           |
 | `usePlanningBoard`, `usePlanningItems`, `useReplan`, `useAddPlanTargets`, `useApproveSlot`, `useUnapproveSlot`, `useRemovePlanningItem`, `useClearPlanningItems`, `usePlaceItem`, `useContinueSlot`                                                                                                                            | `application/planning/usecases/usePlanning.ts`          | La grille, la pile et le placement                                                                                                                  |
@@ -3112,6 +3181,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 49** ajoute `todo_links` (tâches posées dans l'app Todo par le studio, jamais supprimées).
 - **Migration 48** ajoute `goals` (objectifs de Succès). `entity_id` sans clé étrangère : il désigne une chaîne **ou** un compte selon la métrique.
 - **Migration 47** ajoute `external_apps.local_url` (adresse sur le réseau local, choisie par le navigateur).
 - **Migration 46** ajoute `amazon_snapshots` (PK `date`, cumuls du mois en centimes) et y reprend l'instantané Amazon d'`integration_snapshots` (`json_extract`).
@@ -4068,7 +4138,7 @@ Images publiées sur GHCR par `.github/workflows/release.yml` :
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 
-Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
 
 Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer.
 

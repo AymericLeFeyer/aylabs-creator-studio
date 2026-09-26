@@ -37,9 +37,45 @@ export interface TodoTaskQuery {
   tags: string[];
 }
 
+/** Une tâche que le studio pose dans Todo. */
+export interface NewTodoTask {
+  title: string;
+  notes?: string | null;
+  dueDate: IsoDate;
+  /** 15, 30 ou 60. */
+  duration?: 15 | 30 | 60 | null;
+  tags?: string[];
+  /**
+   * Clé d'idempotence (`acs:…`) : Todo rend la tâche existante au lieu d'en créer une
+   * seconde. C'est ce qui rend un POST rejoué (panne réseau, redémarrage) sans danger.
+   */
+  externalId: string;
+}
+
+/**
+ * Ce que le studio a déjà posé dans Todo, par clé métier (`release:production:<id>`,
+ * `legal:<obligation>:<AAAA-MM>`). **La ligne ne disparaît jamais** : une tâche supprimée
+ * à la main dans Todo ne doit pas revenir à la synchro suivante.
+ */
+export interface TodoLink {
+  key: string;
+  taskId: string;
+  /** Dernier état « fait » connu **des deux côtés** : c'est ce qui dit lequel a bougé. */
+  done: boolean;
+}
+
+export interface TodoLinkRepository {
+  find(key: string): TodoLink | null;
+  findByPrefix(prefix: string): TodoLink[];
+  save(link: TodoLink): void;
+}
+
 /** L'API de l'app Todo, vue du planning. */
 export interface TodoTaskSource {
   listTasks(query: TodoTaskQuery): Promise<TodoTask[]>;
+  /** `null` si la tâche a été supprimée dans Todo. */
+  getTask(id: string): Promise<TodoTask | null>;
+  createTask(input: NewTodoTask): Promise<TodoTask>;
   complete(id: string): Promise<void>;
   uncomplete(id: string): Promise<void>;
   setDueDate(id: string, dueDate: IsoDate): Promise<void>;

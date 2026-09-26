@@ -78,7 +78,6 @@ export interface GoalView extends Goal {
   progress: number | null;
   /** Part du temps écoulé, 0 → 1. */
   elapsed: number;
-  projected: number | null;
   achievedAt: string | null;
   status: GoalStatus;
   series: GoalPoint[];

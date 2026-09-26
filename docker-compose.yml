@@ -18,6 +18,8 @@ services:
       COLLECT_CRON: ${COLLECT_CRON:-0 * * * *}
       COLLECT_AT_STARTUP: ${COLLECT_AT_STARTUP:-true}
       BACKFILL_DAYS: ${BACKFILL_DAYS:-730}
+      # Le jour des tâches posées dans l'app Todo (sorties, légal) : le conteneur est en UTC.
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Paris}
       # Le front appelle /api en relatif via nginx : aucune origine tierce à autoriser.
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       # Chiffre les mots de passe saisis dans Paramètres -> API (16 caractères minimum,

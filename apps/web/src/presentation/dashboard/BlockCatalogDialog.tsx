@@ -11,8 +11,7 @@ import {
 import { Input } from '../components/ui/input.tsx';
 import { AddToDashboardButton } from './AddToDashboard.tsx';
 import { useChannels } from '../../application/channel/usecases/useChannels.ts';
-import { useGoals } from '../../application/goal/usecases/useGoals.ts';
-import { BLOCKS, channelBlocks, goalBlocks } from './registry.tsx';
+import { BLOCKS, channelBlocks } from './registry.tsx';
 
 /**
  * Tout le catalogue, rangé par page d'origine, pour ajouter un bloc **sans quitter le
@@ -30,22 +29,17 @@ export const BlockCatalogDialog = ({
   const [query, setQuery] = useState('');
   const { data: widgets = [] } = useDashboardWidgets();
   const { data: channels = [] } = useChannels();
-  const { data: goals = [] } = useGoals();
 
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const map = new Map<string, Array<[string, (typeof BLOCKS)[string]]>>();
-    for (const entry of [
-      ...Object.entries(BLOCKS),
-      ...channelBlocks(channels),
-      ...goalBlocks(goals),
-    ]) {
+    for (const entry of [...Object.entries(BLOCKS), ...channelBlocks(channels)]) {
       const [, block] = entry;
       if (needle && !`${block.label} ${block.group}`.toLowerCase().includes(needle)) continue;
       map.set(block.group, [...(map.get(block.group) ?? []), entry]);
     }
     return [...map.entries()];
-  }, [query, channels, goals]);
+  }, [query, channels]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

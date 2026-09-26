@@ -25,6 +25,19 @@ export const startCollectScheduler = (container: Container): void => {
 
   let running = false;
 
+  /** Les tâches posées dans l'app Todo. Rien à faire tant que Todo n'est pas connecté. */
+  const syncTodos = async (): Promise<void> => {
+    try {
+      const result = await container.syncStudioTodos.run();
+      if (result.created > 0) console.log(`[todo] ${result.created} tâche(s) posée(s) dans Todo`);
+      if (result.synced > 0)
+        console.log(`[todo] ${result.synced} case(s) légale(s) synchronisée(s)`);
+      for (const error of result.errors) console.warn(`[todo] ${error}`);
+    } catch (error) {
+      console.error('[todo] synchro interrompue :', error);
+    }
+  };
+
   const run = async (trigger: string): Promise<void> => {
     if (running) {
       console.warn(`[cron] collecte déjà en cours, déclenchement ${trigger} ignoré`);
@@ -89,6 +102,9 @@ export const startCollectScheduler = (container: Container): void => {
       } catch (error) {
         console.error('[cron] collecte des sources de l’export interrompue :', error);
       }
+
+      // Après la collecte : les vidéos du jour viennent d'être écrites.
+      await syncTodos();
     } catch (error) {
       console.error('[cron] collecte interrompue :', error);
     } finally {
@@ -113,5 +129,8 @@ export const startCollectScheduler = (container: Container): void => {
 
   if (collectAtStartup) {
     void run('au démarrage');
+  } else {
+    // Sans collecte au démarrage, la synchro Todo tourne quand même : elle ne coûte rien.
+    void syncTodos();
   }
 };

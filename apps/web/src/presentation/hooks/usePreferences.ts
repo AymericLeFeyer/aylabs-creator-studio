@@ -25,6 +25,11 @@ export interface AppPreferences {
    * porte cette barre.
    */
   mobileNav: string[];
+  /**
+   * Les familles du menu repliées (leurs intitulés : « Production », « Revenus »…). On
+   * retient les **repliées** : une famille ajoutée plus tard arrive dépliée.
+   */
+  collapsedNavSections: string[];
 }
 
 const DEFAULTS: AppPreferences = {
@@ -34,6 +39,7 @@ const DEFAULTS: AppPreferences = {
   // `DEFAULT_ZOOM` : le cran qui reproduit l'ancienne hauteur fixe de 56 px par heure.
   planningZoom: 3,
   mobileNav: [...DEFAULT_MOBILE_NAV],
+  collapsedNavSections: [],
 };
 
 export const usePreferences = () => {

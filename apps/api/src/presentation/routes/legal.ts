@@ -88,12 +88,15 @@ export const legalRouter = (container: Container): Router => {
   router.put('/checks/:obligationId/:month', (req, res) => {
     const month = legalMonthParamSchema.parse(param(req, 'month'));
     container.legalObligations.check(param(req, 'obligationId'), month);
+    // La tâche Todo correspondante suit sans attendre le cron ; son échec est avalé.
+    void container.syncStudioTodos.legalChanged(param(req, 'obligationId'), month, true);
     res.status(204).end();
   });
 
   router.delete('/checks/:obligationId/:month', (req, res) => {
     const month = legalMonthParamSchema.parse(param(req, 'month'));
     container.legalObligations.uncheck(param(req, 'obligationId'), month);
+    void container.syncStudioTodos.legalChanged(param(req, 'obligationId'), month, false);
     res.status(204).end();
   });
 
