@@ -546,8 +546,8 @@ export const YouTubeChannelLifetimeCard = ({
             ]}
             note={
               metric === 'subscribers'
-                ? 'Compteur public de YouTube : au-delà de 1 000, il est arrondi à trois chiffres. Tous les paliers dans Audience → Achievements.'
-                : 'Compteur public de YouTube, exact. Tous les paliers dans Audience → Achievements.'
+                ? 'Compteur public de YouTube : au-delà de 1 000, il est arrondi à trois chiffres. Tous les paliers dans Audience → Succès.'
+                : 'Compteur public de YouTube, exact. Tous les paliers dans Audience → Succès.'
             }
           />
         )

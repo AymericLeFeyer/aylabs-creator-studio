@@ -9,6 +9,9 @@ import * as prod from '../blocks/productionBlocks.tsx';
 import * as legal from '../blocks/legalBlocks.tsx';
 import * as comment from '../blocks/commentBlocks.tsx';
 import * as achievement from '../blocks/achievementBlocks.tsx';
+import * as goal from '../blocks/goalBlocks.tsx';
+import type { GoalView } from '../../domain/goal/entities/Goal.ts';
+import { goalTitle } from '../../domain/goal/entities/Goal.ts';
 import {
   DomadooChartBlock,
   DomadooMetricCard,
@@ -226,14 +229,16 @@ export const BLOCKS: Record<string, BlockDefinition> = {
   'discord.online': metric('En ligne sur Discord', 'Discord', () => <social.DiscordOnlineCard />),
   'discord.chart': panel('Évolution Discord', 'Discord', HALF, () => <social.DiscordChartBlock />),
 
-  // --- Achievements ---
-  'achievements.recent': panel('Derniers paliers franchis', 'Achievements', HALF, () => (
+  // --- Succès (ex-Achievements : les identifiants gardent l'ancien nom, contrat stocké) ---
+  'goals.list': panel('Objectifs', 'Succès', HALF, () => <goal.GoalsListBlock />),
+  'goals.chart': panel('Progression des objectifs', 'Succès', HALF, () => <goal.GoalsChartBlock />),
+  'achievements.recent': panel('Derniers paliers franchis', 'Succès', HALF, () => (
     <achievement.AchievementsRecentBlock />
   )),
-  'achievements.next': panel('Prochains paliers', 'Achievements', HALF, () => (
+  'achievements.next': panel('Prochains paliers', 'Succès', HALF, () => (
     <achievement.AchievementsNextBlock />
   )),
-  'achievements.records': panel('Records', 'Achievements', FULL, () => (
+  'achievements.records': panel('Records', 'Succès', FULL, () => (
     <achievement.AchievementsRecordsBlock />
   )),
 
@@ -384,12 +389,32 @@ const channelBlock = (channelId: string, kind: ChannelMetric, name?: string): Bl
     () => <yt.YouTubeChannelLifetimeCard channelId={channelId} metric={kind} />,
   );
 
-/** Le bloc d'un identifiant : le catalogue fixe, puis les motifs par chaîne. */
+/**
+ * Un bloc **par objectif** (`goals.goal.<id>`), sur le même principe que les blocs par
+ * chaîne : l'identifiant porte celui de l'objectif. Supprimer l'objectif laisse un bloc qui
+ * le dit, retirable depuis l'édition du dashboard.
+ */
+const GOAL_BLOCK = /^goals\.goal\.(.+)$/;
+
+export const goalBlockId = (goalId: string) => `goals.goal.${goalId}`;
+
+const goalBlock = (goalId: string, title?: string): BlockDefinition =>
+  panel(title ? `Objectif · ${title}` : 'Objectif', 'Succès', 2, () => (
+    <goal.GoalBlock goalId={goalId} />
+  ));
+
+/** Le bloc d'un identifiant : le catalogue fixe, puis les motifs par chaîne et par objectif. */
 export const resolveBlock = (id: string): BlockDefinition | undefined => {
   if (BLOCKS[id]) return BLOCKS[id];
-  const match = CHANNEL_BLOCK.exec(id);
-  return match ? channelBlock(match[1]!, match[2] as ChannelMetric) : undefined;
+  const channel = CHANNEL_BLOCK.exec(id);
+  if (channel) return channelBlock(channel[1]!, channel[2] as ChannelMetric);
+  const goalMatch = GOAL_BLOCK.exec(id);
+  return goalMatch ? goalBlock(goalMatch[1]!) : undefined;
 };
+
+/** Un bloc par objectif, à proposer dans le catalogue. */
+export const goalBlocks = (goals: GoalView[]): Array<[string, BlockDefinition]> =>
+  goals.map((item) => [goalBlockId(item.id), goalBlock(item.id, goalTitle(item))]);
 
 /** Les blocs par chaîne à proposer dans le catalogue, une paire par chaîne active. */
 export const channelBlocks = (channels: Channel[]): Array<[string, BlockDefinition]> =>

@@ -40,6 +40,11 @@ export const queryKeys = {
   branding: () => ['branding'] as const,
   // Recalculés à la lecture : aucune écriture ne les invalide.
   achievements: () => ['achievements'] as const,
+  // Les objectifs : la liste (jour local dans la clé), le catalogue et l'aperçu du
+  // formulaire, sous une seule racine. Ne croise aucune autre racine.
+  goals: (today: string) => ['goals', 'list', today] as const,
+  goalCatalog: () => ['goals', 'catalog'] as const,
+  goalPreview: (params: unknown) => ['goals', 'preview', params] as const,
   // Préférences partagées entre appareils (`/api/preferences`) : ne croise aucune racine.
   sharedPreferences: () => ['sharedPreferences'] as const,
   scriptPresets: (includeArchived: boolean) => ['scriptPresets', includeArchived] as const,

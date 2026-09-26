@@ -109,7 +109,7 @@ export const NAV_SECTIONS: NavSection[] = [
       },
       // En dernier : ce n'est pas un écran de travail, c'est celui qu'on ouvre pour
       // regarder le chemin parcouru.
-      { to: '/achievements', label: 'Achievements', short: 'Paliers', icon: Trophy, end: false },
+      { to: '/achievements', label: 'Succès', short: 'Succès', icon: Trophy, end: false },
     ],
   },
   {
@@ -268,7 +268,7 @@ const TITLES: Array<[string, string]> = [
   ['/tiktok', 'TikTok'],
   ['/discord', 'Discord'],
   ['/commentaires', 'Commentaires'],
-  ['/achievements', 'Achievements'],
+  ['/achievements', 'Succès'],
   ['/produits', 'Produits'],
   ['/sponsors', 'Sponsors'],
   ['/affiliations', 'Affiliations'],

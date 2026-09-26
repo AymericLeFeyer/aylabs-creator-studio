@@ -72,6 +72,9 @@ import { SqliteTikTokRepository } from './infrastructure/tiktok/repositories/Sql
 import { CollectTikTok } from './application/tiktok/usecases/CollectTikTok.ts';
 import { GetTikTokOverview } from './application/tiktok/usecases/GetTikTokOverview.ts';
 import { GetAchievements } from './application/achievement/usecases/GetAchievements.ts';
+import { ManageGoals } from './application/goal/usecases/ManageGoals.ts';
+import { SqliteGoalRepository } from './infrastructure/goal/repositories/SqliteGoalRepository.ts';
+import { SqliteGoalSourceRepository } from './infrastructure/goal/repositories/SqliteGoalSourceRepository.ts';
 import { SqliteAchievementSourceRepository } from './infrastructure/achievement/repositories/SqliteAchievementSourceRepository.ts';
 import { ManageExternalApps } from './application/externalApp/usecases/ManageExternalApps.ts';
 import { ManageIntegrations } from './application/integration/usecases/ManageIntegrations.ts';
@@ -185,6 +188,8 @@ export interface Container {
   collectTikTok: CollectTikTok;
   getTikTokOverview: GetTikTokOverview;
   getAchievements: GetAchievements;
+  /** Les objectifs de l'écran Succès : CRUD, progression et prévision. */
+  manageGoals: ManageGoals;
   /** `null` tant qu'aucune clé API YouTube n'est configurée. */
   youtubeData: YouTubeDataClient | null;
   /**
@@ -382,6 +387,7 @@ export const buildContainer = (config: Config): Container => {
     collectTikTok,
     getTikTokOverview: new GetTikTokOverview(tiktokAccounts, tiktokAccounts),
     getAchievements: new GetAchievements(new SqliteAchievementSourceRepository(db)),
+    manageGoals: new ManageGoals(new SqliteGoalRepository(db), new SqliteGoalSourceRepository(db)),
     getPreviousPublication: new GetPreviousPublication(productions, videos, channels, {
       youtubeApiKey: config.youtubeApiKey,
       gcpClientId: config.gcpClientId,

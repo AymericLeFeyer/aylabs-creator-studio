@@ -1715,6 +1715,31 @@ const migrations: Migration[] = [
       ALTER TABLE external_apps ADD COLUMN local_url TEXT;
     `,
   },
+  {
+    version: 48,
+    name: 'goals',
+    // Les objectifs de l'ecran Succes : une metrique (et sa chaine ou son compte), une
+    // fenetre de temps, une valeur de depart et une cible. La progression n'est pas
+    // stockee : elle se recalcule a chaque lecture depuis l'historique, comme les paliers.
+    // "start_value" l'est, elle : relevee a la creation, elle reste modifiable.
+    // "entity_id" sans cle etrangere : il designe une chaine OU un compte selon la metrique.
+    up: `
+      CREATE TABLE goals (
+        id           TEXT PRIMARY KEY,
+        title        TEXT NOT NULL DEFAULT '',
+        metric       TEXT NOT NULL,
+        entity_id    TEXT,
+        start_date   TEXT NOT NULL,
+        end_date     TEXT NOT NULL,
+        start_value  REAL NOT NULL,
+        target_value REAL NOT NULL,
+        color        TEXT NOT NULL,
+        sort_order   INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 /**

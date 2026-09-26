@@ -5,6 +5,7 @@ import {
   EXTERNAL_APP_SECTIONS,
 } from '../domain/externalApp/entities/ExternalApp.ts';
 import { POST_DRAFT_STEPS } from '../domain/postDraft/entities/PostDraft.ts';
+import { GOAL_METRICS, type GoalMetricId } from '../domain/goal/entities/Goal.ts';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date attendue au format AAAA-MM-JJ');
 
@@ -468,6 +469,35 @@ export const updateDashboardWidgetSchema = z.object({
   width: widgetWidth.optional(),
   variant: z.string().max(20).nullable().optional(),
 });
+
+/**
+ * Les objectifs. Les valeurs sont **dans l'unité de la métrique** — des centimes pour une
+ * métrique d'argent, contrairement aux montants saisis ailleurs : ce ne sont pas des
+ * écritures comptables mais des repères, relus tels quels sur la courbe.
+ */
+const goalMetric = z.enum(
+  GOAL_METRICS.map((metric) => metric.id) as [GoalMetricId, ...GoalMetricId[]],
+);
+const goalValue = z.number().finite();
+export const createGoalSchema = z.object({
+  title: z.string().max(120).optional(),
+  metric: goalMetric,
+  entityId: z.string().min(1).nullable().optional(),
+  startDate: isoDate,
+  endDate: isoDate,
+  startValue: goalValue,
+  targetValue: goalValue,
+  color: hexColor,
+});
+export const updateGoalSchema = createGoalSchema.partial();
+export const goalPreviewQuerySchema = z.object({
+  metric: goalMetric,
+  entityId: z.string().min(1).optional(),
+  startDate: isoDate,
+  endDate: isoDate.optional(),
+  today: isoDate.optional(),
+});
+export const todayQuerySchema = z.object({ today: isoDate.optional() });
 
 /** Préférences partagées : une clé courte, une valeur JSON de 8 Ko au plus. */
 export const preferenceKeySchema = z

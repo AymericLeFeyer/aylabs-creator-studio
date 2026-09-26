@@ -8,9 +8,15 @@ import { PLATFORM_LABELS, PLATFORMS } from '../components/achievements/achieveme
 import { EmptyState } from '../components/EmptyState.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.tsx';
 import { BlockSkeleton } from '../blocks/BlockSkeleton.tsx';
+import { useGoals } from '../../application/goal/usecases/useGoals.ts';
+import { goalBlockId } from '../dashboard/registry.tsx';
 
 /**
- * Les achievements : les paliers franchis et leur date, sur toute la vie des chaînes et
+ * **Succès** (ex-Achievements — l'adresse `/achievements` et les identifiants de blocs
+ * gardent l'ancien nom, ce sont des contrats).
+ *
+ * En tête, les **objectifs** : la liste, le graphique commun, puis un bloc par objectif —
+ * chacun ajoutable au dashboard. Dessous, les achievements : les paliers franchis et leur date, sur toute la vie des chaînes et
  * des comptes. **Hors période** — un palier ne se regarde pas dans une fenêtre de temps —,
  * d'où l'absence de barre de filtres (`ROUTES_WITHOUT_FILTERS`).
  *
@@ -19,6 +25,7 @@ import { BlockSkeleton } from '../blocks/BlockSkeleton.tsx';
  */
 export const AchievementsPage = () => {
   const { data, all, isLoading } = useVisibleAchievements();
+  const { data: goals = [] } = useGoals();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const tracks = data?.tracks ?? [];
@@ -32,11 +39,11 @@ export const AchievementsPage = () => {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="hidden lg:block">
-          <h1 className="text-lg font-semibold">Achievements</h1>
+          <h1 className="text-lg font-semibold">Succès</h1>
           <p className="text-sm text-muted-foreground">
-            Les paliers franchis, reconstruits depuis tout l’historique collecté. Un palier acquis
-            avant le début de l’historique est marqué « avant le … » : on sait qu’il l’est, pas
-            quand.
+            Tes objectifs, puis les paliers franchis, reconstruits depuis tout l’historique
+            collecté. Un palier acquis avant le début de l’historique est marqué « avant le … » : on
+            sait qu’il l’est, pas quand.
           </p>
         </div>
         {/* Visible aussi sur mobile, où le bloc titre disparaît : poussé à droite. */}
@@ -44,6 +51,18 @@ export const AchievementsPage = () => {
           <AchievementAccountsPicker />
         </div>
       </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Block id="goals.list" />
+        <Block id="goals.chart" />
+      </div>
+      {goals.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {goals.map((goal) => (
+            <Block key={goal.id} id={goalBlockId(goal.id)} />
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Block id="achievements.recent" />

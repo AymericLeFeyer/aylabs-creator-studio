@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-09-25
+> Dernière mise à jour : 2026-09-26
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -103,7 +103,7 @@ Les deux applications suivent la même découpe.
 apps/api/src/
 ├── domain/          channel, metrics, category, revenue, expense, video, analytics,
 │                    brand, production, product, sponsorship, idea, postDraft, legal, integration,
-│                    todoApp, externalApp, dashboard, branding, achievement
+│                    todoApp, externalApp, dashboard, branding, achievement, goal
 │   └── <domaine>/{entities,repositories,services}    # repositories = interfaces seules
 ├── application/<domaine>/usecases/
 ├── infrastructure/
@@ -2051,7 +2051,8 @@ installée une seconde application pour Android.
 
 ### `achievement` — les paliers franchis
 
-Écran **Audience → Achievements** (`/achievements`). Rien n'est stocké : `GetAchievements`
+Écran **Audience → Succès** (`/achievements` — l'écran s'appelait « Achievements » ; l'adresse
+et les identifiants de blocs `achievements.*` ont gardé l'ancien nom, ce sont des contrats). Rien n'est stocké : `GetAchievements`
 **recalcule tout à chaque lecture** depuis l'historique (port `AchievementSourceRepository`,
 lectures seules, chaînes et comptes archivés exclus). Un palier franchi apparaît dès la
 collecte suivante, et rien ne peut diverger des autres écrans.
@@ -2094,6 +2095,65 @@ partagée entre appareils** (`achievements.hiddenEntities`, liste de `plateforme
 vaut pour l'écran **et** les trois blocs : tous lisent `useVisibleAchievements`, jamais
 `useAchievements` directement. On retient les **exclus** et non les retenus : un compte
 connecté demain apparaît de lui-même. L'API renvoie toujours tout.
+
+### `goal` — les objectifs (en tête de Succès)
+
+`Goal { id, title, metric, entityId, startDate, endDate, startValue, targetValue, color,
+sortOrder }` — table `goals` (migration 48). `GoalView` y ajoute `category`, `metricLabel`,
+`unit`, `entityName`, `entityColor`, `current`, `currentDate`, `progress`, `elapsed`,
+`projected`, `achievedAt`, `status` et `series`.
+
+**L'objectif est stocké, sa progression ne l'est pas** : comme les paliers, elle se
+recalcule à chaque lecture depuis l'historique (`ManageGoals`, port
+`GoalSourceRepository`). `startValue` est relevée **à la création** (valeur de la courbe au
+jour de départ, via `/preview`) et reste modifiable : sans relevé à cette date, on la tape.
+
+**Le catalogue vit côté API seulement** (`GOAL_METRICS`, `GOAL_CATEGORIES`, servis par
+`/api/goals/catalog` avec les chaînes et comptes actifs) : le front ne duplique ni les
+libellés ni les unités. Une métrique porte `entity` (`youtube | instagram | tiktok | null`)
+et `entityOptional` (AdSense : sans chaîne = toutes additionnées). **Les abonnés se suivent
+toujours par chaîne** — une somme compterait deux fois la même personne.
+
+**Toutes les valeurs sont des cumuls**, d'où une seule règle
+`progress = (valeur − départ) / (cible − départ)` (non bornée, et juste aussi pour une
+cible à la baisse). Deux natures de série brute (`RawGoalSeries`) :
+
+| `kind`  | Lecture d'un jour                              | Métriques                                                                                         |
+| ------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `level` | dernier relevé ≤ jour ; `null` avant le 1er    | abonnés, vues/vidéos au total, IG followers/posts, TikTok, membres Discord, cumuls Domadoo       |
+| `flux`  | somme des incréments ≤ jour ; `0` avant le 1er | heures vues, j'aime, AdSense, portée IG, stories, produits reçus, sponsos payées, affiliation, CA |
+
+Amazon ne donne que des **cumuls du mois** : `SqliteGoalSourceRepository.amazon` les
+convertit en flux (écart avec le relevé précédent du même mois, cumul entier à l'ouverture
+d'un mois, plancher à 0). `money.*` refait `revenueMath` en un flux : revenus saisis
+(`nature = 'cash'` seulement pour « CA encaissé ») + AdSense, moins les dépenses pour le
+bénéfice. Discord : le dernier relevé de chaque jour.
+
+**La prévision** (`goalMath.projectAt`) : pente des moindres carrés sur la série
+quotidienne des **90 derniers jours** (`PROJECTION_WINDOW_DAYS`), prolongée de la valeur
+d'aujourd'hui à l'échéance ; `null` sous 7 jours d'historique. Le formulaire l'**arrondit**
+(`roundForecast`, deux chiffres significatifs) quand on clique le bouton graphique à côté de
+la cible — un point de départ, pas une cible imposée.
+
+`status` : `upcoming` (départ futur), `achieved` (cible atteinte — `achievedAt`, même
+échéance passée), `missed`, sinon `on_track` si `progress ≥ elapsed` (part du temps
+écoulé), `behind`. Tout se lit **borné à l'échéance** : un objectif clos ne bouge plus.
+`?today=` porte le jour local du navigateur (serveur en UTC). La série passe à un point par
+semaine au-delà de 540 jours.
+
+**Les valeurs sont dans l'unité de la métrique — des centimes pour l'argent**, y compris
+en écriture, contrairement aux montants comptables (`amount` en euros) : ce sont des
+repères, pas des écritures. Le formulaire convertit (`toFieldValue` / `fromFieldValue`).
+
+Front : `GoalDialog` (catégorie → propriété → chaîne/compte → début + valeur relevée →
+échéance → cible + prévision → nom facultatif), `GoalRow` (barre + **trait du temps
+écoulé** : barre devant le trait = en avance), `GoalsProgressChart` (tous, en % — abscisse
+en temps numérique, les séries n'ont pas les mêmes dates), `GoalChart` (un seul : réel,
+cible, trajectoire idéale en pointillés fins, prévision en tirets). Blocs `goals.list`,
+`goals.chart`, et **un bloc par objectif** `goals.goal.<id>` reconnu au motif par
+`resolveBlock` (comme `youtube.channel.<id>.*`) et proposé au catalogue par `goalBlocks`.
+**Confidentialité** : `goalMask(metric)` → valeurs en `•••`, et le graphique d'un objectif
+masqué retombe sur le pourcentage.
 
 ### `analytics`
 
@@ -2274,6 +2334,13 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `PATCH`  | `/api/dashboard/widgets/:id`                        | `{ title?, description?, icon?, width?, variant? }` — `null` rend la valeur d'origine du bloc, `width` 1–6 |
 | `DELETE` | `/api/dashboard/widgets/:id`                        | Retirer du dashboard (le bloc reste sur sa page) |
 | `GET`    | `/api/achievements`                                 | `{ tracks, records }` recalculés depuis tout l'historique. Aucun paramètre : hors période |
+| `GET`    | `/api/goals`                                        | `GoalView[]` (progression, prévision, série recalculées). `?today=` jour local |
+| `GET`    | `/api/goals/catalog`                                | `{ categories, metrics, entities }` — ce que le formulaire propose. **Déclaré avant `/:id`** |
+| `GET`    | `/api/goals/preview`                                | `?metric=&entityId=&startDate=&endDate=&today=` → `{ startValue, current, currentDate, projected, dailyRate }` |
+| `POST`   | `/api/goals`                                        | `{ title?, metric, entityId?, startDate, endDate, startValue, targetValue, color? }` — valeurs **dans l'unité de la métrique** (centimes pour l'argent). 400 si l'entité manque/est en trop ou si l'échéance ne suit pas le départ |
+| `POST`   | `/api/goals/reorder`                                | `{ ids }` → ordre `1..n` |
+| `PATCH`  | `/api/goals/:id`                                    | Mêmes champs, tous facultatifs |
+| `DELETE` | `/api/goals/:id`                                    | Supprimer |
 | `GET`    | `/api/branding`                                     | `{ name, logoVersion, updatedAt, displayName }` |
 | `PATCH`  | `/api/branding`                                     | `{ name }` — `null` ou `""` rend le nom par défaut, 40 caractères max |
 | `PUT`    | `/api/branding/logo`                                | `{ icons: { 'favicon-32', 'icon-192', 'icon-512', 'maskable-512', 'apple-180' } }`, PNG en base64 (préfixe `data:` admis). 422 si ce n'est pas un PNG. Limite 8 Mo |
@@ -2292,7 +2359,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/instagram`        | `InstagramPage`        | **API Graph**, toujours au jour : alerte de jeton, chiffres clés (Stories, Abonnés, Publications, Portée, Interactions), **dernières publications** (`LatestPostCard` : les 10 dernières hors période — `InstagramOverview.latestMedia` —, aux chevrons ou au glissement, avec vues/portée/j'aime/commentaires/partages/enregistrements), courbes d'abonnés et de portée liées, graphiques en onglets (Activité, Abonnés, Gain par jour), calendrier des publications (vues/portée/j'aime/commentaires/enregistrements au clic)                                                                                |
 | `/tiktok`           | `TikTokPage`            | **Profil public seulement**, toujours au jour : cartes Abonnés/Coeurs/Publications, **dernières vidéos** (carrousel hors période avec leurs stats, comme Instagram), graphique en onglets (Abonnés, Vidéos). N'apparaît dans le menu que si un profil est configuré (Paramètres → Audience → TikTok)                                                                                                                                                |
 | `/discord`          | `DiscordPage`          | Membres, membres en ligne (le nom du serveur n'est plus qu'en sous-titre), dernier relevé, bouton Collecter. **Aucune série** : Discord ne renvoie que des compteurs courants. N'apparaît dans le menu que si un serveur est configuré (Paramètres → Audience → Discord)                                                                                                                                       |
-| `/achievements`     | `AchievementsPage`     | Derniers paliers, prochains paliers, records (trois blocs), puis une courbe par chaîne/compte et par métrique, en onglets par plateforme (`?plateforme=`). Hors période, sans barre de filtres |
+| `/achievements`     | `AchievementsPage`     | Titré **« Succès »**. En tête les **objectifs** (liste, graphique commun, un bloc par objectif), puis derniers paliers, prochains paliers, records (trois blocs), puis une courbe par chaîne/compte et par métrique, en onglets par plateforme (`?plateforme=`). Hors période, sans barre de filtres |
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
@@ -2638,7 +2705,7 @@ horizontalement.
 
 **Les écrans sont groupés par famille** (`NAV_SECTIONS`, `presentation/navigation.ts`) :
 le dashboard **hors famille** en tête, puis **Production** (Planning, Vidéos, Shorts &
-Réels, Publications), **Audience** (YouTube, Instagram, Commentaires — plus TikTok et
+Réels, Publications), **Audience** (YouTube, Instagram, Commentaires, Succès — plus TikTok et
 Discord, conditionnels, voir plus bas), **Revenus** (Produits, Sponsors, Affiliations,
 Chiffre d'affaires) et **Entreprise** (Légal). À neuf entrées, une liste à plat obligeait à lire
 tous les libellés pour en trouver un — rien ne disait que « Contenu » et « Instagram »
@@ -2947,6 +3014,7 @@ période**, et leur sous-titre le dit.
 | `planningNow`, `nowMinutes`, `localToday`, `shiftDate`                                                                                                                                                                                                                                                                         | idem                                                    | Le temps **local du navigateur**, envoyé à l'API — le serveur est en UTC                                                                            |
 | `useExternalApps`, `useCreateExternalApp`, `useUpdateExternalApp`, `useDeleteExternalApp`, `useTodayTodos`                                                                                                                                                                                                                     | `application/externalApp/usecases/useExternalApps.ts`   | Applications externes du menu ; tâches Todo du jour (pastille, **relue chaque minute** : ce qu'on coche dans l'iframe ne passe pas par le studio)   |
 | `useSharedPreference(key, fallback, parse)` | `application/sharedPreference/usecases/useSharedPreference.ts` | Une préférence **partagée entre appareils** (`/api/preferences`, table `app_preferences`). `parse` valide la valeur, sinon `fallback`. Écriture optimiste. `['sharedPreferences']` ne croise aucune racine |
+| `useGoals`, `useGoalCatalog`, `useGoalPreview`, `useCreateGoal`, `useUpdateGoal`, `useDeleteGoal` | `application/goal/usecases/useGoals.ts` | Objectifs. Clés sous la racine `['goals']` (liste avec jour local, catalogue, aperçu), invalidée entière à chaque écriture ; ne croise aucune autre racine |
 | `useAchievements`, `useVisibleAchievements` | `application/achievement/usecases/useAchievements.ts` | Paliers et records. Relu au focus ; aucune écriture ne l'invalide (`['achievements']`) |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
@@ -3044,6 +3112,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 48** ajoute `goals` (objectifs de Succès). `entity_id` sans clé étrangère : il désigne une chaîne **ou** un compte selon la métrique.
 - **Migration 47** ajoute `external_apps.local_url` (adresse sur le réseau local, choisie par le navigateur).
 - **Migration 46** ajoute `amazon_snapshots` (PK `date`, cumuls du mois en centimes) et y reprend l'instantané Amazon d'`integration_snapshots` (`json_extract`).
 - **Migration 43** ajoute `dashboard_widgets.variant` (style des titres de section) et pose le titre `heading.dashboard` en tête : l'en-tête de l'écran devient modifiable.

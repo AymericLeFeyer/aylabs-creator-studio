@@ -36,6 +36,7 @@ import { planningRouter } from './routes/planning.ts';
 import { instagramRouter } from './routes/instagram.ts';
 import { tiktokRouter } from './routes/tiktok.ts';
 import { achievementsRouter } from './routes/achievements.ts';
+import { goalsRouter } from './routes/goals.ts';
 import { integrationsRouter } from './routes/integrations.ts';
 import { domadooRouter } from './routes/domadoo.ts';
 import { amazonRouter } from './routes/amazon.ts';
@@ -94,6 +95,7 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/instagram', instagramRouter(container));
   app.use('/api/tiktok', tiktokRouter(container));
   app.use('/api/achievements', achievementsRouter(container));
+  app.use('/api/goals', goalsRouter(container));
   app.use('/api/integrations', integrationsRouter(container));
   app.use('/api/domadoo', domadooRouter(container));
   app.use('/api/amazon', amazonRouter(container));
