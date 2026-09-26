@@ -192,11 +192,6 @@ export const AppLayout = () => {
         ? collapsedSections.filter((item) => item !== label)
         : [...collapsedSections, label],
     });
-  /** Le bouton du menu mobile : la somme de toutes les pastilles. */
-  const totalBadge = sumBadges(
-    badges,
-    navSections.flatMap((section) => section.items.map((item) => item.to)),
-  );
   const closeMobile = useCallback(() => setMobileOpen(false), []);
   const logoUrl = brandingIconUrl(branding, 'icon-192');
   const title =
@@ -430,11 +425,7 @@ export const AppLayout = () => {
               onClick={() => setMobileOpen(true)}
               aria-label="Ouvrir le menu"
             >
-              <span className="relative">
-                <Menu className="h-5 w-5" />
-                {/* La somme de toutes les pastilles : ce qui attend, où que ce soit. */}
-                <NavBadgePill badge={totalBadge} className="absolute -right-2.5 -top-2" />
-              </span>
+              <Menu className="h-5 w-5" />
             </Button>
             <span className="min-w-0 flex-1 truncate text-base font-semibold">{title}</span>
             {/* Les actions de l'écran, portées ici par `AppBarActions`. La collecte y

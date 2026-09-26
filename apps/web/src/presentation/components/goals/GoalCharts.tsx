@@ -19,6 +19,7 @@ import {
 } from 'recharts';
 import { goalTitle, type GoalView } from '../../../domain/goal/entities/Goal.ts';
 import { formatDate } from '../../../shared/format.ts';
+import { useGoalValue } from './goalFormat.ts';
 
 /**
  * Les vues de la progression des objectifs, **toutes en pourcentage de complétion** — la
@@ -223,6 +224,19 @@ export const GoalsBarChart = ({ goals, height = 260 }: { goals: GoalView[]; heig
 };
 
 /**
+ * Sous l'anneau, la valeur atteinte et la cible (« 2 190 / 3 000 ») : le pourcentage est
+ * déjà au centre, c'est le chiffre réel qui manque. `•••` si la métrique est masquée.
+ */
+const DonutValue = ({ goal }: { goal: GoalView }) => {
+  const value = useGoalValue(goal);
+  return (
+    <p className="text-[11px] tabular text-muted-foreground">
+      {value(goal.current)} / {value(goal.targetValue)}
+    </p>
+  );
+};
+
+/**
  * Un anneau par objectif, le pourcentage au centre. La lecture la plus directe de
  * « combien il me reste », une cible à la fois ; au-delà de 100 %, l'anneau est plein.
  */
@@ -263,9 +277,7 @@ export const GoalsDonuts = ({ goals }: { goals: GoalView[] }) => {
             <p className="w-full truncate text-center text-xs font-medium" title={goalTitle(goal)}>
               {goalTitle(goal)}
             </p>
-            <p className="text-[11px] text-muted-foreground">
-              {Math.round(goal.elapsed * 100)} % du temps écoulé
-            </p>
+            <DonutValue goal={goal} />
           </div>
         );
       })}

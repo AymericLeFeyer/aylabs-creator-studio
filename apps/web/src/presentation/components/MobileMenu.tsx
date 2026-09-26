@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { ChevronDown, Settings, X } from 'lucide-react';
+import { ChevronDown, Monitor, Moon, Settings, Sun, X, type LucideIcon } from 'lucide-react';
 import type { NavItem, NavSection } from '../navigation.ts';
 import { sumBadges, type NavBadge } from '../navBadges.ts';
 import { cn } from '../../shared/cn.ts';
 import { Button } from './ui/button.tsx';
 import { NavBadgePill } from './NavBadgePill.tsx';
-import { ThemeToggle } from './ThemeToggle.tsx';
+import { useTheme, type ThemePreference } from '../hooks/useTheme.ts';
 
 interface MobileMenuProps {
   open: boolean;
@@ -19,6 +19,12 @@ interface MobileMenuProps {
   logoUrl: string;
   appName: string;
 }
+
+const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; icon: LucideIcon }> = [
+  { value: 'system', label: 'Auto', icon: Monitor },
+  { value: 'light', label: 'Clair', icon: Sun },
+  { value: 'dark', label: 'Sombre', icon: Moon },
+];
 
 /**
  * Le menu sur mobile : **une page entière de tuiles**, et non la barre latérale posée en
@@ -46,6 +52,7 @@ export const MobileMenu = ({
   logoUrl,
   appName,
 }: MobileMenuProps) => {
+  const { preference, setPreference } = useTheme();
   // `Échap` referme, et la page dessous ne défile pas pendant que le menu la couvre.
   useEffect(() => {
     if (!open) return;
@@ -159,8 +166,34 @@ export const MobileMenu = ({
 
         <section className="grid grid-cols-3 gap-2 border-t border-border pt-4 sm:grid-cols-4">
           {tile({ to: '/parametres', label: 'Paramètres', icon: Settings, end: false })}
-          <div className="col-span-2 flex items-center sm:col-span-3">
-            <ThemeToggle compact={false} />
+          {/* Le thème dans la grammaire des tuiles : une tuile large, trois choix. */}
+          <div
+            role="group"
+            aria-label="Thème"
+            style={{ transitionDelay: `${open ? 60 + (order.size + 1) * 18 : 0}ms` }}
+            className={cn(
+              'col-span-2 grid grid-cols-3 gap-1 rounded-2xl border border-border bg-card p-1',
+              'transition-[opacity,transform] duration-300 ease-out motion-reduce:transition-none',
+              open ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0',
+            )}
+          >
+            {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setPreference(value)}
+                aria-pressed={preference === value}
+                className={cn(
+                  'flex flex-col items-center justify-center gap-1.5 rounded-xl text-xs font-medium transition-colors active:scale-95',
+                  preference === value
+                    ? 'bg-secondary text-secondary-foreground'
+                    : 'text-muted-foreground',
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                {label}
+              </button>
+            ))}
           </div>
         </section>
       </nav>

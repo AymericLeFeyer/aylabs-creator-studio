@@ -2786,8 +2786,8 @@ icônes n'a pas de familles repliables (un filet suffit).
 **La somme des pastilles** (`sumBadges`, `navBadges.ts`) : poids d'une pastille =
 son nombre, **1** pour une pastille-texte (« -3 » jours de publications ne soustrait
 rien, c'est un point à traiter) ou un simple point, 0 si rien ne s'affiche
-(`badgeWeight`). Couleur = la pire. Posée sur une famille repliée et sur le **bouton du
-menu mobile** (toutes les entrées).
+(`badgeWeight`). Couleur = la pire. Posée **sur une famille repliée seulement** — le
+bouton du menu mobile a porté la somme de tout, retirée : elle ne disait pas où regarder.
 
 **Sur mobile, le menu est une page entière de tuiles** (`MobileMenu`), plus la barre
 latérale en tiroir : une liste de quinze lignes de 36 px se vise mal au pouce, des tuiles
@@ -2795,8 +2795,9 @@ de trois par rangée tiennent sur un écran. Il glisse depuis la gauche et les t
 apparaissent en cascade (`transitionDelay` par rang, `motion-reduce` coupe tout). **Toujours
 monté** pour que la fermeture s'anime aussi : fermé, il est `inert`, `aria-hidden` et
 `invisible` (la visibilité fait partie de la transition, elle ne bascule qu'à la fin).
-`Échap` referme, le défilement de la page est bloqué pendant qu'il la couvre. Paramètres et
-le thème sont en pied.
+`Échap` referme, le défilement de la page est bloqué pendant qu'il la couvre. En pied, la
+tuile Paramètres et **le thème en tuile large à trois choix** (Auto, Clair, Sombre), dans la
+grammaire des tuiles plutôt que le `ThemeToggle` de la barre latérale, qui y détonnait.
 
 **Sur mobile, l'en-tête devient une barre d'application** : bouton du menu, **titre de
 l'écran** (`pageTitle`, dérivé de l'adresse — faire remonter un titre depuis chaque page
