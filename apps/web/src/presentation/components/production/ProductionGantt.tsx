@@ -87,7 +87,7 @@ const shiftIso = (iso: string, days: number): string => toIsoDate(addDays(parseI
 
 const formatDay = (iso: string): string => format(parseISO(iso), 'd MMM yyyy', { locale: fr });
 
-/** L'infobulle d'une barre : un rappel des dates, rien d'autre — la couleur dit l'état. */
+/** Les dates visées, affichées dans la barre pendant qu'on la glisse ou l'étire. */
 const datesLabel = ({ startDate, plannedDate }: BarDates): string => {
   if (startDate && plannedDate && startDate !== plannedDate) {
     return `Du ${formatDay(startDate)} au ${formatDay(plannedDate)}`;
@@ -130,22 +130,6 @@ const applyDrag = (production: BarDates, mode: DragMode, delta: number): BarDate
 };
 
 const datesKey = (dates: BarDates): string => `${dates.startDate}|${dates.plannedDate}`;
-
-/**
- * Largeur d'un texte en 11 px / 500, lue par un canevas plutôt que devinée : c'est ce qui
- * décide si le titre tient dans sa barre ou en sort. Repli grossier sans DOM.
- */
-let measureContext: CanvasRenderingContext2D | null | undefined;
-const textWidth = (text: string): number => {
-  if (measureContext === undefined) {
-    measureContext =
-      typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d');
-    if (measureContext) {
-      measureContext.font = `500 11px ${getComputedStyle(document.body).fontFamily}`;
-    }
-  }
-  return measureContext ? measureContext.measureText(text).width : text.length * 6;
-};
 
 /**
  * Détail des sponsos et des produits d'une barre.
@@ -339,13 +323,26 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
     const archived = (production: Production) =>
       production.status === 'done' && deadlineOf(production) < today;
 
+    // Seules les vidéos dont la fenêtre recoupe la période affichée : une sortie d'il y a
+    // six mois se retrouvait sinon écrasée contre le bord gauche, et toutes les anciennes
+    // vidéos s'empilaient là.
+    const windowStart = toIsoDate(first);
+    const windowEnd = toIsoDate(addDays(first, days.length - 1));
+    const visible = (production: Production) => {
+      const end = deadlineOf(production);
+      const start = production.startDate ?? end;
+      return end >= windowStart && start <= windowEnd;
+    };
+
     return effective
-      .filter((production) => production.plannedDate ?? production.startDate)
+      .filter(
+        (production) => (production.plannedDate ?? production.startDate) && visible(production),
+      )
       .sort((a, b) => {
         if (archived(a) !== archived(b)) return archived(a) ? 1 : -1;
         return deadlineOf(a).localeCompare(deadlineOf(b));
       });
-  }, [effective]);
+  }, [effective, days, first]);
 
   /**
    * Les lundis, où commence chaque semaine. Un trait par lundi, sur toute la hauteur :
@@ -437,7 +434,8 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
       <CardContent>
         {planned.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            Aucune vidéo datée. Renseigne une date de sortie visée pour la voir apparaître ici.
+            Aucune vidéo datée sur cette période. Renseigne une date de sortie visée pour la voir
+            apparaître ici.
           </p>
         ) : (
           <>
@@ -532,13 +530,14 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
                     // Pendant le geste, le texte annonce les dates visées à la place du titre :
                     // la grille n'a pas d'autre repère, et on poserait la sortie à l'aveugle.
                     const label = dragging?.moved ? datesLabel(dates) : production.title;
-                    // Padding, logo et icônes d'argent : ce qui reste au texte dans la barre.
-                    const reserved =
-                      8 +
+                    // Où le titre commence : après le padding, le logo et les icônes
+                    // d'argent (14 ou 12 px chacun, plus l'écart de 4 px).
+                    const labelLeft =
+                      4 +
                       (channel ? 18 : 0) +
                       (production.sponsorships.length > 0 ? 16 : 0) +
                       (production.products.length > 0 ? 16 : 0);
-                    const fits = textWidth(label) <= span * cell - reserved;
+                    const barWidth = span * cell;
 
                     return (
                       // La ligne entière s'éclaire au survol, colonne des titres comprise :
@@ -621,7 +620,11 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
                                 color: BAR_INK,
                                 opacity: done ? 0.55 : 1,
                               }}
-                              title={datesLabel(production)}
+                              title={
+                                production.plannedDate
+                                  ? `Prévue le ${formatDay(production.plannedDate)}`
+                                  : undefined
+                              }
                             >
                               {/* En tête, et `shrink-0` : sur une barre d'un jour, c'est la
                                   dernière chose à disparaître avec les pastilles d'argent. */}
@@ -654,7 +657,7 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
                                   </span>
                                 </span>
                               )}
-                              {fits && <span className="whitespace-nowrap">{label}</span>}
+                              <span className="sr-only">{production.title}</span>
 
                               {/* Les deux bords, saisissables : tirer à gauche avance ou
                                   recule le début, à droite la sortie visée. */}
@@ -671,19 +674,40 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
                               ))}
                             </Link>
 
-                            {/* Trop long pour la barre : le titre en sort, à droite, dans
-                                l'encre du thème — l'encre des barres ne se lirait pas sur le
-                                fond de la carte en mode sombre. */}
-                            {!fits && (
+                            {/* Le titre commence TOUJOURS dans la barre et peut en déborder.
+                                Il est posé deux fois au même endroit : en encre des barres,
+                                rogné à la barre, puis en encre du thème, rogné à tout ce qui
+                                est AVANT le bord droit. Une seule encre ne se lirait pas des
+                                deux côtés — l'encre sombre disparaît sur le fond en mode
+                                sombre, le blanc sur les barres claires. */}
+                            <span
+                              aria-hidden
+                              className="pointer-events-none absolute inset-0 overflow-hidden rounded"
+                            >
                               <span
-                                className={cn(
-                                  'pointer-events-none absolute left-full top-1/2 ml-1.5 -translate-y-1/2 whitespace-nowrap text-[11px] font-medium',
-                                  done ? 'text-muted-foreground' : 'text-foreground',
-                                )}
+                                className="absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[11px] font-medium"
+                                style={{
+                                  left: labelLeft,
+                                  color: BAR_INK,
+                                  opacity: done ? 0.55 : 1,
+                                }}
                               >
                                 {label}
                               </span>
-                            )}
+                            </span>
+                            <span
+                              aria-hidden
+                              className={cn(
+                                'pointer-events-none absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[11px] font-medium',
+                                done ? 'text-muted-foreground' : 'text-foreground',
+                              )}
+                              style={{
+                                left: labelLeft,
+                                clipPath: `inset(-4px 0 -4px ${barWidth - labelLeft}px)`,
+                              }}
+                            >
+                              {label}
+                            </span>
                           </div>
                         </div>
                       </div>
