@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Handshake, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronsUpDown, Handshake, Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   useDeleteProduct,
   useProducts,
@@ -14,6 +14,13 @@ import {
   productInPeriod,
   productIsOutstanding,
 } from '../../../domain/partner/services/pipeline.ts';
+import type { ProductSort, ProductSortKey } from '../../../domain/product/services/productSort.ts';
+import {
+  DEFAULT_PRODUCT_SORT,
+  nextProductSort,
+  sortProducts,
+} from '../../../domain/product/services/productSort.ts';
+import { cn } from '../../../shared/cn.ts';
 import { formatDate, toIsoDate } from '../../../shared/format.ts';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { useFilters } from '../../hooks/useFilters.tsx';
@@ -40,17 +47,51 @@ export const ProductsTable = () => {
   const remove = useDeleteProduct();
 
   const range = useMemo(() => ({ from: filters.from, to: filters.to }), [filters.from, filters.to]);
-  const [outstandingOnly, setOutstandingOnly] = useState(false);
+  // Cochée d'office : on ouvre cette table pour savoir quoi tourner, l'historique vient après.
+  const [outstandingOnly, setOutstandingOnly] = useState(true);
+  const [sort, setSort] = useState<ProductSort>(DEFAULT_PRODUCT_SORT);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
 
   const visible = useMemo(
     () =>
-      products.filter((product) =>
-        outstandingOnly ? productIsOutstanding(product) : productInPeriod(product, range),
+      sortProducts(
+        products.filter((product) =>
+          outstandingOnly ? productIsOutstanding(product) : productInPeriod(product, range),
+        ),
+        sort,
       ),
-    [products, range, outstandingOnly],
+    [products, range, outstandingOnly, sort],
   );
+
+  const sortHead = (key: ProductSortKey, label: string, className?: string) => {
+    const active = sort.key === key;
+    return (
+      <TableHead className={className}>
+        <button
+          type="button"
+          onClick={() => setSort((current) => nextProductSort(current, key))}
+          aria-sort={active ? (sort.desc ? 'descending' : 'ascending') : 'none'}
+          className={cn(
+            'inline-flex items-center gap-1 whitespace-nowrap rounded transition-colors hover:text-foreground',
+            className?.includes('text-right') && 'flex-row-reverse',
+            active && 'text-foreground',
+          )}
+        >
+          {label}
+          {active ? (
+            sort.desc ? (
+              <ArrowDown className="h-3 w-3" />
+            ) : (
+              <ArrowUp className="h-3 w-3" />
+            )
+          ) : (
+            <ChevronsUpDown className="h-3 w-3 opacity-40" />
+          )}
+        </button>
+      </TableHead>
+    );
+  };
   const stats = useMemo(
     () => ({ pipeline: partnerPipeline(products, [], toIsoDate(new Date()), range) }),
     [products, range],
@@ -105,13 +146,13 @@ export const ProductsTable = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Produit</TableHead>
-              <TableHead>Marque</TableHead>
-              <TableHead>Statut</TableHead>
-              <TableHead>Échéance</TableHead>
-              <TableHead>Reçu le</TableHead>
-              <TableHead>Vidéo</TableHead>
-              <TableHead className="text-right">Valeur</TableHead>
+              {sortHead('name', 'Produit')}
+              {sortHead('brand', 'Marque')}
+              {sortHead('status', 'Statut')}
+              {sortHead('deadline', 'Échéance')}
+              {sortHead('receivedAt', 'Reçu le')}
+              {sortHead('video', 'Vidéo')}
+              {sortHead('value', 'Valeur', 'text-right')}
               <TableHead className="w-20" />
             </TableRow>
           </TableHeader>

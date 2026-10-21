@@ -8,9 +8,9 @@ import {
   PRODUCTION_STATUSES,
   STATUS_COLORS,
   STATUS_LABELS,
-  stepProgress,
 } from '../../../domain/production/entities/Production.ts';
 import { useChannels } from '../../../application/channel/usecases/useChannels.ts';
+import { useUpdateProduction } from '../../../application/production/usecases/useProductions.ts';
 import { PRODUCT_STATUS_LABELS } from '../../../domain/product/entities/Product.ts';
 import { SPONSORSHIP_STATUS_LABELS } from '../../../domain/sponsorship/entities/Sponsorship.ts';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
@@ -62,26 +62,90 @@ const COLLAPSED_ROWS = 5;
  */
 const BAR_INK = '#0f172a';
 
-/**
- * L'avancement **réel** de la vidéo : étapes ET tâches, la même règle que la carte de la
- * file (`stepProgress`). Le Gantt ne comptait que les étapes cochées, si bien qu'une vidéo
- * à 18 tâches sur 30 y affichait 0 % tant qu'aucune étape n'était entièrement close.
- */
-const progressPercent = (production: Production): number =>
-  Math.round(stepProgress(production) * 100);
+/** Les deux dates qu'une barre représente — et les seules qu'un geste sur elle modifie. */
+interface BarDates {
+  startDate: string | null;
+  plannedDate: string | null;
+}
 
-/** Infobulle de la barre : tout ce que le rognage a pu manger. */
-const barTitle = (production: Production): string =>
-  [
-    production.title,
-    STATUS_LABELS[production.status],
-    production.channelName,
-    production.stepIds.length + production.todos.length > 0
-      ? `${progressPercent(production)} % d'avancement`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+/** `move` déplace la barre entière, `start` / `end` tirent l'un de ses bords. */
+type DragMode = 'move' | 'start' | 'end';
+
+interface DragState {
+  id: string;
+  mode: DragMode;
+  originX: number;
+  /** Décalage en jours entiers : on ne cale pas une sortie à la demi-journée. */
+  delta: number;
+  moved: boolean;
+}
+
+/** En deçà, un appui suivi d'un relâchement reste un clic qui ouvre la fiche. */
+const DRAG_THRESHOLD_PX = 4;
+
+const shiftIso = (iso: string, days: number): string => toIsoDate(addDays(parseISO(iso), days));
+
+const formatDay = (iso: string): string => format(parseISO(iso), 'd MMM yyyy', { locale: fr });
+
+/** L'infobulle d'une barre : un rappel des dates, rien d'autre — la couleur dit l'état. */
+const datesLabel = ({ startDate, plannedDate }: BarDates): string => {
+  if (startDate && plannedDate && startDate !== plannedDate) {
+    return `Du ${formatDay(startDate)} au ${formatDay(plannedDate)}`;
+  }
+  if (plannedDate) return `Sortie visée le ${formatDay(plannedDate)}`;
+  return startDate ? `Début le ${formatDay(startDate)}` : '';
+};
+
+/**
+ * Les dates qu'un geste produit.
+ *
+ * Une barre sans `startDate` n'occupe que le jour visé : la déplacer ne lui invente pas de
+ * début, seule une date existante est décalée. Tirer un bord, en revanche, pose la date qui
+ * manquait — c'est précisément ce qu'on demande en étirant une barre d'un jour. Les bords
+ * ne se croisent jamais : un début ne passe pas après la sortie.
+ */
+const applyDrag = (production: BarDates, mode: DragMode, delta: number): BarDates => {
+  const end = production.plannedDate ?? production.startDate!;
+  const start = production.startDate ?? end;
+  if (mode === 'move') {
+    return {
+      startDate: production.startDate ? shiftIso(production.startDate, delta) : null,
+      plannedDate: production.plannedDate ? shiftIso(production.plannedDate, delta) : null,
+    };
+  }
+  if (mode === 'start') {
+    const shifted = shiftIso(start, delta);
+    const next = shifted > end ? end : shifted;
+    return {
+      startDate: next === end && !production.startDate ? null : next,
+      plannedDate: production.plannedDate ?? end,
+    };
+  }
+  const shifted = shiftIso(end, delta);
+  const next = shifted < start ? start : shifted;
+  return {
+    startDate: production.startDate ?? (next === start ? null : start),
+    plannedDate: next,
+  };
+};
+
+const datesKey = (dates: BarDates): string => `${dates.startDate}|${dates.plannedDate}`;
+
+/**
+ * Largeur d'un texte en 11 px / 500, lue par un canevas plutôt que devinée : c'est ce qui
+ * décide si le titre tient dans sa barre ou en sort. Repli grossier sans DOM.
+ */
+let measureContext: CanvasRenderingContext2D | null | undefined;
+const textWidth = (text: string): number => {
+  if (measureContext === undefined) {
+    measureContext =
+      typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d');
+    if (measureContext) {
+      measureContext.font = `500 11px ${getComputedStyle(document.body).fontFamily}`;
+    }
+  }
+  return measureContext ? measureContext.measureText(text).width : text.length * 6;
+};
 
 /**
  * Détail des sponsos et des produits d'une barre.
@@ -132,9 +196,10 @@ interface ProductionGanttProps {
  * regard sur un calendrier (qu'est-ce qui est bloqué, qu'est-ce qui n'a pas commencé) ;
  * la chaîne se reconnaît à son logo en tête de barre, sans prendre la couleur pour elle.
  *
- * L'ordre dans la barre suit ce qui doit survivre au rognage : les icônes et le
- * pourcentage sont `shrink-0`, c'est le libellé d'état qui se tronque en premier — sur
- * une barre d'un jour, savoir qu'il y a une sponso vaut mieux que lire « En cours ».
+ * La barre porte le **titre** de la vidéo, pas son état (la couleur le dit déjà) ; trop
+ * long, il sort à droite de la barre. L'infobulle ne rappelle que les dates. La barre se
+ * **glisse** pour décaler début et sortie ensemble, et ses **bords se tirent** pour n'en
+ * changer qu'un — sans ouvrir la fiche. Un trait vertical par lundi découpe les semaines.
  *
  * Au survol, toute la ligne s'éclaire et la barre prend un contour : c'est ce qui relie
  * une barre lointaine à son titre, collé à gauche.
@@ -152,6 +217,94 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
   /** Le coin de l'en-tête : il porte la largeur réelle de la colonne des titres. */
   const titleRef = useRef<HTMLDivElement>(null);
   const { before, after, cell } = ZOOM[zoom];
+  const update = useUpdateProduction();
+
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  /** Un glissement se termine par un `click` sur la barre : il ne doit pas ouvrir la fiche. */
+  const swallowClick = useRef(false);
+
+  /**
+   * Les dates posées par un geste, en attendant que l'API les renvoie.
+   *
+   * Sans ça, la barre revenait à sa place le temps de l'aller-retour puis repartait. Une
+   * entrée ne vaut que tant que la production porte encore les dates d'avant le geste
+   * (`base`) : dès que la réponse arrive — ou qu'une autre écriture change les dates —
+   * elle s'efface d'elle-même, sans effet ni nettoyage.
+   */
+  const [pending, setPending] = useState<Record<string, { base: string; dates: BarDates }>>({});
+  const effective = useMemo(
+    () =>
+      productions.map((production) => {
+        const entry = pending[production.id];
+        return entry && entry.base === datesKey(production)
+          ? { ...production, ...entry.dates }
+          : production;
+      }),
+    [productions, pending],
+  );
+
+  const commit = (production: Production, dates: BarDates) => {
+    if (datesKey(dates) === datesKey(production)) return;
+    setPending((current) => ({
+      ...current,
+      [production.id]: { base: datesKey(production), dates },
+    }));
+    update.mutate(
+      { id: production.id, input: dates },
+      {
+        onError: () =>
+          setPending((current) => {
+            const next = { ...current };
+            delete next[production.id];
+            return next;
+          }),
+      },
+    );
+  };
+
+  /**
+   * Le geste vit sur l'enveloppe de la barre, qui capture le pointeur : sortir de la ligne
+   * en glissant ne l'interrompt pas. Le bord saisi se lit sur `data-handle`.
+   */
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>, id: string) => {
+    swallowClick.current = false;
+    if (event.button !== 0) return;
+    const handle = (event.target as HTMLElement).closest<HTMLElement>('[data-handle]');
+    const mode = (handle?.dataset.handle as DragMode | undefined) ?? 'move';
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const state = { id, mode, originX: event.clientX, delta: 0, moved: false };
+    dragRef.current = state;
+    setDrag(state);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const current = dragRef.current;
+    if (!current) return;
+    const dx = event.clientX - current.originX;
+    const moved = current.moved || Math.abs(dx) > DRAG_THRESHOLD_PX;
+    const delta = moved ? Math.round(dx / cell) : 0;
+    if (delta === current.delta && moved === current.moved) return;
+    const next = { ...current, delta, moved };
+    dragRef.current = next;
+    setDrag(next);
+  };
+
+  const onPointerUp = (production: Production) => {
+    const current = dragRef.current;
+    dragRef.current = null;
+    setDrag(null);
+    if (!current) return;
+    swallowClick.current = current.moved;
+    if (current.moved && current.delta !== 0) {
+      commit(production, applyDrag(production, current.mode, current.delta));
+    }
+  };
+
+  const onPointerCancel = () => {
+    dragRef.current = null;
+    setDrag(null);
+  };
 
   const { days, first } = useMemo(() => {
     const start = addDays(new Date(), -before);
@@ -186,13 +339,22 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
     const archived = (production: Production) =>
       production.status === 'done' && deadlineOf(production) < today;
 
-    return productions
+    return effective
       .filter((production) => production.plannedDate ?? production.startDate)
       .sort((a, b) => {
         if (archived(a) !== archived(b)) return archived(a) ? 1 : -1;
         return deadlineOf(a).localeCompare(deadlineOf(b));
       });
-  }, [productions]);
+  }, [effective]);
+
+  /**
+   * Les lundis, où commence chaque semaine. Un trait par lundi, sur toute la hauteur :
+   * « cette vidéo sort la semaine prochaine » se lit alors sans compter les colonnes.
+   */
+  const mondays = useMemo(
+    () => days.flatMap((day, index) => (day.getDay() === 1 ? [index] : [])),
+    [days],
+  );
 
   const rows = expanded ? planned : planned.slice(0, COLLAPSED_ROWS);
   const hidden = planned.length - rows.length;
@@ -315,7 +477,9 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
                         <div
                           key={day.toISOString()}
                           className={cn(
-                            'border-l border-border/60 pb-1 text-center text-[10px] leading-tight',
+                            'border-l pb-1 text-center text-[10px] leading-tight',
+                            // Le lundi porte le même trait que les lignes du dessous.
+                            monday ? 'border-foreground/25' : 'border-border/60',
                             weekend ? 'text-muted-foreground/50' : 'text-muted-foreground',
                           )}
                         >
@@ -337,10 +501,17 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
                   </div>
                 </div>
 
-                <div className="space-y-1.5 pt-2">
+                {/* Pas d'écart entre les lignes : les traits de semaine les traversent d'un
+                    seul tenant, un `space-y` les aurait hachés à chaque vidéo. */}
+                <div className="pt-1">
                   {rows.map((production) => {
-                    const end = production.plannedDate ?? production.startDate!;
-                    const start = production.startDate ?? end;
+                    const dragging = drag?.id === production.id ? drag : null;
+                    const dates =
+                      dragging && dragging.moved
+                        ? applyDrag(production, dragging.mode, dragging.delta)
+                        : production;
+                    const end = dates.plannedDate ?? dates.startDate!;
+                    const start = dates.startDate ?? end;
                     const from = columnOf(start);
                     const to = columnOf(end);
                     const span = Math.max(1, to - from + 1);
@@ -358,6 +529,16 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
                             }
                           : null))
                       : null;
+                    // Pendant le geste, le texte annonce les dates visées à la place du titre :
+                    // la grille n'a pas d'autre repère, et on poserait la sortie à l'aveugle.
+                    const label = dragging?.moved ? datesLabel(dates) : production.title;
+                    // Padding, logo et icônes d'argent : ce qui reste au texte dans la barre.
+                    const reserved =
+                      8 +
+                      (channel ? 18 : 0) +
+                      (production.sponsorships.length > 0 ? 16 : 0) +
+                      (production.products.length > 0 ? 16 : 0);
+                    const fits = textWidth(label) <= span * cell - reserved;
 
                     return (
                       // La ligne entière s'éclaire au survol, colonne des titres comprise :
@@ -365,19 +546,16 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
                       // quelle vidéo il s'agit sans suivre la ligne des yeux.
                       <div
                         key={production.id}
-                        className="group flex items-center rounded-sm transition-colors hover:bg-muted"
+                        className="group flex items-stretch rounded-sm transition-colors hover:bg-muted"
                       >
                         {/* Collée à gauche : en défilant vers le futur, on doit continuer
                             de savoir de quelle vidéo est la barre qu'on regarde. */}
                         <Link
                           to={`/production/${production.id}`}
                           className={cn(
-                            // `self-stretch` est la correction du bug : sans lui, le fond
-                            // de la colonne ne couvrait que la hauteur du texte, et le
-                            // trait d'aujourd'hui comme les barres transparaissaient
-                            // au-dessus et en dessous en défilant. Le filet de droite
-                            // donne à la colonne un bord franc, sans quoi on ne voit pas
-                            // où elle s'arrête et où le calendrier commence.
+                            // `self-stretch` : sans lui, le fond de la colonne ne couvrait
+                            // que la hauteur du texte, et le trait d'aujourd'hui comme les
+                            // barres transparaissaient au-dessus et en dessous en défilant.
                             'sticky left-0 z-30 flex w-36 shrink-0 items-center self-stretch',
                             'border-r border-border bg-card pr-3 text-sm hover:underline lg:w-56',
                             // Opaque, comme le fond de ligne : la colonne est collante et
@@ -390,7 +568,18 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
                           <span className="truncate">{production.title}</span>
                         </Link>
 
-                        <div className="relative grid h-7 items-center" style={gridStyle}>
+                        <div className="relative grid h-8 items-center" style={gridStyle}>
+                          {/* Un trait par lundi : le découpage en semaines, du lundi au
+                              dimanche, sur toute la hauteur de la ligne. */}
+                          {mondays.map((index) => (
+                            <span
+                              key={index}
+                              aria-hidden
+                              className="pointer-events-none absolute inset-y-0 w-px bg-foreground/25"
+                              style={{ left: index * cell }}
+                            />
+                          ))}
+
                           {/* Trait d'aujourd'hui, posé sur toute la hauteur de la ligne et
                               au-dessus des barres. Épais de 3 px et centré sur son offset :
                               un trait d'un pixel se perdait dans les filets de la grille. */}
@@ -400,57 +589,102 @@ export const ProductionGantt = ({ productions }: ProductionGanttProps) => {
                             style={{ left: todayOffset }}
                           />
 
-                          {/* La barre entière est cliquable : c'est la cible la plus large
-                              de la ligne, et celle qu'on vise naturellement. */}
-                          <Link
-                            to={`/production/${production.id}`}
-                            className="z-10 flex h-5 items-center gap-1 overflow-hidden rounded px-1 text-[11px] font-medium transition-shadow group-hover:shadow-[0_0_0_2px_var(--foreground)]"
-                            style={{
-                              gridColumn: `${from + 1} / span ${span}`,
-                              backgroundColor: color,
-                              color: BAR_INK,
-                              opacity: done ? 0.55 : 1,
-                            }}
-                            title={barTitle(production)}
+                          {/* L'enveloppe porte le geste : glisser la barre la déplace, tirer
+                              un bord ne déplace que lui. Un simple clic ouvre toujours la
+                              fiche. Pas de `touch-none` sur le corps de la barre : au doigt,
+                              le planning doit continuer de défiler — seuls les bords captent. */}
+                          <div
+                            className="relative z-10 flex h-5 select-none"
+                            style={{ gridColumn: `${from + 1} / span ${span}` }}
+                            onPointerDown={(event) => onPointerDown(event, production.id)}
+                            onPointerMove={onPointerMove}
+                            onPointerUp={() => onPointerUp(production)}
+                            onPointerCancel={onPointerCancel}
                           >
-                            {/* En tête, et `shrink-0` : sur une barre d'un jour, c'est la
-                                dernière chose à disparaître avec les pastilles d'argent. */}
-                            {channel && (
-                              <ChannelAvatar
-                                channel={channel}
-                                size={14}
-                                className="ring-1 ring-black/10"
-                              />
-                            )}
-                            {production.sponsorships.length > 0 && (
-                              <span
-                                className="shrink-0"
-                                title={sponsorshipsTitle(production, sponsorMoney)}
-                              >
-                                <DollarSign className="h-3 w-3" aria-hidden />
-                                <span className="sr-only">
-                                  {sponsorshipsTitle(production, sponsorMoney)}
+                            <Link
+                              to={`/production/${production.id}`}
+                              draggable={false}
+                              onClick={(event) => {
+                                if (swallowClick.current) {
+                                  event.preventDefault();
+                                  swallowClick.current = false;
+                                }
+                              }}
+                              className={cn(
+                                'group/bar relative flex w-full items-center gap-1 overflow-hidden rounded px-1 text-[11px] font-medium transition-shadow group-hover:shadow-[0_0_0_2px_var(--foreground)]',
+                                dragging?.moved
+                                  ? 'cursor-grabbing shadow-[0_0_0_2px_var(--foreground)]'
+                                  : 'cursor-grab',
+                              )}
+                              style={{
+                                backgroundColor: color,
+                                color: BAR_INK,
+                                opacity: done ? 0.55 : 1,
+                              }}
+                              title={datesLabel(production)}
+                            >
+                              {/* En tête, et `shrink-0` : sur une barre d'un jour, c'est la
+                                  dernière chose à disparaître avec les pastilles d'argent. */}
+                              {channel && (
+                                <ChannelAvatar
+                                  channel={channel}
+                                  size={14}
+                                  className="ring-1 ring-black/10"
+                                />
+                              )}
+                              {production.sponsorships.length > 0 && (
+                                <span
+                                  className="shrink-0"
+                                  title={sponsorshipsTitle(production, sponsorMoney)}
+                                >
+                                  <DollarSign className="h-3 w-3" aria-hidden />
+                                  <span className="sr-only">
+                                    {sponsorshipsTitle(production, sponsorMoney)}
+                                  </span>
                                 </span>
-                              </span>
-                            )}
-                            {production.products.length > 0 && (
-                              <span
-                                className="shrink-0"
-                                title={productsTitle(production, productMoney)}
-                              >
-                                <Package className="h-3 w-3" aria-hidden />
-                                <span className="sr-only">
-                                  {productsTitle(production, productMoney)}
+                              )}
+                              {production.products.length > 0 && (
+                                <span
+                                  className="shrink-0"
+                                  title={productsTitle(production, productMoney)}
+                                >
+                                  <Package className="h-3 w-3" aria-hidden />
+                                  <span className="sr-only">
+                                    {productsTitle(production, productMoney)}
+                                  </span>
                                 </span>
+                              )}
+                              {fits && <span className="whitespace-nowrap">{label}</span>}
+
+                              {/* Les deux bords, saisissables : tirer à gauche avance ou
+                                  recule le début, à droite la sortie visée. */}
+                              {(['start', 'end'] as const).map((edge) => (
+                                <span
+                                  key={edge}
+                                  data-handle={edge}
+                                  aria-hidden
+                                  className={cn(
+                                    'absolute inset-y-0 w-2 cursor-ew-resize touch-none transition-colors group-hover/bar:bg-black/15',
+                                    edge === 'start' ? 'left-0' : 'right-0',
+                                  )}
+                                />
+                              ))}
+                            </Link>
+
+                            {/* Trop long pour la barre : le titre en sort, à droite, dans
+                                l'encre du thème — l'encre des barres ne se lirait pas sur le
+                                fond de la carte en mode sombre. */}
+                            {!fits && (
+                              <span
+                                className={cn(
+                                  'pointer-events-none absolute left-full top-1/2 ml-1.5 -translate-y-1/2 whitespace-nowrap text-[11px] font-medium',
+                                  done ? 'text-muted-foreground' : 'text-foreground',
+                                )}
+                              >
+                                {label}
                               </span>
                             )}
-                            <span className="truncate">{STATUS_LABELS[production.status]}</span>
-                            {production.stepIds.length + production.todos.length > 0 && (
-                              <span className="ml-auto shrink-0 tabular">
-                                {progressPercent(production)} %
-                              </span>
-                            )}
-                          </Link>
+                          </div>
                         </div>
                       </div>
                     );
