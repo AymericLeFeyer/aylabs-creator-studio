@@ -83,18 +83,9 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Production',
     items: [
       { to: '/planning', label: 'Planning', icon: CalendarClock, end: false },
-      // Deux files, un seul module : les vidéos longues et les formats courts se
-      // préparent pareil (script, créneaux, partenaires) mais ne se pilotent pas au même
-      // rythme, et les mêler faisait disparaître les shorts sous les gros projets. Le
-      // planning, lui, les montre ensemble — c'est le même temps de travail.
+      // Une seule file : « Shorts & Réels » a été retiré, les formats courts se préparent
+      // dans Publications.
       { to: '/production', label: 'Vidéos', icon: FORMAT_ICONS.video, end: false },
-      {
-        to: '/shorts',
-        label: 'Shorts & Réels',
-        short: 'Shorts',
-        icon: FORMAT_ICONS.short,
-        end: false,
-      },
       // Les brouillons de publication Instagram : de la préparation, donc ici, et non
       // sous Audience → Instagram qui ne montre que ce qui est réellement paru.
       { to: '/publications', label: 'Publications', icon: Images, end: false },
@@ -262,7 +253,6 @@ export const resolveMobileNav = (
 const TITLES: Array<[string, string]> = [
   ['/production/', 'Fiche'],
   ['/production', 'Vidéos'],
-  ['/shorts', 'Shorts & Réels'],
   ['/publications', 'Publications'],
   ['/planning', 'Planning'],
   ['/youtube', 'YouTube'],

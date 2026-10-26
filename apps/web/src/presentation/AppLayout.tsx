@@ -37,7 +37,6 @@ const ROUTES_WITHOUT_FILTERS = [
   '/commentaires',
   '/planning',
   '/production',
-  '/shorts',
   '/publications',
   '/produits',
   '/sponsors',
@@ -164,7 +163,7 @@ export const AppLayout = () => {
   const { data: detail } = useProduction(detailId);
   const detailRoute = detailId && detail ? FORMAT_ROUTES[detail.format] : null;
   const isItemActive = (to: string, isActive: boolean): boolean =>
-    detailRoute && (to === '/production' || to === '/shorts') ? to === detailRoute : isActive;
+    detailRoute && to === '/production' ? to === detailRoute : isActive;
 
   /**
    * Le menu du studio, plus les applications externes activées, chacune dans sa famille.

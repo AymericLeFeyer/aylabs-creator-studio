@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-10-21
+> Dernière mise à jour : 2026-10-26
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
 
@@ -295,6 +295,13 @@ manque est **supprimé au parsing**, pas affiché en clair.
 
 `paused_at` est posé par le **passage** en pause, pas par la mise à jour de la raison : corriger le libellé d'un blocage ne doit pas remettre le compteur « en pause depuis X jours » à zéro.
 
+**« Shorts & Réels » a été retiré (2026-10-26)** : les formats courts se préparent dans
+Publications. `/shorts` redirige vers `/production`, `FORMAT_ROUTES.short` vaut
+`/production`, les blocs `production.short.*` ont quitté le catalogue (un dashboard qui en
+portait affiche « Ce bloc n'existe plus »), et le champ Format de `ProductionDialog` ne
+s'affiche plus que sur un short existant, pour le repasser en vidéo. La colonne et le
+paramètre `format` restent : ce qui suit décrit le mécanisme d'origine.
+
 **`format` (`video` | `short`, migration 25) ne sépare que les menus.** « Vidéos »
 (`/production`) et « Shorts & Réels » (`/shorts`) montent le **même** `ProductionPage`
 avec un `format` différent ; script, créneaux, tâches, produits, sponsos et planning sont
@@ -328,6 +335,12 @@ avance sort quand même ce jour-là. Elles le lisaient dans `queue`, qui exclut 
 la carte annonçait la vidéo suivante. **Seule la date visée compte, jamais `videoDate`** :
 une vidéo programmée sur YouTube est collectée avec sa date d'**upload**, et l'écarter sur
 `videoDate < aujourd'hui` faisait sauter les vidéos terminées et programmées.
+
+**La file (`queue`) garde les vidéos terminées dont la sortie visée est strictement
+après aujourd'hui** : prêtes, pas encore publiées. Elles comptent dans `inQueue` (donc la
+pastille), mais pas dans `nextId` ni dans les alertes (toujours calculées sur
+`idea | in_progress | paused`). Le Gantt dédoublonne file + terminées. L'onglet
+**Terminées** se trie de la plus récente à la plus ancienne (`videoDate ?? plannedDate`).
 
 `GetProductionOverview.execute(format?)` borne **la file, tous les chiffres et les
 créneaux** au format demandé — y compris « Temps cette semaine », qui filtre les sessions de
@@ -1158,7 +1171,11 @@ carré. Une barre arrondie qui s'arrête net au bord se lirait comme une échéa
 
 `ManagePlanning.replan({ mode })` :
 
-- **`incremental`** (le défaut) — rien n'est effacé. Les créneaux déjà posés comptent comme
+- **`incremental`** (le défaut) — rien n'est effacé. **Ajouter une vidéo** (`addTargets`)
+  le borne en plus aux lignes qu'il vient de créer ou rouvrir (`onlyItemIds`) : le reste à
+  couvrir des **autres** lignes (créneau supprimé ou raccourci, estimation recalée) était
+  sinon reposé au passage, en tête de pile, et toute la semaine prévisualisée se
+  recomposait. Il attend désormais « Repositionner ». Les créneaux déjà posés comptent comme
   occupation, et le reste à couvrir d'une ligne tombe à zéro dès qu'elle a ses créneaux :
   seules les minutes qu'aucun créneau ne couvre reçoivent une place. C'est le mode de tout
   ce qui se déclenche **tout seul** — ajouter une vidéo, approuver, arrêter un chronomètre,
@@ -2416,7 +2433,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/commentaires`     | `CommentsPage`         | 3 vues (`?onglet=`) : Wall of Love (par défaut), Propositions, Commentaires (le tableau de tri). **Deux icônes à pastille** en tiennent lieu, pas des onglets                                                                                                                                                                                                                 |
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                         |
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
-| `/shorts`           | `ProductionPage`       | `format="short"`, titré **« Shorts & Réels »**. Exactement le même écran, borné aux formats courts                                                                                                                                                                                                                                                                            |
+| `/shorts`           | —                      | **Retiré** : redirige vers `/production`.                                                                                                                                                                                                                                                                                                                                     |
 | `/publications`     | `PublicationsPage`     | **Un couloir par jour** (vides compris, ouvert sur aujourd'hui), 6 cases par publication, archivage sans confirmation (vert quand tout est coché), archivées visibles grisées, « + » par jour. Pastille « -X jours »                                                                                                                                                          |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / **Notes** (plusieurs, en fichiers)                                                                                                                                                                                                           |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                    |

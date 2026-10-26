@@ -107,15 +107,11 @@ export const PlanningQueue = ({ items, onPickUp, pendingId = null }: PlanningQue
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <ListOrdered className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
           <span>
-            L’ordre suit la file de production — commune aux{' '}
+            L’ordre suit la{' '}
             <Link to="/production" className="underline hover:text-foreground">
-              vidéos
-            </Link>{' '}
-            et aux{' '}
-            <Link to="/shorts" className="underline hover:text-foreground">
-              shorts
-            </Link>{' '}
-            — puis celui des étapes. Une tâche cochée quitte la pile toute seule — et se glisse sur
+              file des vidéos
+            </Link>
+            , puis celui des étapes. Une tâche cochée quitte la pile toute seule — et se glisse sur
             la grille pour lui donner une heure à la main.
           </span>
         </p>

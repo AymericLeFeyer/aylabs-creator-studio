@@ -148,8 +148,6 @@ export const ProductionDetailPage = () => {
 
   return (
     <div className="space-y-4">
-      {/* Le retour mène à la file du format : un short se range dans « Shorts & Réels »,
-          et revenir sur la liste des vidéos obligerait à le rechercher ailleurs. */}
       <Button
         variant="ghost"
         size="sm"
@@ -157,7 +155,7 @@ export const ProductionDetailPage = () => {
         onClick={() => navigate(FORMAT_ROUTES[production.format])}
       >
         <ArrowLeft className="h-4 w-4" />
-        {production.format === 'short' ? 'Shorts & Réels' : 'Vidéos'}
+        Vidéos
       </Button>
 
       <Card className="space-y-4 p-5">

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { cn } from '../../../shared/cn.ts';
 import { useChannels } from '../../../application/channel/usecases/useChannels.ts';
 import {
   useCreateProduction,
@@ -129,6 +130,7 @@ export const ProductionDialog = ({
   };
 
   const pending = create.isPending || update.isPending;
+  const legacyShort = production?.format === 'short';
   const statuses = PRODUCTION_STATUSES.filter(
     (status) => status !== 'done' || production?.status === 'done',
   );
@@ -151,7 +153,7 @@ export const ProductionDialog = ({
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_11rem]">
+          <div className={cn('grid gap-4', legacyShort && 'sm:grid-cols-[minmax(0,1fr)_11rem]')}>
             <div className="space-y-1.5">
               <Label htmlFor="production-title">Titre de travail</Label>
               <Input
@@ -163,28 +165,31 @@ export const ProductionDialog = ({
               />
             </div>
 
-            {/* Le format ne décide que du menu où la vidéo se range : on peut le changer à
-                tout moment, rien d'autre ne bouge — script, créneaux et partenaires restent. */}
-            <div className="space-y-1.5">
-              <Label htmlFor="production-format">Format</Label>
-              <Select
-                value={form.format}
-                onValueChange={(value) =>
-                  setForm((f) => ({ ...f, format: value as ProductionFormat }))
-                }
-              >
-                <SelectTrigger id="production-format">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRODUCTION_FORMATS.map((format) => (
-                    <SelectItem key={format} value={format}>
-                      {FORMAT_LABELS[format]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* « Shorts & Réels » n'a plus d'écran : le format ne se propose plus que sur un
+                short d'avant le retrait, pour le repasser en vidéo — script, créneaux et
+                partenaires restent. */}
+            {legacyShort && (
+              <div className="space-y-1.5">
+                <Label htmlFor="production-format">Format</Label>
+                <Select
+                  value={form.format}
+                  onValueChange={(value) =>
+                    setForm((f) => ({ ...f, format: value as ProductionFormat }))
+                  }
+                >
+                  <SelectTrigger id="production-format">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRODUCTION_FORMATS.map((format) => (
+                      <SelectItem key={format} value={format}>
+                        {FORMAT_LABELS[format]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

@@ -15,7 +15,7 @@ import type {
   ProductionAlertKind,
   ProductionOverview,
 } from '../domain/production/entities/ProductionOverview.ts';
-import { FORMAT_ROUTES, PRODUCTION_FORMATS } from '../domain/production/entities/Production.ts';
+import { FORMAT_ROUTES } from '../domain/production/entities/Production.ts';
 import type { LegalAlert } from '../domain/legal/entities/Legal.ts';
 import { formatMonth } from '../domain/legal/entities/Legal.ts';
 import {
@@ -150,14 +150,14 @@ export const buildNavBadges = (
     const reasonsOf = (keep: (alert: ProductionAlert) => boolean) =>
       overview.alerts.filter(keep).map(fromProductionAlert);
 
-    for (const format of PRODUCTION_FORMATS) {
-      badges[FORMAT_ROUTES[format]] = badge(
-        overview.queue.filter((production) => production.format === format).length,
-        reasonsOf(
-          (alert) => PRODUCTION_KINDS.includes(alert.kind) && alert.productionFormat === format,
-        ),
-      );
-    }
+    // Une seule file depuis le retrait de « Shorts & Réels » : la pastille compte les
+    // vidéos, et un short restant ne doit pas écraser la pastille en partageant l'adresse.
+    badges[FORMAT_ROUTES.video] = badge(
+      overview.queue.filter((production) => production.format === 'video').length,
+      reasonsOf(
+        (alert) => PRODUCTION_KINDS.includes(alert.kind) && alert.productionFormat === 'video',
+      ),
+    );
 
     const products = reasonsOf((alert) => alert.kind === 'product_late');
     badges['/produits'] = badge(products.length, products);

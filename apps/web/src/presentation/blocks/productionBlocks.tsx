@@ -371,7 +371,15 @@ export const ProductionQueueCountCard = () => {
 export const ProductionGanttBlock = ({ format }: FormatProps) => {
   const { data: overview } = useProductionOverview(format);
   const { data: done = [] } = useProductions({ statuses: ['done'], formats: [format] });
-  return <ProductionGantt productions={[...(overview?.queue ?? []), ...done]} />;
+  // La file porte aussi les terminées pas encore sorties : sans dédoublonnage, elles
+  // auraient deux barres.
+  const queue = overview?.queue ?? [];
+  const inQueue = new Set(queue.map((production) => production.id));
+  return (
+    <ProductionGantt
+      productions={[...queue, ...done.filter((production) => !inQueue.has(production.id))]}
+    />
+  );
 };
 
 /** Les créneaux à venir du format, tous projets confondus : ce que dit l'agenda. */
@@ -563,8 +571,17 @@ export const ProductionQueueBlock = ({ format }: FormatProps) => {
   );
 };
 
+/** Date de sortie d'une terminée : la sortie réelle si elle est rattachée, sinon la visée. */
+const releaseDateOf = (production: Production): string =>
+  production.videoDate ?? production.plannedDate ?? '';
+
 export const ProductionDoneBlock = ({ format }: FormatProps) => {
-  const { data: done = [] } = useProductions({ statuses: ['done'], formats: [format] });
+  const { data } = useProductions({ statuses: ['done'], formats: [format] });
+  // La plus récente d'abord : on revient sur ce qu'on vient de sortir, pas sur l'historique.
+  const done = useMemo(
+    () => [...(data ?? [])].sort((a, b) => releaseDateOf(b).localeCompare(releaseDateOf(a))),
+    [data],
+  );
   if (done.length === 0) {
     return (
       <Card className="p-8 text-center text-sm text-muted-foreground">

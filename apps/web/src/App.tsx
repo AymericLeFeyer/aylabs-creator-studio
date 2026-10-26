@@ -64,11 +64,10 @@ export const App = () => (
               <Route path="achievements" element={<AchievementsPage />} />
               <Route path="commentaires" element={<CommentsPage />} />
               <Route path="planning" element={<PlanningPage />} />
-              {/* Un seul écran pour les deux files. La clé force un remontage en passant
-                  de l'une à l'autre : sans elle, React réutiliserait l'instance, et les
-                  cartes dépliées ou un formulaire ouvert passeraient d'un format à l'autre. */}
-              <Route path="production" element={<ProductionPage key="video" format="video" />} />
-              <Route path="shorts" element={<ProductionPage key="short" format="short" />} />
+              <Route path="production" element={<ProductionPage format="video" />} />
+              {/* « Shorts & Réels » a été retiré du menu : les formats courts se préparent
+                  dans Publications. L'ancienne adresse ramène à la file des vidéos. */}
+              <Route path="shorts" element={<Navigate to="/production" replace />} />
               <Route path="publications" element={<PublicationsPage />} />
               <Route path="production/:id" element={<ProductionDetailPage />} />
               <Route path="produits" element={<ProductsPage />} />

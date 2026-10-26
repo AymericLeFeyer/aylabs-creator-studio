@@ -254,7 +254,6 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     <prod.ProductionQueueCountCard />
   )),
   ...productionBlocks('video'),
-  ...productionBlocks('short'),
 
   // --- Produits ---
   'products.pending': metric('Produits attendus', 'Produits', () => (

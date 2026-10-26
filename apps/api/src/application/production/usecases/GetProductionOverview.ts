@@ -92,14 +92,22 @@ export class GetProductionOverview {
   execute(format?: ProductionFormat): ProductionOverview {
     const now = today();
     const fullQueue = this.productions.findAll({ statuses: ['idea', 'in_progress', 'paused'] });
-    const queue = format ? fullQueue.filter((p) => p.format === format) : fullQueue;
+    // Une vidéo terminée **avant** sa sortie reste dans la file jusqu'au jour J (exclu) :
+    // elle est prête, pas encore publiée, et la retirer faisait croire que rien ne sortait
+    // cette semaine. Elle n'entre ni dans les alertes ni dans le choix de la prochaine à
+    // travailler — il n'y a plus rien à y faire.
+    const waitingRelease = this.productions
+      .findAll({ statuses: ['idea', 'in_progress', 'paused', 'done'] })
+      .filter((p) => p.status !== 'done' || (p.plannedDate !== null && p.plannedDate > now));
+    const queue = format ? waitingRelease.filter((p) => p.format === format) : waitingRelease;
     // Une seule lecture complète, partagée par les alertes : elles ont besoin des
     // publiées (celles qui ont une sortie rattachée) autant que de la file.
     const all = this.productions.findAll();
 
     // La prochaine à travailler est la première qui n'attend pas quelqu'un d'autre.
     // Si tout est en pause, on retombe sur la tête de file plutôt que sur rien.
-    const next = queue.find((p) => p.status !== 'paused') ?? queue[0] ?? null;
+    const workable = queue.filter((p) => p.status !== 'done');
+    const next = workable.find((p) => p.status !== 'paused') ?? workable[0] ?? null;
 
     const upcomingSlots = this.slots
       .findAll({

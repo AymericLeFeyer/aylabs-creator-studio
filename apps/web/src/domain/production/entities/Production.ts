@@ -25,10 +25,13 @@ export const FORMAT_LABELS: Record<ProductionFormat, string> = {
   short: 'Short / Réel',
 };
 
-/** L'écran de la file de chaque format : c'est là qu'on revient depuis une fiche. */
+/**
+ * L'écran de la file de chaque format : c'est là qu'on revient depuis une fiche.
+ * « Shorts & Réels » n'a plus d'écran : un short restant se range avec les vidéos.
+ */
 export const FORMAT_ROUTES: Record<ProductionFormat, string> = {
   video: '/production',
-  short: '/shorts',
+  short: '/production',
 };
 
 /** Les libellés vivent ici uniquement : les renommer ne touche ni la base ni l'API. */

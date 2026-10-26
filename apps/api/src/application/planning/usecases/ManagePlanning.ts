@@ -107,6 +107,13 @@ export interface ReplanOptions {
   nowDate?: IsoDate;
   /** Heure locale du navigateur, en minutes depuis minuit. */
   nowMinutes?: number;
+  /**
+   * Ne poser que ces lignes de pile (mode `incremental` seulement). C'est ce qui garantit
+   * qu'ajouter une vidéo ne touche **qu'à elle** : sans ce filtre, le reste à couvrir des
+   * autres lignes — un créneau supprimé, raccourci, une estimation recalée — était reposé
+   * au passage, en tête de pile, et toute la semaine prévisualisée se recomposait.
+   */
+  onlyItemIds?: string[];
 }
 
 /**
@@ -236,6 +243,7 @@ export class ManagePlanning {
     }
 
     let sequence = this.items.nextSequence();
+    const added: string[] = [];
     const pending = this.items.findAll({
       productionIds: [input.productionId],
       statuses: ['pending'],
@@ -254,7 +262,7 @@ export class ManagePlanning {
         for (const item of pending) {
           if (item.stepId === step.id && item.todoId !== null) this.removeItem(item.id);
         }
-        this.items.create({
+        const block = this.items.create({
           productionId: input.productionId,
           stepId: step.id,
           todoId: null,
@@ -269,6 +277,7 @@ export class ManagePlanning {
               : (step.defaultMinutes ?? FALLBACK_MINUTES),
           sequence: sequence++,
         });
+        added.push(block.id);
         continue;
       }
 
@@ -280,7 +289,7 @@ export class ManagePlanning {
       }
 
       for (const todo of selected) {
-        this.items.create({
+        const line = this.items.create({
           productionId: input.productionId,
           stepId: step.id,
           todoId: todo.id,
@@ -288,13 +297,14 @@ export class ManagePlanning {
           plannedMinutes: todo.defaultMinutes ?? step.defaultMinutes ?? FALLBACK_MINUTES,
           sequence: sequence++,
         });
+        added.push(line.id);
       }
     }
 
     // Une tâche ponctuelle rangée sous aucune étape ne serait vue par aucune boucle.
     for (const todo of todos) {
       if (todo.checked || todo.stepId !== null || !wantedTodos.has(todo.id)) continue;
-      this.items.create({
+      const line = this.items.create({
         productionId: input.productionId,
         stepId: null,
         todoId: todo.id,
@@ -302,12 +312,13 @@ export class ManagePlanning {
         plannedMinutes: todo.defaultMinutes ?? FALLBACK_MINUTES,
         sequence: sequence++,
       });
+      added.push(line.id);
     }
 
-    // Incrémental : la nouvelle vidéo reçoit ses créneaux, celles qui étaient déjà calées
-    // ne bougent pas d'un pouce. Réécrire toute la journée à chaque ajout déplaçait ce
-    // qu'on venait de caler à la main.
-    await this.replan({ ...options, mode: 'incremental' });
+    // Incrémental **et borné aux lignes qu'on vient d'ajouter** : la nouvelle vidéo reçoit
+    // ses créneaux dans la place libre, et rien d'autre n'est posé ni déplacé. Le reste à
+    // couvrir des autres lignes attend le bouton « Repositionner ».
+    await this.replan({ ...options, mode: 'incremental', onlyItemIds: added });
     return this.items.findAll({ statuses: ['pending'] });
   }
 
@@ -507,7 +518,11 @@ export class ManagePlanning {
       this.clearElapsed(notBefore, options.onlyDate ?? null);
     }
 
-    const pending = this.items.findAll({ statuses: ['pending'] });
+    const only =
+      mode === 'incremental' && options.onlyItemIds ? new Set(options.onlyItemIds) : null;
+    const pending = this.items
+      .findAll({ statuses: ['pending'] })
+      .filter((item) => !only || only.has(item.id));
     const tasks: PlanTask[] = pending
       .map((item) => ({
         id: item.id,
