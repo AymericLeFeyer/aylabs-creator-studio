@@ -3386,6 +3386,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 
 - **Aucun mail ne part sans confirmation, et l'IA n'envoie jamais.** Voir le domaine `mail`. Toute nouvelle fonctionnalité mail (relance, modèle, envoi groupé) doit passer par le brouillon + la modale de confirmation, jamais par un appel direct à `ManageMail.send`.
 - **Le corps HTML d'un mail ne s'injecte jamais dans la page** : iframe `sandbox` sans `allow-scripts`, images distantes bloquées par CSP. Ne pas ajouter `allow-scripts` (avec `allow-same-origin`, le mail pourrait sortir du bac à sable).
+- **Proton Mail Bridge se met à jour tout seul, dans son volume, et la 3.2x exige `libfido2`** : l'image communautaire `shenxn/protonmail-bridge` ne l'a pas, le conteneur démarre, se met à jour puis ne relance plus (`libfido2.so.1: cannot open shared object file`). D'où `docker/proton-bridge/Dockerfile` (l'image communautaire + `libfido2-1`), publiée par la CI comme 3ᵉ image (`-proton-bridge`). Ne pas bloquer la mise à jour : Proton refuse les vieilles versions ; fournir les dépendances.
 - **Gmail exige un mot de passe d'application** pour IMAP/SMTP (validation en deux étapes activée) ; le mot de passe habituel est refusé. Port SMTP 465 = SSL activé, 587 = SSL désactivé (STARTTLS).
 - **`useLocalStorage` est partagé par clé** (`useSyncExternalStore` + abonnés par clé +
   événement `storage`). Il tenait un `useState` par instance : Paramètres → Général écrivait

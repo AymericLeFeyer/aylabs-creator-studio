@@ -40,7 +40,17 @@ jobs:
 
     strategy:
       matrix:
-        app: [api, web]
+        include:
+          - app: api
+            context: .
+            file: apps/api/Dockerfile
+          - app: web
+            context: .
+            file: apps/web/Dockerfile
+          # Proton Mail Bridge, complété de ses dépendances (voir le Dockerfile).
+          - app: proton-bridge
+            context: docker/proton-bridge
+            file: docker/proton-bridge/Dockerfile
 
     steps:
       - uses: actions/checkout@v4
@@ -73,8 +83,8 @@ jobs:
       - name: Construire et publier
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: apps/${{ matrix.app }}/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

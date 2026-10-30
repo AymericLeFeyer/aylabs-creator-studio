@@ -49,8 +49,9 @@ services:
 
   # Proton Mail Bridge : la passerelle officielle de Proton, qui expose ta boîte en IMAP/SMTP
   # classiques (Proton n'en expose aucun lui-même, tout est chiffré de bout en bout).
-  # Image communautaire (github.com/shenxn/protonmail-bridge-docker). Abonnement Proton
-  # payant obligatoire.
+  # Image communautaire (github.com/shenxn/protonmail-bridge-docker) complétée de libfido2,
+  # dont Bridge a besoin après sa mise à jour automatique (docker/proton-bridge/Dockerfile,
+  # publiée par la CI). Abonnement Proton payant obligatoire.
   #
   # **Aucun port publié** : seul le conteneur de l'API lui parle, par le réseau interne,
   # sur `protonmail-bridge` — IMAP 143, SMTP 25, STARTTLS avec un certificat auto-signé.
@@ -58,7 +59,7 @@ services:
   # Connexion à faire UNE fois, sur le VPS (la session vit ensuite dans le volume) :
   #   1. déployer la stack, puis arrêter ce seul conteneur (deux Bridge ne peuvent pas
   #      ouvrir le même volume) : docker stop creator-studio-proton-bridge
-  #   2. docker run --rm -it -v creator-studio-proton:/root shenxn/protonmail-bridge init
+  #   2. docker run --rm -it -v creator-studio-proton:/root ghcr.io/aymericlefeyer/aylabs-creator-studio-proton-bridge:latest init
   #        > login   (adresse Proton, mot de passe, code 2FA)
   #        > info    (note le « Username » et le « Password » générés par Bridge)
   #        > exit
@@ -66,7 +67,7 @@ services:
   #   4. Paramètres -> Admin -> Mails -> préréglage « Proton (Bridge) », avec CES identifiants
   #      (le mot de passe de Bridge, jamais celui du compte Proton).
   protonmail-bridge:
-    image: shenxn/protonmail-bridge:${PROTON_BRIDGE_TAG:-latest}
+    image: ghcr.io/aymericlefeyer/aylabs-creator-studio-proton-bridge:${TAG:-latest}
     container_name: creator-studio-proton-bridge
     restart: unless-stopped
     volumes:
