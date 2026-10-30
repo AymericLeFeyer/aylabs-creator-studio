@@ -50,7 +50,7 @@ export interface NavSection {
  * rien ne dit que « YouTube » et « Instagram » répondent à la même question, ni que
  * « Sponsors » et « Chiffre d'affaires » se consultent l'un après l'autre. Quatre
  * familles courtes se balaient d'un regard, et le titre suffit à savoir dans laquelle
- * chercher : **Production**, **Audience**, **Revenus**, **Admin**.
+ * chercher : **Production**, **Admin**, **Audience**, **Revenus**.
  *
  * Le dashboard reste **hors famille**, en tête et sans titre : c'est la vue d'ensemble,
  * il n'appartient à aucun des métiers et lui donner un intitulé à lui seul ferait une
@@ -93,6 +93,19 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    // Le suivi administratif n'est pas un revenu : cocher sa déclaration d'Urssaf ne
+    // répond pas à la même question que « combien ai-je gagné ». Une famille à part
+    // (ex-« Entreprise ») : la société, et la boîte mail où arrivent les demandes. Placée
+    // juste après Production : les mails des marques font avancer les vidéos, on y passe
+    // plus souvent que par l'audience ou les revenus.
+    label: 'Admin',
+    items: [
+      // Mails en tête : c'est l'écran qu'on ouvre chaque jour, le légal une fois par mois.
+      { to: '/mails', label: 'Mails', icon: Mail, end: false },
+      { to: '/legal', label: 'Légal', icon: ScrollText, end: false },
+    ],
+  },
+  {
     label: 'Audience',
     items: [
       { to: '/youtube', label: 'YouTube', icon: Youtube, end: false },
@@ -127,16 +140,6 @@ export const NAV_SECTIONS: NavSection[] = [
       // « Affiliations » : Domadoo (collecté tout seul) et les autres plateformes
       // (rattachées à la main). Deux onglets d'un même écran, plus deux entrées de menu.
       { to: '/affiliations', label: 'Affiliations', icon: Link2, end: false },
-    ],
-  },
-  {
-    // Le suivi administratif n'est pas un revenu : cocher sa déclaration d'Urssaf ne
-    // répond pas à la même question que « combien ai-je gagné ». Une famille à part
-    // (ex-« Entreprise ») : la société, et la boîte mail où arrivent les demandes.
-    label: 'Admin',
-    items: [
-      { to: '/legal', label: 'Légal', icon: ScrollText, end: false },
-      { to: '/mails', label: 'Mails', icon: Mail, end: false },
     ],
   },
 ];

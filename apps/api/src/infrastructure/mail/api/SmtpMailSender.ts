@@ -18,10 +18,10 @@ const escapeHtml = (text: string): string =>
  */
 export class SmtpMailSender implements MailSender {
   async send(connection: MailConnection, mail: OutgoingMail) {
-    const domain = connection.fromAddress.split('@')[1] ?? 'localhost';
+    const domain = mail.from.split('@')[1] ?? 'localhost';
     const messageId = `<${randomUUID()}@${domain}>`;
     const options = {
-      from: { name: connection.fromName, address: connection.fromAddress },
+      from: { name: connection.fromName, address: mail.from },
       to: mail.to.map((entry) => ({ name: entry.name, address: entry.address })),
       cc: mail.cc.map((entry) => ({ name: entry.name, address: entry.address })),
       subject: mail.subject,
@@ -44,7 +44,7 @@ export class SmtpMailSender implements MailSender {
     try {
       await transport.sendMail({
         envelope: {
-          from: connection.fromAddress,
+          from: mail.from,
           to: [...mail.to, ...mail.cc].map((entry) => entry.address),
         },
         raw,

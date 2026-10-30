@@ -18,6 +18,7 @@ import {
   Youtube,
   type LucideIcon,
   Mail,
+  Sparkles,
 } from 'lucide-react';
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
@@ -40,6 +41,7 @@ import { BrandsPage } from './BrandsPage.tsx';
 import { StepsPage } from './StepsPage.tsx';
 import { ScriptSettingsPage } from './ScriptSettingsPage.tsx';
 import { MailSettingsPage } from './MailSettingsPage.tsx';
+import { AiSettingsPage } from './AiSettingsPage.tsx';
 import { PlanningSettingsPage } from './PlanningSettingsPage.tsx';
 import { InstagramSettingsPage } from './InstagramSettingsPage.tsx';
 import { TikTokSettingsPage } from './TikTokSettingsPage.tsx';
@@ -115,6 +117,13 @@ const GROUPS: SettingsGroup[] = [
     ],
   },
   {
+    label: 'Admin',
+    entries: [
+      { id: 'mails', label: 'Mails', icon: Mail, render: () => <MailSettingsPage /> },
+      { id: 'societe', label: 'Société', icon: Building2, render: () => <CompanyPage /> },
+    ],
+  },
+  {
     label: 'Audience',
     entries: [
       { id: 'youtube', label: 'YouTube', icon: Youtube, render: () => <ChannelsPage /> },
@@ -147,16 +156,10 @@ const GROUPS: SettingsGroup[] = [
     ],
   },
   {
-    label: 'Admin',
-    entries: [
-      { id: 'societe', label: 'Société', icon: Building2, render: () => <CompanyPage /> },
-      { id: 'mails', label: 'Mails', icon: Mail, render: () => <MailSettingsPage /> },
-    ],
-  },
-  {
     label: 'API',
     entries: [
       { id: 'api', label: 'Export & sources', icon: KeyRound, render: () => <ApiSettingsPage /> },
+      { id: 'ia', label: 'Assistant IA', icon: Sparkles, render: () => <AiSettingsPage /> },
     ],
   },
   {

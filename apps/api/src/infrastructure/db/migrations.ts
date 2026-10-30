@@ -1851,6 +1851,80 @@ const migrations: Migration[] = [
       ALTER TABLE mail_settings ADD COLUMN allow_self_signed INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    version: 52,
+    name: 'mail_addresses',
+    // Une boite Proton (Bridge) melange toutes les adresses du compte dans une seule INBOX.
+    // "addresses" : celles qu'on suit (une par ligne, vide = toutes). "recipients" : les
+    // adresses auxquelles un message a ete ecrit (To, Cc, Delivered-To, X-Original-To), en
+    // minuscules, entourees d'espaces pour un instr() sans faux positif. L'existant est
+    // repris depuis To et Cc, les seuls en-tetes deja stockes.
+    up: `
+      ALTER TABLE mail_settings ADD COLUMN addresses TEXT NOT NULL DEFAULT '';
+      ALTER TABLE mail_messages ADD COLUMN recipients TEXT NOT NULL DEFAULT '';
+      UPDATE mail_messages SET recipients = ' ' || COALESCE((
+        SELECT group_concat(lower(json_extract(entry.value, '$.address')), ' ')
+          FROM (SELECT value FROM json_each(mail_messages.to_json)
+                UNION ALL
+                SELECT value FROM json_each(mail_messages.cc_json)) AS entry
+      ), '') || ' ';
+    `,
+  },
+  {
+    version: 53,
+    name: 'ai_settings',
+    // L'assistant IA quitte les reglages mail pour Parametres -> API : il servira a autre
+    // chose que les mails. La cle chiffree est recopiee telle quelle (un chiffre ne se
+    // reecrit pas en SQL) : ManageAi la relit sous l'ancien contexte puis la rechiffre.
+    // Les colonnes "ai_api_key" / "ai_model" de "mail_settings" restent, mortes.
+    up: `
+      CREATE TABLE ai_settings (
+        id         TEXT PRIMARY KEY,
+        api_key    TEXT,
+        model      TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO ai_settings (id, api_key, model, created_at, updated_at)
+        SELECT 'default', ai_api_key, ai_model, created_at, updated_at
+          FROM mail_settings WHERE id = 'default';
+      INSERT OR IGNORE INTO ai_settings (id, created_at, updated_at)
+        VALUES ('default', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+    `,
+  },
+  {
+    version: 54,
+    name: 'mail_folders_attachments',
+    // "move_folders" : les dossiers du serveur proposes pour ranger un fil (une ligne par
+    // chemin). "note_body" : la partie redigee par l'IA de la note de video, gardee pour
+    // reecrire la note quand une piece jointe arrive sans rappeler l'IA.
+    // "mail_attachments" : une ligne par piece jointe ; "data" n'est rempli qu'a la demande
+    // (telechargement, note de video, rangement) — la boite entiere n'a pas a peser dans la
+    // base. Pas de cle etrangere : une piece deja telechargee doit survivre a un message
+    // reimporte, c'est elle que pointent les notes. Reprise des metadonnees existantes.
+    up: `
+      ALTER TABLE mail_settings ADD COLUMN move_folders TEXT NOT NULL DEFAULT '';
+      ALTER TABLE mail_threads ADD COLUMN note_body TEXT;
+      CREATE TABLE mail_attachments (
+        id           TEXT PRIMARY KEY,
+        message_id   TEXT NOT NULL,
+        position     INTEGER NOT NULL,
+        filename     TEXT NOT NULL,
+        content_type TEXT NOT NULL,
+        size         INTEGER NOT NULL,
+        data         BLOB,
+        created_at   TEXT NOT NULL,
+        UNIQUE (message_id, position)
+      );
+      INSERT INTO mail_attachments (id, message_id, position, filename, content_type, size, created_at)
+        SELECT lower(hex(randomblob(16))), m.id, CAST(a.key AS INTEGER),
+               COALESCE(json_extract(a.value, '$.filename'), 'piece jointe'),
+               COALESCE(json_extract(a.value, '$.contentType'), 'application/octet-stream'),
+               COALESCE(json_extract(a.value, '$.size'), 0),
+               m.created_at
+          FROM mail_messages m, json_each(m.attachments_json) a;
+    `,
+  },
 ];
 
 /**

@@ -1269,10 +1269,15 @@ export const updateMailSettingsSchema = z.object({
     .transform((value) => (value === '' ? null : value)),
   signature: z.string().max(5_000).optional(),
   rates: z.string().max(10_000).optional(),
+  addresses: z
+    .array(z.string().trim().toLowerCase().email('Adresse suivie invalide'))
+    .max(100)
+    .optional(),
   syncDays: z.number().int().min(1).max(365).optional(),
-  aiApiKey: z.string().trim().max(500).nullable().optional(),
-  aiModel: mailText,
+  moveFolders: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
 });
+
+export const moveMailThreadSchema = z.object({ folder: z.string().trim().min(1).max(300) });
 
 export const mailThreadsQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
@@ -1318,5 +1323,14 @@ export const sendMailSchema = z.object({
   subject: z.string().trim().max(500),
   text: z.string().min(1, 'Le message est vide').max(100_000),
   threadId: z.string().min(1).nullable().default(null),
+  /** Absente : l'adresse d'expédition par défaut. Sinon, une de `senders`, 400 autrement. */
+  from: z.string().trim().toLowerCase().email().optional(),
   confirm: z.literal(true, { errorMap: () => ({ message: 'Envoi non confirmé' }) }),
+});
+
+// --- Assistant IA ----------------------------------------------------------------
+
+export const updateAiSettingsSchema = z.object({
+  apiKey: z.string().trim().max(500).nullable().optional(),
+  model: z.string().trim().max(100).nullable().optional(),
 });

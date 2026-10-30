@@ -1,7 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type {
   MailAddress,
+  MailAddressCandidate,
   MailMessage,
+  MailScope,
+  StoredAttachment,
   MailThreadFilter,
   MailThreadLinks,
   MailThreadSummary,
@@ -38,6 +41,7 @@ interface MessageRow {
   outgoing: number;
   ai_summary: string | null;
   removed_at: string | null;
+  recipients: string;
 }
 
 interface ThreadRow {
@@ -89,11 +93,30 @@ const toDomain = (row: MessageRow): MailMessage => ({
 });
 
 /**
- * Les agrégats d'un fil, calculés à la lecture : le nombre de messages, ce qui reste à
- * lire, la dernière date. Rien n'est dénormalisé — une collecte n'a jamais à recompter.
+ * Le périmètre, en SQL : un message en fait partie s'il a été **envoyé depuis** une adresse
+ * suivie, ou **reçu sur** l'une d'elles (`recipients`, entouré d'espaces : `instr` ne peut
+ * pas confondre `a@x.fr` avec `ba@x.fr`). Sans adresse suivie, tout en fait partie.
+ */
+const scopeSql = (scope: MailScope): { sql: string; params: string[] } => {
+  if (scope.filter.length === 0) return { sql: '1 = 1', params: [] };
+  const marks = scope.filter.map(() => '?').join(', ');
+  const received = scope.filter.map(() => "instr(recipients, ' ' || ? || ' ') > 0").join(' OR ');
+  return {
+    sql: `((outgoing = 1 AND lower(from_address) IN (${marks})) OR (outgoing = 0 AND (${received})))`,
+    params: [...scope.filter, ...scope.filter],
+  };
+};
+
+/**
+ * Les agrégats d'un fil, calculés à la lecture et **bornés au périmètre** : un fil n'existe
+ * que s'il a au moins un message sur une adresse suivie, et seuls ceux-là comptent dans ses
+ * non lus. Rien n'est dénormalisé — changer les adresses suivies n'a rien à recalculer.
  * `active_incoming` dit si le fil est encore dans la boîte de réception sur le serveur.
  */
-const THREAD_SQL = `
+const threadSql = (scope: MailScope): { sql: string; params: string[] } => {
+  const { sql, params } = scopeSql(scope);
+  return {
+    sql: `
   SELECT t.*, th.brand_id, b.name AS brand_name, b.color AS brand_color,
          th.production_id, p.title AS production_title,
          th.summary, th.summary_at, th.note_id
@@ -105,12 +128,26 @@ const THREAD_SQL = `
              MAX(date) AS last_date,
              MAX(CASE WHEN attachments_json <> '[]' THEN 1 ELSE 0 END) AS has_attachments
         FROM mail_messages
+       WHERE ${sql}
        GROUP BY thread_id
     ) t
     LEFT JOIN mail_threads th ON th.id = t.thread_id
     LEFT JOIN brands b ON b.id = th.brand_id
     LEFT JOIN productions p ON p.id = th.production_id
-`;
+`,
+    params,
+  };
+};
+
+/** Les adresses auxquelles un message a été écrit, au format de la colonne `recipients`. */
+const recipientsOf = (message: NewMailMessage): string =>
+  ` ${[
+    ...new Set(
+      [...message.to, ...message.cc]
+        .map((entry) => entry.address.toLowerCase())
+        .concat(message.deliveredTo),
+    ),
+  ].join(' ')} `;
 
 export class SqliteMailStore implements MailStore {
   private readonly db: DatabaseSync;
@@ -155,27 +192,29 @@ export class SqliteMailStore implements MailStore {
 
   // --- Messages ---------------------------------------------------------------
 
-  insert(message: NewMailMessage): void {
+  insert(message: NewMailMessage): string | null {
     const exists = this.db
       .prepare('SELECT 1 FROM mail_messages WHERE folder = ? AND uid = ?')
       .get(message.folder, message.uid);
-    if (exists) return;
+    if (exists) return null;
 
+    const id = newId();
+    const threadId = this.resolveThread(message);
     this.db
       .prepare(
         `INSERT INTO mail_messages (id, folder, uid, message_id, in_reply_to, refs, thread_id,
            from_name, from_address, to_json, cc_json, subject, date, snippet, text_body,
-           html_body, attachments_json, seen, outgoing, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           html_body, attachments_json, seen, outgoing, recipients, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        newId(),
+        id,
         message.folder,
         message.uid,
         message.messageId,
         message.inReplyTo,
         message.references.join(' '),
-        this.resolveThread(message),
+        threadId,
         message.from.name,
         message.from.address,
         JSON.stringify(message.to),
@@ -188,8 +227,85 @@ export class SqliteMailStore implements MailStore {
         JSON.stringify(message.attachments),
         message.seen ? 1 : 0,
         message.outgoing ? 1 : 0,
+        recipientsOf(message),
         new Date().toISOString(),
       );
+    const attach = this.db.prepare(
+      `INSERT OR IGNORE INTO mail_attachments
+         (id, message_id, position, filename, content_type, size, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    message.attachments.forEach((attachment, position) =>
+      attach.run(
+        newId(),
+        id,
+        position,
+        attachment.filename,
+        attachment.contentType,
+        attachment.size,
+        new Date().toISOString(),
+      ),
+    );
+    return threadId;
+  }
+
+  findAttachment(id: string): StoredAttachment | null {
+    const row = this.db
+      .prepare(
+        `SELECT a.*, m.folder, m.uid FROM mail_attachments a
+           LEFT JOIN mail_messages m ON m.id = a.message_id AND m.removed_at IS NULL
+          WHERE a.id = ?`,
+      )
+      .get(id) as
+      | {
+          id: string;
+          message_id: string;
+          position: number;
+          filename: string;
+          content_type: string;
+          size: number;
+          data: Uint8Array | null;
+          folder: string | null;
+          uid: number | null;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      id: row.id,
+      messageId: row.message_id,
+      position: row.position,
+      filename: row.filename,
+      contentType: row.content_type,
+      size: row.size,
+      data: row.data ? Buffer.from(row.data) : null,
+      folder: row.folder,
+      uid: row.uid,
+    };
+  }
+
+  saveAttachmentData(id: string, data: Buffer): void {
+    this.db.prepare('UPDATE mail_attachments SET data = ? WHERE id = ?').run(data, id);
+  }
+
+  markMessagesRemoved(ids: string[]): void {
+    const statement = this.db.prepare(
+      'UPDATE mail_messages SET removed_at = ? WHERE id = ? AND removed_at IS NULL',
+    );
+    const now = new Date().toISOString();
+    for (const id of ids) statement.run(now, id);
+  }
+
+  threadNoteBody(id: string): string | null {
+    const row = this.db.prepare('SELECT note_body FROM mail_threads WHERE id = ?').get(id) as
+      { note_body: string | null } | undefined;
+    return row?.note_body ?? null;
+  }
+
+  setThreadNoteBody(id: string, html: string): void {
+    this.ensureThread(id);
+    this.db
+      .prepare('UPDATE mail_threads SET note_body = ?, updated_at = ? WHERE id = ?')
+      .run(html, new Date().toISOString(), id);
   }
 
   /**
@@ -249,14 +365,41 @@ export class SqliteMailStore implements MailStore {
     }
   }
 
-  unreadCount(): number {
+  unreadCount(scope: MailScope): number {
+    const { sql, params } = scopeSql(scope);
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS n FROM mail_messages
-          WHERE seen = 0 AND outgoing = 0 AND removed_at IS NULL`,
+          WHERE seen = 0 AND outgoing = 0 AND removed_at IS NULL AND ${sql}`,
       )
-      .get() as { n: number };
+      .get(...params) as { n: number };
     return row.n;
+  }
+
+  /**
+   * Les adresses vues : celles auxquelles des messages ont été **reçus**, et celles depuis
+   * lesquelles j'en ai **envoyé**. Les interlocuteurs en copie y figurent aussi, avec peu
+   * de messages — c'est à l'écran qu'on coche les siennes.
+   */
+  addressCandidates(): MailAddressCandidate[] {
+    const rows = this.db
+      .prepare('SELECT recipients, outgoing, from_address FROM mail_messages')
+      .all() as unknown as Array<{ recipients: string; outgoing: number; from_address: string }>;
+    const counts = new Map<string, MailAddressCandidate>();
+    const bump = (address: string, key: 'received' | 'sent') => {
+      if (!address.includes('@')) return;
+      const entry = counts.get(address) ?? { address, received: 0, sent: 0 };
+      entry[key] += 1;
+      counts.set(address, entry);
+    };
+    for (const row of rows) {
+      if (row.outgoing === 1) bump(row.from_address.toLowerCase(), 'sent');
+      else
+        for (const address of row.recipients.split(' ').filter(Boolean)) bump(address, 'received');
+    }
+    return [...counts.values()]
+      .sort((a, b) => b.received + b.sent - (a.received + a.sent))
+      .slice(0, 60);
   }
 
   findMessage(id: string): MailMessage | null {
@@ -271,9 +414,10 @@ export class SqliteMailStore implements MailStore {
 
   // --- Fils -------------------------------------------------------------------
 
-  listThreads(filter: MailThreadFilter, me: string | null): MailThreadSummary[] {
+  listThreads(filter: MailThreadFilter, scope: MailScope): MailThreadSummary[] {
+    const base = threadSql(scope);
     const where: string[] = [];
-    const params: Array<string | number> = [];
+    const params: Array<string | number> = [...base.params];
     const view = filter.view ?? 'inbox';
 
     if (view === 'inbox') where.push('t.active_incoming > 0');
@@ -298,7 +442,7 @@ export class SqliteMailStore implements MailStore {
 
     const rows = this.db
       .prepare(
-        `${THREAD_SQL} ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        `${base.sql} ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
          ORDER BY t.last_date DESC LIMIT ?`,
       )
       .all(...params, filter.limit ?? 200) as unknown as ThreadRow[];
@@ -318,11 +462,12 @@ export class SqliteMailStore implements MailStore {
       byThread.set(row.thread_id, list);
     }
 
-    return rows.map((row) => this.summarize(row, byThread.get(row.thread_id) ?? [], me));
+    return rows.map((row) => this.summarize(row, byThread.get(row.thread_id) ?? [], scope));
   }
 
-  findThread(id: string, me: string | null): MailThreadView | null {
-    const row = this.db.prepare(`${THREAD_SQL} WHERE t.thread_id = ?`).get(id) as
+  findThread(id: string, scope: MailScope): MailThreadView | null {
+    const base = threadSql(scope);
+    const row = this.db.prepare(`${base.sql} WHERE t.thread_id = ?`).get(...base.params, id) as
       ThreadRow | undefined;
     if (!row) return null;
     const messages = (
@@ -330,12 +475,33 @@ export class SqliteMailStore implements MailStore {
         .prepare('SELECT * FROM mail_messages WHERE thread_id = ? ORDER BY date')
         .all(id) as unknown as MessageRow[]
     ).map(toDomain);
+    // Les identifiants des pièces jointes, pour les liens de téléchargement.
+    const attachmentRows = this.db
+      .prepare(
+        `SELECT a.id, a.message_id, a.position FROM mail_attachments a
+           JOIN mail_messages m ON m.id = a.message_id WHERE m.thread_id = ?`,
+      )
+      .all(id) as unknown as Array<{ id: string; message_id: string; position: number }>;
+    for (const message of messages) {
+      message.attachments = message.attachments.map((attachment, position) => ({
+        ...attachment,
+        id:
+          attachmentRows.find((row) => row.message_id === message.id && row.position === position)
+            ?.id ?? undefined,
+      }));
+    }
+    const recipients = (
+      this.db
+        .prepare('SELECT recipients FROM mail_messages WHERE thread_id = ? ORDER BY date')
+        .all(id) as unknown as Array<{ recipients: string }>
+    ).map((entry) => entry.recipients);
     // Une note supprimée depuis la fiche de la vidéo ne doit pas être réécrite : on la recrée.
     const noteExists =
       row.note_id !== null &&
       this.db.prepare('SELECT 1 FROM production_notes WHERE id = ?').get(row.note_id) !== undefined;
     return {
-      ...this.summarize(row, messages, me),
+      ...this.summarize(row, messages, scope),
+      replyFrom: this.replyFrom(messages, recipients, scope),
       summary: row.summary,
       summaryAt: row.summary_at,
       noteId: noteExists ? row.note_id : null,
@@ -343,15 +509,38 @@ export class SqliteMailStore implements MailStore {
     };
   }
 
-  private summarize(row: ThreadRow, messages: MailMessage[], me: string | null): MailThreadSummary {
+  /**
+   * L'adresse depuis laquelle répondre : la plus récente des miennes à laquelle le fil a été
+   * écrit (ou depuis laquelle j'ai déjà répondu). Répondre depuis une autre trahirait l'alias
+   * — la marque a écrit à « partenariats@ », elle doit recevoir de « partenariats@ ».
+   */
+  private replyFrom(
+    messages: MailMessage[],
+    recipients: string[],
+    scope: MailScope,
+  ): string | null {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]!;
+      if (message.outgoing) {
+        const from = message.from.address.toLowerCase();
+        if (scope.mine.includes(from)) return from;
+        continue;
+      }
+      const hit = scope.mine.find((address) => recipients[index]?.includes(` ${address} `));
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  private summarize(row: ThreadRow, messages: MailMessage[], scope: MailScope): MailThreadSummary {
     const last = messages.at(-1);
-    const mine = me?.toLowerCase() ?? null;
+    const mine = new Set(scope.mine);
     const participants = new Map<string, MailAddress>();
     for (const message of messages) {
       const people = message.outgoing ? [...message.to, ...message.cc] : [message.from];
       for (const person of people) {
         const key = person.address.toLowerCase();
-        if (!key || key === mine || participants.has(key)) continue;
+        if (!key || mine.has(key) || participants.has(key)) continue;
         participants.set(key, person);
       }
     }

@@ -3,11 +3,14 @@ import type { Container } from '../../container.ts';
 import {
   mailAiSchema,
   mailThreadsQuerySchema,
+  moveMailThreadSchema,
   sendMailSchema,
+  todayQuerySchema,
   updateMailSettingsSchema,
   updateMailThreadSchema,
 } from '../validation.ts';
 import { param } from '../helpers.ts';
+import { todayIn } from '../../shared/dates.ts';
 
 /**
  * La boîte mail. Les réglages ne laissent jamais sortir un secret (`passwordSource`,
@@ -28,6 +31,27 @@ export const mailsRouter = (container: Container): Router => {
 
   router.post('/settings/test', async (_req, res) => {
     res.json(await mail.test());
+  });
+
+  // Lus en direct sur le serveur : les dossiers se créent dans Proton, pas ici.
+  router.get('/folders', async (_req, res) => {
+    res.json(await mail.folders());
+  });
+
+  router.get('/attachments/:id', async (req, res) => {
+    const attachment = await mail.attachment(param(req, 'id'));
+    res.setHeader('Content-Type', attachment.contentType || 'application/octet-stream');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
+    );
+    // Le contenu ne change jamais : une fois téléchargée, la pièce est servie du cache.
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.send(attachment.data);
+  });
+
+  router.get('/addresses', (_req, res) => {
+    res.json(mail.addressCandidates());
   });
 
   router.get('/stats', (_req, res) => {
@@ -51,12 +75,24 @@ export const mailsRouter = (container: Container): Router => {
     const id = param(req, 'id');
     const { read, ...links } = updateMailThreadSchema.parse(req.body);
     if (links.brandId !== undefined || links.productionId !== undefined) mail.link(id, links);
+    // Rattacher à une vidéo y fait naître la note des pièces jointes déjà reçues.
+    if (links.productionId) await container.mailVideoNotes.refresh(id);
     res.json(read === undefined ? mail.thread(id) : await mail.setRead(id, read));
+  });
+
+  router.post('/threads/:id/move', async (req, res) => {
+    res.json(await mail.move(param(req, 'id'), moveMailThreadSchema.parse(req.body).folder));
   });
 
   router.post('/threads/:id/ai', async (req, res) => {
     const text = await container.mailAssistant.run(param(req, 'id'), mailAiSchema.parse(req.body));
     res.json({ text });
+  });
+
+  // Le jour **local** du navigateur : l'API tourne en UTC, et « mercredi » se lit depuis lui.
+  router.post('/threads/:id/check-dates', async (req, res) => {
+    const today = todayQuerySchema.parse(req.query).today ?? todayIn(container.config.timeZone);
+    res.json(await container.mailAssistant.checkDates(param(req, 'id'), today));
   });
 
   router.post('/threads/:id/video-note', async (req, res) => {
@@ -68,8 +104,8 @@ export const mailsRouter = (container: Container): Router => {
   });
 
   router.post('/send', async (req, res) => {
-    const { to, cc, subject, text, threadId } = sendMailSchema.parse(req.body);
-    res.json(await mail.send({ to, cc, subject, text, threadId }));
+    const { to, cc, subject, text, threadId, from } = sendMailSchema.parse(req.body);
+    res.json(await mail.send({ to, cc, subject, text, threadId, from: from ?? null }));
   });
 
   return router;

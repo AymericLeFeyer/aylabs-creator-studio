@@ -1,6 +1,9 @@
 import type {
   MailAddress,
+  MailAddressCandidate,
   MailConnection,
+  MailFolderInfo,
+  MailScope,
   MailSettingsInput,
   MailSettingsView,
   MailStats,
@@ -11,7 +14,6 @@ import type {
   SecretSource,
   StoredMailSettings,
 } from '../../../domain/mail/entities/Mail.ts';
-import { DEFAULT_AI_MODEL } from '../../../domain/mail/entities/Mail.ts';
 import type {
   MailSender,
   MailServer,
@@ -24,12 +26,10 @@ import { badRequest, conflict, notFound } from '../../../shared/errors.ts';
 
 /** Données authentifiées des chiffrés : recopier l'un dans l'autre le rend illisible. */
 const PASSWORD_CONTEXT = 'mail:password';
-const AI_KEY_CONTEXT = 'mail:aiKey';
 
 /** Ce que l'environnement fournit. Il l'emporte toujours sur l'écran. */
 export interface MailEnv {
   password: string | null;
-  anthropicApiKey: string | null;
 }
 
 export interface MailSyncResult {
@@ -48,7 +48,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * La boîte mail : réglages, collecte, fils, et **le seul chemin d'envoi**.
  *
- * Seul ce use case chiffre et déchiffre le mot de passe et la clé de l'IA, comme
+ * Seul ce use case chiffre et déchiffre le mot de passe (la clé de l'IA vit dans
+ * `ManageAi`, Paramètres → API), comme
  * `ManageIntegrations` pour les secrets de l'export. La connexion en clair n'existe que le
  * temps d'un appel et ne sort jamais d'ici.
  */
@@ -59,7 +60,19 @@ export class ManageMail {
   private readonly env: MailEnv;
   private readonly servers: MailServerFactory;
   private readonly sender: MailSender;
+  /** L'assistant est-il configuré ? Lu pour l'écran, jamais sa clé. */
+  private readonly ai: { configured(): boolean };
   private syncing: Promise<MailSyncResult> | null = null;
+  /**
+   * Prévenu des fils qui ont reçu de nouveaux messages pendant un relevé : c'est ce qui
+   * fait arriver une pièce jointe dans la note de la vidéo sans clic. Posé après coup
+   * (`onThreadsChanged`) — le use case des notes dépend lui-même de celui-ci.
+   */
+  private threadsChanged: ((threadIds: string[]) => Promise<void>) | null = null;
+
+  onThreadsChanged(listener: (threadIds: string[]) => Promise<void>): void {
+    this.threadsChanged = listener;
+  }
 
   constructor(
     settings: MailSettingsRepository,
@@ -68,7 +81,9 @@ export class ManageMail {
     env: MailEnv,
     servers: MailServerFactory,
     sender: MailSender,
+    ai: { configured(): boolean },
   ) {
+    this.ai = ai;
     this.settings = settings;
     this.store = store;
     this.cipher = cipher;
@@ -96,11 +111,6 @@ export class ManageMail {
       stored.encryptedPassword,
       PASSWORD_CONTEXT,
     );
-    const aiKeySource = this.secretSource(
-      this.env.anthropicApiKey,
-      stored.encryptedAiKey,
-      AI_KEY_CONTEXT,
-    );
     return {
       imapHost: stored.imapHost,
       imapPort: stored.imapPort,
@@ -115,12 +125,13 @@ export class ManageMail {
       fromAddress: stored.fromAddress,
       signature: stored.signature,
       rates: stored.rates,
+      addresses: stored.addresses,
+      moveFolders: stored.moveFolders,
+      senders: this.senders(stored),
       syncDays: stored.syncDays,
-      aiKeySource,
-      aiModel: stored.aiModel ?? DEFAULT_AI_MODEL,
       secretsKeyConfigured: this.cipher.available,
       configured: this.connectionOf(stored) !== null,
-      aiConfigured: aiKeySource === 'env' || aiKeySource === 'app',
+      aiConfigured: this.ai.configured(),
     };
   }
 
@@ -141,8 +152,17 @@ export class ManageMail {
     if (input.fromAddress !== undefined) patch.fromAddress = text(input.fromAddress);
     if (input.signature !== undefined) patch.signature = input.signature;
     if (input.rates !== undefined) patch.rates = input.rates;
+    if (input.addresses !== undefined) {
+      patch.addresses = [
+        ...new Set(input.addresses.map((address) => address.trim().toLowerCase())),
+      ].filter(Boolean);
+    }
     if (input.syncDays !== undefined) patch.syncDays = input.syncDays;
-    if (input.aiModel !== undefined) patch.aiModel = text(input.aiModel);
+    if (input.moveFolders !== undefined) {
+      patch.moveFolders = [...new Set(input.moveFolders.map((path) => path.trim()))].filter(
+        Boolean,
+      );
+    }
 
     if (input.password !== undefined) {
       if (this.env.password) {
@@ -155,17 +175,6 @@ export class ManageMail {
         ? this.cipher.encrypt(input.password, PASSWORD_CONTEXT)
         : null;
     }
-    if (input.aiApiKey !== undefined) {
-      if (this.env.anthropicApiKey) {
-        throw conflict(
-          'La clé de l’IA vient de ANTHROPIC_API_KEY : elle se change dans l’environnement.',
-        );
-      }
-      patch.encryptedAiKey = input.aiApiKey
-        ? this.cipher.encrypt(input.aiApiKey, AI_KEY_CONTEXT)
-        : null;
-    }
-
     this.settings.update(patch);
     return this.view();
   }
@@ -197,34 +206,35 @@ export class ManageMail {
     return connection;
   }
 
-  /** Mon adresse, pour ne pas me compter parmi les interlocuteurs d'un fil. */
-  me(): string | null {
-    const stored = this.settings.get();
-    return stored.fromAddress ?? stored.username;
+  /** L'adresse d'expédition par défaut, puis les adresses suivies. */
+  private senders(stored: StoredMailSettings): string[] {
+    const main = (stored.fromAddress ?? stored.username)?.toLowerCase();
+    return [...new Set([...(main ? [main] : []), ...stored.addresses])];
   }
 
-  /** Ce dont l'assistant a besoin. La clé ne sort de ce use case que vers lui. */
-  aiContext(): {
-    apiKey: string;
-    model: string;
-    fromName: string;
-    signature: string;
-    rates: string;
-  } {
+  /** Le périmètre de la boîte : ce qui est suivi, et ce qui me désigne. */
+  scope(): MailScope {
     const stored = this.settings.get();
-    const apiKey =
-      this.env.anthropicApiKey ??
-      (stored.encryptedAiKey ? this.cipher.decrypt(stored.encryptedAiKey, AI_KEY_CONTEXT) : null);
-    if (!apiKey) {
-      throw badRequest('Aucune clé API Anthropic : renseigne-la dans Paramètres → Admin → Mails.');
-    }
     return {
-      apiKey,
-      model: stored.aiModel ?? DEFAULT_AI_MODEL,
-      fromName: stored.fromName,
-      signature: stored.signature,
-      rates: stored.rates,
+      filter: stored.addresses,
+      mine: [
+        ...new Set([
+          ...this.senders(stored),
+          ...(stored.username ? [stored.username.toLowerCase()] : []),
+        ]),
+      ],
     };
+  }
+
+  /** Les adresses vues dans la boîte, pour cocher celles à suivre. */
+  addressCandidates(): MailAddressCandidate[] {
+    return this.store.addressCandidates();
+  }
+
+  /** Ce que l'assistant reprend pour écrire en mon nom : nom, signature, tarifs. */
+  writingContext(): { fromName: string; signature: string; rates: string } {
+    const stored = this.settings.get();
+    return { fromName: stored.fromName, signature: stored.signature, rates: stored.rates };
   }
 
   stats(): MailStats {
@@ -233,7 +243,7 @@ export class ManageMail {
     return {
       configured: view.configured,
       aiConfigured: view.aiConfigured,
-      unread: this.store.unreadCount(),
+      unread: this.store.unreadCount(this.scope()),
       lastSyncAt: stored.lastSyncAt,
       lastSyncError: stored.lastSyncError,
     };
@@ -275,6 +285,7 @@ export class ManageMail {
 
     let server: MailServer | null = null;
     let created = 0;
+    const touched = new Set<string>();
     try {
       server = await this.servers.open(connection);
       const since = new Date(Date.now() - this.settings.get().syncDays * DAY_MS);
@@ -292,7 +303,12 @@ export class ManageMail {
           result = await server.syncFolder(folder.path, 0, since);
         }
         for (const message of result.fresh) {
-          this.store.insert({ ...message, folder: folder.path, outgoing: folder.role === 'sent' });
+          const threadId = this.store.insert({
+            ...message,
+            folder: folder.path,
+            outgoing: folder.role === 'sent',
+          });
+          if (threadId && message.attachments.length > 0) touched.add(threadId);
           lastUid = Math.max(lastUid, message.uid);
           created += 1;
         }
@@ -326,6 +342,16 @@ export class ManageMail {
         });
       }
       this.settings.update({ lastSyncAt: new Date().toISOString(), lastSyncError: null });
+      await server.close();
+      server = null;
+      // Après la fermeture : la mise à jour des notes rouvre une session pour télécharger.
+      if (touched.size > 0 && this.threadsChanged) {
+        try {
+          await this.threadsChanged([...touched]);
+        } catch (error) {
+          console.warn('[mail] mise à jour des notes de vidéo :', error);
+        }
+      }
       return { created, error: null };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -339,11 +365,11 @@ export class ManageMail {
   // --- Fils ---------------------------------------------------------------------
 
   listThreads(filter: MailThreadFilter): MailThreadSummary[] {
-    return this.store.listThreads(filter, this.me());
+    return this.store.listThreads(filter, this.scope());
   }
 
   thread(id: string): MailThreadView {
-    const thread = this.store.findThread(id, this.me());
+    const thread = this.store.findThread(id, this.scope());
     if (!thread) throw notFound('Fil');
     return thread;
   }
@@ -351,6 +377,109 @@ export class ManageMail {
   link(id: string, links: MailThreadLinks): MailThreadView {
     this.store.linkThread(id, links);
     return this.thread(id);
+  }
+
+  // --- Dossiers et pièces jointes -------------------------------------------------
+
+  /** Les dossiers du compte, lus en direct : l'écran de réglages en coche quelques-uns. */
+  async folders(): Promise<MailFolderInfo[]> {
+    const server = await this.servers.open(this.connection());
+    try {
+      return await server.listFolders();
+    } finally {
+      await server.close();
+    }
+  }
+
+  /**
+   * Range un fil dans un dossier, **sur le serveur** : ses messages reçus quittent la
+   * boîte de réception (`MOVE`), et sont marqués partis ici — le fil sort de « Réception »
+   * mais reste lisible dans « Tous » et dans ses rattachements.
+   *
+   * Seuls les dossiers choisis dans les réglages sont admis. Les pièces jointes sont
+   * **téléchargées avant** : une fois rangé, le message n'est plus relevé, et ses pièces
+   * ne pourraient plus être relues.
+   */
+  async move(id: string, target: string): Promise<MailThreadView> {
+    if (!this.settings.get().moveFolders.includes(target)) {
+      throw badRequest(`« ${target} » n’est pas un dossier de rangement choisi dans les réglages.`);
+    }
+    const thread = this.thread(id);
+    const inbox = this.store.folders().find((folder) => folder.role === 'inbox')?.path ?? 'INBOX';
+    const messages = thread.messages.filter(
+      (message) => message.folder === inbox && !message.removedAt,
+    );
+    if (messages.length === 0) return thread;
+
+    const server = await this.servers.open(this.connection());
+    try {
+      await this.cacheAttachments(thread, server);
+      await server.move(
+        inbox,
+        messages.map((message) => message.uid),
+        target,
+      );
+    } finally {
+      await server.close();
+    }
+    this.store.markMessagesRemoved(messages.map((message) => message.id));
+    return this.thread(id);
+  }
+
+  /**
+   * Une pièce jointe, avec son contenu. Relue sur le serveur la première fois, puis gardée
+   * en base : c'est ce qui permet aux liens posés dans une note de vidéo de fonctionner
+   * encore quand le mail a été rangé ou supprimé.
+   */
+  async attachment(id: string): Promise<{ filename: string; contentType: string; data: Buffer }> {
+    const stored = this.store.findAttachment(id);
+    if (!stored) throw notFound('Pièce jointe');
+    if (stored.data) {
+      return { filename: stored.filename, contentType: stored.contentType, data: stored.data };
+    }
+    if (!stored.folder || stored.uid === null) {
+      throw notFound('Pièce jointe (le message n’est plus sur le serveur)');
+    }
+    const server = await this.servers.open(this.connection());
+    try {
+      const data = await server.fetchAttachment(stored.folder, stored.uid, stored.position);
+      if (!data) throw notFound('Pièce jointe (le message n’est plus sur le serveur)');
+      this.store.saveAttachmentData(id, data);
+      return { filename: stored.filename, contentType: stored.contentType, data };
+    } finally {
+      await server.close();
+    }
+  }
+
+  /**
+   * Télécharge en base toutes les pièces d'un fil qui ne le sont pas encore. Au mieux :
+   * une pièce introuvable n'empêche ni la note ni le rangement. Une session déjà ouverte
+   * peut être fournie (rangement), sinon une est ouverte pour l'occasion.
+   */
+  async cacheAttachments(thread: MailThreadView, open?: MailServer): Promise<void> {
+    const pending = thread.messages.flatMap((message) =>
+      message.attachments
+        .map((attachment) => (attachment.id ? this.store.findAttachment(attachment.id) : null))
+        .filter((stored) => stored && !stored.data && stored.folder && stored.uid !== null),
+    );
+    if (pending.length === 0) return;
+    const server = open ?? (await this.servers.open(this.connection()));
+    try {
+      for (const stored of pending) {
+        try {
+          const data = await server.fetchAttachment(
+            stored!.folder!,
+            stored!.uid!,
+            stored!.position,
+          );
+          if (data) this.store.saveAttachmentData(stored!.id, data);
+        } catch (error) {
+          console.warn(`[mail] pièce jointe ${stored!.filename} :`, error);
+        }
+      }
+    } finally {
+      if (!open) await server.close();
+    }
   }
 
   /** Lu / non lu, **sur le serveur d'abord** : la boîte du téléphone doit dire la même chose. */
@@ -397,9 +526,17 @@ export class ManageMail {
     subject: string;
     text: string;
     threadId: string | null;
+    /** `null` : l'adresse d'expédition par défaut. */
+    from: string | null;
   }): Promise<{ messageId: string; threadId: string | null }> {
     if (input.to.length === 0) throw badRequest('Au moins un destinataire.');
     const connection = this.connection();
+    const senders = this.senders(this.settings.get());
+    const from = input.from ?? connection.fromAddress;
+    // Seules mes adresses : le serveur refuserait de toute façon, autant le dire clairement.
+    if (!senders.includes(from.toLowerCase())) {
+      throw badRequest(`« ${from} » n’est pas une de tes adresses d’expédition.`);
+    }
 
     let inReplyTo: string | null = null;
     let references: string[] = [];
@@ -412,6 +549,7 @@ export class ManageMail {
     }
 
     const sent = await this.sender.send(connection, {
+      from,
       to: input.to,
       cc: input.cc,
       subject: input.subject,

@@ -39,7 +39,7 @@ services:
       # Boîte mail (Admin -> Mails). Facultatifs : l'environnement l'emporte sur l'écran.
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       MAIL_CRON: ${MAIL_CRON:-*/5 * * * *}
-      # Assistant mail (résumés, traductions, brouillons). Facultatif, saisissable à l'écran.
+      # Assistant IA (Paramètres -> API). Facultatif, saisissable à l'écran.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - creator-studio-data:/app/data

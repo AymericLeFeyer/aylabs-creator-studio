@@ -32,6 +32,14 @@ export const useMailSettings = () =>
 export const useUpdateMailSettings = () =>
   useMailMutation((input: MailSettingsInput) => mailApi.updateSettings(input));
 
+/** Les adresses vues dans la boîte, à cocher dans les réglages. */
+export const useMailAddresses = (enabled: boolean) =>
+  useQuery({
+    queryKey: ['mails', 'addresses'],
+    queryFn: () => mailApi.addresses(),
+    enabled,
+  });
+
 export const useTestMail = () => useMutation({ mutationFn: () => mailApi.test() });
 
 /**
@@ -126,3 +134,33 @@ export const useMailVideoNote = () => {
 
 /** Le seul hook qui fasse partir un mail — appelé par la modale de confirmation, et elle seule. */
 export const useSendMail = () => useMailMutation((input: SendMailInput) => mailApi.send(input));
+
+/**
+ * « Vérifier les dates » : pose des tâches dans Todo. Le planning et la pastille Todo les
+ * affichent, d'où `planningBoard` et `todoToday` — rien d'autre ne bouge côté studio.
+ */
+export const useMailDateCheck = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, today }: { id: string; today: string }) => mailApi.checkDates(id, today),
+    onSuccess: (check) => {
+      if (check.tasks.some((task) => task.status === 'created')) {
+        void queryClient.invalidateQueries({ queryKey: ['planningBoard'] });
+        void queryClient.invalidateQueries({ queryKey: ['todoToday'] });
+      }
+    },
+  });
+};
+
+/** Les dossiers du serveur : lus au clic seulement (`refetch`), jamais à l'ouverture. */
+export const useMailFolders = () =>
+  useQuery({
+    queryKey: ['mails', 'folders'],
+    queryFn: () => mailApi.folders(),
+    enabled: false,
+    staleTime: Infinity,
+  });
+
+/** Range un fil sur le serveur. Il quitte la réception : liste, fil et pastille repartent. */
+export const useMoveMailThread = () =>
+  useMailMutation(({ id, folder }: { id: string; folder: string }) => mailApi.move(id, folder));

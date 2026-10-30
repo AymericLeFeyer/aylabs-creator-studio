@@ -2241,7 +2241,8 @@ Tables (migration 50) :
 
 | Table           | Contenu                                                                                         |
 | --------------- | ----------------------------------------------------------------------------------------------- |
-| `mail_settings` | ligne unique : IMAP/SMTP, identifiant, **mot de passe et clé IA chiffrés** (`SecretBox`, contextes `mail:password` / `mail:aiKey`), signature, tarifs, `sync_days`, modèle IA, dernier relevé |
+| `mail_settings` | ligne unique : IMAP/SMTP, identifiant, **mot de passe chiffré** (`SecretBox`, contexte `mail:password`), signature, tarifs, `sync_days`, adresses suivies, dossiers de rangement, dernier relevé. `ai_api_key` / `ai_model` y sont **morts** depuis la migration 53 (voir le domaine `ai`) |
+| `mail_attachments` | une ligne par pièce jointe (`message_id`, `position` dans la liste filtrée, nom, type, taille) ; `data` (BLOB) rempli **à la demande** — pas de clé étrangère, une pièce téléchargée survit au message |
 | `mail_folders`  | `path`, `role` (`inbox`/`sent`), `uid_validity`, `last_uid`                                     |
 | `mail_messages` | copie locale des messages (clé unique `(folder, uid)`), `thread_id`, `seen`, `outgoing`, `ai_summary`, `removed_at` |
 | `mail_threads`  | ce qui appartient au studio : `brand_id`, `production_id` (`ON DELETE SET NULL`), `summary`, `note_id` |
@@ -2269,11 +2270,24 @@ Tables (migration 50) :
 - **Corps HTML affiché dans une iframe `sandbox` sans `allow-scripts`** (`MailBody`), CSP
   `img-src data: cid:` : les **images distantes sont bloquées** par défaut (pixels
   espions), un clic les autorise pour le message.
+- **Adresses suivies** (`mail_settings.addresses`, migration 52, une par ligne, vide =
+  toutes) : une boîte Proton Bridge mélange toutes les adresses du compte dans une seule
+  INBOX. Un message est **dans le périmètre** s'il est envoyé depuis une adresse suivie ou
+  reçu sur l'une d'elles — `mail_messages.recipients` (` a b `, minuscules : To, Cc,
+  `Delivered-To`, `X-Original-To`, ces deux derniers attrapant copies cachées et listes ;
+  l'existant repris depuis To/Cc). Filtre **à la lecture** (`scopeSql`) : un fil n'apparaît
+  que s'il a au moins un message dans le périmètre, seuls ceux-là comptent dans ses non lus
+  et dans la pastille ; rien n'est supprimé, décocher fait tout revenir. Les adresses sont
+  **proposées** depuis ce qui a été relevé (`GET /api/mails/addresses`,
+  `MailAddressesCard`, une coche = un enregistrement).
+- **Expéditeur** : `senders` = adresse d'expédition par défaut + adresses suivies. Une
+  réponse part de `MailThreadView.replyFrom` (la plus récente de mes adresses à laquelle le
+  fil a été écrit) — répondre depuis un autre alias le trahirait. `send` refuse en 400 un
+  `from` hors de `senders`. Le choix « De » n'apparaît qu'à partir de deux adresses.
 - **Marque** : rattachée au **fil** (une conversation avec une marque). Suggestion
   automatique quand le domaine d'un interlocuteur égale celui du `website` ou du
   `contactEmail` d'une marque. **Vidéo** : `production_id` du fil.
-- **IA** (`MailAssistant`, `ClaudeMailAi`, SDK officiel, `fallbacks: 'default'` sur
-  `claude-opus-5`/Fable seulement) : résumé d'un message (gardé dans `ai_summary`), résumé
+- **IA** (`MailAssistant`, sur le domaine `ai` — clé et modèle dans Paramètres → API) : résumé d'un message (gardé dans `ai_summary`), résumé
   du fil (gardé dans `mail_threads.summary`), relance, brouillons « Pas intéressé /
   Intéressé / Voici mes tarifs » (+ indications libres), traduction du brouillon (dans la
   langue du fil, ou une langue saisie). Brouillons : texte brut, langue et registre du
@@ -2281,32 +2295,93 @@ Tables (migration 50) :
   avertit s'il en reste), jamais de montant inventé — les tarifs viennent de
   `mail_settings.rates`. Le transcript retire les citations (`stripQuoted`) et tronque
   explicitement au-delà de 12 000 caractères par message.
-- **Note de vidéo** (`POST /threads/:id/video-note`) : une note « Échanges — <objet> » dans
-  `production_notes`, deux sections (« Résumé des échanges », « Ce qui est attendu »).
-  **Une seule par fil** (`mail_threads.note_id`), réécrite à chaque clic ; recréée si elle a
-  été supprimée ou si le fil a changé de vidéo. HTML assaini (`sanitizeNoteHtml` : h2, h3,
-  p, ul, ol, li, strong, em, br, blockquote, sans attribut).
-- **Secrets** : `MAIL_PASSWORD` et `ANTHROPIC_API_KEY` l'emportent sur l'écran (409 si on
-  tente de les changer). Sans `SECRETS_KEY`, l'écran refuse de les enregistrer.
-- Le studio **ne télécharge pas les pièces jointes** : il en liste le nom et la taille.
+- **« Vérifier les dates »** (`MailAssistant.checkDates`, `POST /threads/:id/check-dates
+  ?today=`) : l'IA lit le fil (avec le jour local, la marque, les dates de la vidéo
+  rattachée) et rend, **en JSON contraint** (`DATE_CHECK_SCHEMA`, structured outputs,
+  revalidé par `parseDateCheck`), les échéances qui **m'engagent**, un résumé « urgent ou
+  pas » et les incohérences avec la vidéo. Chaque échéance future devient une **tâche Todo**
+  (`[Marque] titre`, échéance, durée 15/30/60, la phrase du mail en note, premier tag de la
+  connexion) ; une échéance urgente en reçoit une seconde, « Commencer : … », à la date de
+  départ proposée (ramenée à aujourd'hui si passée). Une échéance dépassée est signalée,
+  jamais posée. **Une tâche n'est posée qu'une fois** : `todo_links`, clé
+  `mail:<fil>:<sha1(titre|date)>` (+ `:start`), et `externalId` `acs:<clé>` — recliquer
+  n'ajoute que le nouveau, une tâche supprimée dans Todo ne revient pas. Les incohérences
+  portent `field` (`plannedDate` | `startDate`) et `suggestedDate` : l'écran
+  (`MailDateCheckPanel`) propose « Mettre la sortie au … », **jamais appliqué sans clic**.
+  Sans Todo connecté, l'analyse est rendue quand même (`not_connected`).
+- **Note de vidéo** (`MailVideoNotes`) : une note « Échanges — <objet> » dans
+  `production_notes`, **une seule par fil** (`mail_threads.note_id`), réécrite à chaque
+  passage, recréée si supprimée ou si le fil a changé de vidéo. Son contenu = la partie
+  rédigée par l'IA (« Résumé des échanges », « Ce qui est attendu » ; gardée dans
+  `mail_threads.note_body`, HTML assaini par `sanitizeNoteHtml`) **+ une section « Pièces
+  jointes »** (liens `/api/mails/attachments/<id>`). Trois déclencheurs : rattacher le fil
+  à une vidéo (route `PATCH /threads/:id`), un relevé qui apporte un message avec pièce
+  jointe dans un fil rattaché (`ManageMail.onThreadsChanged`, branché dans `container.ts`),
+  et « Écrire la note dans la vidéo » (l'IA). Sans pièce jointe ni texte de l'IA, aucune
+  note n'est créée. `ProductionNotesPanel` affiche les pièces jointes d'une note en boutons
+  au-dessus de l'éditeur (`NoteAttachments`) : l'éditeur n'ouvre pas les liens au clic.
+- **Pièces jointes** : métadonnées en base à l'import (`mail_attachments`), contenu
+  **téléchargé à la demande** (`ManageMail.attachment` : relu sur le serveur par dossier,
+  UID et position, puis gardé en base) et **d'office** avant un rangement ou une note de
+  vidéo (`cacheAttachments`) — c'est ce qui garde les liens des notes valables une fois le
+  mail rangé. La position est celle de `visibleAttachments` (même filtre à l'import et au
+  téléchargement : tout sauf les images inline sans nom).
+- **Rangement** (`ManageMail.move`, `POST /threads/:id/move`) : les dossiers se chargent du
+  serveur dans les réglages (`GET /folders`, au clic seulement) et on en coche quelques-uns
+  (`mail_settings.move_folders`) ; seuls ceux-là sont admis (400 sinon). IMAP `MOVE` des
+  messages du fil encore dans la réception, puis `removed_at` posé localement : le fil sort
+  de « Réception », reste lisible dans « Tous » et ses rattachements.
+- **Secret** : `MAIL_PASSWORD` l'emporte sur l'écran (409 si on tente de le changer). Sans
+  `SECRETS_KEY`, l'écran refuse de l'enregistrer.
 
 Ports (`domain/mail/repositories/MailRepository.ts`) : `MailSettingsRepository`
 (`get`, `update`), `MailStore` (`folders`, `saveFolder`, `resetFolder`, `insert`,
-`knownUids`, `setSeen`, `markRemoved`, `unreadCount`, `listThreads`, `findThread`,
-`findMessage`, `setMessageSummary`, `linkThread`, `setThreadSummary`, `setThreadNote`),
-`MailServer` / `MailServerFactory` (IMAP), `MailSender` (SMTP), `MailAi`.
+`knownUids`, `setSeen`, `markRemoved`, `unreadCount(scope)`, `addressCandidates`,
+`listThreads(filter, scope)`, `findThread(id, scope)`,
+`findMessage`, `setMessageSummary`, `linkThread`, `setThreadSummary`, `setThreadNote`,
+`findAttachment`, `saveAttachmentData`, `markMessagesRemoved`, `threadNoteBody`,
+`setThreadNoteBody`), `MailServer` / `MailServerFactory` (IMAP : `resolveFolders`,
+`syncFolder`, `setSeen`, `listFolders`, `move`, `fetchAttachment`, `append`), `MailSender`
+(SMTP).
 
 Use cases : `ManageMail` — `view()`, `update(input)`, `test()`, `stats()`, `sync()`,
 `listThreads(filter)`, `thread(id)`, `link(id, { brandId?, productionId? })`,
-`setRead(id, read)`, `send({ to, cc, subject, text, threadId })`, `me()`, `aiContext()` ;
+`setRead(id, read)`, `send({ to, cc, subject, text, threadId, from })`, `scope()`,
+`addressCandidates()`, `writingContext()`, `folders()`, `move(id, folder)`,
+`attachment(id)`, `cacheAttachments(thread)`, `onThreadsChanged(listener)` ;
 `MailAssistant` — `summarizeMessage(id)`, `run(threadId, { action: 'summarize' |
-'follow_up' | 'draft' | 'translate', … })`, `writeVideoNote(threadId)`.
+'follow_up' | 'draft' | 'translate', … })`, `checkDates(threadId, today)`,
+`writeVideoNote(threadId)` ; `MailVideoNotes` — `refresh(threadId, body?)`,
+`refreshMany(threadIds)`.
 
 Front : `/mails` (`MailsPage` : liste à gauche — Réception, Non lus, Rattachés, Tous,
 recherche — fil à droite, `?fil=<id>`), `MailThreadPanel`, `MailComposer`, `MailBody`.
-Réglages : Paramètres → Admin → Mails (`MailSettingsPage`, préréglages Gmail, Outlook,
-OVH, iCloud, Infomaniak ; bouton « Tester la connexion »). Pastille du menu = messages
+Réglages : Paramètres → Admin → Mails (`MailSettingsPage`, préréglages Proton Bridge,
+Gmail, Outlook, OVH, iCloud, Infomaniak ; « Tester la connexion » ; `MailAddressesCard` ;
+`MailFoldersCard`). Dans un fil : « Résumer le fil », « Proposer une relance »,
+« Vérifier les dates » (boutons IA, absents sans clé), « Ranger dans… » (absent sans
+dossier choisi). Pastille du menu = messages
 reçus non lus (neutre). `ProductionDetailPage` accepte `?onglet=notes`.
+
+### `ai` — l'assistant IA du studio
+
+`StoredAiSettings { encryptedApiKey, model }` — table `ai_settings`, **ligne unique**
+(migration 53, reprise de `mail_settings.ai_api_key` / `ai_model`). Réglé dans
+**Paramètres → API → Assistant IA** (`AiSettingsPage`) : un domaine à part et non un
+réglage des mails, pour servir à d'autres modules plus tard.
+
+- `ManageAi` — `view()` (`{ keySource, model, secretsKeyConfigured, configured }`),
+  `update({ apiKey?, model? })`, `configured()`, `credentials()` (400 sans clé). **Seul
+  endroit où la clé est déchiffrée** (contexte `ai:apiKey`). La clé héritée des mails,
+  chiffrée sous `mail:aiKey`, est relue sous l'ancien contexte puis **rechiffrée** à la
+  première lecture. `ANTHROPIC_API_KEY` l'emporte (409 à l'écran).
+- `AiClient.complete(credentials, { system, prompt, schema? })` — `ClaudeAiClient` (SDK
+  officiel, `claude-opus-5` par défaut, `fallbacks: 'default'` sur Opus 5 / Fable
+  seulement). Avec `schema`, réponse contrainte par `output_config.format` (structured
+  outputs) ; l'appelant la revalide quand même. **Aucun outil** : l'IA rend du texte ou des
+  données, c'est le code appelant qui applique, dans ses limites.
+- `GET` / `PATCH /api/ai/settings`. Front : `useAiSettings`, `useUpdateAiSettings`
+  (invalide aussi `['mails']` : `aiConfigured` y est lu).
 
 ### `analytics`
 
@@ -2504,15 +2579,22 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/mails/settings`                               | Réglages mail. Aucun secret : `passwordSource` / `aiKeySource` (`env` \| `app` \| `unreadable` \| `null`) |
 | `PATCH`  | `/api/mails/settings`                               | Modifier. `password` / `aiApiKey` : absent conserve, `null`/`""` efface. 409 si couvert par l'env ou sans `SECRETS_KEY` |
 | `POST`   | `/api/mails/settings/test`                          | Ouvre une session IMAP et liste les dossiers suivis. 502 si refusé |
+| `GET`    | `/api/mails/folders`                                | Dossiers du serveur, lus en direct (`[{ path, name, specialUse }]`) — à cocher comme dossiers de rangement |
+| `GET`    | `/api/mails/attachments/:id`                        | Télécharge une pièce jointe (relue sur le serveur la 1ʳᵉ fois, puis gardée en base). 404 si le message n'est plus sur le serveur et la pièce jamais téléchargée |
+| `POST`   | `/api/mails/threads/:id/move`                       | `{ folder }` → range le fil sur le serveur (IMAP `MOVE`). 400 si le dossier n'est pas dans `moveFolders` |
+| `POST`   | `/api/mails/threads/:id/check-dates`                | `?today=` (jour local) → `MailDateCheck` : résumé, tâches posées dans Todo, incohérences avec la vidéo |
+| `GET`    | `/api/ai/settings`                                  | `{ keySource, model, secretsKeyConfigured, configured }` — la clé n'en sort jamais |
+| `PATCH`  | `/api/ai/settings`                                  | `{ apiKey?, model? }` — `apiKey: null` efface. 409 si `ANTHROPIC_API_KEY` est définie |
+| `GET`    | `/api/mails/addresses`                              | Adresses vues dans la boîte : `[{ address, received, sent }]`, les 60 plus fréquentes — à cocher comme adresses suivies |
 | `GET`    | `/api/mails/stats`                                  | `{ configured, aiConfigured, unread, lastSyncAt, lastSyncError }` — la pastille, relue chaque minute |
 | `POST`   | `/api/mails/sync`                                   | Relevé immédiat. `{ created, error, stats }` |
 | `GET`    | `/api/mails/threads`                                | `?view=inbox\|unread\|linked\|all&search=&brandId=&productionId=&limit=` (200) |
 | `GET`    | `/api/mails/threads/:id`                            | `MailThreadView` : fil + messages complets |
-| `PATCH`  | `/api/mails/threads/:id`                            | `{ brandId?, productionId?, read? }`. `read` écrit `\Seen` **sur le serveur** d'abord |
+| `PATCH`  | `/api/mails/threads/:id`                            | `{ brandId?, productionId?, read? }`. `read` écrit `\Seen` **sur le serveur** d'abord ; un `productionId` écrit la note « Échanges » (pièces jointes) dans la vidéo |
 | `POST`   | `/api/mails/threads/:id/ai`                         | `{ action: 'summarize' \| 'follow_up' }`, `{ action: 'draft', intent, notes? }`, `{ action: 'translate', text, language? }` → `{ text }`. N'envoie rien |
 | `POST`   | `/api/mails/threads/:id/video-note`                 | Écrit/réécrit la note « Échanges » dans la vidéo rattachée (400 sans vidéo). Rend la `ProductionNote` |
 | `POST`   | `/api/mails/messages/:id/summarize`                 | `{ text }`, gardé dans `ai_summary` |
-| `POST`   | `/api/mails/send`                                   | **Seul envoi du studio.** `{ to, cc, subject, text, threadId, confirm: true }` — 422 sans `confirm` |
+| `POST`   | `/api/mails/send`                                   | **Seul envoi du studio.** `{ to, cc, subject, text, threadId, from?, confirm: true }` — 422 sans `confirm`, 400 si `from` n'est pas dans `senders` |
 
 Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube ou d'une source de l'export.
 
@@ -2872,11 +2954,12 @@ horizontalement.
 
 **Les écrans sont groupés par famille** (`NAV_SECTIONS`, `presentation/navigation.ts`) :
 le dashboard **et Succès, hors famille**, en tête, puis **Production** (Planning, Vidéos, Shorts &
-Réels, Publications), **Audience** (YouTube, Instagram, Commentaires — plus TikTok et
-Discord, conditionnels, voir plus bas), **Revenus** (Produits, Sponsors, Affiliations,
-Chiffre d'affaires) et **Admin** (Légal, Mails — ex-« Entreprise », renommée le
-2026-10-30 ; le groupe des paramètres aussi, et `EXTERNAL_APP_SECTIONS` garde l'id
-`entreprise` avec le libellé « Admin »). À neuf entrées, une liste à plat obligeait à lire
+Réels, Publications), **Admin** (Mails, Légal — ex-« Entreprise », renommée et remontée
+juste après Production le 2026-10-30 : les mails des marques font avancer les vidéos ; le
+groupe des paramètres suit le même ordre, et `EXTERNAL_APP_SECTIONS` garde l'id
+`entreprise` avec le libellé « Admin »), **Audience** (YouTube, Instagram, Commentaires —
+plus TikTok et Discord, conditionnels, voir plus bas) et **Revenus** (Produits, Sponsors,
+Affiliations, Chiffre d'affaires). À neuf entrées, une liste à plat obligeait à lire
 tous les libellés pour en trouver un — rien ne disait que « Contenu » et « Instagram »
 répondent à la même question. Le dashboard n'a pas d'intitulé : c'est la vue d'ensemble,
 elle n'appartient à aucun des métiers et lui en donner un ferait une rubrique d'une ligne.
@@ -3211,7 +3294,7 @@ période**, et leur sous-titre le dit.
 | `useSharedPreference(key, fallback, parse)` | `application/sharedPreference/usecases/useSharedPreference.ts` | Une préférence **partagée entre appareils** (`/api/preferences`, table `app_preferences`). `parse` valide la valeur, sinon `fallback`. Écriture optimiste. `['sharedPreferences']` ne croise aucune racine |
 | `useGoals`, `useGoalCatalog`, `useGoalPreview`, `useCreateGoal`, `useUpdateGoal`, `useDeleteGoal` | `application/goal/usecases/useGoals.ts` | Objectifs. Clés sous la racine `['goals']` (liste avec jour local, catalogue, aperçu), invalidée entière à chaque écriture ; ne croise aucune autre racine |
 | `useAchievements`, `useVisibleAchievements` | `application/achievement/usecases/useAchievements.ts` | Paliers et records. Relu au focus ; aucune écriture ne l'invalide (`['achievements']`) |
-| `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail` | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
+| `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail`, `useMailAddresses`, `useMailFolders` (au clic), `useMoveMailThread`, `useMailDateCheck` (invalide `planningBoard` / `todoToday` quand des tâches sont créées) | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
@@ -3308,6 +3391,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 54** ajoute `mail_settings.move_folders`, `mail_threads.note_body` et `mail_attachments` (reprise des métadonnées par `json_each`). **Migration 53** ajoute `ai_settings` (reprise de la clé IA des mails).
+- **Migration 52** ajoute `mail_settings.addresses` et `mail_messages.recipients` (repris de To/Cc par `json_each`). **Migration 51** ajoute `mail_settings.allow_self_signed` (Proton Bridge).
 - **Migration 50** ajoute `mail_settings` (ligne unique), `mail_folders`, `mail_messages` et `mail_threads` (la boîte mail).
 - **Migration 49** ajoute `todo_links` (tâches posées dans l'app Todo par le studio, jamais supprimées).
 - **Migration 48** ajoute `goals` (objectifs de Succès). `entity_id` sans clé étrangère : il désigne une chaîne **ou** un compte selon la métrique.

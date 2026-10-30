@@ -1,5 +1,9 @@
 import type {
+  MailAddressCandidate,
   MailConnection,
+  MailFolderInfo,
+  StoredAttachment,
+  MailScope,
   MailFolderRole,
   MailMessage,
   MailThreadFilter,
@@ -28,17 +32,26 @@ export interface MailStore {
   saveFolder(state: MailFolderState): void;
   /** UIDVALIDITY a changé : les UID d'avant ne désignent plus rien, on repart de zéro. */
   resetFolder(path: string): void;
-  /** Insère et rattache au bon fil. Ignoré si `(folder, uid)` existe déjà. */
-  insert(message: NewMailMessage): void;
+  /** Insère et rattache au bon fil. Rend le fil, ou `null` si `(folder, uid)` existait déjà. */
+  insert(message: NewMailMessage): string | null;
+  findAttachment(id: string): StoredAttachment | null;
+  saveAttachmentData(id: string, data: Buffer): void;
+  /** Les messages rangés ailleurs depuis le studio quittent la boîte de réception. */
+  markMessagesRemoved(ids: string[]): void;
+  threadNoteBody(id: string): string | null;
+  setThreadNoteBody(id: string, html: string): void;
   /** Les UID connus d'un dossier depuis une date (ISO), pour réconcilier lus et départs. */
   knownUids(folder: string, sinceIso: string): Array<{ uid: number; seen: boolean }>;
   setSeen(folder: string, uids: number[], seen: boolean): void;
   /** Ce qui n'est plus dans le dossier sur le serveur est marqué, et démarqué s'il revient. */
   markRemoved(folder: string, sinceIso: string, presentUids: number[]): void;
-  unreadCount(): number;
+  unreadCount(scope: MailScope): number;
+  /** Les adresses vues dans la boîte, pour proposer le filtre. */
+  addressCandidates(): MailAddressCandidate[];
 
-  listThreads(filter: MailThreadFilter, me: string | null): MailThreadSummary[];
-  findThread(id: string, me: string | null): MailThreadView | null;
+  /** Seuls les fils qui ont au moins un message dans le périmètre (`scope.filter`). */
+  listThreads(filter: MailThreadFilter, scope: MailScope): MailThreadSummary[];
+  findThread(id: string, scope: MailScope): MailThreadView | null;
   findMessage(id: string): MailMessage | null;
   setMessageSummary(id: string, summary: string): void;
   linkThread(id: string, links: MailThreadLinks): void;
@@ -67,6 +80,11 @@ export interface MailServer {
     present: Array<{ uid: number; seen: boolean }>;
   }>;
   setSeen(path: string, uids: number[], seen: boolean): Promise<void>;
+  /** Tous les dossiers du compte (Proton : `Folders/…`, `Labels/…`). */
+  listFolders(): Promise<MailFolderInfo[]>;
+  move(path: string, uids: number[], target: string): Promise<void>;
+  /** Le contenu d'une pièce jointe, relu depuis le message. `null` s'il n'existe plus. */
+  fetchAttachment(path: string, uid: number, position: number): Promise<Buffer | null>;
   append(path: string, raw: Buffer): Promise<void>;
   close(): Promise<void>;
 }
@@ -78,14 +96,4 @@ export interface MailSender {
 
 export interface MailServerFactory {
   open(connection: MailConnection): Promise<MailServer>;
-}
-
-/** L'assistant : du texte en entrée, du texte en sortie. Il n'envoie jamais rien. */
-export interface MailAi {
-  complete(input: {
-    apiKey: string;
-    model: string;
-    system: string;
-    prompt: string;
-  }): Promise<string>;
 }

@@ -11,6 +11,8 @@ export interface MailAddress {
 }
 
 export interface MailAttachment {
+  /** Présent à la lecture d'un fil : sert au téléchargement. */
+  id?: string;
   filename: string;
   contentType: string;
   size: number;
@@ -60,6 +62,8 @@ export interface MailThreadView extends MailThreadSummary {
   summary: string | null;
   summaryAt: string | null;
   noteId: string | null;
+  /** L'adresse depuis laquelle répondre : celle à laquelle le fil m'a été écrit. */
+  replyFrom: string | null;
   messages: MailMessage[];
 }
 
@@ -95,9 +99,13 @@ export interface MailSettingsView {
   fromAddress: string | null;
   signature: string;
   rates: string;
+  /** Adresses suivies (vide = toutes). */
+  addresses: string[];
+  /** Dossiers du serveur proposés par « Ranger dans… ». */
+  moveFolders: string[];
+  /** Adresses d'expédition possibles : la principale, puis les suivies. */
+  senders: string[];
   syncDays: number;
-  aiKeySource: SecretSource;
-  aiModel: string;
   secretsKeyConfigured: boolean;
   configured: boolean;
   aiConfigured: boolean;
@@ -106,11 +114,10 @@ export interface MailSettingsView {
 export type MailSettingsInput = Partial<
   Omit<
     MailSettingsView,
-    'passwordSource' | 'aiKeySource' | 'secretsKeyConfigured' | 'configured' | 'aiConfigured'
+    'passwordSource' | 'secretsKeyConfigured' | 'configured' | 'aiConfigured' | 'senders'
   >
 > & {
   password?: string | null;
-  aiApiKey?: string | null;
 };
 
 export interface MailStats {
@@ -141,16 +148,11 @@ export interface SendMailInput {
   subject: string;
   text: string;
   threadId: string | null;
+  /** Absente : l'adresse d'expédition par défaut. */
+  from?: string;
   /** Posé par la modale de confirmation, et par elle seule. */
   confirm: true;
 }
-
-/** Les modèles proposés dans les réglages. Un autre identifiant reste saisissable. */
-export const AI_MODELS = [
-  { id: 'claude-opus-5', label: 'Claude Opus 5 (recommandé)' },
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (plus rapide, moins cher)' },
-  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 (le plus rapide)' },
-];
 
 export const addressLabel = (address: MailAddress): string => address.name || address.address;
 
@@ -176,3 +178,54 @@ export const formatAddresses = (addresses: MailAddress[]): string =>
   addresses
     .map((entry) => (entry.name ? `${entry.name} <${entry.address}>` : entry.address))
     .join(', ');
+
+/** Une adresse vue dans la boîte, proposée dans les réglages. */
+export interface MailAddressCandidate {
+  address: string;
+  received: number;
+  sent: number;
+}
+
+/** « Vérifier les dates » : une tâche tirée d'une échéance, et ce qu'il en est advenu. */
+export interface MailDateTask {
+  title: string;
+  dueDate: string;
+  kind: 'deadline' | 'start';
+  urgent: boolean;
+  status: 'created' | 'exists' | 'past' | 'not_connected' | 'error';
+  error: string | null;
+  quote: string;
+}
+
+export interface MailDateIncoherence {
+  message: string;
+  field: 'plannedDate' | 'startDate' | null;
+  suggestedDate: string | null;
+}
+
+export interface MailDateCheck {
+  summary: string;
+  urgent: boolean;
+  todoConnected: boolean;
+  productionId: string | null;
+  tasks: MailDateTask[];
+  incoherences: MailDateIncoherence[];
+}
+
+/** Un dossier du serveur (Proton : `Folders/…`, `Labels/…`). */
+export interface MailFolderInfo {
+  path: string;
+  name: string;
+  specialUse: string | null;
+}
+
+/**
+ * L'adresse de téléchargement d'une pièce jointe. Relative : nginx (prod) et Vite (dev)
+ * servent `/api` sur la même origine que le front — c'est aussi ce qui la rend valable
+ * dans une note de vidéo.
+ */
+export const attachmentUrl = (id: string): string => `/api/mails/attachments/${id}`;
+
+/** Le dernier segment d'un chemin de dossier (« Folders/Partenariats » → « Partenariats »). */
+export const folderLabel = (path: string): string =>
+  path.split(/[/.]/).filter(Boolean).at(-1) ?? path;

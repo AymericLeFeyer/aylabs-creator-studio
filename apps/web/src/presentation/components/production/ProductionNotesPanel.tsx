@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, FileText, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, FileText, Paperclip, Plus, Trash2 } from 'lucide-react';
 import {
   useCreateProductionNote,
   useDeleteProductionNote,
@@ -139,6 +139,36 @@ interface NoteEditorProps {
   onDelete: () => void;
 }
 
+const ATTACHMENT_LINK = /<a[^>]*href="(\/api\/mails\/attachments\/[\w-]+)"[^>]*>([^<]*)<\/a>/g;
+
+/**
+ * Les pièces jointes d'un fil de mails rattaché, en boutons de téléchargement au-dessus de
+ * la note. Elles sont aussi des liens dans le texte, mais l'éditeur n'ouvre pas les liens
+ * au clic (`openOnClick: false`, pour pouvoir les éditer) : sans ces boutons, il faudrait
+ * passer par le mail pour récupérer le brief.
+ */
+const NoteAttachments = ({ content }: { content: string }) => {
+  const links = [...content.matchAll(ATTACHMENT_LINK)].map((match) => ({
+    href: match[1]!,
+    name: match[2]!.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'),
+  }));
+  if (links.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {links.map((link) => (
+        <a
+          key={link.href}
+          href={link.href}
+          className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
+        >
+          <Paperclip className="h-3.5 w-3.5" />
+          {link.name}
+        </a>
+      ))}
+    </div>
+  );
+};
+
 const NoteEditor = ({ productionId, note, autoFocusTitle, onBack, onDelete }: NoteEditorProps) => {
   const update = useUpdateProductionNote(productionId);
 
@@ -190,6 +220,8 @@ const NoteEditor = ({ productionId, note, autoFocusTitle, onBack, onDelete }: No
           <span className="sr-only">Supprimer la note</span>
         </Button>
       </div>
+
+      <NoteAttachments content={note.content} />
 
       <ScriptEditor
         value={initialContent}

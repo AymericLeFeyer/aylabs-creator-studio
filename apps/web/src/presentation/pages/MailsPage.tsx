@@ -131,7 +131,14 @@ export const MailsPage = () => {
 
   const startNew = () => {
     open(null);
-    setNewDraft({ to: '', cc: '', subject: '', body: '', signature: settings?.signature ?? '' });
+    setNewDraft({
+      from: settings?.senders[0] ?? '',
+      to: '',
+      cc: '',
+      subject: '',
+      body: '',
+      signature: settings?.signature ?? '',
+    });
   };
 
   if (settings && !configured) {
@@ -256,6 +263,7 @@ export const MailsPage = () => {
               onClose={() => setNewDraft(null)}
               onSent={() => setNewDraft(null)}
               aiConfigured={false}
+              senders={settings?.senders ?? []}
             />
           ) : threadId ? (
             <MailThreadPanel
@@ -263,6 +271,8 @@ export const MailsPage = () => {
               threadId={threadId}
               aiConfigured={settings?.aiConfigured ?? false}
               signature={settings?.signature ?? ''}
+              senders={settings?.senders ?? []}
+              moveFolders={settings?.moveFolders ?? []}
               onBack={() => open(null)}
             />
           ) : (

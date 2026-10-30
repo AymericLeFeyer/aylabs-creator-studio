@@ -19,8 +19,11 @@ import {
 } from '../ui/dialog.tsx';
 import { Input, Textarea } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 
 export interface MailDraft {
+  /** L'adresse d'expédition, parmi `senders`. Vide = celle par défaut. */
+  from: string;
   to: string;
   cc: string;
   subject: string;
@@ -51,6 +54,7 @@ export const MailComposer = ({
   onClose,
   onSent,
   aiConfigured,
+  senders,
 }: {
   /** `null` pour un nouveau message : pas de fil, donc pas d'IA contextuelle. */
   threadId: string | null;
@@ -58,6 +62,8 @@ export const MailComposer = ({
   onChange: (draft: MailDraft) => void;
   onClose: () => void;
   onSent: () => void;
+  /** Les adresses d'expédition possibles. Le choix n'apparaît qu'à partir de deux. */
+  senders: string[];
   aiConfigured: boolean;
 }) => {
   const ai = useMailAi();
@@ -105,7 +111,15 @@ export const MailComposer = ({
 
   const confirmSend = () => {
     send.mutate(
-      { to, cc, subject: draft.subject, text: fullText(draft), threadId, confirm: true },
+      {
+        to,
+        cc,
+        subject: draft.subject,
+        text: fullText(draft),
+        threadId,
+        from: draft.from || undefined,
+        confirm: true,
+      },
       {
         onSuccess: () => {
           setConfirming(false);
@@ -127,6 +141,23 @@ export const MailComposer = ({
       </div>
 
       <div className="grid gap-2 sm:grid-cols-[4rem_minmax(0,1fr)] sm:items-center">
+        {senders.length > 1 && (
+          <>
+            <Label>De</Label>
+            <Select value={draft.from || senders[0]} onValueChange={(from) => set({ from })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {senders.map((sender) => (
+                  <SelectItem key={sender} value={sender}>
+                    {sender}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        )}
         <Label htmlFor="mail-to">À</Label>
         <Input
           id="mail-to"
@@ -236,6 +267,12 @@ export const MailComposer = ({
             </DialogDescription>
           </DialogHeader>
           <dl className="grid grid-cols-[4rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+            {senders.length > 0 && (
+              <>
+                <dt className="text-muted-foreground">De</dt>
+                <dd className="break-words">{draft.from || senders[0]}</dd>
+              </>
+            )}
             <dt className="text-muted-foreground">À</dt>
             <dd className="break-words">{formatAddresses(to)}</dd>
             {cc.length > 0 && (

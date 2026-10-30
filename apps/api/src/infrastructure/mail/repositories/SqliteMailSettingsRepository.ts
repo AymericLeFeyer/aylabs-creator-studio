@@ -16,9 +16,9 @@ interface Row {
   from_address: string | null;
   signature: string;
   rates: string;
+  addresses: string;
+  move_folders: string;
   sync_days: number;
-  ai_api_key: string | null;
-  ai_model: string | null;
   last_sync_at: string | null;
   last_sync_error: string | null;
 }
@@ -39,9 +39,9 @@ const COLUMNS: Record<keyof StoredMailSettings, string> = {
   fromAddress: 'from_address',
   signature: 'signature',
   rates: 'rates',
+  addresses: 'addresses',
+  moveFolders: 'move_folders',
   syncDays: 'sync_days',
-  encryptedAiKey: 'ai_api_key',
-  aiModel: 'ai_model',
   lastSyncAt: 'last_sync_at',
   lastSyncError: 'last_sync_error',
 };
@@ -80,9 +80,9 @@ export class SqliteMailSettingsRepository implements MailSettingsRepository {
       fromAddress: row.from_address,
       signature: row.signature,
       rates: row.rates,
+      addresses: row.addresses.split('\n').filter(Boolean),
+      moveFolders: row.move_folders.split('\n').filter(Boolean),
       syncDays: row.sync_days,
-      encryptedAiKey: row.ai_api_key,
-      aiModel: row.ai_model,
       lastSyncAt: row.last_sync_at,
       lastSyncError: row.last_sync_error,
     };
@@ -96,7 +96,15 @@ export class SqliteMailSettingsRepository implements MailSettingsRepository {
     >) {
       if (value === undefined) continue;
       fields.push(`${COLUMNS[key]} = ?`);
-      values.push(typeof value === 'boolean' ? (value ? 1 : 0) : value);
+      values.push(
+        typeof value === 'boolean'
+          ? value
+            ? 1
+            : 0
+          : Array.isArray(value)
+            ? value.join('\n')
+            : value,
+      );
     }
     if (fields.length === 0) return;
     this.get();

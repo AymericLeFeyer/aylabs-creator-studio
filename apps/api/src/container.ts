@@ -91,11 +91,14 @@ import { SqliteTodoLinkRepository } from './infrastructure/todoApp/repositories/
 import { SyncStudioTodos } from './application/todoApp/usecases/SyncStudioTodos.ts';
 import { ManageMail } from './application/mail/usecases/ManageMail.ts';
 import { MailAssistant } from './application/mail/usecases/MailAssistant.ts';
+import { MailVideoNotes } from './application/mail/usecases/MailVideoNotes.ts';
 import { SqliteMailSettingsRepository } from './infrastructure/mail/repositories/SqliteMailSettingsRepository.ts';
 import { SqliteMailStore } from './infrastructure/mail/repositories/SqliteMailStore.ts';
 import { ImapMailServerFactory } from './infrastructure/mail/api/ImapMailServer.ts';
 import { SmtpMailSender } from './infrastructure/mail/api/SmtpMailSender.ts';
-import { ClaudeMailAi } from './infrastructure/mail/api/ClaudeMailAi.ts';
+import { ManageAi } from './application/ai/usecases/ManageAi.ts';
+import { SqliteAiSettingsRepository } from './infrastructure/ai/repositories/SqliteAiSettingsRepository.ts';
+import { ClaudeAiClient } from './infrastructure/ai/api/ClaudeAiClient.ts';
 
 export interface Container {
   db: DatabaseSync;
@@ -231,8 +234,12 @@ export interface Container {
    * **seul chemin d'envoi** du studio.
    */
   manageMail: ManageMail;
-  /** Résumés, traductions, brouillons et note de vidéo. N'envoie jamais rien. */
+  /** Résumés, traductions, brouillons, dates et note de vidéo. N'envoie jamais rien. */
   mailAssistant: MailAssistant;
+  /** L'assistant IA (Paramètres → API) : seul endroit où sa clé est déchiffrée. */
+  manageAi: ManageAi;
+  /** La note « Échanges » d'un fil dans sa vidéo, pièces jointes comprises. */
+  mailVideoNotes: MailVideoNotes;
 }
 
 /** Assemble les implémentations concrètes derrière les interfaces du domaine. */
@@ -331,21 +338,41 @@ export const buildContainer = (config: Config): Container => {
     timeZone: config.timeZone,
   });
 
+  const manageAi = new ManageAi(
+    new SqliteAiSettingsRepository(db),
+    secrets,
+    config.anthropicApiKey,
+  );
   const mailStore = new SqliteMailStore(db);
   const manageMail = new ManageMail(
     new SqliteMailSettingsRepository(db),
     mailStore,
     secrets,
-    { password: config.mailPassword, anthropicApiKey: config.anthropicApiKey },
+    { password: config.mailPassword },
     new ImapMailServerFactory(),
     new SmtpMailSender(),
+    manageAi,
   );
+  const mailVideoNotes = new MailVideoNotes(manageMail, mailStore, productionNotes);
+  manageMail.onThreadsChanged((threadIds) => mailVideoNotes.refreshMany(threadIds));
 
   return {
     db,
     config,
     manageMail,
-    mailAssistant: new MailAssistant(manageMail, mailStore, new ClaudeMailAi(), productionNotes),
+    manageAi,
+    mailVideoNotes,
+    mailAssistant: new MailAssistant({
+      mail: manageMail,
+      store: mailStore,
+      ai: new ClaudeAiClient(),
+      settings: manageAi,
+      notes: productionNotes,
+      productions,
+      todoTasks: manageTodoTasks,
+      todoLinks: new SqliteTodoLinkRepository(db),
+      videoNotes: mailVideoNotes,
+    }),
     channels,
     metrics,
     categories,

@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
+  Download,
+  FolderInput,
+  CalendarSearch,
   FileText,
   Loader2,
   Mail,
@@ -13,8 +16,10 @@ import {
 } from 'lucide-react';
 import {
   useMailAi,
+  useMailDateCheck,
   useMailThread,
   useMailVideoNote,
+  useMoveMailThread,
   useSummarizeMailMessage,
   useUpdateMailThread,
 } from '../../../application/mail/usecases/useMails.ts';
@@ -22,8 +27,11 @@ import { useBrands } from '../../../application/brand/usecases/useBrands.ts';
 import { useProductions } from '../../../application/production/usecases/useProductions.ts';
 import {
   addressLabel,
+  attachmentUrl,
+  folderLabel,
   formatAddresses,
   replySubject,
+  type MailDateCheck,
   type MailMessage,
   type MailThreadView,
 } from '../../../domain/mail/entities/Mail.ts';
@@ -32,11 +40,19 @@ import { cn } from '../../../shared/cn.ts';
 import { Button } from '../ui/button.tsx';
 import { Card } from '../ui/card.tsx';
 import { Label } from '../ui/label.tsx';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { BrandCombobox } from '../forms/BrandCombobox.tsx';
 import { NONE, fromSelectValue, toSelectValue } from '../forms/selectNone.ts';
 import { MailBody } from './MailBody.tsx';
 import { MailComposer, type MailDraft } from './MailComposer.tsx';
+import { MailDateCheckPanel } from './MailDateCheckPanel.tsx';
+import { localToday } from '../../../application/planning/usecases/usePlanning.ts';
 
 const domainOf = (value: string | null | undefined): string | null => {
   if (!value) return null;
@@ -107,12 +123,21 @@ const MessageCard = ({
           {message.attachments.length > 0 && (
             <ul className="flex flex-wrap gap-2 text-xs text-muted-foreground">
               {message.attachments.map((attachment, index) => (
-                <li
-                  key={index}
-                  className="flex items-center gap-1 rounded border border-border px-2 py-1"
-                >
-                  <Paperclip className="h-3 w-3" />
-                  {attachment.filename} ({Math.max(1, Math.round(attachment.size / 1024))} ko)
+                <li key={index}>
+                  {attachment.id ? (
+                    <a
+                      href={attachmentUrl(attachment.id)}
+                      className="flex items-center gap-1 rounded border border-border px-2 py-1 hover:bg-accent hover:text-foreground"
+                    >
+                      <Download className="h-3 w-3" />
+                      {attachment.filename} ({Math.max(1, Math.round(attachment.size / 1024))} ko)
+                    </a>
+                  ) : (
+                    <span className="flex items-center gap-1 rounded border border-border px-2 py-1">
+                      <Paperclip className="h-3 w-3" />
+                      {attachment.filename}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -151,17 +176,25 @@ export const MailThreadPanel = ({
   threadId,
   aiConfigured,
   signature,
+  senders,
+  moveFolders,
   onBack,
 }: {
   threadId: string;
   aiConfigured: boolean;
   signature: string;
+  senders: string[];
+  /** Les dossiers de rangement choisis dans les réglages. */
+  moveFolders: string[];
   onBack: () => void;
 }) => {
   const { data: thread, isLoading, error } = useMailThread(threadId);
   const update = useUpdateMailThread();
   const ai = useMailAi();
   const videoNote = useMailVideoNote();
+  const dateCheck = useMailDateCheck();
+  const move = useMoveMailThread();
+  const [check, setCheck] = useState<MailDateCheck | null>(null);
   const { data: brands = [] } = useBrands();
   const { data: productions = [] } = useProductions({});
   const [draft, setDraft] = useState<MailDraft | null>(null);
@@ -183,6 +216,7 @@ export const MailThreadPanel = ({
 
   const openReply = (body = '') =>
     setDraft({
+      from: thread.replyFrom ?? senders[0] ?? '',
       to: formatAddresses(replyTargets(thread)),
       cc: '',
       subject: replySubject(thread.subject),
@@ -365,10 +399,54 @@ export const MailThreadPanel = ({
               )}
               Proposer une relance
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={dateCheck.isPending}
+              onClick={() =>
+                dateCheck.mutate({ id: thread.id, today: localToday() }, { onSuccess: setCheck })
+              }
+            >
+              {dateCheck.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CalendarSearch className="h-4 w-4" />
+              )}
+              Vérifier les dates
+            </Button>
           </>
+        )}
+        {moveFolders.length > 0 && !thread.archived && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" disabled={move.isPending}>
+                {move.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FolderInput className="h-4 w-4" />
+                )}
+                Ranger dans…
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {moveFolders.map((folder) => (
+                <DropdownMenuItem
+                  key={folder}
+                  onSelect={() =>
+                    move.mutate({ id: thread.id, folder }, { onSuccess: () => onBack() })
+                  }
+                >
+                  {folderLabel(folder)}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
       {ai.error && <p className="text-sm text-destructive">{ai.error.message}</p>}
+      {dateCheck.error && <p className="text-sm text-destructive">{dateCheck.error.message}</p>}
+      {move.error && <p className="text-sm text-destructive">{move.error.message}</p>}
+      {check && <MailDateCheckPanel check={check} onClose={() => setCheck(null)} />}
       {update.error && <p className="text-sm text-destructive">{update.error.message}</p>}
 
       {thread.summary && (
@@ -403,6 +481,7 @@ export const MailThreadPanel = ({
           }}
           onSent={() => setDraft(null)}
           aiConfigured={aiConfigured}
+          senders={senders}
         />
       )}
     </div>

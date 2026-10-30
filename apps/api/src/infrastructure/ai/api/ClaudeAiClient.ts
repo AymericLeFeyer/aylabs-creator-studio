@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { MailAi } from '../../../domain/mail/repositories/MailRepository.ts';
+import type { AiCredentials } from '../../../domain/ai/entities/Ai.ts';
+import type { AiClient, AiRequest } from '../../../domain/ai/repositories/AiRepository.ts';
 import { AppError, upstream } from '../../../shared/errors.ts';
 
 /**
@@ -11,26 +12,32 @@ const supportsFallback = (model: string): boolean =>
   model === 'claude-opus-5' || model.startsWith('claude-fable-5');
 
 /**
- * L'assistant mail, par le SDK officiel d'Anthropic. Une requête, un texte : aucun outil,
- * et surtout **aucun moyen d'envoyer quoi que ce soit** — ce qu'il rend est posé dans le
- * brouillon, que l'on relit et envoie soi-même.
+ * Claude, par le SDK officiel d'Anthropic. Une requête, une réponse : aucun outil, et donc
+ * **aucun moyen d'agir** — ce qu'il rend est appliqué par le code appelant, dans les limites
+ * que celui-ci fixe.
+ *
+ * Avec un `schema`, la réponse est contrainte au format (`output_config.format`) : c'est ce
+ * qui permet de tirer des tâches datées d'un fil de mails sans parser du texte libre.
  */
-export class ClaudeMailAi implements MailAi {
-  async complete(input: { apiKey: string; model: string; system: string; prompt: string }) {
-    const client = new Anthropic({ apiKey: input.apiKey });
-    const fallback = supportsFallback(input.model);
+export class ClaudeAiClient implements AiClient {
+  async complete(credentials: AiCredentials, request: AiRequest): Promise<string> {
+    const client = new Anthropic({ apiKey: credentials.apiKey });
+    const fallback = supportsFallback(credentials.model);
     try {
       const response = await client.beta.messages.create({
-        model: input.model,
+        model: credentials.model,
         max_tokens: 16000,
-        system: input.system,
-        messages: [{ role: 'user', content: input.prompt }],
+        system: request.system,
+        messages: [{ role: 'user', content: request.prompt }],
+        ...(request.schema
+          ? { output_config: { format: { type: 'json_schema' as const, schema: request.schema } } }
+          : {}),
         ...(fallback
           ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
           : {}),
       });
       if (response.stop_reason === 'refusal') {
-        throw upstream('L’IA a refusé de traiter ce message.');
+        throw upstream('L’IA a refusé de traiter ce contenu.');
       }
       const text = response.content
         .flatMap((block) => (block.type === 'text' ? [block.text] : []))
@@ -41,7 +48,9 @@ export class ClaudeMailAi implements MailAi {
     } catch (error) {
       if (error instanceof AppError) throw error;
       if (error instanceof Anthropic.AuthenticationError) {
-        throw upstream('Clé API Anthropic refusée : vérifie-la dans Paramètres → Mails.');
+        throw upstream(
+          'Clé API Anthropic refusée : vérifie-la dans Paramètres → API → Assistant IA.',
+        );
       }
       if (error instanceof Anthropic.RateLimitError) {
         throw upstream('L’API Anthropic limite les appels : réessaie dans un instant.');

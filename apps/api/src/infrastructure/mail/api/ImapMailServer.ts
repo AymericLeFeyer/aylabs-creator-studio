@@ -38,6 +38,18 @@ const normalizeId = (value: string): string => {
   return trimmed.startsWith('<') ? trimmed : `<${trimmed}>`;
 };
 
+/**
+ * Les pièces jointes qu'on montre : tout sauf les images collées dans le corps (inline
+ * sans nom). **Le même filtre sert à l'import et au téléchargement** : la position d'une
+ * pièce dans cette liste est ce qui permet de la retrouver plus tard dans le message.
+ */
+const visibleAttachments = <T extends { contentDisposition?: string; filename?: string }>(
+  attachments: T[],
+): T[] =>
+  attachments.filter(
+    (attachment) => attachment.contentDisposition !== 'inline' || attachment.filename,
+  );
+
 /** Décode une source brute. Un message sans `Message-ID` en reçoit un, stable, tiré de son UID. */
 export const parseMessage = async (
   source: Buffer,
@@ -71,14 +83,20 @@ export const parseMessage = async (
     snippet: snippetOf(bodyText({ textBody: text, htmlBody: html })),
     textBody: text,
     htmlBody: html,
-    attachments: parsed.attachments
-      .filter((attachment) => attachment.contentDisposition !== 'inline' || attachment.filename)
-      .map((attachment) => ({
-        filename: attachment.filename ?? 'pièce jointe',
-        contentType: attachment.contentType,
-        size: attachment.size,
-      })),
+    attachments: visibleAttachments(parsed.attachments).map((attachment) => ({
+      filename: attachment.filename ?? 'pièce jointe',
+      contentType: attachment.contentType,
+      size: attachment.size,
+    })),
     seen: fallback.seen,
+    deliveredTo: [
+      ...new Set(
+        parsed.headerLines
+          .filter((header) => header.key === 'delivered-to' || header.key === 'x-original-to')
+          .flatMap((header) => header.line.match(/[^\s<>:,;"]+@[^\s<>:,;"]+/g) ?? [])
+          .map((address) => address.toLowerCase()),
+      ),
+    ],
   };
 };
 
@@ -183,6 +201,42 @@ class ImapMailServer implements MailServer {
     } finally {
       lock.release();
     }
+  }
+
+  async listFolders() {
+    const list = await this.client.list();
+    return list
+      .filter((entry) => !entry.flags?.has('\\Noselect'))
+      .map((entry) => ({
+        path: entry.path,
+        name: entry.name,
+        specialUse: entry.specialUse ?? null,
+      }))
+      .sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  async move(path: string, uids: number[], target: string): Promise<void> {
+    if (uids.length === 0) return;
+    const lock = await this.client.getMailboxLock(path);
+    try {
+      await this.client.messageMove(uids, target, { uid: true });
+    } finally {
+      lock.release();
+    }
+  }
+
+  async fetchAttachment(path: string, uid: number, position: number): Promise<Buffer | null> {
+    const lock = await this.client.getMailboxLock(path);
+    let source: Buffer | undefined;
+    try {
+      const message = await this.client.fetchOne(String(uid), { source: true }, { uid: true });
+      source = message ? message.source : undefined;
+    } finally {
+      lock.release();
+    }
+    if (!source) return null;
+    const parsed = await simpleParser(source);
+    return visibleAttachments(parsed.attachments)[position]?.content ?? null;
   }
 
   async append(path: string, raw: Buffer): Promise<void> {

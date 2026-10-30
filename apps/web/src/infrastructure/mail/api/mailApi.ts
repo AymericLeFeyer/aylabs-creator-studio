@@ -1,6 +1,9 @@
 import { request } from '../../http/httpClient.ts';
 import type {
+  MailAddressCandidate,
   MailAiRequest,
+  MailDateCheck,
+  MailFolderInfo,
   MailSettingsInput,
   MailSettingsView,
   MailStats,
@@ -15,6 +18,10 @@ export const mailApi = {
   settings: () => request<MailSettingsView>('/api/mails/settings'),
   updateSettings: (input: MailSettingsInput) =>
     request<MailSettingsView>('/api/mails/settings', { method: 'PATCH', body: input }),
+  folders: () => request<MailFolderInfo[]>('/api/mails/folders'),
+  move: (id: string, folder: string) =>
+    request<MailThreadView>(`/api/mails/threads/${id}/move`, { method: 'POST', body: { folder } }),
+  addresses: () => request<MailAddressCandidate[]>('/api/mails/addresses'),
   test: () => request<{ folders: string[] }>('/api/mails/settings/test', { method: 'POST' }),
 
   stats: () => request<MailStats>('/api/mails/stats'),
@@ -42,6 +49,11 @@ export const mailApi = {
     request<{ text: string }>(`/api/mails/threads/${id}/ai`, { method: 'POST', body: input }),
   summarizeMessage: (id: string) =>
     request<{ text: string }>(`/api/mails/messages/${id}/summarize`, { method: 'POST' }),
+  checkDates: (id: string, today: string) =>
+    request<MailDateCheck>(`/api/mails/threads/${id}/check-dates`, {
+      method: 'POST',
+      query: { today },
+    }),
   videoNote: (id: string) =>
     request<ProductionNote>(`/api/mails/threads/${id}/video-note`, { method: 'POST' }),
 

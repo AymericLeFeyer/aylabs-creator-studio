@@ -6,7 +6,6 @@ import {
   useUpdateMailSettings,
 } from '../../application/mail/usecases/useMails.ts';
 import {
-  AI_MODELS,
   type MailSettingsInput,
   type MailSettingsView,
   type SecretSource,
@@ -22,6 +21,8 @@ import {
 import { Input, Textarea } from '../components/ui/input.tsx';
 import { Label } from '../components/ui/label.tsx';
 import { Switch } from '../components/ui/switch.tsx';
+import { MailAddressesCard } from '../components/mail/MailAddressesCard.tsx';
+import { MailFoldersCard } from '../components/mail/MailFoldersCard.tsx';
 
 /** Les réglages courants des grandes messageries, pour ne pas avoir à les chercher. */
 interface Preset {
@@ -73,9 +74,8 @@ const secretPlaceholder = (source: SecretSource, envVar: string, secretsKey: boo
   return secretsKey ? '' : 'SECRETS_KEY requise';
 };
 
-type Draft = Omit<MailSettingsInput, 'password' | 'aiApiKey'> & {
+type Draft = Omit<MailSettingsInput, 'password'> & {
   password: string;
-  aiApiKey: string;
 };
 
 const draftOf = (view: MailSettingsView): Draft => ({
@@ -93,8 +93,6 @@ const draftOf = (view: MailSettingsView): Draft => ({
   signature: view.signature,
   rates: view.rates,
   syncDays: view.syncDays,
-  aiApiKey: '',
-  aiModel: view.aiModel,
 });
 
 const Form = ({ view }: { view: MailSettingsView }) => {
@@ -105,12 +103,11 @@ const Form = ({ view }: { view: MailSettingsView }) => {
   const set = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
 
   const save = () => {
-    const { password, aiApiKey, ...rest } = draft;
+    const { password, ...rest } = draft;
     const input: MailSettingsInput = { ...rest };
     // Un secret laissé vide veut dire « je n'y touche pas », pas « efface-le ».
     if (password) input.password = password;
-    if (aiApiKey) input.aiApiKey = aiApiKey;
-    update.mutate(input, { onSuccess: () => set({ password: '', aiApiKey: '' }) });
+    update.mutate(input, { onSuccess: () => set({ password: '' }) });
   };
 
   const secretsLocked = !view.secretsKeyConfigured;
@@ -288,6 +285,10 @@ const Form = ({ view }: { view: MailSettingsView }) => {
         </CardContent>
       </Card>
 
+      <MailAddressesCard view={view} />
+
+      <MailFoldersCard view={view} />
+
       <Card>
         <CardHeader>
           <CardTitle>Rédaction</CardTitle>
@@ -316,62 +317,6 @@ const Form = ({ view }: { view: MailSettingsView }) => {
               onChange={(e) => set({ rates: e.target.value })}
               placeholder={'Intégration 60 s : 800 €\nVidéo dédiée : 2 500 €\nShort : 400 €'}
             />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Assistant IA (Claude)</CardTitle>
-          <CardDescription>
-            Résumés, traductions, relances et brouillons. L’IA ne fait que proposer du texte :{' '}
-            <strong>aucun mail ne part sans que tu le confirmes</strong>. Le contenu des mails
-            concernés est envoyé à l’API d’Anthropic au moment où tu cliques.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="ai-key">Clé API Anthropic</Label>
-            <Input
-              id="ai-key"
-              type="password"
-              autoComplete="off"
-              disabled={view.aiKeySource === 'env' || secretsLocked}
-              value={draft.aiApiKey}
-              onChange={(e) => set({ aiApiKey: e.target.value })}
-              placeholder={
-                secretPlaceholder(
-                  view.aiKeySource,
-                  'ANTHROPIC_API_KEY',
-                  view.secretsKeyConfigured,
-                ) || 'sk-ant-…'
-              }
-            />
-            {view.aiKeySource === 'app' && (
-              <button
-                type="button"
-                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                onClick={() => update.mutate({ aiApiKey: null })}
-              >
-                Effacer la clé
-              </button>
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ai-model">Modèle</Label>
-            <Input
-              id="ai-model"
-              list="ai-models"
-              value={draft.aiModel ?? ''}
-              onChange={(e) => set({ aiModel: e.target.value })}
-            />
-            <datalist id="ai-models">
-              {AI_MODELS.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.label}
-                </option>
-              ))}
-            </datalist>
           </div>
         </CardContent>
       </Card>

@@ -20,9 +20,32 @@ export interface MailAddress {
 }
 
 export interface MailAttachment {
+  /** Posé à la lecture d'un fil : c'est lui qui sert au téléchargement. */
+  id?: string;
   filename: string;
   contentType: string;
   size: number;
+}
+
+/** Une pièce jointe telle que stockée. `data` n'est rempli qu'à la demande. */
+export interface StoredAttachment {
+  id: string;
+  messageId: string;
+  position: number;
+  filename: string;
+  contentType: string;
+  size: number;
+  data: Buffer | null;
+  /** Où la relire sur le serveur tant qu'elle n'est pas en base. `null` : message disparu. */
+  folder: string | null;
+  uid: number | null;
+}
+
+/** Un dossier du serveur, proposé pour ranger les fils. */
+export interface MailFolderInfo {
+  path: string;
+  name: string;
+  specialUse: string | null;
 }
 
 export type MailFolderRole = 'inbox' | 'sent';
@@ -55,7 +78,32 @@ export interface MailMessage {
 }
 
 /** Ce que la collecte écrit. L'identifiant et le fil sont posés par le dépôt. */
-export type NewMailMessage = Omit<MailMessage, 'id' | 'threadId' | 'aiSummary' | 'removedAt'>;
+export type NewMailMessage = Omit<MailMessage, 'id' | 'threadId' | 'aiSummary' | 'removedAt'> & {
+  /**
+   * Les adresses de livraison (`Delivered-To`, `X-Original-To`) : elles disent à laquelle
+   * de mes adresses le message est arrivé, même en copie cachée ou via une liste.
+   */
+  deliveredTo: string[];
+};
+
+/**
+ * Quelles adresses sont « moi ». `filter` : celles qu'on suit (vide = toutes) ; `mine` :
+ * tout ce qui me désigne (suivies, adresse d'expédition, identifiant), pour ne jamais me
+ * compter parmi les interlocuteurs d'un fil.
+ */
+export interface MailScope {
+  filter: string[];
+  mine: string[];
+}
+
+/** Une adresse vue dans la boîte, proposée dans les réglages. */
+export interface MailAddressCandidate {
+  address: string;
+  /** Messages reçus à cette adresse. */
+  received: number;
+  /** Messages envoyés depuis elle. */
+  sent: number;
+}
 
 /** Une ligne de la liste des fils. */
 export interface MailThreadSummary {
@@ -82,6 +130,8 @@ export interface MailThreadView extends MailThreadSummary {
   summaryAt: string | null;
   /** La note posée dans la fiche de la vidéo, quand elle existe encore. */
   noteId: string | null;
+  /** L'adresse depuis laquelle répondre : celle à laquelle le fil m'a été écrit. */
+  replyFrom: string | null;
   messages: MailMessage[];
 }
 
@@ -113,9 +163,11 @@ export interface StoredMailSettings {
   fromAddress: string | null;
   signature: string;
   rates: string;
+  /** Adresses suivies, en minuscules. Vide = toutes. */
+  addresses: string[];
+  /** Dossiers du serveur proposés pour ranger un fil. */
+  moveFolders: string[];
   syncDays: number;
-  encryptedAiKey: string | null;
-  aiModel: string | null;
   lastSyncAt: string | null;
   lastSyncError: string | null;
 }
@@ -137,9 +189,11 @@ export interface MailSettingsView {
   fromAddress: string | null;
   signature: string;
   rates: string;
+  addresses: string[];
+  moveFolders: string[];
+  /** Les adresses depuis lesquelles on peut envoyer : l'expédition par défaut, puis les suivies. */
+  senders: string[];
   syncDays: number;
-  aiKeySource: SecretSource;
-  aiModel: string;
   secretsKeyConfigured: boolean;
   configured: boolean;
   aiConfigured: boolean;
@@ -160,9 +214,9 @@ export interface MailSettingsInput {
   fromAddress?: string | null;
   signature?: string;
   rates?: string;
+  addresses?: string[];
+  moveFolders?: string[];
   syncDays?: number;
-  aiApiKey?: string | null;
-  aiModel?: string | null;
 }
 
 export interface MailStats {
@@ -189,6 +243,8 @@ export interface MailConnection {
 }
 
 export interface OutgoingMail {
+  /** L'adresse d'expédition, déjà vérifiée parmi les miennes. */
+  from: string;
   to: MailAddress[];
   cc: MailAddress[];
   subject: string;
@@ -196,8 +252,6 @@ export interface OutgoingMail {
   inReplyTo: string | null;
   references: string[];
 }
-
-export const DEFAULT_AI_MODEL = 'claude-opus-5';
 
 /** Les boutons de pré-remplissage d'une réponse. */
 export type MailDraftIntent = 'not_interested' | 'interested' | 'rates';
@@ -208,3 +262,32 @@ export type MailAiAction =
   | { action: 'follow_up' }
   | { action: 'draft'; intent: MailDraftIntent; notes?: string }
   | { action: 'translate'; text: string; language?: string };
+
+/** Une tâche tirée d'une échéance d'un fil, et ce qu'il en est advenu. */
+export interface MailDateTask {
+  title: string;
+  dueDate: string;
+  /** `deadline` : l'échéance elle-même ; `start` : « s'y mettre », posée avant quand c'est urgent. */
+  kind: 'deadline' | 'start';
+  urgent: boolean;
+  /** `exists` : déjà posée par une vérification précédente (jamais reposée, même supprimée). */
+  status: 'created' | 'exists' | 'past' | 'not_connected' | 'error';
+  error: string | null;
+  quote: string;
+}
+
+export interface MailDateIncoherence {
+  message: string;
+  /** Le champ de la vidéo rattachée qui la résoudrait, avec la date proposée. */
+  field: 'plannedDate' | 'startDate' | null;
+  suggestedDate: string | null;
+}
+
+export interface MailDateCheck {
+  summary: string;
+  urgent: boolean;
+  todoConnected: boolean;
+  productionId: string | null;
+  tasks: MailDateTask[];
+  incoherences: MailDateIncoherence[];
+}
