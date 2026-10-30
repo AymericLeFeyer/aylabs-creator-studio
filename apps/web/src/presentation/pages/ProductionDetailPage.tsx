@@ -253,6 +253,7 @@ export const ProductionDetailPage = () => {
           <ScriptEditor
             value={production.script}
             productionId={production.id}
+            ai
             onSave={(script) => update.mutateAsync({ id: production.id, input: { script } })}
           />
         </TabsContent>

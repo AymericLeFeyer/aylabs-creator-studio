@@ -2391,7 +2391,46 @@ réglage des mails, pour servir à d'autres modules plus tard.
   outputs) ; l'appelant la revalide quand même. **Aucun outil** : l'IA rend du texte ou des
   données, c'est le code appelant qui applique, dans ses limites.
 - `GET` / `PATCH /api/ai/settings`. Front : `useAiSettings`, `useUpdateAiSettings`
-  (invalide aussi `['mails']` : `aiConfigured` y est lu).
+  (invalide aussi `['mails']` : `aiConfigured` y est lu ; `useAiSettings` se relit chaque
+  minute, tout appel à l'IA entamant le solde).
+- **Les crédits sont une ESTIMATION** (`AiCreditView`, migration 56) : l'API d'Anthropic
+  n'expose aucun solde, seule la Console l'affiche (l'Admin API donne des coûts, pas un
+  solde, et n'existe pas sur un compte individuel). On note le solde relevé
+  (`creditBalance`, **en dollars**, remet la consommation à zéro) et `ClaudeAiClient` rapporte
+  chaque appel à `ManageAi` (`AiObserver.usage`), qui ajoute à `credit_spent_micros`
+  (millionièmes de dollar, un appel coûte moins d'un centime ; `usageCostMicros`, tarifs dans
+  `domain/ai/services/pricing.ts`, **à compléter à chaque nouveau modèle**, un modèle inconnu
+  compte au tarif d'Opus 5). Une clé utilisée hors du studio n'est pas comptée, et le coût
+  d'une relance interne ne l'est pas non plus. `exhausted` est le seul signal certain : le 400
+  « credit balance » de l'API (`creditExhausted`), effacé au prochain appel réussi.
+  `low` = épuisé ou reste < 2 $ (`AI_CREDIT_ALERT_CENTS`) → point orange (rouge si épuisé) sur
+  Paramètres et sur son entrée Assistant IA (`aiCreditBadge`).
+- `ClaudeAiClient` refuse aussi une réponse coupée (`stop_reason: 'max_tokens'`) : poser un
+  script tronqué serait pire qu'une erreur.
+
+**`ProductionAssistant`** — l'IA d'une fiche de production. Propose, **n'écrit rien en base** :
+
+- `writeScript(id, { prompt, script, selection })` → HTML assaini (`sanitizeNoteHtml`).
+  `script` et `selection` viennent **de l'éditeur** : le script enregistré peut retarder
+  d'une phrase. Écran : `ScriptAiPanel` (baguette de la barre d'outils, prop `ai` de
+  `ScriptEditor`, posée seulement sur la fiche — pas sur le script d'une sponso ni les notes).
+  Un **panneau dans le bloc collant**, pas une modale : le texte reste lisible, et une modale
+  dans la modale d'une sponso se refermerait de travers. Avec une sélection : « Remplacer la
+  sélection ». Sans : « Insérer au curseur » ou « Remplacer tout le script ». Tout se défait
+  par Ctrl+Z. Les positions visées ne valent que sur le document de la demande : si le script
+  a changé, le panneau refuse (`doc.eq`). Une sélection dans un paragraphe perd ses espaces
+  de bord (Windows prend l'espace après un mot au double-clic) et un `<p>` unique y est
+  déballé, sinon il couperait le paragraphe. Remplacer perd les marques du passage (angle de
+  vue, couleur).
+- `titles(id, avoid)` : trois titres. `avoid` = ce qui a déjà été vu, pour que le reroll
+  propose autre chose.
+- `tags(id)` : `{ tags, hashtags }`, bornés à 500 caractères (`fitTags`) et nettoyés
+  (`toHashtag`). L'écran remplit les deux champs, avec confirmation s'ils ne sont pas vides.
+- `description(id, avoid)` : une **proposition** (« Ajouter en tête » / « Remplacer »), jamais
+  posée d'office : le champ porte souvent le gabarit de liens de la chaîne.
+
+Ces trois-là lisent le script **enregistré** (400 s'il est vide) et remplissent le formulaire
+de `PublicationPanel`, qui reste à enregistrer. Boutons absents sans clé.
 
 ### `analytics`
 
@@ -2449,6 +2488,10 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `PATCH`  | `/api/productions/:id`                              | Modifier (dont `script`)                                                                                                                                                                                                                                 |
 | `DELETE` | `/api/productions/:id`                              | Supprimer ; produits et sponsos sont **détachés**, pas supprimés                                                                                                                                                                                         |
 | `GET`    | `/api/productions/:id/previous-publication`         | Titre, description et tags de la **sortie précédente** de la même chaîne, lus en direct sur YouTube. `null` si la chaîne n'en a pas d'autre ; 400 sans chaîne renseignée                                                                                 |
+| `POST`   | `/api/productions/:id/ai/script`                    | `{ prompt, script, selection }` → `{ html }`. N'écrit rien |
+| `POST`   | `/api/productions/:id/ai/titles`                    | `{ avoid }` → `{ titles }` (3). 400 sans script enregistré. N'écrit rien |
+| `POST`   | `/api/productions/:id/ai/tags`                      | → `{ tags, hashtags }`. 400 sans script enregistré. N'écrit rien |
+| `POST`   | `/api/productions/:id/ai/description`               | `{ avoid }` → `{ description }`. 400 sans script enregistré. N'écrit rien |
 | `POST`   | `/api/productions/:id/publish`                      | `{ videoId }` → rattache la sortie, passe en `done`. **Ne coche aucune étape**                                                                                                                                                                           |
 | `PUT`    | `/api/productions/:id/steps/:stepId`                | Cocher une étape (idempotent)                                                                                                                                                                                                                            |
 | `DELETE` | `/api/productions/:id/steps/:stepId`                | Décocher                                                                                                                                                                                                                                                 |
@@ -2593,8 +2636,8 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/mails/attachments/:id`                        | Télécharge une pièce jointe (relue sur le serveur la 1ʳᵉ fois, puis gardée en base). 404 si le message n'est plus sur le serveur et la pièce jamais téléchargée |
 | `POST`   | `/api/mails/threads/:id/move`                       | `{ folder }` → range le fil sur le serveur (IMAP `MOVE`). 400 si le dossier n'est pas dans `moveFolders` |
 | `POST`   | `/api/mails/threads/:id/check-dates`                | `?today=` (jour local) → `MailDateCheck` : résumé, tâches posées dans Todo, incohérences avec la vidéo |
-| `GET`    | `/api/ai/settings`                                  | `{ keySource, model, secretsKeyConfigured, configured }` — la clé n'en sort jamais |
-| `PATCH`  | `/api/ai/settings`                                  | `{ apiKey?, model? }` — `apiKey: null` efface. 409 si `ANTHROPIC_API_KEY` est définie |
+| `GET`    | `/api/ai/settings`                                  | `{ keySource, model, secretsKeyConfigured, configured, credit }` — la clé n'en sort jamais |
+| `PATCH`  | `/api/ai/settings`                                  | `{ apiKey?, model?, creditBalance? }` — `apiKey: null` efface (409 si `ANTHROPIC_API_KEY` est définie). `creditBalance` : solde relevé **en dollars**, remet la consommation à zéro |
 | `GET`    | `/api/mails/addresses`                              | Adresses vues dans la boîte : `[{ address, received, sent }]`, les 60 plus fréquentes — à cocher comme adresses suivies |
 | `GET`    | `/api/mails/stats`                                  | `{ configured, aiConfigured, unread, lastSyncAt, lastSyncError }` — la pastille, relue chaque minute |
 | `POST`   | `/api/mails/sync`                                   | Relevé immédiat. `{ created, error, stats }` |
@@ -3305,6 +3348,7 @@ période**, et leur sous-titre le dit.
 | `useGoals`, `useGoalCatalog`, `useGoalPreview`, `useCreateGoal`, `useUpdateGoal`, `useDeleteGoal` | `application/goal/usecases/useGoals.ts` | Objectifs. Clés sous la racine `['goals']` (liste avec jour local, catalogue, aperçu), invalidée entière à chaque écriture ; ne croise aucune autre racine |
 | `useAchievements`, `useVisibleAchievements` | `application/achievement/usecases/useAchievements.ts` | Paliers et records. Relu au focus ; aucune écriture ne l'invalide (`['achievements']`) |
 | `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail`, `useMailAddresses`, `useMailFolders` (au clic), `useMoveMailThread`, `useMailDateCheck` (invalide `planningBoard` / `todoToday` quand des tâches sont créées) | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
+| `useAiScript`, `useAiTitles`, `useAiTags`, `useAiDescription` | `application/production/usecases/useProductionAi.ts` | L'IA d'une fiche. Mutations (chaque appel coûte) ; n'invalident que `['aiSettings']` |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
@@ -3401,6 +3445,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 56** ajoute à `ai_settings` le solde relevé, sa date, la consommation et la date d'épuisement.
 - **Migration 55** élargit le `CHECK` de `mail_folders` au rôle `folder` (table recréée, aucune clé étrangère ne la vise) et indexe `mail_messages.folder`.
 - **Migration 54** ajoute `mail_settings.move_folders`, `mail_threads.note_body` et `mail_attachments` (reprise des métadonnées par `json_each`). **Migration 53** ajoute `ai_settings` (reprise de la clé IA des mails).
 - **Migration 52** ajoute `mail_settings.addresses` et `mail_messages.recipients` (repris de To/Cc par `json_each`). **Migration 51** ajoute `mail_settings.allow_self_signed` (Proton Bridge).

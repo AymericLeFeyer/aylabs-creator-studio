@@ -16,6 +16,7 @@ import type {
   ProductionOverview,
 } from '../domain/production/entities/ProductionOverview.ts';
 import { FORMAT_ROUTES } from '../domain/production/entities/Production.ts';
+import { type AiCreditView, formatDollars } from '../domain/ai/entities/Ai.ts';
 import type { LegalAlert } from '../domain/legal/entities/Legal.ts';
 import { formatMonth } from '../domain/legal/entities/Legal.ts';
 import {
@@ -230,6 +231,34 @@ export const publicationBadge = (summary: PostDraftSummary, today: string): NavB
         date: lastDay,
         to: '/publications',
         icon: Images,
+      },
+    ],
+  };
+};
+
+/**
+ * La pastille des crédits de l'IA, sur Paramètres et sur son entrée dans les réglages : un
+ * point, le montant se lit à l'écran. Rouge quand l'API a dit que le solde était épuisé,
+ * orange sous 2 $ — ce reste-là n'est qu'une estimation.
+ */
+export const aiCreditBadge = (credit: AiCreditView | undefined): NavBadge | undefined => {
+  if (!credit?.low) return undefined;
+  const severity = credit.exhausted ? 'danger' : 'warning';
+  return {
+    count: 0,
+    tone: severity,
+    reasons: [
+      {
+        key: 'ai-credit',
+        severity,
+        title: credit.exhausted ? 'Crédits IA épuisés' : 'Crédits IA bientôt épuisés',
+        detail:
+          credit.remainingCents !== null && !credit.exhausted
+            ? `Il reste environ ${formatDollars(credit.remainingCents)}.`
+            : 'Recharge-les dans la Console d’Anthropic.',
+        date: null,
+        to: '/parametres?onglet=ia',
+        icon: Wallet,
       },
     ],
   };

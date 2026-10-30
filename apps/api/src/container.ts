@@ -99,6 +99,7 @@ import { SmtpMailSender } from './infrastructure/mail/api/SmtpMailSender.ts';
 import { ManageAi } from './application/ai/usecases/ManageAi.ts';
 import { SqliteAiSettingsRepository } from './infrastructure/ai/repositories/SqliteAiSettingsRepository.ts';
 import { ClaudeAiClient } from './infrastructure/ai/api/ClaudeAiClient.ts';
+import { ProductionAssistant } from './application/production/usecases/ProductionAssistant.ts';
 
 export interface Container {
   db: DatabaseSync;
@@ -238,6 +239,8 @@ export interface Container {
   mailAssistant: MailAssistant;
   /** L'assistant IA (Paramètres → API) : seul endroit où sa clé est déchiffrée. */
   manageAi: ManageAi;
+  /** L'IA d'une fiche : script, titres, tags, description. Propose, n'écrit rien. */
+  productionAssistant: ProductionAssistant;
   /** La note « Échanges » d'un fil dans sa vidéo, pièces jointes comprises. */
   mailVideoNotes: MailVideoNotes;
 }
@@ -343,6 +346,7 @@ export const buildContainer = (config: Config): Container => {
     secrets,
     config.anthropicApiKey,
   );
+  const aiClient = new ClaudeAiClient(manageAi);
   const mailStore = new SqliteMailStore(db);
   const manageMail = new ManageMail(
     new SqliteMailSettingsRepository(db),
@@ -362,10 +366,15 @@ export const buildContainer = (config: Config): Container => {
     manageMail,
     manageAi,
     mailVideoNotes,
+    productionAssistant: new ProductionAssistant({
+      productions,
+      ai: aiClient,
+      settings: manageAi,
+    }),
     mailAssistant: new MailAssistant({
       mail: manageMail,
       store: mailStore,
-      ai: new ClaudeAiClient(),
+      ai: aiClient,
       settings: manageAi,
       notes: productionNotes,
       productions,

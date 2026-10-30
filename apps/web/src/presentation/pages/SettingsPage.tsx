@@ -21,6 +21,9 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
+import { useAiSettings } from '../../application/ai/usecases/useAi.ts';
+import { aiCreditBadge } from '../navBadges.ts';
+import { NavBadgePill } from '../components/NavBadgePill.tsx';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
 import { usePreferences } from '../hooks/usePreferences.ts';
 import { ThemeToggle } from '../components/ThemeToggle.tsx';
@@ -201,6 +204,9 @@ export const SettingsPage = () => {
   const active = ENTRIES.find(({ entry }) => entry.id === id) ?? ENTRIES[0]!;
   const select = (value: string) => setSearchParams({ onglet: value }, { replace: true });
   const ActiveIcon = active.entry.icon;
+  const { data: aiSettings } = useAiSettings();
+  const entryBadge = (entryId: string) =>
+    entryId === 'ia' ? aiCreditBadge(aiSettings?.credit) : undefined;
 
   return (
     <div className="space-y-4">
@@ -240,7 +246,8 @@ export const SettingsPage = () => {
                     className={cn(entry.id === active.entry.id && 'bg-secondary')}
                   >
                     <entry.icon className="h-4 w-4 text-muted-foreground" />
-                    {entry.label}
+                    <span className="flex-1">{entry.label}</span>
+                    <NavBadgePill badge={entryBadge(entry.id)} />
                   </DropdownMenuItem>
                 ))}
               </Fragment>
@@ -273,7 +280,8 @@ export const SettingsPage = () => {
                     )}
                   >
                     <entry.icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{entry.label}</span>
+                    <span className="flex-1 truncate">{entry.label}</span>
+                    <NavBadgePill badge={entryBadge(entry.id)} />
                   </button>
                 ))}
               </div>

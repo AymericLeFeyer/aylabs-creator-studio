@@ -1944,6 +1944,20 @@ const migrations: Migration[] = [
       CREATE INDEX idx_mail_messages_folder ON mail_messages (folder);
     `,
   },
+  {
+    version: 56,
+    name: 'ai_credit',
+    // Anthropic n'expose pas le solde de credits : il se releve a la main dans la Console.
+    // "credit_balance_cents" est ce releve (dollars en centimes), "credit_spent_micros" ce
+    // que le studio a consomme depuis (millioniemes de dollar : un appel coute moins d'un
+    // centime). "credit_exhausted_at" : l'API a repondu que le solde etait epuise.
+    up: `
+      ALTER TABLE ai_settings ADD COLUMN credit_balance_cents INTEGER;
+      ALTER TABLE ai_settings ADD COLUMN credit_set_at TEXT;
+      ALTER TABLE ai_settings ADD COLUMN credit_spent_micros INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE ai_settings ADD COLUMN credit_exhausted_at TEXT;
+    `,
+  },
 ];
 
 /**

@@ -10,6 +10,8 @@ import {
   createSlotBodySchema,
   productionOverviewQuerySchema,
   productionQuerySchema,
+  productionAiAvoidSchema,
+  productionAiScriptSchema,
   publishProductionSchema,
   reorderSchema,
   slotQuerySchema,
@@ -75,6 +77,31 @@ export const productionsRouter = (container: Container): Router => {
    */
   router.get('/:id/previous-publication', async (req, res) => {
     res.json(await container.getPreviousPublication.execute(param(req, 'id')));
+  });
+
+  /** L'IA ne fait que proposer : ces quatre routes n'écrivent rien sur la production. */
+  router.post('/:id/ai/script', async (req, res) => {
+    const html = await container.productionAssistant.writeScript(
+      param(req, 'id'),
+      productionAiScriptSchema.parse(req.body),
+    );
+    res.json({ html });
+  });
+
+  router.post('/:id/ai/titles', async (req, res) => {
+    const { avoid } = productionAiAvoidSchema.parse(req.body);
+    res.json({ titles: await container.productionAssistant.titles(param(req, 'id'), avoid) });
+  });
+
+  router.post('/:id/ai/tags', async (req, res) => {
+    res.json(await container.productionAssistant.tags(param(req, 'id')));
+  });
+
+  router.post('/:id/ai/description', async (req, res) => {
+    const { avoid } = productionAiAvoidSchema.parse(req.body);
+    res.json({
+      description: await container.productionAssistant.description(param(req, 'id'), avoid),
+    });
   });
 
   /** Rattache la sortie réelle, coche la publication et sort la vidéo de la file. */

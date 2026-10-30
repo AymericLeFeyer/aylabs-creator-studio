@@ -28,6 +28,7 @@ import {
   Strikethrough,
   Underline,
   Undo2,
+  WandSparkles,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -454,10 +455,15 @@ export const ScriptToolbar = ({
   editor,
   productionId,
   scriptTools = true,
+  aiOpen = false,
+  onToggleAi,
 }: {
   editor: Editor;
   productionId?: string;
   scriptTools?: boolean;
+  aiOpen?: boolean;
+  /** Absent : pas de bouton d'IA sur cet éditeur. */
+  onToggleAi?: () => void;
 }) => {
   const state =
     useEditorState({
@@ -674,6 +680,15 @@ export const ScriptToolbar = ({
           <Divider />
           <PresetMenu editor={editor} />
           <ShotAngleMenu editor={editor} productionId={productionId} activeId={state.shotAngle} />
+        </>
+      )}
+
+      {onToggleAi && (
+        <>
+          <Divider />
+          <ToolButton label="Demander à l'IA" active={aiOpen} onClick={onToggleAi}>
+            <WandSparkles className="h-4 w-4" />
+          </ToolButton>
         </>
       )}
     </div>

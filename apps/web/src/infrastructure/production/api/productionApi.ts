@@ -82,6 +82,27 @@ export const productionApi = {
   previousPublication: (id: string) =>
     request<PreviousPublication | null>(`/api/productions/${id}/previous-publication`),
 
+  aiScript: (id: string, input: { prompt: string; script: string; selection: string | null }) =>
+    request<{ html: string }>(`/api/productions/${id}/ai/script`, { method: 'POST', body: input }),
+
+  aiTitles: (id: string, avoid: string[]) =>
+    request<{ titles: string[] }>(`/api/productions/${id}/ai/titles`, {
+      method: 'POST',
+      body: { avoid },
+    }),
+
+  aiTags: (id: string) =>
+    request<{ tags: string[]; hashtags: string[] }>(`/api/productions/${id}/ai/tags`, {
+      method: 'POST',
+      body: {},
+    }),
+
+  aiDescription: (id: string, avoid: string[]) =>
+    request<{ description: string }>(`/api/productions/${id}/ai/description`, {
+      method: 'POST',
+      body: { avoid },
+    }),
+
   publish: (id: string, videoId: string) =>
     request<Production>(`/api/productions/${id}/publish`, { method: 'POST', body: { videoId } }),
 

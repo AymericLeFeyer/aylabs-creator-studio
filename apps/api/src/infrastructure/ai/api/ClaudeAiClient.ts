@@ -1,6 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { AiCredentials } from '../../../domain/ai/entities/Ai.ts';
-import type { AiClient, AiRequest } from '../../../domain/ai/repositories/AiRepository.ts';
+import type {
+  AiClient,
+  AiObserver,
+  AiRequest,
+} from '../../../domain/ai/repositories/AiRepository.ts';
 import { AppError, upstream } from '../../../shared/errors.ts';
 
 /**
@@ -20,6 +24,12 @@ const supportsFallback = (model: string): boolean =>
  * qui permet de tirer des tâches datées d'un fil de mails sans parser du texte libre.
  */
 export class ClaudeAiClient implements AiClient {
+  private readonly observer: AiObserver;
+
+  constructor(observer: AiObserver) {
+    this.observer = observer;
+  }
+
   async complete(credentials: AiCredentials, request: AiRequest): Promise<string> {
     const client = new Anthropic({ apiKey: credentials.apiKey });
     const fallback = supportsFallback(credentials.model);
@@ -36,8 +46,19 @@ export class ClaudeAiClient implements AiClient {
           ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
           : {}),
       });
+      // Avant tout contrôle : un refus ou une réponse tronquée sont facturés aussi.
+      this.observer.usage({
+        model: response.model,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+        cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
+      });
       if (response.stop_reason === 'refusal') {
         throw upstream('L’IA a refusé de traiter ce contenu.');
+      }
+      if (response.stop_reason === 'max_tokens') {
+        throw upstream('La réponse de l’IA a été coupée : demande quelque chose de plus court.');
       }
       const text = response.content
         .flatMap((block) => (block.type === 'text' ? [block.text] : []))
@@ -54,6 +75,11 @@ export class ClaudeAiClient implements AiClient {
       }
       if (error instanceof Anthropic.RateLimitError) {
         throw upstream('L’API Anthropic limite les appels : réessaie dans un instant.');
+      }
+      // Aucune classe d'erreur dédiée : l'API répond 400, seul le message le distingue.
+      if (error instanceof Anthropic.BadRequestError && /credit balance/i.test(error.message)) {
+        this.observer.creditExhausted();
+        throw upstream('Crédits Anthropic épuisés : recharge-les dans la Console.');
       }
       if (error instanceof Anthropic.APIError) {
         throw upstream(`Erreur de l’API Anthropic (${error.status ?? '?'}) : ${error.message}`);

@@ -325,8 +325,18 @@ export const AppLayout = () => {
             )
           }
         >
-          <Settings className="h-4 w-4 shrink-0" />
-          {!compact && <span>Paramètres</span>}
+          <span className="relative shrink-0">
+            <Settings className="h-4 w-4" />
+            {compact && (
+              <NavBadgePill
+                badge={badges['/parametres']}
+                dot
+                className="absolute -right-1 -top-1"
+              />
+            )}
+          </span>
+          {!compact && <span className="flex-1">Paramètres</span>}
+          {!compact && <NavBadgePill badge={badges['/parametres']} />}
           {compact && <CompactTooltip label="Paramètres" />}
         </NavLink>
       </div>

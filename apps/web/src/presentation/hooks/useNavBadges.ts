@@ -10,7 +10,8 @@ import { usePostDraftSummary } from '../../application/postDraft/usecases/usePos
 import { localToday } from '../../application/planning/usecases/usePlanning.ts';
 import { useCommentCounts } from '../../application/comment/usecases/useComments.ts';
 import { useMailStats } from '../../application/mail/usecases/useMails.ts';
-import { buildNavBadges, publicationBadge, type NavBadge } from '../navBadges.ts';
+import { useAiSettings } from '../../application/ai/usecases/useAi.ts';
+import { aiCreditBadge, buildNavBadges, publicationBadge, type NavBadge } from '../navBadges.ts';
 
 /**
  * Les pastilles du menu, et les raisons qui les expliquent.
@@ -34,6 +35,7 @@ export const useNavBadges = (): Record<string, NavBadge> => {
   // Toutes chaînes confondues : même clé que l'écran sans filtre de chaîne.
   const { data: commentCounts } = useCommentCounts();
   const { data: mailStats } = useMailStats();
+  const { data: aiSettings } = useAiSettings();
   // Le jour local, relu à chaque rendu : la pastille doit basculer à minuit sans recharger.
   const localDay = localToday();
 
@@ -62,6 +64,18 @@ export const useNavBadges = (): Record<string, NavBadge> => {
         reasons: [],
       };
     }
+    const aiBadge = aiCreditBadge(aiSettings?.credit);
+    if (aiBadge) badges['/parametres'] = aiBadge;
     return badges;
-  }, [overview, legal, todoApp, today, publications, localDay, commentCounts, mailStats]);
+  }, [
+    overview,
+    legal,
+    todoApp,
+    today,
+    publications,
+    localDay,
+    commentCounts,
+    mailStats,
+    aiSettings,
+  ]);
 };

@@ -1,8 +1,17 @@
-import type { AiCredentials, StoredAiSettings } from '../entities/Ai.ts';
+import type { AiCredentials, AiUsage, StoredAiSettings } from '../entities/Ai.ts';
 
 export interface AiSettingsRepository {
   get(): StoredAiSettings;
   update(patch: Partial<StoredAiSettings>): void;
+  /** Ajoute au compteur, sans lire ni réécrire : deux appels simultanés ne s'écrasent pas. */
+  addCreditSpend(micros: number): void;
+}
+
+/** Ce que le client rapporte après coup. C'est lui seul qui voit les réponses de l'API. */
+export interface AiObserver {
+  usage(usage: AiUsage): void;
+  /** L'API a refusé l'appel faute de crédits. */
+  creditExhausted(): void;
 }
 
 export interface AiRequest {

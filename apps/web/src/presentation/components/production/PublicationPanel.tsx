@@ -1,11 +1,17 @@
 import { useState } from 'react';
-import { Download, Megaphone, Save } from 'lucide-react';
+import { Download, LoaderCircle, Megaphone, RefreshCw, Save, WandSparkles, X } from 'lucide-react';
 import type { Production } from '../../../domain/production/entities/Production.ts';
 import { resolvePaidPromotion } from '../../../domain/production/entities/Production.ts';
 import {
   usePreviousPublication,
   useUpdateProduction,
 } from '../../../application/production/usecases/useProductions.ts';
+import {
+  useAiDescription,
+  useAiTags,
+  useAiTitles,
+} from '../../../application/production/usecases/useProductionAi.ts';
+import { useAiSettings } from '../../../application/ai/usecases/useAi.ts';
 import { formatDate } from '../../../shared/format.ts';
 import { Button } from '../ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.tsx';
@@ -22,6 +28,26 @@ const DESCRIPTION_MAX = 5000;
 interface PublicationPanelProps {
   production: Production;
 }
+
+/** Un bouton d'IA : l'icône tourne le temps de la réponse, qui prend plusieurs secondes. */
+const AiButton = ({
+  pending,
+  onClick,
+  label,
+}: {
+  pending: boolean;
+  onClick: () => void;
+  label: string;
+}) => (
+  <Button variant="outline" size="sm" disabled={pending} onClick={onClick}>
+    {pending ? (
+      <LoaderCircle className="h-4 w-4 animate-spin" />
+    ) : (
+      <WandSparkles className="h-4 w-4" />
+    )}
+    {label}
+  </Button>
+);
 
 /**
  * Le formulaire de mise en ligne, préparé **avant** que la vidéo existe.
@@ -52,6 +78,18 @@ interface PublicationPanelProps {
 export const PublicationPanel = ({ production }: PublicationPanelProps) => {
   const update = useUpdateProduction();
   const previous = usePreviousPublication();
+  const { data: aiSettings } = useAiSettings();
+  const aiTitles = useAiTitles();
+  const aiTags = useAiTags();
+  const aiDescription = useAiDescription();
+  const aiReady = aiSettings?.configured === true;
+
+  /** Les trois titres proposés, et tous ceux déjà vus : un reroll ne les repropose pas. */
+  const [titleIdeas, setTitleIdeas] = useState<string[]>([]);
+  const [seenTitles, setSeenTitles] = useState<string[]>([]);
+  /** La description proposée : elle ne remplace rien toute seule, le gabarit porte les liens. */
+  const [descriptionIdea, setDescriptionIdea] = useState<string | null>(null);
+  const [seenDescriptions, setSeenDescriptions] = useState<string[]>([]);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -143,6 +181,50 @@ export const PublicationPanel = ({ production }: PublicationPanelProps) => {
     }
   };
 
+  const suggestTitles = () =>
+    aiTitles.mutate(
+      { productionId: production.id, avoid: seenTitles },
+      {
+        onSuccess: ({ titles }) => {
+          setTitleIdeas(titles);
+          setSeenTitles((seen) => [...seen, ...titles].slice(-30));
+        },
+      },
+    );
+
+  const suggestDescription = () =>
+    aiDescription.mutate(
+      { productionId: production.id, avoid: seenDescriptions },
+      {
+        onSuccess: ({ description: idea }) => {
+          setDescriptionIdea(idea);
+          setSeenDescriptions((seen) => [...seen, idea].slice(-30));
+        },
+      },
+    );
+
+  /** Remplit les deux champs. Ce qui serait perdu se confirme, comme la description reprise. */
+  const generateTags = () => {
+    if (
+      (tags.trim() !== '' || hashtags.trim() !== '') &&
+      !window.confirm('Remplacer les tags et hashtags actuels ?')
+    ) {
+      return;
+    }
+    aiTags.mutate(production.id, {
+      onSuccess: (generated) => {
+        setTags(generated.tags.join(', '));
+        setHashtags(generated.hashtags.join(' '));
+        setDirty(true);
+      },
+    });
+  };
+
+  const takeDescription = (text: string) => {
+    edit(setDescription)(text);
+    setDescriptionIdea(null);
+  };
+
   /** Ce que la case vaudrait si personne n'y avait touché : le texte d'aide s'en sert. */
   const deducedFromSponsorships = production.sponsorships.some(
     (sponsorship) => sponsorship.status !== 'cancelled',
@@ -183,6 +265,50 @@ export const PublicationPanel = ({ production }: PublicationPanelProps) => {
             onChange={(event) => edit(setTitle)(event.target.value)}
             placeholder="Le titre public, celui qui fait cliquer"
           />
+          {aiReady && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <AiButton
+                  pending={aiTitles.isPending}
+                  onClick={suggestTitles}
+                  label={
+                    titleIdeas.length > 0 ? 'Trois autres idées' : 'Trouver des idées de titre'
+                  }
+                />
+                {titleIdeas.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setTitleIdeas([])}
+                    aria-label="Fermer les idées de titre"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+                {aiTitles.error && (
+                  <span className="text-xs text-destructive">{aiTitles.error.message}</span>
+                )}
+              </div>
+              {titleIdeas.length > 0 && (
+                <ul className="space-y-1">
+                  {titleIdeas.map((idea) => (
+                    <li key={idea}>
+                      <button
+                        type="button"
+                        onClick={() => edit(setTitle)(idea)}
+                        className={cn(
+                          'w-full rounded-md border border-border px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50',
+                          idea === title && 'border-primary bg-accent/50',
+                        )}
+                      >
+                        {idea}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
             {trimmedTitle && trimmedTitle !== production.title ? (
               <>
@@ -207,6 +333,13 @@ export const PublicationPanel = ({ production }: PublicationPanelProps) => {
               >
                 {description.length} / {DESCRIPTION_MAX}
               </span>
+              {aiReady && (
+                <AiButton
+                  pending={aiDescription.isPending}
+                  onClick={suggestDescription}
+                  label="Générer une description courte"
+                />
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -219,6 +352,52 @@ export const PublicationPanel = ({ production }: PublicationPanelProps) => {
               </Button>
             </div>
           </div>
+          {aiDescription.error && (
+            <p className="text-xs text-destructive">{aiDescription.error.message}</p>
+          )}
+          {descriptionIdea !== null && (
+            <div className="space-y-2 rounded-md border border-border bg-muted/50 p-3">
+              <p className="whitespace-pre-wrap text-sm">{descriptionIdea}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    takeDescription(
+                      description.trim() === ''
+                        ? descriptionIdea
+                        : `${descriptionIdea}\n\n${description}`,
+                    )
+                  }
+                >
+                  Ajouter en tête
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => takeDescription(descriptionIdea)}
+                >
+                  Remplacer
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={aiDescription.isPending}
+                  onClick={suggestDescription}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Autre proposition
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setDescriptionIdea(null)}
+                  aria-label="Fermer la proposition"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
           <Textarea
             id="publish-description"
             className="min-h-[16rem] font-mono text-xs"
@@ -233,6 +412,19 @@ export const PublicationPanel = ({ production }: PublicationPanelProps) => {
           )}
           {loadError && <p className="text-xs text-destructive">{loadError}</p>}
         </div>
+
+        {aiReady && (
+          <div className="flex flex-wrap items-center gap-2">
+            <AiButton
+              pending={aiTags.isPending}
+              onClick={generateTags}
+              label="Générer les tags et hashtags"
+            />
+            {aiTags.error && (
+              <span className="text-xs text-destructive">{aiTags.error.message}</span>
+            )}
+          </div>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">

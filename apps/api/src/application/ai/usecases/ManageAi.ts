@@ -1,11 +1,17 @@
 import type {
   AiCredentials,
+  AiCreditView,
   AiKeySource,
   AiSettingsInput,
   AiSettingsView,
+  AiUsage,
 } from '../../../domain/ai/entities/Ai.ts';
-import { DEFAULT_AI_MODEL } from '../../../domain/ai/entities/Ai.ts';
-import type { AiSettingsRepository } from '../../../domain/ai/repositories/AiRepository.ts';
+import { AI_CREDIT_ALERT_CENTS, DEFAULT_AI_MODEL } from '../../../domain/ai/entities/Ai.ts';
+import type {
+  AiObserver,
+  AiSettingsRepository,
+} from '../../../domain/ai/repositories/AiRepository.ts';
+import { usageCostMicros } from '../../../domain/ai/services/pricing.ts';
 import type { SecretCipher } from '../../../domain/integration/repositories/IntegrationRepository.ts';
 import { badRequest, conflict } from '../../../shared/errors.ts';
 
@@ -17,11 +23,13 @@ const KEY_CONTEXT = 'ai:apiKey';
  */
 const LEGACY_KEY_CONTEXT = 'mail:aiKey';
 
+const MICROS_PER_CENT = 10_000;
+
 /**
  * Les réglages de l'assistant IA, et le **seul** endroit où sa clé est déchiffrée.
  * `ANTHROPIC_API_KEY` l'emporte toujours sur l'écran.
  */
-export class ManageAi {
+export class ManageAi implements AiObserver {
   private readonly settings: AiSettingsRepository;
   private readonly cipher: SecretCipher;
   private readonly envKey: string | null;
@@ -57,7 +65,37 @@ export class ManageAi {
       model: this.settings.get().model ?? DEFAULT_AI_MODEL,
       secretsKeyConfigured: this.cipher.available,
       configured: keySource === 'env' || keySource === 'app',
+      credit: this.credit(),
     };
+  }
+
+  private credit(): AiCreditView {
+    const { creditBalanceCents, creditSetAt, creditSpentMicros, creditExhaustedAt } =
+      this.settings.get();
+    const spentCents = Math.ceil(creditSpentMicros / MICROS_PER_CENT);
+    const remainingCents =
+      creditBalanceCents === null ? null : Math.max(0, creditBalanceCents - spentCents);
+    const exhausted = creditExhaustedAt !== null;
+    return {
+      balanceCents: creditBalanceCents,
+      setAt: creditSetAt,
+      spentCents,
+      remainingCents,
+      exhausted,
+      low: exhausted || (remainingCents !== null && remainingCents < AI_CREDIT_ALERT_CENTS),
+    };
+  }
+
+  /** Compte un appel. Il a abouti : un solde signalé épuisé ne l'est donc plus. */
+  usage(usage: AiUsage): void {
+    this.settings.addCreditSpend(usageCostMicros(usage));
+    if (this.settings.get().creditExhaustedAt !== null) {
+      this.settings.update({ creditExhaustedAt: null });
+    }
+  }
+
+  creditExhausted(): void {
+    this.settings.update({ creditExhaustedAt: new Date().toISOString() });
   }
 
   configured(): boolean {
@@ -78,6 +116,16 @@ export class ManageAi {
     }
     if (input.model !== undefined) {
       this.settings.update({ model: input.model?.trim() ? input.model.trim() : null });
+    }
+    if (input.creditBalance !== undefined) {
+      // Un nouveau relevé remplace tout : ce qui a été consommé avant y est déjà déduit.
+      this.settings.update({
+        creditBalanceCents:
+          input.creditBalance === null ? null : Math.round(input.creditBalance * 100),
+        creditSetAt: input.creditBalance === null ? null : new Date().toISOString(),
+        creditSpentMicros: 0,
+        creditExhaustedAt: null,
+      });
     }
     return this.view();
   }

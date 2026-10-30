@@ -30,6 +30,8 @@ export interface ScriptEditorProps {
    * éditeur et même enregistrement automatique, sans les outils de tournage.
    */
   scriptTools?: boolean;
+  /** L'IA d'écriture, sur le script d'une fiche de production. */
+  ai?: boolean;
   placeholder?: string;
   minHeight?: string;
 }
@@ -55,6 +57,7 @@ export const ScriptEditorView = ({
   productionId,
   stickyOffset,
   scriptTools,
+  ai,
   placeholder,
   minHeight,
 }: ScriptEditorProps) => {
@@ -142,6 +145,7 @@ export const ScriptEditorView = ({
         productionId={productionId}
         stickyOffset={stickyOffset}
         scriptTools={scriptTools}
+        ai={ai}
         placeholder={placeholder}
         minHeight={minHeight}
         status={<SaveIndicator status={status} onRetry={() => void flush()} />}

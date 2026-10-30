@@ -10,6 +10,7 @@ import { Placeholder } from '@tiptap/extensions';
 import { Eye } from 'lucide-react';
 import { ScriptToolbar } from './ScriptToolbar.tsx';
 import { ScriptReader } from './ScriptReader.tsx';
+import { ScriptAiPanel } from './ScriptAiPanel.tsx';
 import { Checkbox } from '../ui/checkbox.tsx';
 import { ScriptEditorSkeleton } from './ScriptEditorSkeleton.tsx';
 import { ScriptPresetNode } from './extensions/ScriptPresetNode.ts';
@@ -42,6 +43,8 @@ export interface ScriptSurfaceProps {
    * vidéos n'aurait pas de sens.
    */
   scriptTools?: boolean;
+  /** L'IA d'écriture. Demande `productionId` : c'est le script d'une vidéo qu'elle écrit. */
+  ai?: boolean;
   placeholder?: string;
   /** Classe de hauteur minimale de la zone d'écriture. */
   minHeight?: string;
@@ -71,6 +74,7 @@ export const ScriptSurface = ({
   onChange,
   productionId,
   scriptTools = true,
+  ai = false,
   placeholder = DEFAULT_PLACEHOLDER,
   minHeight = 'min-h-[28rem]',
   stickyOffset = 'var(--app-header, 0px)',
@@ -91,6 +95,7 @@ export const ScriptSurface = ({
   const [anglesHidden, setAnglesHidden] = useState(false);
   /** Le mode lecture plein écran. Son HTML est relu à l'ouverture, pas à chaque frappe. */
   const [readerHtml, setReaderHtml] = useState<string | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
 
   /** Le dernier HTML sorti d'ici : c'est lui qui dit si un `value` entrant est nouveau. */
   const emittedRef = useRef(value);
@@ -211,7 +216,13 @@ export const ScriptSurface = ({
         style={{ top: stickyOffset }}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <ScriptToolbar editor={editor} productionId={productionId} scriptTools={scriptTools} />
+          <ScriptToolbar
+            editor={editor}
+            productionId={productionId}
+            scriptTools={scriptTools}
+            aiOpen={aiOpen}
+            onToggleAi={ai && productionId ? () => setAiOpen((open) => !open) : undefined}
+          />
 
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             {/*
@@ -249,6 +260,15 @@ export const ScriptSurface = ({
             )}
           </div>
         </div>
+
+        {/* Dans le bloc collant : l'IA reste à portée quand on retravaille la page 3. */}
+        {aiOpen && productionId && (
+          <ScriptAiPanel
+            editor={editor}
+            productionId={productionId}
+            onClose={() => setAiOpen(false)}
+          />
+        )}
       </div>
 
       <ScriptReader

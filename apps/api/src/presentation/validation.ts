@@ -1339,4 +1339,16 @@ export const sendMailSchema = z.object({
 export const updateAiSettingsSchema = z.object({
   apiKey: z.string().trim().max(500).nullable().optional(),
   model: z.string().trim().max(100).nullable().optional(),
+  creditBalance: z.number().min(0).max(1_000_000).nullable().optional(),
+});
+
+export const productionAiScriptSchema = z.object({
+  prompt: z.string().trim().min(1).max(4000),
+  script: z.string().max(200_000).default(''),
+  selection: z.string().max(200_000).nullable().default(null),
+});
+
+/** Ce que l'IA a déjà proposé : c'est ce qui fait qu'une relance propose autre chose. */
+export const productionAiAvoidSchema = z.object({
+  avoid: z.array(z.string().max(6000)).max(30).default([]),
 });
