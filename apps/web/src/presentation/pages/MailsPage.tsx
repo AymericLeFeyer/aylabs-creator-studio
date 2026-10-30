@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, Paperclip, PenSquare, RefreshCw, Search } from 'lucide-react';
+import { Folder, Loader2, Paperclip, PenSquare, RefreshCw, Search } from 'lucide-react';
 import {
   useMailSettings,
   useMailStats,
@@ -9,6 +9,7 @@ import {
 } from '../../application/mail/usecases/useMails.ts';
 import {
   MAIL_VIEWS,
+  folderLabel,
   addressLabel,
   type MailThreadSummary,
   type MailView,
@@ -111,17 +112,26 @@ export const MailsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const threadId = searchParams.get('fil');
   const [view, setView] = useState<MailView>('inbox');
+  /** Le dossier ouvert. Dérivé des réglages : un dossier décoché y retombe sur la vue. */
+  const [folder, setFolder] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [newDraft, setNewDraft] = useState<MailDraft | null>(null);
 
   const { data: settings } = useMailSettings();
+  const moveFolders = settings?.moveFolders ?? [];
+  const activeFolder = folder && moveFolders.includes(folder) ? folder : null;
   const { data: stats } = useMailStats();
   const configured = settings?.configured ?? false;
   const {
     data: threads = [],
     isLoading,
     isFetching,
-  } = useMailThreads({ view, search: search.trim() || undefined }, configured);
+  } = useMailThreads(
+    activeFolder
+      ? { view: 'all', folder: activeFolder, search: search.trim() || undefined }
+      : { view, search: search.trim() || undefined },
+    configured,
+  );
   const sync = useSyncMail();
 
   const open = (id: string | null) => {
@@ -213,20 +223,40 @@ export const MailsPage = () => {
               className="pl-8"
             />
           </div>
-          <div className="flex flex-wrap gap-1 px-1">
-            {MAIL_VIEWS.map((entry) => (
-              <Button
-                key={entry.id}
-                size="sm"
-                variant={view === entry.id ? 'secondary' : 'ghost'}
-                onClick={() => setView(entry.id)}
-              >
-                {entry.label}
-                {entry.id === 'unread' && stats && stats.unread > 0 && ` (${stats.unread})`}
-              </Button>
-            ))}
+          {/* Une seule ligne qui défile : les dossiers s'ajoutent sans repousser la liste. */}
+          <div className="flex items-center gap-1 px-1">
+            <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-1">
+              {MAIL_VIEWS.map((entry) => (
+                <Button
+                  key={entry.id}
+                  size="sm"
+                  className="shrink-0"
+                  variant={!activeFolder && view === entry.id ? 'secondary' : 'ghost'}
+                  onClick={() => {
+                    setFolder(null);
+                    setView(entry.id);
+                  }}
+                >
+                  {entry.label}
+                  {entry.id === 'unread' && stats && stats.unread > 0 && ` (${stats.unread})`}
+                </Button>
+              ))}
+              {moveFolders.map((path) => (
+                <Button
+                  key={path}
+                  size="sm"
+                  className="shrink-0"
+                  variant={activeFolder === path ? 'secondary' : 'ghost'}
+                  title={path}
+                  onClick={() => setFolder(path)}
+                >
+                  <Folder className="h-3.5 w-3.5" />
+                  {folderLabel(path)}
+                </Button>
+              ))}
+            </div>
             {isFetching && (
-              <Loader2 className="ml-auto h-4 w-4 animate-spin self-center text-muted-foreground" />
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
             )}
           </div>
           {isLoading ? (
@@ -272,7 +302,7 @@ export const MailsPage = () => {
               aiConfigured={settings?.aiConfigured ?? false}
               signature={settings?.signature ?? ''}
               senders={settings?.senders ?? []}
-              moveFolders={settings?.moveFolders ?? []}
+              moveFolders={moveFolders}
               onBack={() => open(null)}
             />
           ) : (

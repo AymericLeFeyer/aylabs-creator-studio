@@ -48,7 +48,8 @@ export interface MailFolderInfo {
   specialUse: string | null;
 }
 
-export type MailFolderRole = 'inbox' | 'sent';
+/** `folder` : un dossier de rangement choisi dans les réglages, relevé pour être lu ici. */
+export type MailFolderRole = 'inbox' | 'sent' | 'folder';
 
 export interface MailMessage {
   id: string;
@@ -138,6 +139,8 @@ export interface MailThreadView extends MailThreadSummary {
 export interface MailThreadFilter {
   search?: string;
   view?: 'inbox' | 'unread' | 'linked' | 'all';
+  /** Ne garde que les fils présents dans ce dossier du serveur. */
+  folder?: string;
   brandId?: string;
   productionId?: string;
   limit?: number;
@@ -261,7 +264,8 @@ export type MailAiAction =
   | { action: 'summarize' }
   | { action: 'follow_up' }
   | { action: 'draft'; intent: MailDraftIntent; notes?: string }
-  | { action: 'translate'; text: string; language?: string };
+  | { action: 'translate'; text: string; language?: string }
+  | { action: 'refine'; text: string; instruction: string };
 
 /** Une tâche tirée d'une échéance d'un fil, et ce qu'il en est advenu. */
 export interface MailDateTask {

@@ -292,9 +292,30 @@ export class ManageMail {
       const sinceIso = since.toISOString();
       const known = new Map(this.store.folders().map((folder) => [folder.path, folder]));
 
-      for (const folder of await server.resolveFolders()) {
+      // Réception d'abord : un mail rangé doit y être marqué parti avant d'être retrouvé
+      // dans son dossier, c'est ce qui fait suivre sa ligne au lieu d'en créer une seconde.
+      const stored = this.settings.get();
+      const mine = this.scope().mine;
+      const base = await server.resolveFolders();
+      const followed = [
+        ...base,
+        ...stored.moveFolders
+          .filter((path) => !base.some((folder) => folder.path === path))
+          .map((path) => ({ path, role: 'folder' as const })),
+      ];
+
+      for (const folder of followed) {
         const state = known.get(folder.path);
-        let result = await server.syncFolder(folder.path, state?.lastUid ?? 0, since);
+        // Un dossier supprimé dans Proton ne doit pas priver du relevé de la réception.
+        const first = await server
+          .syncFolder(folder.path, state?.lastUid ?? 0, since)
+          .catch((error: unknown) => {
+            if (folder.role !== 'folder') throw error;
+            console.warn(`[mail] dossier ${folder.path} :`, error);
+            return null;
+          });
+        if (!first) continue;
+        let result = first;
         let lastUid = state?.lastUid ?? 0;
         if (state?.uidValidity && state.uidValidity !== result.uidValidity) {
           // Les UID d'avant ne désignent plus rien : on réimporte tout depuis zéro.
@@ -306,7 +327,10 @@ export class ManageMail {
           const threadId = this.store.insert({
             ...message,
             folder: folder.path,
-            outgoing: folder.role === 'sent',
+            // Dans un dossier, mes réponses côtoient les mails reçus.
+            outgoing:
+              folder.role === 'sent' ||
+              (folder.role === 'folder' && mine.includes(message.from.address.toLowerCase())),
           });
           if (threadId && message.attachments.length > 0) touched.add(threadId);
           lastUid = Math.max(lastUid, message.uid);
@@ -423,6 +447,8 @@ export class ManageMail {
       await server.close();
     }
     this.store.markMessagesRemoved(messages.map((message) => message.id));
+    // Le relevé retrouve aussitôt le fil dans son dossier, s'il fait partie des suivis.
+    await this.sync();
     return this.thread(id);
   }
 

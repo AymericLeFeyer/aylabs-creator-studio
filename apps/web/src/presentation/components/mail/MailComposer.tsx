@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Languages, Loader2, Send, Sparkles, X } from 'lucide-react';
+import { Languages, Loader2, Send, Sparkles, Undo2, WandSparkles, X } from 'lucide-react';
 import { useMailAi, useSendMail } from '../../../application/mail/usecases/useMails.ts';
 import {
   MAIL_DRAFT_INTENTS,
@@ -71,6 +71,9 @@ export const MailComposer = ({
   const [confirming, setConfirming] = useState(false);
   const [notes, setNotes] = useState('');
   const [language, setLanguage] = useState('');
+  const [instruction, setInstruction] = useState('');
+  /** Le brouillon d'avant l'ajustement : un clic le rend si l'IA a trop touché au texte. */
+  const [beforeRefine, setBeforeRefine] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
 
   const set = (patch: Partial<MailDraft>) => onChange({ ...draft, ...patch });
@@ -106,6 +109,26 @@ export const MailComposer = ({
         request: { action: 'translate', text: draft.body, language: language.trim() || undefined },
       },
       { onSuccess: ({ text }) => set({ body: text }), onSettled: () => setPending(null) },
+    );
+  };
+
+  const refine = () => {
+    if (!threadId || !draft.body.trim() || !instruction.trim()) return;
+    const before = draft.body;
+    setPending('refine');
+    ai.mutate(
+      {
+        id: threadId,
+        request: { action: 'refine', text: before, instruction: instruction.trim() },
+      },
+      {
+        onSuccess: ({ text }) => {
+          set({ body: text });
+          setBeforeRefine(before);
+          setInstruction('');
+        },
+        onSettled: () => setPending(null),
+      },
     );
   };
 
@@ -233,6 +256,50 @@ export const MailComposer = ({
             )}
             Traduire mon message
           </Button>
+        </div>
+      )}
+
+      {threadId && aiConfigured && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                refine();
+              }
+            }}
+            placeholder="Ajuster : « ajoute que je suis dispo en mars », « reformule la 2e phrase »…"
+            className="h-8 min-w-0 flex-1 basis-64 text-xs"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy || !draft.body.trim() || !instruction.trim()}
+            onClick={refine}
+          >
+            {pending === 'refine' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <WandSparkles className="h-3.5 w-3.5" />
+            )}
+            Ajuster
+          </Button>
+          {beforeRefine !== null && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                set({ body: beforeRefine });
+                setBeforeRefine(null);
+              }}
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+              Annuler
+            </Button>
+          )}
         </div>
       )}
 

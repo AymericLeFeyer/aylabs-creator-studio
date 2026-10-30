@@ -2290,7 +2290,9 @@ Tables (migration 50) :
 - **IA** (`MailAssistant`, sur le domaine `ai` — clé et modèle dans Paramètres → API) : résumé d'un message (gardé dans `ai_summary`), résumé
   du fil (gardé dans `mail_threads.summary`), relance, brouillons « Pas intéressé /
   Intéressé / Voici mes tarifs » (+ indications libres), traduction du brouillon (dans la
-  langue du fil, ou une langue saisie). Brouillons : texte brut, langue et registre du
+  langue du fil, ou une langue saisie), **ajustement du brouillon** (`action: 'refine'`, champ
+  libre + « Ajuster » : seule la modification demandée change, le reste reste mot pour mot,
+  et « Annuler » rend le texte d'avant). Brouillons : texte brut, langue et registre du
   dernier message reçu, **champs inconnus entre crochets** (la modale de confirmation
   avertit s'il en reste), jamais de montant inventé — les tarifs viennent de
   `mail_settings.rates`. Le transcript retire les citations (`stripQuoted`) et tronque
@@ -2330,7 +2332,15 @@ Tables (migration 50) :
   serveur dans les réglages (`GET /folders`, au clic seulement) et on en coche quelques-uns
   (`mail_settings.move_folders`) ; seuls ceux-là sont admis (400 sinon). IMAP `MOVE` des
   messages du fil encore dans la réception, puis `removed_at` posé localement : le fil sort
-  de « Réception », reste lisible dans « Tous » et ses rattachements.
+  de « Réception », reste lisible dans « Tous » et ses rattachements. Un relevé suit aussitôt.
+- **Dossiers lisibles** : les dossiers de rangement sont **relevés** (rôle `folder`, migration
+  55, après la réception et les envoyés) et s'ouvrent dans la rangée à défilement horizontal
+  de `/mails` (`GET /threads?folder=`). `insert` fait **suivre sa ligne** à un mail rangé (même
+  `message_id`, ligne `removed_at`) : il garde résumé, fil et pièces jointes, redevenues
+  téléchargeables. Une étiquette (même mail dans deux dossiers) donne deux lignes : tout se
+  compte par `message_id` et `uniqueRows` n'en garde qu'une à l'affichage. **« Réception »,
+  « Non lus » et la pastille ne lisent que `INBOX`** ; un mail non lu dans un dossier n'y
+  compte pas. Un dossier disparu du serveur est sauté, sans faire échouer le relevé.
 - **Secret** : `MAIL_PASSWORD` l'emporte sur l'écran (409 si on tente de le changer). Sans
   `SECRETS_KEY`, l'écran refuse de l'enregistrer.
 
@@ -2588,10 +2598,10 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/mails/addresses`                              | Adresses vues dans la boîte : `[{ address, received, sent }]`, les 60 plus fréquentes — à cocher comme adresses suivies |
 | `GET`    | `/api/mails/stats`                                  | `{ configured, aiConfigured, unread, lastSyncAt, lastSyncError }` — la pastille, relue chaque minute |
 | `POST`   | `/api/mails/sync`                                   | Relevé immédiat. `{ created, error, stats }` |
-| `GET`    | `/api/mails/threads`                                | `?view=inbox\|unread\|linked\|all&search=&brandId=&productionId=&limit=` (200) |
+| `GET`    | `/api/mails/threads`                                | `?view=inbox\|unread\|linked\|all&folder=&search=&brandId=&productionId=&limit=` (200). `folder` : les fils présents dans ce dossier |
 | `GET`    | `/api/mails/threads/:id`                            | `MailThreadView` : fil + messages complets |
 | `PATCH`  | `/api/mails/threads/:id`                            | `{ brandId?, productionId?, read? }`. `read` écrit `\Seen` **sur le serveur** d'abord ; un `productionId` écrit la note « Échanges » (pièces jointes) dans la vidéo |
-| `POST`   | `/api/mails/threads/:id/ai`                         | `{ action: 'summarize' \| 'follow_up' }`, `{ action: 'draft', intent, notes? }`, `{ action: 'translate', text, language? }` → `{ text }`. N'envoie rien |
+| `POST`   | `/api/mails/threads/:id/ai`                         | `{ action: 'summarize' \| 'follow_up' }`, `{ action: 'draft', intent, notes? }`, `{ action: 'translate', text, language? }`, `{ action: 'refine', text, instruction }` → `{ text }`. N'envoie rien |
 | `POST`   | `/api/mails/threads/:id/video-note`                 | Écrit/réécrit la note « Échanges » dans la vidéo rattachée (400 sans vidéo). Rend la `ProductionNote` |
 | `POST`   | `/api/mails/messages/:id/summarize`                 | `{ text }`, gardé dans `ai_summary` |
 | `POST`   | `/api/mails/send`                                   | **Seul envoi du studio.** `{ to, cc, subject, text, threadId, from?, confirm: true }` — 422 sans `confirm`, 400 si `from` n'est pas dans `senders` |
@@ -3391,6 +3401,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 55** élargit le `CHECK` de `mail_folders` au rôle `folder` (table recréée, aucune clé étrangère ne la vise) et indexe `mail_messages.folder`.
 - **Migration 54** ajoute `mail_settings.move_folders`, `mail_threads.note_body` et `mail_attachments` (reprise des métadonnées par `json_each`). **Migration 53** ajoute `ai_settings` (reprise de la clé IA des mails).
 - **Migration 52** ajoute `mail_settings.addresses` et `mail_messages.recipients` (repris de To/Cc par `json_each`). **Migration 51** ajoute `mail_settings.allow_self_signed` (Proton Bridge).
 - **Migration 50** ajoute `mail_settings` (ligne unique), `mail_folders`, `mail_messages` et `mail_threads` (la boîte mail).

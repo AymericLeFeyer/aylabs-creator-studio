@@ -48,6 +48,7 @@ interface ThreadRow {
   thread_id: string;
   message_count: number;
   unread_count: number;
+  inbox_unread: number;
   active_incoming: number;
   last_date: string;
   has_attachments: number;
@@ -112,6 +113,8 @@ const scopeSql = (scope: MailScope): { sql: string; params: string[] } => {
  * que s'il a au moins un message sur une adresse suivie, et seuls ceux-là comptent dans ses
  * non lus. Rien n'est dénormalisé — changer les adresses suivies n'a rien à recalculer.
  * `active_incoming` dit si le fil est encore dans la boîte de réception sur le serveur.
+ * Tout se compte par `message_id` : une étiquette Proton montre le même message dans deux
+ * dossiers, soit deux lignes pour un seul mail.
  */
 const threadSql = (scope: MailScope): { sql: string; params: string[] } => {
   const { sql, params } = scopeSql(scope);
@@ -122,9 +125,10 @@ const threadSql = (scope: MailScope): { sql: string; params: string[] } => {
          th.summary, th.summary_at, th.note_id
     FROM (
       SELECT thread_id,
-             COUNT(*) AS message_count,
-             SUM(CASE WHEN seen = 0 AND outgoing = 0 AND removed_at IS NULL THEN 1 ELSE 0 END) AS unread_count,
-             SUM(CASE WHEN outgoing = 0 AND removed_at IS NULL THEN 1 ELSE 0 END) AS active_incoming,
+             COUNT(DISTINCT message_id) AS message_count,
+             COUNT(DISTINCT CASE WHEN seen = 0 AND outgoing = 0 AND removed_at IS NULL THEN message_id END) AS unread_count,
+             COUNT(DISTINCT CASE WHEN seen = 0 AND outgoing = 0 AND removed_at IS NULL AND folder = 'INBOX' THEN message_id END) AS inbox_unread,
+             COUNT(DISTINCT CASE WHEN outgoing = 0 AND removed_at IS NULL AND folder = 'INBOX' THEN message_id END) AS active_incoming,
              MAX(date) AS last_date,
              MAX(CASE WHEN attachments_json <> '[]' THEN 1 ELSE 0 END) AS has_attachments
         FROM mail_messages
@@ -137,6 +141,20 @@ const threadSql = (scope: MailScope): { sql: string; params: string[] } => {
 `,
     params,
   };
+};
+
+/**
+ * Une ligne par mail : une étiquette Proton en donne une par dossier. On garde celle de la
+ * réception, à défaut une ligne encore active — c'est elle qui sait où relire le message.
+ */
+const uniqueRows = (rows: MessageRow[]): MessageRow[] => {
+  const rank = (row: MessageRow) => (row.removed_at ? 2 : row.folder === 'INBOX' ? 0 : 1);
+  const best = new Map<string, MessageRow>();
+  for (const row of rows) {
+    const current = best.get(row.message_id);
+    if (!current || rank(row) < rank(current)) best.set(row.message_id, row);
+  }
+  return rows.filter((row) => best.get(row.message_id) === row);
 };
 
 /** Les adresses auxquelles un message a été écrit, au format de la colonne `recipients`. */
@@ -197,6 +215,23 @@ export class SqliteMailStore implements MailStore {
       .prepare('SELECT 1 FROM mail_messages WHERE folder = ? AND uid = ?')
       .get(message.folder, message.uid);
     if (exists) return null;
+
+    // Le même mail a quitté un dossier : il a été rangé. Sa ligne le suit, avec son résumé,
+    // son fil et ses pièces jointes, plutôt que d'en créer une seconde.
+    const moved = this.db
+      .prepare(
+        `SELECT id, thread_id FROM mail_messages
+          WHERE message_id = ? AND removed_at IS NOT NULL LIMIT 1`,
+      )
+      .get(message.messageId) as { id: string; thread_id: string } | undefined;
+    if (moved) {
+      this.db
+        .prepare(
+          'UPDATE mail_messages SET folder = ?, uid = ?, seen = ?, removed_at = NULL WHERE id = ?',
+        )
+        .run(message.folder, message.uid, message.seen ? 1 : 0, moved.id);
+      return moved.thread_id;
+    }
 
     const id = newId();
     const threadId = this.resolveThread(message);
@@ -315,6 +350,12 @@ export class SqliteMailStore implements MailStore {
    * — certains clients n'y gardent que le dernier maillon.
    */
   private resolveThread(message: NewMailMessage): string {
+    // Copie du même mail dans un autre dossier (étiquette) : même fil, sans discussion.
+    const same = this.db
+      .prepare('SELECT thread_id FROM mail_messages WHERE message_id = ? LIMIT 1')
+      .get(message.messageId) as { thread_id: string } | undefined;
+    if (same) return same.thread_id;
+
     const cited = [message.inReplyTo, ...message.references].filter(
       (value): value is string => !!value,
     );
@@ -369,8 +410,8 @@ export class SqliteMailStore implements MailStore {
     const { sql, params } = scopeSql(scope);
     const row = this.db
       .prepare(
-        `SELECT COUNT(*) AS n FROM mail_messages
-          WHERE seen = 0 AND outgoing = 0 AND removed_at IS NULL AND ${sql}`,
+        `SELECT COUNT(DISTINCT message_id) AS n FROM mail_messages
+          WHERE seen = 0 AND outgoing = 0 AND removed_at IS NULL AND folder = 'INBOX' AND ${sql}`,
       )
       .get(...params) as { n: number };
     return row.n;
@@ -421,8 +462,14 @@ export class SqliteMailStore implements MailStore {
     const view = filter.view ?? 'inbox';
 
     if (view === 'inbox') where.push('t.active_incoming > 0');
-    if (view === 'unread') where.push('t.unread_count > 0');
+    if (view === 'unread') where.push('t.inbox_unread > 0');
     if (view === 'linked') where.push('(th.brand_id IS NOT NULL OR th.production_id IS NOT NULL)');
+    if (filter.folder) {
+      where.push(
+        't.thread_id IN (SELECT thread_id FROM mail_messages WHERE folder = ? AND removed_at IS NULL)',
+      );
+      params.push(filter.folder);
+    }
     if (filter.brandId) {
       where.push('th.brand_id = ?');
       params.push(filter.brandId);
@@ -449,12 +496,14 @@ export class SqliteMailStore implements MailStore {
     if (rows.length === 0) return [];
 
     const ids = rows.map((row) => row.thread_id);
-    const messages = this.db
-      .prepare(
-        `SELECT * FROM mail_messages WHERE thread_id IN (${ids.map(() => '?').join(', ')})
-          ORDER BY date`,
-      )
-      .all(...ids) as unknown as MessageRow[];
+    const messages = uniqueRows(
+      this.db
+        .prepare(
+          `SELECT * FROM mail_messages WHERE thread_id IN (${ids.map(() => '?').join(', ')})
+            ORDER BY date`,
+        )
+        .all(...ids) as unknown as MessageRow[],
+    );
     const byThread = new Map<string, MailMessage[]>();
     for (const row of messages) {
       const list = byThread.get(row.thread_id) ?? [];
@@ -470,11 +519,12 @@ export class SqliteMailStore implements MailStore {
     const row = this.db.prepare(`${base.sql} WHERE t.thread_id = ?`).get(...base.params, id) as
       ThreadRow | undefined;
     if (!row) return null;
-    const messages = (
+    const messageRows = uniqueRows(
       this.db
         .prepare('SELECT * FROM mail_messages WHERE thread_id = ? ORDER BY date')
-        .all(id) as unknown as MessageRow[]
-    ).map(toDomain);
+        .all(id) as unknown as MessageRow[],
+    );
+    const messages = messageRows.map(toDomain);
     // Les identifiants des pièces jointes, pour les liens de téléchargement.
     const attachmentRows = this.db
       .prepare(
@@ -490,11 +540,7 @@ export class SqliteMailStore implements MailStore {
             ?.id ?? undefined,
       }));
     }
-    const recipients = (
-      this.db
-        .prepare('SELECT recipients FROM mail_messages WHERE thread_id = ? ORDER BY date')
-        .all(id) as unknown as Array<{ recipients: string }>
-    ).map((entry) => entry.recipients);
+    const recipients = messageRows.map((entry) => entry.recipients);
     // Une note supprimée depuis la fiche de la vidéo ne doit pas être réécrite : on la recrée.
     const noteExists =
       row.note_id !== null &&

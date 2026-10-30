@@ -79,6 +79,8 @@ export const MAIL_VIEWS: Array<{ id: MailView; label: string }> = [
 export interface MailThreadFilter {
   search?: string;
   view?: MailView;
+  /** Ne garde que les fils présents dans ce dossier du serveur. */
+  folder?: string;
   brandId?: string;
   productionId?: string;
 }
@@ -140,7 +142,8 @@ export type MailAiRequest =
   | { action: 'summarize' }
   | { action: 'follow_up' }
   | { action: 'draft'; intent: MailDraftIntent; notes?: string }
-  | { action: 'translate'; text: string; language?: string };
+  | { action: 'translate'; text: string; language?: string }
+  | { action: 'refine'; text: string; instruction: string };
 
 export interface SendMailInput {
   to: MailAddress[];

@@ -1282,6 +1282,7 @@ export const moveMailThreadSchema = z.object({ folder: z.string().trim().min(1).
 export const mailThreadsQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
   view: z.enum(['inbox', 'unread', 'linked', 'all']).optional(),
+  folder: z.string().trim().min(1).max(300).optional(),
   brandId: z.string().min(1).optional(),
   productionId: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
@@ -1305,6 +1306,11 @@ export const mailAiSchema = z.discriminatedUnion('action', [
     action: z.literal('translate'),
     text: z.string().min(1).max(50_000),
     language: z.string().trim().max(60).optional(),
+  }),
+  z.object({
+    action: z.literal('refine'),
+    text: z.string().min(1).max(50_000),
+    instruction: z.string().trim().min(1).max(2_000),
   }),
 ]);
 

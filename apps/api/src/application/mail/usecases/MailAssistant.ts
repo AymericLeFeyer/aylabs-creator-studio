@@ -149,6 +149,16 @@ export class MailAssistant {
           `## Fil (pour le contexte et la langue)\n${transcript}\n\n## Brouillon à traduire\n${request.text}`,
         );
       }
+      case 'refine':
+        // Un ajustement, pas une réécriture : ce qui n'est pas visé doit rester mot pour mot.
+        return this.ask(
+          [
+            'Applique au brouillon uniquement la modification demandée. Tout le reste reste mot pour mot : mêmes phrases, même ordre, mêmes paragraphes, même langue, mêmes champs entre crochets.',
+            'Ne reformule rien d’autre, ne corrige pas le style, n’ajoute ni formule ni signature. N’invente aucun montant, date ou engagement : ce qui manque devient un champ entre crochets.',
+            'Rends uniquement le brouillon modifié, en texte brut, sans commentaire.',
+          ].join('\n'),
+          `## Fil (pour le contexte)\n${transcript}\n\n## Brouillon\n${request.text}\n\n## Modification demandée\n${request.instruction}`,
+        );
     }
   }
 

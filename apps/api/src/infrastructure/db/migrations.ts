@@ -1925,6 +1925,25 @@ const migrations: Migration[] = [
           FROM mail_messages m, json_each(m.attachments_json) a;
     `,
   },
+  {
+    version: 55,
+    name: 'mail_followed_folders',
+    // Les dossiers de rangement se relevent aussi, pour etre lisibles dans l'ecran : le role
+    // "folder" s'ajoute. Elargir un CHECK impose de recreer la table ; aucune cle etrangere
+    // ne la vise, donc pas besoin de "rebuildsTable". Un index aide a lire un dossier.
+    up: `
+      CREATE TABLE mail_folders_new (
+        path         TEXT PRIMARY KEY,
+        role         TEXT NOT NULL CHECK (role IN ('inbox', 'sent', 'folder')),
+        uid_validity TEXT,
+        last_uid     INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO mail_folders_new SELECT path, role, uid_validity, last_uid FROM mail_folders;
+      DROP TABLE mail_folders;
+      ALTER TABLE mail_folders_new RENAME TO mail_folders;
+      CREATE INDEX idx_mail_messages_folder ON mail_messages (folder);
+    `,
+  },
 ];
 
 /**

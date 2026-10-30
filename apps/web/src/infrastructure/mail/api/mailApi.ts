@@ -35,6 +35,7 @@ export const mailApi = {
       query: {
         search: filter.search || undefined,
         view: filter.view,
+        folder: filter.folder,
         brandId: filter.brandId,
         productionId: filter.productionId,
       },
