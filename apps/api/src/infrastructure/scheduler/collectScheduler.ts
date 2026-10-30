@@ -127,6 +127,24 @@ export const startCollectScheduler = (container: Container): void => {
       .catch((error: unknown) => console.error('[cron] ventes Domadoo interrompues :', error));
   });
 
+  // La boîte mail a son propre rythme (5 min par défaut) : la pastille des non lus doit
+  // bouger dans la journée, pas une fois par heure. Hors du verrou de la collecte : un
+  // relevé IMAP n'a rien à voir avec YouTube, et `ManageMail.sync` porte son propre verrou.
+  const syncMail = (): void => {
+    void container.manageMail.sync().then((result) => {
+      if (result.created > 0) console.log(`[mail] ${result.created} nouveau(x) message(s)`);
+      if (result.error) console.warn(`[mail] relevé : ${result.error}`);
+    });
+  };
+  if (cron.validate(container.config.mailCron)) {
+    cron.schedule(container.config.mailCron, syncMail);
+    syncMail();
+  } else {
+    console.error(
+      `[cron] MAIL_CRON invalide (${container.config.mailCron}), relevé mail désactivé`,
+    );
+  }
+
   if (collectAtStartup) {
     void run('au démarrage');
   } else {

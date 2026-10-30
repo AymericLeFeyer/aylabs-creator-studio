@@ -85,6 +85,13 @@ export const queryKeys = {
   // jour local fait partie de la clé, passé minuit la liste change.
   externalApps: () => ['externalApps'] as const,
   todoToday: (today: string) => ['todoToday', today] as const,
+
+  // La boîte mail. Tout vit sous la racine `['mails']`, qui ne croise aucune autre racine
+  // — sauf la note de vidéo, qui invalide en plus `productionNotes` de la vidéo visée.
+  mailSettings: () => ['mails', 'settings'] as const,
+  mailStats: () => ['mails', 'stats'] as const,
+  mailThreads: (filter: unknown) => ['mails', 'threads', filter] as const,
+  mailThread: (id: string) => ['mails', 'thread', id] as const,
 };
 
 /** Racines à invalider après une écriture qui change les chiffres agrégés. */

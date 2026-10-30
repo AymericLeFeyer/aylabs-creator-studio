@@ -9,6 +9,7 @@ import { externalAppPath } from '../../domain/externalApp/entities/ExternalApp.t
 import { usePostDraftSummary } from '../../application/postDraft/usecases/usePostDrafts.ts';
 import { localToday } from '../../application/planning/usecases/usePlanning.ts';
 import { useCommentCounts } from '../../application/comment/usecases/useComments.ts';
+import { useMailStats } from '../../application/mail/usecases/useMails.ts';
 import { buildNavBadges, publicationBadge, type NavBadge } from '../navBadges.ts';
 
 /**
@@ -32,6 +33,7 @@ export const useNavBadges = (): Record<string, NavBadge> => {
   const { data: publications } = usePostDraftSummary();
   // Toutes chaînes confondues : même clé que l'écran sans filtre de chaîne.
   const { data: commentCounts } = useCommentCounts();
+  const { data: mailStats } = useMailStats();
   // Le jour local, relu à chaque rendu : la pastille doit basculer à minuit sans recharger.
   const localDay = localToday();
 
@@ -51,6 +53,15 @@ export const useNavBadges = (): Record<string, NavBadge> => {
     if (commentCounts && commentCounts.new > 0) {
       badges['/commentaires'] = { count: commentCounts.new, tone: 'warning', reasons: [] };
     }
+    // Les mails non lus : une information, pas une alerte — neutre, et rien à zéro.
+    if (mailStats && mailStats.unread > 0) {
+      badges['/mails'] = {
+        count: mailStats.unread,
+        label: `${mailStats.unread} non lu${mailStats.unread > 1 ? 's' : ''}`,
+        tone: 'neutral',
+        reasons: [],
+      };
+    }
     return badges;
-  }, [overview, legal, todoApp, today, publications, localDay, commentCounts]);
+  }, [overview, legal, todoApp, today, publications, localDay, commentCounts, mailStats]);
 };

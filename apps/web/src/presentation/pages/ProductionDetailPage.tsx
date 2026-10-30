@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   ExternalLink,
@@ -63,6 +63,9 @@ export const ProductionDetailPage = () => {
   const privacy = usePrivacy();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // `?onglet=notes` : la boîte mail y renvoie après avoir écrit la note des échanges.
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('onglet') ?? 'script';
 
   const { data: production, isLoading } = useProduction(id);
   const { data: steps = [] } = useProductionSteps();
@@ -230,7 +233,7 @@ export const ProductionDetailPage = () => {
         </div>
       </Card>
 
-      <Tabs defaultValue="script">
+      <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="script">Script</TabsTrigger>
           <TabsTrigger value="publication">Publication</TabsTrigger>

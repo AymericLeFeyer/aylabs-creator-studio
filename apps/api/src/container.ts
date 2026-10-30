@@ -89,6 +89,13 @@ import { SqliteTodoConnectionRepository } from './infrastructure/todoApp/reposit
 import { TodoAppClient } from './infrastructure/todoApp/api/TodoAppClient.ts';
 import { SqliteTodoLinkRepository } from './infrastructure/todoApp/repositories/SqliteTodoLinkRepository.ts';
 import { SyncStudioTodos } from './application/todoApp/usecases/SyncStudioTodos.ts';
+import { ManageMail } from './application/mail/usecases/ManageMail.ts';
+import { MailAssistant } from './application/mail/usecases/MailAssistant.ts';
+import { SqliteMailSettingsRepository } from './infrastructure/mail/repositories/SqliteMailSettingsRepository.ts';
+import { SqliteMailStore } from './infrastructure/mail/repositories/SqliteMailStore.ts';
+import { ImapMailServerFactory } from './infrastructure/mail/api/ImapMailServer.ts';
+import { SmtpMailSender } from './infrastructure/mail/api/SmtpMailSender.ts';
+import { ClaudeMailAi } from './infrastructure/mail/api/ClaudeMailAi.ts';
 
 export interface Container {
   db: DatabaseSync;
@@ -219,6 +226,13 @@ export interface Container {
    * et les cases du tableau légal (synchronisées dans les deux sens).
    */
   syncStudioTodos: SyncStudioTodos;
+  /**
+   * La boîte mail : réglages (secrets chiffrés ici seulement), relevé IMAP, fils, et le
+   * **seul chemin d'envoi** du studio.
+   */
+  manageMail: ManageMail;
+  /** Résumés, traductions, brouillons et note de vidéo. N'envoie jamais rien. */
+  mailAssistant: MailAssistant;
 }
 
 /** Assemble les implémentations concrètes derrière les interfaces du domaine. */
@@ -317,9 +331,21 @@ export const buildContainer = (config: Config): Container => {
     timeZone: config.timeZone,
   });
 
+  const mailStore = new SqliteMailStore(db);
+  const manageMail = new ManageMail(
+    new SqliteMailSettingsRepository(db),
+    mailStore,
+    secrets,
+    { password: config.mailPassword, anthropicApiKey: config.anthropicApiKey },
+    new ImapMailServerFactory(),
+    new SmtpMailSender(),
+  );
+
   return {
     db,
     config,
+    manageMail,
+    mailAssistant: new MailAssistant(manageMail, mailStore, new ClaudeMailAi(), productionNotes),
     channels,
     metrics,
     categories,

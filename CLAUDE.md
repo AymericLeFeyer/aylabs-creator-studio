@@ -1,8 +1,8 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-10-26
+> Dernière mise à jour : 2026-10-30
 
-Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie.
+Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie. **Et la boîte mail** (Admin → Mails), avec un assistant IA qui propose — jamais n'envoie.
 
 ## Stack
 
@@ -15,6 +15,8 @@ Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagn�
 | Design     | **shadcn/ui + Tailwind v4** — seul design system du projet, ne pas en mêler d'autre  |
 | Graphiques | Recharts 3                                                                           |
 | Éditeur    | **TipTap 3** (ProseMirror) — scripts en WYSIWYG. Chunk isolé **et** chargé en `lazy` |
+| Mails      | `imapflow` (IMAP), `nodemailer` (SMTP), `mailparser` — JS pur, rien à compiler       |
+| IA         | `@anthropic-ai/sdk`, modèle `claude-opus-5` par défaut (réglable)                    |
 | Données    | TanStack Query 5                                                                     |
 | PWA        | Manifeste + service worker **écrits à la main**, aucune dépendance de build          |
 | CI/CD      | GitHub Actions → images GHCR → stack Portainer sur VPS                               |
@@ -103,7 +105,7 @@ Les deux applications suivent la même découpe.
 apps/api/src/
 ├── domain/          channel, metrics, category, revenue, expense, video, analytics,
 │                    brand, production, product, sponsorship, idea, postDraft, legal, integration,
-│                    todoApp, externalApp, dashboard, branding, achievement, goal
+│                    todoApp, externalApp, dashboard, branding, achievement, goal, mail
 │   └── <domaine>/{entities,repositories,services}    # repositories = interfaces seules
 ├── application/<domaine>/usecases/
 ├── infrastructure/
@@ -2225,6 +2227,87 @@ affiche au centre son % **et sa valeur réelle** ; un clic et non un survol, pou
 ni crayon, ni « Modifier », ni modale montée (`useOnDashboard` = `WidgetContext` non nul).
 On crée et on corrige depuis Succès seulement.
 
+### `mail` — la boîte mail (Admin → Mails)
+
+**Règle absolue : aucun mail ne part sans un geste explicite de l'utilisateur.** Un seul
+chemin d'envoi dans tout le studio : `POST /api/mails/send` → `ManageMail.send` →
+`SmtpMailSender`. Le schéma zod exige `confirm: true`, que seul le bouton « Envoyer
+maintenant » de la modale de confirmation de `MailComposer` pose (`useSendMail`). L'IA
+(`MailAssistant`) **n'a aucune référence** à ce chemin : elle rend du texte, que l'écran
+pose dans le brouillon. Ne jamais brancher d'envoi automatique, de relance planifiée ou
+d'envoi depuis l'IA.
+
+Tables (migration 50) :
+
+| Table           | Contenu                                                                                         |
+| --------------- | ----------------------------------------------------------------------------------------------- |
+| `mail_settings` | ligne unique : IMAP/SMTP, identifiant, **mot de passe et clé IA chiffrés** (`SecretBox`, contextes `mail:password` / `mail:aiKey`), signature, tarifs, `sync_days`, modèle IA, dernier relevé |
+| `mail_folders`  | `path`, `role` (`inbox`/`sent`), `uid_validity`, `last_uid`                                     |
+| `mail_messages` | copie locale des messages (clé unique `(folder, uid)`), `thread_id`, `seen`, `outgoing`, `ai_summary`, `removed_at` |
+| `mail_threads`  | ce qui appartient au studio : `brand_id`, `production_id` (`ON DELETE SET NULL`), `summary`, `note_id` |
+
+- **Relevé** (`ManageMail.sync`, verrou par promesse partagée) : cron `MAIL_CRON` (défaut
+  `*/5 * * * *`) + au démarrage + bouton « Relever » + après chaque envoi. INBOX + dossier
+  des envoyés (`\Sent`, sinon par nom). Fenêtre `sync_days` (défaut 60) ; au plus 300
+  nouveaux messages par dossier et par passage (les plus récents) ; source > 15 Mo =
+  enveloppe seule. `UIDVALIDITY` changé → dossier réimporté (les fils survivent, ils vivent
+  dans `mail_threads`).
+- **L'état lu suit le serveur** dans les deux sens : relevé = flags du serveur ; ouvrir un
+  fil (`PATCH /threads/:id { read: true }`, une fois par ouverture) pose `\Seen` **sur le
+  serveur d'abord**, puis en base.
+- **Un message disparu du dossier est marqué `removed_at`, jamais supprimé** (archivé dans
+  Gmail, supprimé sur le téléphone) : un fil rattaché à une vidéo garde son historique. Un
+  fil sans message reçu actif sort de « Réception » (`archived`), reste dans « Tous ».
+- **Fils** reconstruits par `References` / `In-Reply-To` (`SqliteMailStore.resolveThread`) :
+  fil d'un message cité, sinon d'un message qui le cite, sinon `threadKey(racine)` (sha1, 24
+  hex — un `Message-ID` ne tient pas dans une URL). Agrégats calculés à la lecture.
+- **Une réponse** reprend `In-Reply-To` / `References` du dernier message ; le message est
+  composé une fois (`MailComposer` de nodemailer), envoyé, puis copié dans les envoyés par
+  IMAP `APPEND` — **sauf** Gmail / Office 365 / Outlook (`SAVES_SENT_ITSELF`), qui le font
+  eux-mêmes. Après l'envoi, tout échec (copie, relevé) est avalé : on ne doit jamais faire
+  croire à un échec d'envoi.
+- **Corps HTML affiché dans une iframe `sandbox` sans `allow-scripts`** (`MailBody`), CSP
+  `img-src data: cid:` : les **images distantes sont bloquées** par défaut (pixels
+  espions), un clic les autorise pour le message.
+- **Marque** : rattachée au **fil** (une conversation avec une marque). Suggestion
+  automatique quand le domaine d'un interlocuteur égale celui du `website` ou du
+  `contactEmail` d'une marque. **Vidéo** : `production_id` du fil.
+- **IA** (`MailAssistant`, `ClaudeMailAi`, SDK officiel, `fallbacks: 'default'` sur
+  `claude-opus-5`/Fable seulement) : résumé d'un message (gardé dans `ai_summary`), résumé
+  du fil (gardé dans `mail_threads.summary`), relance, brouillons « Pas intéressé /
+  Intéressé / Voici mes tarifs » (+ indications libres), traduction du brouillon (dans la
+  langue du fil, ou une langue saisie). Brouillons : texte brut, langue et registre du
+  dernier message reçu, **champs inconnus entre crochets** (la modale de confirmation
+  avertit s'il en reste), jamais de montant inventé — les tarifs viennent de
+  `mail_settings.rates`. Le transcript retire les citations (`stripQuoted`) et tronque
+  explicitement au-delà de 12 000 caractères par message.
+- **Note de vidéo** (`POST /threads/:id/video-note`) : une note « Échanges — <objet> » dans
+  `production_notes`, deux sections (« Résumé des échanges », « Ce qui est attendu »).
+  **Une seule par fil** (`mail_threads.note_id`), réécrite à chaque clic ; recréée si elle a
+  été supprimée ou si le fil a changé de vidéo. HTML assaini (`sanitizeNoteHtml` : h2, h3,
+  p, ul, ol, li, strong, em, br, blockquote, sans attribut).
+- **Secrets** : `MAIL_PASSWORD` et `ANTHROPIC_API_KEY` l'emportent sur l'écran (409 si on
+  tente de les changer). Sans `SECRETS_KEY`, l'écran refuse de les enregistrer.
+- Le studio **ne télécharge pas les pièces jointes** : il en liste le nom et la taille.
+
+Ports (`domain/mail/repositories/MailRepository.ts`) : `MailSettingsRepository`
+(`get`, `update`), `MailStore` (`folders`, `saveFolder`, `resetFolder`, `insert`,
+`knownUids`, `setSeen`, `markRemoved`, `unreadCount`, `listThreads`, `findThread`,
+`findMessage`, `setMessageSummary`, `linkThread`, `setThreadSummary`, `setThreadNote`),
+`MailServer` / `MailServerFactory` (IMAP), `MailSender` (SMTP), `MailAi`.
+
+Use cases : `ManageMail` — `view()`, `update(input)`, `test()`, `stats()`, `sync()`,
+`listThreads(filter)`, `thread(id)`, `link(id, { brandId?, productionId? })`,
+`setRead(id, read)`, `send({ to, cc, subject, text, threadId })`, `me()`, `aiContext()` ;
+`MailAssistant` — `summarizeMessage(id)`, `run(threadId, { action: 'summarize' |
+'follow_up' | 'draft' | 'translate', … })`, `writeVideoNote(threadId)`.
+
+Front : `/mails` (`MailsPage` : liste à gauche — Réception, Non lus, Rattachés, Tous,
+recherche — fil à droite, `?fil=<id>`), `MailThreadPanel`, `MailComposer`, `MailBody`.
+Réglages : Paramètres → Admin → Mails (`MailSettingsPage`, préréglages Gmail, Outlook,
+OVH, iCloud, Infomaniak ; bouton « Tester la connexion »). Pastille du menu = messages
+reçus non lus (neutre). `ProductionDetailPage` accepte `?onglet=notes`.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -2418,6 +2501,19 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/branding/manifest`                            | **Le manifeste PWA**, construit à chaque lecture (`no-cache`). Référencé par `index.html` |
 | `GET`    | `/api/branding/icons/:key`                          | Le PNG (`?v=` → `immutable`), ou 302 vers l'icône livrée sans logo. **Sans extension** : nginx servirait un `.png` depuis le disque |
 
+| `GET`    | `/api/mails/settings`                               | Réglages mail. Aucun secret : `passwordSource` / `aiKeySource` (`env` \| `app` \| `unreadable` \| `null`) |
+| `PATCH`  | `/api/mails/settings`                               | Modifier. `password` / `aiApiKey` : absent conserve, `null`/`""` efface. 409 si couvert par l'env ou sans `SECRETS_KEY` |
+| `POST`   | `/api/mails/settings/test`                          | Ouvre une session IMAP et liste les dossiers suivis. 502 si refusé |
+| `GET`    | `/api/mails/stats`                                  | `{ configured, aiConfigured, unread, lastSyncAt, lastSyncError }` — la pastille, relue chaque minute |
+| `POST`   | `/api/mails/sync`                                   | Relevé immédiat. `{ created, error, stats }` |
+| `GET`    | `/api/mails/threads`                                | `?view=inbox\|unread\|linked\|all&search=&brandId=&productionId=&limit=` (200) |
+| `GET`    | `/api/mails/threads/:id`                            | `MailThreadView` : fil + messages complets |
+| `PATCH`  | `/api/mails/threads/:id`                            | `{ brandId?, productionId?, read? }`. `read` écrit `\Seen` **sur le serveur** d'abord |
+| `POST`   | `/api/mails/threads/:id/ai`                         | `{ action: 'summarize' \| 'follow_up' }`, `{ action: 'draft', intent, notes? }`, `{ action: 'translate', text, language? }` → `{ text }`. N'envoie rien |
+| `POST`   | `/api/mails/threads/:id/video-note`                 | Écrit/réécrit la note « Échanges » dans la vidéo rattachée (400 sans vidéo). Rend la `ProductionNote` |
+| `POST`   | `/api/mails/messages/:id/summarize`                 | `{ text }`, gardé dans `ai_summary` |
+| `POST`   | `/api/mails/send`                                   | **Seul envoi du studio.** `{ to, cc, subject, text, threadId, confirm: true }` — 422 sans `confirm` |
+
 Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube ou d'une source de l'export.
 
 ## Routes front
@@ -2440,6 +2536,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                                                                                                |
 | `/affiliations`     | `AffiliationsPage`     | Trois onglets (`?onglet=`) : **Amazon** (mois en cours, période, graphique en onglets, entonnoir, mois par mois), **Domadoo** (collecté tout seul dès que la source est renseignée — 6 cartes, graphique en deux onglets : Solde + Commissions en attente sur la période, Clics sur les 30 derniers jours) et **Plateformes** (4 cartes, `PlatformsPanel`, rattachées à la main). Ex-`/plateformes`, qui redirige ici                                                                                                                                     |
 | `/chiffre-affaires` | `TurnoverPage`         | 4 cartes d'argent, puis 3 onglets (`?onglet=`) : Synthèse (graphique + répartitions + classements), Revenus, **Dépenses** (table + dépenses récurrentes, `RecurringExpensesPanel`)                                                                                                                                                                                             |
+| `/mails`            | `MailsPage`            | Fils (Réception, Non lus, Rattachés, Tous, recherche) à gauche, fil ouvert à droite (`?fil=`) : marque, vidéo, note de vidéo, IA (résumés, relance, brouillons, traduction), réponse avec **confirmation obligatoire**. Voir le domaine `mail` |
 | `/legal`            | `LegalPage`            | Fiche société, **liens utiles**, avancement, alertes, tableau mensuel à cocher — un onglet par année (`?annee=`)                                                                                                                                                                                                                                                              |
 | `/apps/:id`         | `ExternalAppPage`      | Une **application externe** en iframe, pleine hauteur (Recharger, Nouvel onglet). L'entrée vit dans la famille de menu choisie                                                                                                                                                                                                                                                |
 | `/parametres`       | `SettingsPage`         | **Tous les réglages**, en **liste verticale groupée comme le menu** (`?onglet=`) : Général (`general`, `personnalisation` = nom et logo), Production (`planning`, `script`, `etapes`), Audience (`youtube`, `instagram` — accueille désormais le pseudo public suivi —, `discord`), Revenus (`chiffre-affaires` = catégories, `marques`, `affiliation` = identifiants Amazon/Domadoo), Entreprise (`societe`), API (`api` — export, clés, sélection des chaînes/comptes exportés), Applications externes (`applications`). Sur mobile, un seul bouton déroulant |
@@ -2777,7 +2874,9 @@ horizontalement.
 le dashboard **et Succès, hors famille**, en tête, puis **Production** (Planning, Vidéos, Shorts &
 Réels, Publications), **Audience** (YouTube, Instagram, Commentaires — plus TikTok et
 Discord, conditionnels, voir plus bas), **Revenus** (Produits, Sponsors, Affiliations,
-Chiffre d'affaires) et **Entreprise** (Légal). À neuf entrées, une liste à plat obligeait à lire
+Chiffre d'affaires) et **Admin** (Légal, Mails — ex-« Entreprise », renommée le
+2026-10-30 ; le groupe des paramètres aussi, et `EXTERNAL_APP_SECTIONS` garde l'id
+`entreprise` avec le libellé « Admin »). À neuf entrées, une liste à plat obligeait à lire
 tous les libellés pour en trouver un — rien ne disait que « Contenu » et « Instagram »
 répondent à la même question. Le dashboard n'a pas d'intitulé : c'est la vue d'ensemble,
 elle n'appartient à aucun des métiers et lui en donner un ferait une rubrique d'une ligne.
@@ -3112,6 +3211,7 @@ période**, et leur sous-titre le dit.
 | `useSharedPreference(key, fallback, parse)` | `application/sharedPreference/usecases/useSharedPreference.ts` | Une préférence **partagée entre appareils** (`/api/preferences`, table `app_preferences`). `parse` valide la valeur, sinon `fallback`. Écriture optimiste. `['sharedPreferences']` ne croise aucune racine |
 | `useGoals`, `useGoalCatalog`, `useGoalPreview`, `useCreateGoal`, `useUpdateGoal`, `useDeleteGoal` | `application/goal/usecases/useGoals.ts` | Objectifs. Clés sous la racine `['goals']` (liste avec jour local, catalogue, aperçu), invalidée entière à chaque écriture ; ne croise aucune autre racine |
 | `useAchievements`, `useVisibleAchievements` | `application/achievement/usecases/useAchievements.ts` | Paliers et records. Relu au focus ; aucune écriture ne l'invalide (`['achievements']`) |
+| `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail` | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
@@ -3208,6 +3308,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 50** ajoute `mail_settings` (ligne unique), `mail_folders`, `mail_messages` et `mail_threads` (la boîte mail).
 - **Migration 49** ajoute `todo_links` (tâches posées dans l'app Todo par le studio, jamais supprimées).
 - **Migration 48** ajoute `goals` (objectifs de Succès). `entity_id` sans clé étrangère : il désigne une chaîne **ou** un compte selon la métrique.
 - **Migration 47** ajoute `external_apps.local_url` (adresse sur le réseau local, choisie par le navigateur).
@@ -3283,6 +3384,9 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 
 ## Points d'attention
 
+- **Aucun mail ne part sans confirmation, et l'IA n'envoie jamais.** Voir le domaine `mail`. Toute nouvelle fonctionnalité mail (relance, modèle, envoi groupé) doit passer par le brouillon + la modale de confirmation, jamais par un appel direct à `ManageMail.send`.
+- **Le corps HTML d'un mail ne s'injecte jamais dans la page** : iframe `sandbox` sans `allow-scripts`, images distantes bloquées par CSP. Ne pas ajouter `allow-scripts` (avec `allow-same-origin`, le mail pourrait sortir du bac à sable).
+- **Gmail exige un mot de passe d'application** pour IMAP/SMTP (validation en deux étapes activée) ; le mot de passe habituel est refusé. Port SMTP 465 = SSL activé, 587 = SSL désactivé (STARTTLS).
 - **`useLocalStorage` est partagé par clé** (`useSyncExternalStore` + abonnés par clé +
   événement `storage`). Il tenait un `useState` par instance : Paramètres → Général écrivait
   `preferences.mobileNav`, mais `AppLayout` gardait sa propre copie, et la barre du bas ne
@@ -4166,7 +4270,7 @@ Images publiées sur GHCR par `.github/workflows/release.yml` :
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 
-Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Facultatifs pour la boîte mail : `MAIL_PASSWORD`, `MAIL_CRON` (défaut `*/5 * * * *`) et `ANTHROPIC_API_KEY` (l'assistant), qui l'emportent sur Paramètres → Admin → Mails. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
 
 Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer.
 

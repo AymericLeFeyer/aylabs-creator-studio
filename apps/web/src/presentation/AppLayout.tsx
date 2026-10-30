@@ -45,6 +45,8 @@ const ROUTES_WITHOUT_FILTERS = [
   // Des paliers de toute une vie : aucune période ne s'y applique.
   '/achievements',
   '/legal',
+  // Une boîte mail se lit en entier : aucune période ni chaîne n'y pilote quoi que ce soit.
+  '/mails',
   // Une app embarquée a sa propre interface : une barre de période au-dessus d'elle ne
   // piloterait rien.
   '/apps',

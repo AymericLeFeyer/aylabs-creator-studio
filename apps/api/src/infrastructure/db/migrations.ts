@@ -1757,6 +1757,100 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 50,
+    name: 'mails',
+    // La boite mail dans le studio. "mail_settings" est une ligne unique, comme "company" :
+    // connexion IMAP/SMTP (le mot de passe et la cle de l'IA sont CHIFFRES par SecretBox),
+    // signature et tarifs repris par les brouillons de l'IA.
+    // "mail_messages" est une copie locale des dossiers suivis (boite de reception et
+    // envoyes) : l'IMAP ne sait ni grouper en fils ni chercher vite, et les rattachements
+    // doivent survivre a un message deplace. "removed_at" marque ce qui a quitte le dossier
+    // sur le serveur, sans rien supprimer : un fil rattache a une video garde son historique.
+    // "mail_threads" ne porte que ce qui nous appartient : marque, video, resume, note.
+    up: `
+      CREATE TABLE mail_settings (
+        id              TEXT PRIMARY KEY,
+        imap_host       TEXT,
+        imap_port       INTEGER NOT NULL DEFAULT 993,
+        imap_secure     INTEGER NOT NULL DEFAULT 1,
+        smtp_host       TEXT,
+        smtp_port       INTEGER NOT NULL DEFAULT 465,
+        smtp_secure     INTEGER NOT NULL DEFAULT 1,
+        username        TEXT,
+        password        TEXT,
+        from_name       TEXT NOT NULL DEFAULT '',
+        from_address    TEXT,
+        signature       TEXT NOT NULL DEFAULT '',
+        rates           TEXT NOT NULL DEFAULT '',
+        sync_days       INTEGER NOT NULL DEFAULT 60,
+        ai_api_key      TEXT,
+        ai_model        TEXT,
+        last_sync_at    TEXT,
+        last_sync_error TEXT,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+      );
+      INSERT INTO mail_settings (id, created_at, updated_at)
+        VALUES ('default', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
+      CREATE TABLE mail_folders (
+        path         TEXT PRIMARY KEY,
+        role         TEXT NOT NULL CHECK (role IN ('inbox', 'sent')),
+        uid_validity TEXT,
+        last_uid     INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE TABLE mail_messages (
+        id               TEXT PRIMARY KEY,
+        folder           TEXT NOT NULL,
+        uid              INTEGER NOT NULL,
+        message_id       TEXT NOT NULL,
+        in_reply_to      TEXT,
+        refs             TEXT NOT NULL DEFAULT '',
+        thread_id        TEXT NOT NULL,
+        from_name        TEXT NOT NULL DEFAULT '',
+        from_address     TEXT NOT NULL DEFAULT '',
+        to_json          TEXT NOT NULL DEFAULT '[]',
+        cc_json          TEXT NOT NULL DEFAULT '[]',
+        subject          TEXT NOT NULL DEFAULT '',
+        date             TEXT NOT NULL,
+        snippet          TEXT NOT NULL DEFAULT '',
+        text_body        TEXT NOT NULL DEFAULT '',
+        html_body        TEXT,
+        attachments_json TEXT NOT NULL DEFAULT '[]',
+        seen             INTEGER NOT NULL DEFAULT 0,
+        outgoing         INTEGER NOT NULL DEFAULT 0,
+        ai_summary       TEXT,
+        removed_at       TEXT,
+        created_at       TEXT NOT NULL,
+        UNIQUE (folder, uid)
+      );
+      CREATE INDEX idx_mail_messages_thread ON mail_messages (thread_id);
+      CREATE INDEX idx_mail_messages_message_id ON mail_messages (message_id);
+      CREATE INDEX idx_mail_messages_date ON mail_messages (date);
+
+      CREATE TABLE mail_threads (
+        id            TEXT PRIMARY KEY,
+        brand_id      TEXT REFERENCES brands (id) ON DELETE SET NULL,
+        production_id TEXT REFERENCES productions (id) ON DELETE SET NULL,
+        note_id       TEXT,
+        summary       TEXT,
+        summary_at    TEXT,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      );
+    `,
+  },
+  {
+    version: 51,
+    name: 'mail_self_signed',
+    // Proton Mail Bridge presente un certificat auto-signe : sans cette case, IMAP et
+    // SMTP refusent la connexion. Desactivee par defaut, et pour ce seul serveur.
+    up: `
+      ALTER TABLE mail_settings ADD COLUMN allow_self_signed INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 /**

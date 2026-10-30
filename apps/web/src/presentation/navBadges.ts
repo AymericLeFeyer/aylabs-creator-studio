@@ -68,6 +68,8 @@ export interface NavBadge {
   count: number;
   /** Affiché à la place du nombre quand il n'est pas un compte (« -3 » jours). */
   text?: string;
+  /** Ce que dit la pastille aux lecteurs d'écran, sans raison à lister (« 3 non lus »). */
+  label?: string;
   tone: BadgeTone;
   reasons: BadgeReason[];
 }

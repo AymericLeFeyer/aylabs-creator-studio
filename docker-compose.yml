@@ -1,4 +1,4 @@
-# Stack Portainer : deux services, un volume pour la base.
+# Stack Portainer : trois services (API, front, Proton Mail Bridge), un volume par donnée.
 #
 # Déploiement : créer une stack depuis ce dépôt GitHub, renseigner les variables
 # d'environnement, puis déployer. Les images sont construites par la CI et publiées
@@ -36,11 +36,44 @@ services:
       # Profil Instagram public relevé une fois par jour (@pseudo ou URL), sans compte Meta.
       INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME:-}
       SEARCH_API_APIKEY: ${SEARCH_API_APIKEY:-}
+      # Boîte mail (Admin -> Mails). Facultatifs : l'environnement l'emporte sur l'écran.
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_CRON: ${MAIL_CRON:-*/5 * * * *}
+      # Assistant mail (résumés, traductions, brouillons). Facultatif, saisissable à l'écran.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - creator-studio-data:/app/data
     # Pas de ports exposés : seul nginx parle à l'API, sur le réseau interne.
     expose:
       - '3001'
+
+  # Proton Mail Bridge : la passerelle officielle de Proton, qui expose ta boîte en IMAP/SMTP
+  # classiques (Proton n'en expose aucun lui-même, tout est chiffré de bout en bout).
+  # Image communautaire (github.com/shenxn/protonmail-bridge-docker). Abonnement Proton
+  # payant obligatoire.
+  #
+  # **Aucun port publié** : seul le conteneur de l'API lui parle, par le réseau interne,
+  # sur `protonmail-bridge` — IMAP 143, SMTP 25, STARTTLS avec un certificat auto-signé.
+  #
+  # Connexion à faire UNE fois, sur le VPS (la session vit ensuite dans le volume) :
+  #   1. déployer la stack, puis arrêter ce seul conteneur (deux Bridge ne peuvent pas
+  #      ouvrir le même volume) : docker stop creator-studio-proton-bridge
+  #   2. docker run --rm -it -v creator-studio-proton:/root shenxn/protonmail-bridge init
+  #        > login   (adresse Proton, mot de passe, code 2FA)
+  #        > info    (note le « Username » et le « Password » générés par Bridge)
+  #        > exit
+  #   3. docker start creator-studio-proton-bridge
+  #   4. Paramètres -> Admin -> Mails -> préréglage « Proton (Bridge) », avec CES identifiants
+  #      (le mot de passe de Bridge, jamais celui du compte Proton).
+  protonmail-bridge:
+    image: shenxn/protonmail-bridge:${PROTON_BRIDGE_TAG:-latest}
+    container_name: creator-studio-proton-bridge
+    restart: unless-stopped
+    volumes:
+      - creator-studio-proton:/root
+    expose:
+      - '25'
+      - '143'
 
   web:
     image: ghcr.io/aymericlefeyer/aylabs-creator-studio-web:${TAG:-latest}
@@ -56,3 +89,6 @@ services:
 volumes:
   creator-studio-data:
     name: creator-studio-data
+  # La session Proton Mail Bridge (clés, cache). La perdre oblige à refaire le `login`.
+  creator-studio-proton:
+    name: creator-studio-proton

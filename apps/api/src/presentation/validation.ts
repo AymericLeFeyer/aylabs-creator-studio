@@ -1245,3 +1245,78 @@ export const setBrandingLogoSchema = z.object({
     'apple-180': pngSchema,
   }),
 });
+
+// --- Mails ---------------------------------------------------------------------
+
+const port = z.number().int().min(1).max(65_535);
+const mailText = z.string().trim().max(500).nullable().optional();
+
+export const updateMailSettingsSchema = z.object({
+  imapHost: mailText,
+  imapPort: port.optional(),
+  imapSecure: z.boolean().optional(),
+  smtpHost: mailText,
+  smtpPort: port.optional(),
+  smtpSecure: z.boolean().optional(),
+  allowSelfSigned: z.boolean().optional(),
+  username: mailText,
+  password: z.string().max(500).nullable().optional(),
+  fromName: z.string().trim().max(120).optional(),
+  fromAddress: z
+    .union([z.literal(''), z.string().trim().email('Adresse d’expédition invalide')])
+    .nullable()
+    .optional()
+    .transform((value) => (value === '' ? null : value)),
+  signature: z.string().max(5_000).optional(),
+  rates: z.string().max(10_000).optional(),
+  syncDays: z.number().int().min(1).max(365).optional(),
+  aiApiKey: z.string().trim().max(500).nullable().optional(),
+  aiModel: mailText,
+});
+
+export const mailThreadsQuerySchema = z.object({
+  search: z.string().trim().max(200).optional(),
+  view: z.enum(['inbox', 'unread', 'linked', 'all']).optional(),
+  brandId: z.string().min(1).optional(),
+  productionId: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+export const updateMailThreadSchema = z.object({
+  brandId: z.string().min(1).nullable().optional(),
+  productionId: z.string().min(1).nullable().optional(),
+  read: z.boolean().optional(),
+});
+
+export const mailAiSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('summarize') }),
+  z.object({ action: z.literal('follow_up') }),
+  z.object({
+    action: z.literal('draft'),
+    intent: z.enum(['not_interested', 'interested', 'rates']),
+    notes: z.string().max(5_000).optional(),
+  }),
+  z.object({
+    action: z.literal('translate'),
+    text: z.string().min(1).max(50_000),
+    language: z.string().trim().max(60).optional(),
+  }),
+]);
+
+const mailAddress = z.object({
+  name: z.string().trim().max(200).default(''),
+  address: z.string().trim().email('Adresse invalide'),
+});
+
+/**
+ * Le corps de l'envoi. `confirm: true` est **obligatoire** : c'est la trace, dans le
+ * contrat, que l'utilisateur a validé l'envoi à l'écran. Rien d'autre ne fait partir un mail.
+ */
+export const sendMailSchema = z.object({
+  to: z.array(mailAddress).min(1, 'Au moins un destinataire').max(50),
+  cc: z.array(mailAddress).max(50).default([]),
+  subject: z.string().trim().max(500),
+  text: z.string().min(1, 'Le message est vide').max(100_000),
+  threadId: z.string().min(1).nullable().default(null),
+  confirm: z.literal(true, { errorMap: () => ({ message: 'Envoi non confirmé' }) }),
+});

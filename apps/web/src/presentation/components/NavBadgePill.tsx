@@ -34,7 +34,7 @@ export const NavBadgePill = ({
       ? badge.reasons[0]!.title
       : badge.reasons.length > 0
         ? `${badge.reasons.length} point(s) à traiter`
-        : `${badge.count} en cours`;
+        : (badge.label ?? `${badge.count} en cours`);
 
   if (dot || badge.count === 0) {
     return (

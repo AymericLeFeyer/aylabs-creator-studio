@@ -6,6 +6,7 @@ import {
   Images,
   Instagram,
   Link2,
+  Mail,
   Trophy,
   MessagesSquare,
   Music2,
@@ -49,15 +50,15 @@ export interface NavSection {
  * rien ne dit que « YouTube » et « Instagram » répondent à la même question, ni que
  * « Sponsors » et « Chiffre d'affaires » se consultent l'un après l'autre. Quatre
  * familles courtes se balaient d'un regard, et le titre suffit à savoir dans laquelle
- * chercher : **Production**, **Audience**, **Revenus**, **Entreprise**.
+ * chercher : **Production**, **Audience**, **Revenus**, **Admin**.
  *
  * Le dashboard reste **hors famille**, en tête et sans titre : c'est la vue d'ensemble,
  * il n'appartient à aucun des métiers et lui donner un intitulé à lui seul ferait une
  * rubrique d'une ligne.
  *
- * « Entreprise » n'en porte qu'un, et c'est assumé : le suivi administratif ne répond pas
- * à la même question que l'argent gagné, et le ranger sous « Revenus » ferait chercher
- * l'Urssaf au milieu des sponsos.
+ * « Admin » (ex-« Entreprise ») porte le légal et la boîte mail : le suivi administratif ne
+ * répond pas à la même question que l'argent gagné, et le ranger sous « Revenus » ferait
+ * chercher l'Urssaf au milieu des sponsos.
  *
  * L'ordre est **fixe**. Il était réglable — deux flèches dans Paramètres → Application —,
  * et ça ne tenait plus : un ordre libre à plat n'a pas d'équivalent une fois les entrées
@@ -130,10 +131,13 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     // Le suivi administratif n'est pas un revenu : cocher sa déclaration d'Urssaf ne
-    // répond pas à la même question que « combien ai-je gagné ». Une famille à part, qui
-    // accueillera ce qui relève de la société plutôt que des chaînes.
-    label: 'Entreprise',
-    items: [{ to: '/legal', label: 'Légal', icon: ScrollText, end: false }],
+    // répond pas à la même question que « combien ai-je gagné ». Une famille à part
+    // (ex-« Entreprise ») : la société, et la boîte mail où arrivent les demandes.
+    label: 'Admin',
+    items: [
+      { to: '/legal', label: 'Légal', icon: ScrollText, end: false },
+      { to: '/mails', label: 'Mails', icon: Mail, end: false },
+    ],
   },
 ];
 
@@ -266,6 +270,7 @@ const TITLES: Array<[string, string]> = [
   ['/affiliations', 'Affiliations'],
   ['/chiffre-affaires', "Chiffre d'affaires"],
   ['/legal', 'Légal'],
+  ['/mails', 'Mails'],
   ['/parametres', 'Paramètres'],
   // Repli seulement : `AppLayout` affiche le nom de l'app ouverte.
   ['/apps/', 'Application'],

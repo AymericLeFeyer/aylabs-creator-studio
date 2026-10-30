@@ -17,6 +17,7 @@ import {
   Wallet,
   Youtube,
   type LucideIcon,
+  Mail,
 } from 'lucide-react';
 import { useAnalytics } from '../../application/analytics/usecases/useAnalytics.ts';
 import { useAnalyticsParams, useFilters } from '../hooks/useFilters.tsx';
@@ -38,6 +39,7 @@ import { CategoriesPage } from './CategoriesPage.tsx';
 import { BrandsPage } from './BrandsPage.tsx';
 import { StepsPage } from './StepsPage.tsx';
 import { ScriptSettingsPage } from './ScriptSettingsPage.tsx';
+import { MailSettingsPage } from './MailSettingsPage.tsx';
 import { PlanningSettingsPage } from './PlanningSettingsPage.tsx';
 import { InstagramSettingsPage } from './InstagramSettingsPage.tsx';
 import { TikTokSettingsPage } from './TikTokSettingsPage.tsx';
@@ -67,7 +69,7 @@ interface SettingsGroup {
 
 /**
  * Les réglages, **rangés comme le menu principal** : Production, Audience, Revenus,
- * Entreprise — plus Général en tête, et deux familles propres aux réglages (API,
+ * Admin — plus Général en tête, et deux familles propres aux réglages (API,
  * Applications externes).
  *
  * C'était une rangée de onze onglets, sur deux lignes dès que l'écran rétrécissait, dans
@@ -145,8 +147,11 @@ const GROUPS: SettingsGroup[] = [
     ],
   },
   {
-    label: 'Entreprise',
-    entries: [{ id: 'societe', label: 'Société', icon: Building2, render: () => <CompanyPage /> }],
+    label: 'Admin',
+    entries: [
+      { id: 'societe', label: 'Société', icon: Building2, render: () => <CompanyPage /> },
+      { id: 'mails', label: 'Mails', icon: Mail, render: () => <MailSettingsPage /> },
+    ],
   },
   {
     label: 'API',

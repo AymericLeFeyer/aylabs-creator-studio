@@ -49,6 +49,12 @@ export interface Config {
    * tourne en UTC : sans lui, une vidéo du jour serait « d'hier » jusqu'à 2 h du matin.
    */
   timeZone: string;
+  /** Le mot de passe de la boîte mail. Facultatif : il l'emporte sur l'écran. */
+  mailPassword: string | null;
+  /** La clé de l'assistant mail. Facultative : elle l'emporte sur l'écran. */
+  anthropicApiKey: string | null;
+  /** Le rythme du relevé de la boîte mail, plus serré que la collecte horaire. */
+  mailCron: string;
 }
 
 export const loadConfig = (): Config => ({
@@ -71,4 +77,7 @@ export const loadConfig = (): Config => ({
   todoBaseUrl: optional('TODO_BASE_URL')?.replace(/\/+$/, '') ?? null,
   todoApiKey: optional('TODO_API_KEY'),
   timeZone: optional('APP_TIMEZONE') ?? 'Europe/Paris',
+  mailPassword: optional('MAIL_PASSWORD'),
+  anthropicApiKey: optional('ANTHROPIC_API_KEY'),
+  mailCron: optional('MAIL_CRON') ?? '*/5 * * * *',
 });

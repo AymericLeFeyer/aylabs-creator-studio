@@ -16,7 +16,7 @@ export const EXTERNAL_APP_SECTIONS: Array<{ id: ExternalAppSection; label: strin
   { id: 'production', label: 'Production' },
   { id: 'audience', label: 'Audience' },
   { id: 'revenus', label: 'Revenus' },
-  { id: 'entreprise', label: 'Entreprise' },
+  { id: 'entreprise', label: 'Admin' },
 ];
 
 export type ExternalAppIcon =

@@ -43,6 +43,7 @@ import { amazonRouter } from './routes/amazon.ts';
 import { discordRouter } from './routes/discord.ts';
 import { externalAppsRouter } from './routes/externalApps.ts';
 import { exportRouter } from './routes/export.ts';
+import { mailsRouter } from './routes/mails.ts';
 
 export const createServer = (container: Container): express.Express => {
   const app = express();
@@ -101,6 +102,7 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/amazon', amazonRouter(container));
   app.use('/api/discord', discordRouter(container));
   app.use('/api/external-apps', externalAppsRouter(container));
+  app.use('/api/mails', mailsRouter(container));
   // La seule route protégée par une clé : elle est faite pour être lue depuis une autre
   // machine (Home Assistant), et porte des montants.
   app.use('/api/export', exportRouter(container));

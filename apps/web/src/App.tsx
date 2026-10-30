@@ -21,6 +21,7 @@ import { AffiliationsPage } from './presentation/pages/AffiliationsPage.tsx';
 import { CommentsPage } from './presentation/pages/CommentsPage.tsx';
 import { ExternalAppPage } from './presentation/pages/ExternalAppPage.tsx';
 import { PublicationsPage } from './presentation/pages/PublicationsPage.tsx';
+import { MailsPage } from './presentation/pages/MailsPage.tsx';
 
 /** `/partenariats?onglet=…` → l'écran qui a remplacé l'onglet. */
 const LegacyPartnersRedirect = () => {
@@ -84,6 +85,7 @@ export const App = () => (
               <Route path="partenariats" element={<LegacyPartnersRedirect />} />
               <Route path="chiffre-affaires" element={<TurnoverPage />} />
               <Route path="legal" element={<LegalPage />} />
+              <Route path="mails" element={<MailsPage />} />
               <Route path="apps/:id" element={<ExternalAppPage />} />
               {/* Revenus et dépenses sont désormais deux onglets du chiffre d'affaires.
                 Les anciennes adresses mènent au bon onglet, pour les signets. */}
