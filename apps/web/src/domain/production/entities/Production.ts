@@ -113,6 +113,8 @@ export interface Production {
    * (`resolvePaidPromotion`). C'est un troisième état, pas un `false` déguisé.
    */
   paidPromotion: boolean | null;
+  /** Quand la sortie a été annoncée sur Discord. Changer de sortie le remet à `null`. */
+  discordAnnouncedAt: string | null;
   // Les notes ne sont plus un champ : elles vivent à part, plusieurs par vidéo
   // (`ProductionNote`, `/api/productions/:id/notes`).
   sortOrder: number;

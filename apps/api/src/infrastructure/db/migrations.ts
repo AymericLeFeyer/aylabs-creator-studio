@@ -1958,6 +1958,14 @@ const migrations: Migration[] = [
       ALTER TABLE ai_settings ADD COLUMN credit_exhausted_at TEXT;
     `,
   },
+  {
+    version: 57,
+    name: 'production_discord_announcement',
+    // Quand la sortie a ete annoncee sur Discord : c'est ce qui grise le bouton.
+    up: `
+      ALTER TABLE productions ADD COLUMN discord_announced_at TEXT;
+    `,
+  },
 ];
 
 /**

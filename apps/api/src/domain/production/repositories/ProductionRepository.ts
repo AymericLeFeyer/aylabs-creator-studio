@@ -38,6 +38,8 @@ export interface ProductionRepository {
   create(input: CreateProductionInput): Production;
   update(id: string, input: UpdateProductionInput): Production;
   delete(id: string): void;
+  /** Retient que la sortie a été annoncée sur Discord, à l'instant présent. */
+  markDiscordAnnounced(id: string): Production;
   /** Coche une étape (idempotent : recocher ne change pas la date de complétion). */
   checkStep(productionId: string, stepId: string): void;
   uncheckStep(productionId: string, stepId: string): void;

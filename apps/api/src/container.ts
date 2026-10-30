@@ -54,6 +54,7 @@ import { GetLegalOverview } from './application/legal/usecases/GetLegalOverview.
 import { CollectMetrics } from './application/metrics/usecases/CollectMetrics.ts';
 import { CollectComments } from './application/comment/usecases/CollectComments.ts';
 import { GetPreviousPublication } from './application/production/usecases/GetPreviousPublication.ts';
+import { AnnounceOnDiscord } from './application/production/usecases/AnnounceOnDiscord.ts';
 import { GetAnalytics } from './application/analytics/usecases/GetAnalytics.ts';
 import { YouTubeDataClient } from './infrastructure/youtube/api/YouTubeDataClient.ts';
 import { SqliteIntegrationRepository } from './infrastructure/integration/repositories/SqliteIntegrationRepository.ts';
@@ -165,6 +166,7 @@ export interface Container {
    */
   collectComments: CollectComments;
   getPreviousPublication: GetPreviousPublication;
+  announceOnDiscord: AnnounceOnDiscord;
   getAnalytics: GetAnalytics;
   /**
    * Écritures du module de production. Les routes passent par elles et jamais par les
@@ -310,6 +312,7 @@ export const buildContainer = (config: Config): Container => {
   const integrations = new SqliteIntegrationRepository(db);
   const domadooSnapshots = new SqliteDomadooSnapshotRepository(db);
   const discordSnapshots = new SqliteDiscordSnapshotRepository(db);
+  const discordClient = new DiscordClient();
   const amazonSnapshots = new SqliteAmazonSnapshotRepository(db);
   const manageIntegrations = new ManageIntegrations(
     integrations,
@@ -472,6 +475,7 @@ export const buildContainer = (config: Config): Container => {
       gcpClientId: config.gcpClientId,
       gcpClientSecret: config.gcpClientSecret,
     }),
+    announceOnDiscord: new AnnounceOnDiscord(productions, manageIntegrations, discordClient),
     getAnalytics: new GetAnalytics(channels, metrics, revenues, categories, expenses, videos),
     youtubeData: config.youtubeApiKey ? new YouTubeDataClient(config.youtubeApiKey) : null,
     manageIntegrations,
@@ -481,7 +485,7 @@ export const buildContainer = (config: Config): Container => {
       {
         amazon: new AmazonScraper(),
         domadoo: new DomadooScraper(),
-        discord: new DiscordClient(),
+        discord: discordClient,
         tiktok: new TikTokProfileClient(),
       },
       collectTikTok,

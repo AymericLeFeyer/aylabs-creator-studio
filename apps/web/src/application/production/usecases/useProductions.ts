@@ -89,6 +89,11 @@ export const useUpdateProduction = () =>
 export const useDeleteProduction = () =>
   useProductionMutation((id: string) => productionApi.remove(id), true);
 
+export const useAnnounceOnDiscord = () =>
+  useProductionMutation(({ id, date }: { id: string; date: string }) =>
+    productionApi.announceOnDiscord(id, date),
+  );
+
 /**
  * Va chercher la fiche de mise en ligne de la sortie précédente, **sur demande**.
  *

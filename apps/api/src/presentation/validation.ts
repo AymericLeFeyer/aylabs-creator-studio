@@ -322,6 +322,8 @@ export const publishProductionSchema = z.object({
   videoId: z.string().min(1, 'Choisis la sortie correspondante'),
 });
 
+export const announceOnDiscordSchema = z.object({ date: isoDate });
+
 export const createProductionSlotSchema = z.object({
   stepId: z.string().nullable().optional(),
   date: isoDate,

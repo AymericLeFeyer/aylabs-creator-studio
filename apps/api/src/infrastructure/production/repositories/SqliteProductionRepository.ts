@@ -39,6 +39,7 @@ interface ProductionRow {
   publish_hashtags: string;
   publish_tags: string;
   paid_promotion: number | null;
+  discord_announced_at: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -75,6 +76,7 @@ const toDomain = (row: ProductionRow): Production => ({
   // pour se déduire de la présence d'une sponso. `fromSqlBool` écraserait ce troisième
   // état en `false`.
   paidPromotion: row.paid_promotion === null ? null : row.paid_promotion === 1,
+  discordAnnouncedAt: row.discord_announced_at,
   sortOrder: row.sort_order,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -451,7 +453,11 @@ export class SqliteProductionRepository implements ProductionRepository {
     if (input.title !== undefined) set('title', input.title);
     if (input.format !== undefined) set('format', input.format);
     if (input.channelId !== undefined) set('channel_id', input.channelId);
-    if (input.videoId !== undefined) set('video_id', input.videoId);
+    if (input.videoId !== undefined) {
+      set('video_id', input.videoId);
+      // L'annonce portait sur l'ancienne sortie : la nouvelle reste à annoncer.
+      if (input.videoId !== existing.videoId) set('discord_announced_at', null);
+    }
     if (input.pausedReason !== undefined) set('paused_reason', input.pausedReason);
     if (input.startDate !== undefined) set('start_date', input.startDate);
     if (input.plannedDate !== undefined) set('planned_date', input.plannedDate);
@@ -493,6 +499,14 @@ export class SqliteProductionRepository implements ProductionRepository {
   delete(id: string): void {
     const result = this.db.prepare('DELETE FROM productions WHERE id = ?').run(id);
     if (result.changes === 0) throw notFound('Production');
+  }
+
+  markDiscordAnnounced(id: string): Production {
+    const now = new Date().toISOString();
+    this.db
+      .prepare('UPDATE productions SET discord_announced_at = ?, updated_at = ? WHERE id = ?')
+      .run(now, now, id);
+    return this.findById(id)!;
   }
 
   checkStep(productionId: string, stepId: string): void {

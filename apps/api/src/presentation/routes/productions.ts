@@ -5,6 +5,7 @@ import type {
   ProductionStatus,
 } from '../../domain/production/entities/Production.ts';
 import {
+  announceOnDiscordSchema,
   createProductionSchema,
   createProductionStepSchema,
   createSlotBodySchema,
@@ -108,6 +109,12 @@ export const productionsRouter = (container: Container): Router => {
   router.post('/:id/publish', (req, res) => {
     const { videoId } = publishProductionSchema.parse(req.body);
     res.json(container.manageProductions.publish(param(req, 'id'), videoId));
+  });
+
+  /** `date` : le jour où la vidéo est visible par tous, relu dans la modale. */
+  router.post('/:id/discord-announcement', async (req, res) => {
+    const { date } = announceOnDiscordSchema.parse(req.body);
+    res.json(await container.announceOnDiscord.execute(param(req, 'id'), date));
   });
 
   /**

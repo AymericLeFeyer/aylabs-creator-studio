@@ -72,6 +72,12 @@ export const productionApi = {
 
   remove: (id: string) => request<void>(`/api/productions/${id}`, { method: 'DELETE' }),
 
+  announceOnDiscord: (id: string, date: string) =>
+    request<Production>(`/api/productions/${id}/discord-announcement`, {
+      method: 'POST',
+      body: { date },
+    }),
+
   /**
    * La fiche de mise en ligne de la sortie précédente de la même chaîne.
    *

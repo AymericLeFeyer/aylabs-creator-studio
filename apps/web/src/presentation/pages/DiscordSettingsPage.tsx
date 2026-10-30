@@ -23,7 +23,8 @@ export const DiscordSettingsPage = () => {
           <Link to="/parametres?onglet=api" className="underline underline-offset-2">
             Paramètres → API
           </Link>
-          .
+          . Le jeton du bot, le salon et le rôle ne servent qu'à annoncer les vidéos depuis leur
+          fiche.
         </p>
       </div>
 

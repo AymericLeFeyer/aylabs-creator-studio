@@ -75,6 +75,8 @@ export interface Production {
    * ouverture de l'onglet, et une vidéo sponsorisée serait partie sans sa mention.
    */
   paidPromotion: boolean | null;
+  /** Quand la sortie a été annoncée sur Discord. Changer de sortie le remet à `null`. */
+  discordAnnouncedAt: string | null;
   // Plus de `notes` : elles vivent dans `production_notes` (plusieurs par vidéo). La
   // colonne existe encore en base mais n'est plus lue (migration 34).
   /** Rang dans la file d'attente. Ordre entièrement manuel. */

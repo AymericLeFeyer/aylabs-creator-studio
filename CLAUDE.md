@@ -396,6 +396,19 @@ réponses distinctes.
 
 `ManageProductions` possède les écritures : changer `channelId` ou `videoId` **re-synchronise** les revenus de tous les produits et sponsos rattachés (voir contrainte 6). `publish(id, videoId)` rattache la sortie et passe en `done`, **sans cocher aucune étape** — pas même `publication` : on publie souvent avant que tout soit fini, et cocher à la place de l'utilisateur mentirait sur l'avancement. Le reste à faire est rappelé par l'alerte `production_incomplete`.
 
+**L'annonce Discord** (`AnnounceOnDiscord`, `POST /api/productions/:id/discord-announcement`,
+`{ date }`) remplace le workflow n8n : bouton « Annonce Discord » sur la fiche d'une vidéo
+publiée, modale de relecture (`DiscordAnnounceDialog`), puis un post dans un salon **forum**
+(`POST /channels/:id/threads`, titre, lien, mention du rôle, date, miniature). La date
+proposée est `plannedDate ?? videoDate` : `videoDate` vaut le jour d'upload sur une vidéo
+programmée, or on annonce le jour « pour tous ». `discord_announced_at` (migration 57) n'est
+posé qu'après la réponse de Discord et grise le bouton (2ᵉ envoi = 409) ; **changer de sortie
+le remet à `null`** (`SqliteProductionRepository.update`). Réglages dans la source `discord`
+(`botToken` secret, `announceChannelId`, `announceRoleId`, env `DISCORD_BOT_TOKEN`,
+`DISCORD_ANNOUNCE_CHANNEL_ID`, `DISCORD_ANNOUNCE_ROLE_ID`), tous `optional` : le relevé des
+membres n'en a pas besoin. La miniature est `i.ytimg.com/vi/<code>/maxresdefault.jpg`, sans
+appel à YouTube : elle n'existe pas sur une vidéo sous 720p.
+
 ### `productionNote` — les notes d'une vidéo, en fichiers
 
 `ProductionNote { id, productionId, title, content, createdAt, updatedAt }` — table
@@ -2493,6 +2506,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/productions/:id/ai/tags`                      | → `{ tags, hashtags }`. 400 sans script enregistré. N'écrit rien |
 | `POST`   | `/api/productions/:id/ai/description`               | `{ avoid }` → `{ description }`. 400 sans script enregistré. N'écrit rien |
 | `POST`   | `/api/productions/:id/publish`                      | `{ videoId }` → rattache la sortie, passe en `done`. **Ne coche aucune étape**                                                                                                                                                                           |
+| `POST`   | `/api/productions/:id/discord-announcement`         | `{ date }` (jour « pour tous ») → publie l'annonce dans le salon forum, une seule fois. 400 sans sortie ou sans réglages, 409 si déjà annoncée, 502 si Discord refuse |
 | `PUT`    | `/api/productions/:id/steps/:stepId`                | Cocher une étape (idempotent)                                                                                                                                                                                                                            |
 | `DELETE` | `/api/productions/:id/steps/:stepId`                | Décocher                                                                                                                                                                                                                                                 |
 | `GET`    | `/api/productions/:id/notes`                        | Notes de la vidéo, ordre de création. 404 si la vidéo n'existe pas                                                                                                                                                                                       |
@@ -3445,6 +3459,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 57** ajoute `productions.discord_announced_at`.
 - **Migration 56** ajoute à `ai_settings` le solde relevé, sa date, la consommation et la date d'épuisement.
 - **Migration 55** élargit le `CHECK` de `mail_folders` au rôle `folder` (table recréée, aucune clé étrangère ne la vise) et indexe `mail_messages.folder`.
 - **Migration 54** ajoute `mail_settings.move_folders`, `mail_threads.note_body` et `mail_attachments` (reprise des métadonnées par `json_each`). **Migration 53** ajoute `ai_settings` (reprise de la clé IA des mails).
