@@ -3,9 +3,13 @@ import { z } from 'zod';
 import type { Container } from '../../container.ts';
 import { netProfit, grossRevenue } from '../../domain/analytics/services/revenueMath.ts';
 import { toChannelView } from '../../domain/channel/entities/Channel.ts';
-import type { CommentStatus } from '../../domain/comment/entities/Comment.ts';
+import type { CommentStatus, CommentView } from '../../domain/comment/entities/Comment.ts';
 import type { MailMessage } from '../../domain/mail/entities/Mail.ts';
 import { bodyText } from '../../domain/mail/services/threading.ts';
+import {
+  missingPostDraftSteps,
+  type PostDraft,
+} from '../../domain/postDraft/entities/PostDraft.ts';
 import type {
   ProductionFormat,
   ProductionStatus,
@@ -13,8 +17,9 @@ import type {
 } from '../../domain/production/entities/Production.ts';
 import type { ProductStatus } from '../../domain/product/entities/Product.ts';
 import type { SponsorshipStatus } from '../../domain/sponsorship/entities/Sponsorship.ts';
+import type { VideoView } from '../../domain/video/entities/Video.ts';
 import { addDays, clockIn, type IsoDate } from '../../shared/dates.ts';
-import { notFound } from '../../shared/errors.ts';
+import { badRequest, notFound } from '../../shared/errors.ts';
 import { readTool } from './tooling.ts';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date attendue au format AAAA-MM-JJ');
@@ -56,6 +61,58 @@ const compactMessage = (message: MailMessage) => {
   };
 };
 
+/** Le briefing ne dit que ce qui arrive : le détail d'une vidéo est dans `production_get`. */
+const briefProduction = (production: ProductionView) => {
+  const {
+    todos: _todos,
+    steps: _steps,
+    stepIds: _stepIds,
+    products: _products,
+    sponsorships: _sponsorships,
+    ...rest
+  } = compactProduction(production);
+  return rest;
+};
+
+/** `hiddenAt` seul se lisait comme une sortie programmée : c'est un masquage manuel. */
+const compactVideo = (video: VideoView) => ({
+  id: video.id,
+  title: video.title,
+  publishedAt: video.publishedAt,
+  channelName: video.channelName,
+  hidden: video.hiddenAt !== null,
+  stats: video.stats,
+});
+
+/**
+ * `steps` seul se lit comme un calendrier d'étapes : un modèle prenait la première pour
+ * l'étape en cours. L'état vient d'abord, la légende, qui peut être longue, à la fin.
+ */
+const compactDraft = (draft: PostDraft) => {
+  const missing = missingPostDraftSteps(draft);
+  return {
+    id: draft.id,
+    title: draft.title,
+    plannedDate: draft.plannedDate,
+    readyToArchive: missing.length === 0,
+    missing,
+    checked: draft.steps,
+    archivedAt: draft.archivedAt,
+    description: draft.description,
+  };
+};
+
+/** Avatars, vignettes et identifiants YouTube ne servent qu'à l'écran. */
+const compactComment = (comment: CommentView) => ({
+  id: comment.id,
+  status: comment.status,
+  authorName: comment.authorName,
+  text: comment.text,
+  videoTitle: comment.videoTitle,
+  publishedAt: comment.publishedAt,
+  likeCount: comment.likeCount,
+});
+
 /** Les outils de lecture : rien de ce qu'ils appellent n'écrit. */
 export const registerReadTools = (server: McpServer, container: Container): void => {
   const clock = () => clockIn(container.config.timeZone);
@@ -67,7 +124,7 @@ export const registerReadTools = (server: McpServer, container: Container): void
   readTool(
     server,
     'briefing',
-    'À appeler en premier pour « où j’en suis » : date, chronomètre, mails non lus, tâches et créneaux du jour, alertes de production et légales, prochaines sorties, publications.',
+    'À appeler en premier pour « où j’en suis » : date, chronomètre, mails non lus, tâches et créneaux du jour, alertes de production et légales, prochaines sorties, publications. Aucun chiffre d’audience : vues, abonnés et argent sont dans `dashboard_get`.',
     {},
     async () => {
       const now = clock();
@@ -93,7 +150,7 @@ export const registerReadTools = (server: McpServer, container: Container): void
         slotsToday: container.productionSlots.findAll({ range: { from: now.date, to: now.date } }),
         productionAlerts: overview.alerts,
         productionStats: overview.stats,
-        nextReleases: overview.upcomingReleases.slice(0, 5).map(compactProduction),
+        nextReleases: overview.upcomingReleases.slice(0, 5).map(briefProduction),
         legalAlerts: container.getLegalOverview.execute().alerts,
         publications: container.postDrafts.summary(),
       };
@@ -212,9 +269,23 @@ export const registerReadTools = (server: McpServer, container: Container): void
   readTool(
     server,
     'videos_list',
-    'Les dernières sorties, avec leurs compteurs cumulés depuis la publication.',
-    { limit: z.number().int().min(1).max(100).default(10) },
-    ({ limit }) => container.videos.findAllWithChannel({ limit }),
+    'Les dernières vidéos publiées sur YouTube, la plus récente d’abord, avec leurs compteurs cumulés. Les vidéos masquées à la main (Shorts, directs) sont écartées sauf `includeHidden` : le premier résultat est donc la dernière vidéo longue. `search` cherche dans le titre. `stats.updatedAt` nul : compteurs pas encore relevés, ce n’est pas zéro vue.',
+    {
+      limit: z.number().int().min(1).max(100).default(10),
+      search: z.string().max(200).optional(),
+      includeHidden: z.boolean().default(false),
+    },
+    ({ limit, search, includeHidden }) => {
+      const wanted = search?.trim().toLowerCase();
+      return container.videos
+        .findAllWithChannel({
+          ...(includeHidden ? {} : { hidden: false }),
+          ...(wanted ? {} : { limit }),
+        })
+        .filter((video) => !wanted || video.title.toLowerCase().includes(wanted))
+        .slice(0, limit)
+        .map(compactVideo);
+    },
   );
 
   readTool(
@@ -239,11 +310,11 @@ export const registerReadTools = (server: McpServer, container: Container): void
   readTool(
     server,
     'publications_list',
-    'Les publications à venir (réseaux) : date prévue, cases faites, et depuis quand rien n’a été validé.',
+    'Les publications à venir (réseaux), distinctes des productions : `checked` = cases déjà cochées, `missing` = cases restantes, `readyToArchive` = tout est prêt, il ne reste qu’à l’archiver. Ces cases ne sont pas une étape en cours.',
     { archived: z.boolean().default(false) },
     ({ archived }) => ({
       summary: container.postDrafts.summary(),
-      drafts: container.postDrafts.findAll({ archived }),
+      drafts: container.postDrafts.findAll({ archived }).map(compactDraft),
     }),
   );
 
@@ -265,18 +336,19 @@ export const registerReadTools = (server: McpServer, container: Container): void
   readTool(
     server,
     'productions_search',
-    'Cherche des vidéos en préparation ou publiées, par titre ou statut. Sert à trouver un `productionId`.',
+    'Cherche des vidéos en préparation ou publiées. Sert à trouver un `productionId`. `search` porte sur le titre : pour une vidéo longue ou un Short, utiliser `format`.',
     {
       search: z.string().max(200).optional(),
       statuses: z.array(z.enum(['idea', 'in_progress', 'paused', 'done'])).default([]),
+      format: z.enum(['video', 'short']).optional().describe('`video` : une vidéo longue.'),
       limit: z.number().int().min(1).max(50).default(20),
     },
-    ({ search, statuses, limit }) =>
+    ({ search, statuses, format, limit }) =>
       container.productions
         .findAll({
           search,
           statuses: statuses as ProductionStatus[],
-          formats: [] as ProductionFormat[],
+          formats: (format ? [format] : []) as ProductionFormat[],
           channelIds: [],
         })
         .slice(0, limit)
@@ -294,7 +366,14 @@ export const registerReadTools = (server: McpServer, container: Container): void
     },
     ({ productionId, includeScript, includeNotes }) => {
       const production = container.productions.findViewById(productionId);
-      if (!production) throw notFound('Production');
+      if (!production) {
+        if (container.postDrafts.findById(productionId)) {
+          throw badRequest(
+            'Cet identifiant est une publication, pas une production : son état est dans `publications_list`.',
+          );
+        }
+        throw notFound('Production');
+      }
       return {
         ...(includeScript ? production : compactProduction(production)),
         ...(includeNotes
@@ -380,12 +459,14 @@ export const registerReadTools = (server: McpServer, container: Container): void
     },
     ({ status, search, limit }) => ({
       counts: container.comments.countByStatus([]),
-      comments: container.comments.findAll({
-        statuses: [status as CommentStatus],
-        channelIds: [],
-        search,
-        limit,
-      }),
+      comments: container.comments
+        .findAll({
+          statuses: [status as CommentStatus],
+          channelIds: [],
+          search,
+          limit,
+        })
+        .map(compactComment),
     }),
   );
 

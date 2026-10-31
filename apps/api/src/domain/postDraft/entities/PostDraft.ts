@@ -43,6 +43,10 @@ export interface PostDraft {
   updatedAt: string;
 }
 
+/** Les cases qu'il reste à cocher. Vide : la publication est prête à être archivée. */
+export const missingPostDraftSteps = (draft: Pick<PostDraft, 'steps'>): PostDraftStep[] =>
+  POST_DRAFT_STEPS.filter((step) => !draft.steps.includes(step));
+
 export interface CreatePostDraftInput {
   title: string;
   description?: string;

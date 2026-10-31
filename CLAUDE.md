@@ -2461,7 +2461,7 @@ pilote le chronomètre. `authenticate(token, scope)`, `touch` et `count` sont bo
 | ----------------------------- | -------------------------------------------------------------- |
 | `tooling.ts`                  | `readTool`, `registerTool`, `asJson`                           |
 | `readTools.ts`                | 24 lectures, `briefing` en tête. Rien de ce qu'elles appellent n'écrit |
-| `actionTools.ts`              | Chronomètre, `mail_prepare_reply`, les deux outils de la carte |
+| `actionTools.ts`              | Chronomètre, tri, archivage, `mail_prepare_reply`, les deux outils de la carte |
 | `mailConfirmCard.html`        | La carte de confirmation (MCP Apps), écrite à la main          |
 
 Lectures : `briefing`, `planning_get`, `tasks_get`, `mails_list`, `mail_thread_get`,
@@ -2471,7 +2471,20 @@ Lectures : `briefing`, `planning_get`, `tasks_get`, `mails_list`, `mail_thread_g
 `products_list`, `sponsorships_list`, `brands_stats`, `money_entries_list`, `comments_list`,
 `legal_overview`, `instagram_overview`, `tiktok_overview`, `affiliation_overview`. Les réponses
 sont **allégées** (script et séries à la demande : ils coûtent à chaque tour). Actions :
-`timer_status`, `timer_start`, `timer_stop`, `mail_prepare_reply`.
+`timer_status`, `timer_start`, `timer_stop`, `comment_set_status`, `publication_archive`,
+`mail_prepare_reply`.
+
+`publications_list` et `comments_list` passent par `compactDraft` et `compactComment` : l'état
+(`readyToArchive`, `missing`, `checked`) et le texte viennent avant ce qui est long ou inutile au
+modèle, car un client peut couper les résultats anciens. `publication_archive` refuse une
+publication incomplète sans `abandon: true`, qui ne compte pas comme validée. `production_get`
+explique qu'un identifiant de publication n'est pas une production.
+
+`videos_list` écarte les vidéos masquées (`includeHidden` pour les revoir) et cherche dans le
+titre (`search`) : `hiddenAt` brut se lisait comme une sortie programmée, et un Short masqué
+passait pour la dernière vidéo. `productions_search` filtre par `format`. `briefing` allège ses
+sorties (`briefProduction`, sans tâches ni produits) : à 20 000 caractères, un client qui coupe
+à 4 000 perdait la fin de la réponse.
 
 **Le chronomètre passe par `managePlanning.stopTimer`**, jamais `TrackTime` seul (créneau,
 agenda). `timer_start` arrête d'abord celui qui tourne par ce même chemin. Le navigateur
