@@ -136,6 +136,24 @@ export interface MailThreadView extends MailThreadSummary {
   messages: MailMessage[];
 }
 
+/**
+ * Une réponse préparée depuis le MCP, qui attend un geste humain.
+ *
+ * Le corps et la signature restent séparés, comme dans `MailComposer`. Le jeton de
+ * confirmation n'en fait pas partie : il ne sort qu'une fois, et jamais vers le modèle.
+ */
+export interface MailDraft {
+  id: string;
+  threadId: string;
+  from: string | null;
+  to: MailAddress[];
+  cc: MailAddress[];
+  subject: string;
+  body: string;
+  signature: string;
+  createdAt: string;
+}
+
 export interface MailThreadFilter {
   search?: string;
   view?: 'inbox' | 'unread' | 'linked' | 'all';

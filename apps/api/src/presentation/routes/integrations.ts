@@ -36,7 +36,7 @@ export const integrationsRouter = (container: Container): Router => {
 
   router.post('/keys', (req, res) => {
     const body = createExportKeySchema.parse(req.body);
-    res.status(201).json(container.manageIntegrations.createKey(body.label));
+    res.status(201).json(container.manageIntegrations.createKey(body.label, body.scope));
   });
 
   router.delete('/keys/:id', (req, res) => {

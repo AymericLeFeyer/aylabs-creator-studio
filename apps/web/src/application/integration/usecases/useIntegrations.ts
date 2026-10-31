@@ -13,6 +13,7 @@ import {
   type DiscordHistoryParams,
 } from '../../../infrastructure/integration/api/discordApi.ts';
 import type {
+  ApiKeyScope,
   IntegrationProvider,
   IntegrationUpdateInput,
 } from '../../../domain/integration/entities/Integration.ts';
@@ -124,7 +125,9 @@ const useExportKeyMutation = <TVariables, TData>(
 };
 
 export const useCreateExportKey = () =>
-  useExportKeyMutation((label: string) => integrationApi.createKey(label));
+  useExportKeyMutation(({ label, scope }: { label: string; scope: ApiKeyScope }) =>
+    integrationApi.createKey(label, scope),
+  );
 
 export const useDeleteExportKey = () =>
   useExportKeyMutation((id: string) => integrationApi.deleteKey(id));

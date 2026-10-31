@@ -72,6 +72,16 @@ export const useMailThread = (id: string | null) =>
     enabled: id !== null,
   });
 
+/** Une seule lecture : le brouillon repris vit ensuite dans le composeur. */
+export const useMailDraft = (id: string | null) =>
+  useQuery({
+    queryKey: queryKeys.mailDraft(id ?? ''),
+    queryFn: () => mailApi.draft(id!),
+    enabled: id !== null,
+    staleTime: Infinity,
+    retry: false,
+  });
+
 export const useUpdateMailThread = () => {
   const queryClient = useQueryClient();
   return useMutation({

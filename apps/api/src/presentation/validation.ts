@@ -1193,6 +1193,7 @@ export const updateIntegrationSchema = z.object({
 
 export const createExportKeySchema = z.object({
   label: z.string().trim().min(1, 'Donne un nom à la clé (ex. « Home Assistant »)').max(60),
+  scope: z.enum(['export', 'mcp']).default('export'),
 });
 
 /** Fenêtre de l'écran Affiliations → Domadoo : mêmes paramètres que l'aperçu Instagram. */
@@ -1333,6 +1334,8 @@ export const sendMailSchema = z.object({
   threadId: z.string().min(1).nullable().default(null),
   /** Absente : l'adresse d'expédition par défaut. Sinon, une de `senders`, 400 autrement. */
   from: z.string().trim().toLowerCase().email().optional(),
+  /** Le brouillon préparé par le MCP dont vient ce message : il est retiré après l'envoi. */
+  draftId: z.string().min(1).optional(),
   confirm: z.literal(true, { errorMap: () => ({ message: 'Envoi non confirmé' }) }),
 });
 

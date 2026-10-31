@@ -63,9 +63,13 @@ export interface CollectIntegrationResult {
   durationMs: number;
 }
 
+/** `export` lit les chiffres publiés ; `mcp` ouvre le serveur MCP, mails et chronomètre compris. */
+export type ApiKeyScope = 'export' | 'mcp';
+
 export interface ExportKey {
   id: string;
   label: string;
+  scope: ApiKeyScope;
   prefix: string;
   createdAt: string;
   lastUsedAt: string | null;

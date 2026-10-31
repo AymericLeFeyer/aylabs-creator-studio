@@ -49,6 +49,11 @@ export interface Config {
    * tourne en UTC : sans lui, une vidéo du jour serait « d'hier » jusqu'à 2 h du matin.
    */
   timeZone: string;
+  /**
+   * L'adresse publique du studio, pour les liens rendus par le MCP. Facultative : sans
+   * elle, le lien vers un brouillon reste un chemin relatif.
+   */
+  publicUrl: string | null;
   /** Le mot de passe de la boîte mail. Facultatif : il l'emporte sur l'écran. */
   mailPassword: string | null;
   /** La clé de l'assistant mail. Facultative : elle l'emporte sur l'écran. */
@@ -77,6 +82,7 @@ export const loadConfig = (): Config => ({
   todoBaseUrl: optional('TODO_BASE_URL')?.replace(/\/+$/, '') ?? null,
   todoApiKey: optional('TODO_API_KEY'),
   timeZone: optional('APP_TIMEZONE') ?? 'Europe/Paris',
+  publicUrl: optional('PUBLIC_URL')?.replace(/\/+$/, '') ?? null,
   mailPassword: optional('MAIL_PASSWORD'),
   anthropicApiKey: optional('ANTHROPIC_API_KEY'),
   mailCron: optional('MAIL_CRON') ?? '*/5 * * * *',

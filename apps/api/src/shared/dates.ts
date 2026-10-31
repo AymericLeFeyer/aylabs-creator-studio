@@ -19,6 +19,33 @@ export const todayIn = (timeZone: string): IsoDate =>
     day: '2-digit',
   }).format(new Date());
 
+/**
+ * Le jour et l'heure d'un instant dans un fuseau donné. Ce que le navigateur envoie
+ * d'ordinaire : le MCP n'en a pas, et le conteneur tourne en UTC.
+ */
+export const clockIn = (
+  timeZone: string,
+  at: Date = new Date(),
+): { date: IsoDate; time: string; minutes: number } => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(at);
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? '00';
+  const hour = part('hour');
+  const minute = part('minute');
+  return {
+    date: `${part('year')}-${part('month')}-${part('day')}`,
+    time: `${hour}:${minute}`,
+    minutes: Number(hour) * 60 + Number(minute),
+  };
+};
+
 export const parseIsoDate = (s: IsoDate): Date => new Date(`${s}T00:00:00.000Z`);
 
 export const addDays = (s: IsoDate, days: number): IsoDate => {

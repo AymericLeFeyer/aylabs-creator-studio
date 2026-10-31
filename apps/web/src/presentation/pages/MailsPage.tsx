@@ -303,6 +303,7 @@ export const MailsPage = () => {
               signature={settings?.signature ?? ''}
               senders={settings?.senders ?? []}
               moveFolders={moveFolders}
+              preparedDraftId={searchParams.get('brouillon')}
               onBack={() => open(null)}
             />
           ) : (

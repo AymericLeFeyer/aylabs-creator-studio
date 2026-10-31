@@ -1,6 +1,7 @@
 import type {
   MailAddressCandidate,
   MailConnection,
+  MailDraft,
   MailFolderInfo,
   StoredAttachment,
   MailScope,
@@ -96,4 +97,16 @@ export interface MailSender {
 
 export interface MailServerFactory {
   open(connection: MailConnection): Promise<MailServer>;
+}
+
+export interface MailDraftRepository {
+  create(draft: Omit<MailDraft, 'id' | 'createdAt'>, tokenHash: string): MailDraft;
+  find(id: string): MailDraft | null;
+  /** Le brouillon si ce jeton est le sien. */
+  findByToken(id: string, tokenHash: string): MailDraft | null;
+  /** Réserve l'envoi. `false` si un autre clic l'a déjà pris. */
+  claim(id: string): boolean;
+  release(id: string): void;
+  delete(id: string): void;
+  deleteOlderThan(iso: string): void;
 }

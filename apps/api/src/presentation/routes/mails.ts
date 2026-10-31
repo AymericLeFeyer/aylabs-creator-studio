@@ -104,8 +104,20 @@ export const mailsRouter = (container: Container): Router => {
   });
 
   router.post('/send', async (req, res) => {
-    const { to, cc, subject, text, threadId, from } = sendMailSchema.parse(req.body);
-    res.json(await mail.send({ to, cc, subject, text, threadId, from: from ?? null }));
+    const { to, cc, subject, text, threadId, from, draftId } = sendMailSchema.parse(req.body);
+    const sent = await mail.send({ to, cc, subject, text, threadId, from: from ?? null });
+    if (draftId) container.manageMailDrafts.discard(draftId);
+    res.json(sent);
+  });
+
+  // Ce que le lien du MCP ouvre : le brouillon repris dans le composeur de l'écran.
+  router.get('/drafts/:id', (req, res) => {
+    res.json(container.manageMailDrafts.find(param(req, 'id')));
+  });
+
+  router.delete('/drafts/:id', (req, res) => {
+    container.manageMailDrafts.discard(param(req, 'id'));
+    res.status(204).end();
   });
 
   return router;

@@ -1,20 +1,8 @@
-import { Router, type Request } from 'express';
+import { Router } from 'express';
 import type { Container } from '../../container.ts';
 import { isIntegrationProvider } from '../../domain/integration/entities/Integration.ts';
 import { notFound } from '../../shared/errors.ts';
-import { param } from '../helpers.ts';
-
-/**
- * La clé se lit dans `Authorization: Bearer …`, sinon dans `?key=`.
- *
- * L'en-tête est la voie à préférer — une adresse finit dans les journaux de nginx. Le
- * paramètre existe pour les clients qui ne savent pas poser d'en-tête.
- */
-const readToken = (req: Request): string | null => {
-  const match = req.get('authorization')?.match(/^Bearer\s+(.+)$/i);
-  if (match?.[1]) return match[1].trim();
-  return typeof req.query.key === 'string' ? req.query.key : null;
-};
+import { param, readToken } from '../helpers.ts';
 
 /**
  * `/api/export` — ce que publie le studio pour Home Assistant, un widget, un script.

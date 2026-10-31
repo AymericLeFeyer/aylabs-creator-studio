@@ -10,6 +10,7 @@ import type {
   MailThreadFilter,
   MailThreadSummary,
   MailThreadView,
+  PreparedMailDraft,
   SendMailInput,
 } from '../../../domain/mail/entities/Mail.ts';
 import type { ProductionNote } from '../../../domain/production/entities/ProductionNote.ts';
@@ -57,6 +58,9 @@ export const mailApi = {
     }),
   videoNote: (id: string) =>
     request<ProductionNote>(`/api/mails/threads/${id}/video-note`, { method: 'POST' }),
+
+  /** Le brouillon préparé par le MCP. */
+  draft: (id: string) => request<PreparedMailDraft>(`/api/mails/drafts/${id}`),
 
   /** Le seul appel qui fasse partir un mail. */
   send: (input: SendMailInput) =>

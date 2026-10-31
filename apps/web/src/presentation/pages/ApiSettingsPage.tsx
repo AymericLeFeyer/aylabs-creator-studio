@@ -38,6 +38,7 @@ import {
 } from '../../application/tiktok/usecases/useTikTok.ts';
 import {
   integrationStatus,
+  type ApiKeyScope,
   type CreatedExportKey,
   type IntegrationProvider,
   type IntegrationStatus,
@@ -63,6 +64,13 @@ import {
 } from '../components/ui/dialog.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Label } from '../components/ui/label.tsx';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select.tsx';
 import { Switch } from '../components/ui/switch.tsx';
 import { cn } from '../../shared/cn.ts';
 
@@ -203,9 +211,11 @@ const ApiKeysCard = () => {
   const create = useCreateExportKey();
   const remove = useDeleteExportKey();
   const [label, setLabel] = useState('');
+  const [scope, setScope] = useState<ApiKeyScope>('export');
   const [created, setCreated] = useState<CreatedExportKey | null>(null);
 
   const endpoint = `${window.location.origin}/api/export`;
+  const mcpEndpoint = `${window.location.origin}/api/mcp`;
 
   return (
     <Card>
@@ -228,6 +238,15 @@ const ApiKeysCard = () => {
           </p>
         </div>
 
+        <div className="space-y-1.5">
+          <Label>Serveur MCP</Label>
+          <CopyField value={mcpEndpoint} label="l’adresse du serveur MCP" />
+          <p className="text-xs text-muted-foreground">
+            Pour un assistant comme Claude : planning, mails, chiffres, chronomètre. Il faut une clé
+            de type MCP, une clé d’export n’y donne pas accès. Aucun mail ne part sans ton clic.
+          </p>
+        </div>
+
         <div className="space-y-2">
           <Label>Clés</Label>
           {keys.length === 0 ? (
@@ -240,7 +259,12 @@ const ApiKeysCard = () => {
                 <li key={key.id} className="flex items-center gap-3 px-3 py-2">
                   <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{key.label}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium">{key.label}</span>
+                      <Badge variant={key.scope === 'mcp' ? 'default' : 'outline'}>
+                        {key.scope === 'mcp' ? 'MCP' : 'Export'}
+                      </Badge>
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       <code>{key.prefix}…</code> · créée {relative(key.createdAt)} ·{' '}
                       {key.lastUsedAt ? `utilisée ${relative(key.lastUsedAt)}` : 'jamais utilisée'}
@@ -274,12 +298,15 @@ const ApiKeysCard = () => {
             className="flex gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              create.mutate(label.trim(), {
-                onSuccess: (result) => {
-                  setCreated(result);
-                  setLabel('');
+              create.mutate(
+                { label: label.trim(), scope },
+                {
+                  onSuccess: (result) => {
+                    setCreated(result);
+                    setLabel('');
+                  },
                 },
-              });
+              );
             }}
           >
             <Input
@@ -288,6 +315,15 @@ const ApiKeysCard = () => {
               onChange={(event) => setLabel(event.target.value)}
               maxLength={60}
             />
+            <Select value={scope} onValueChange={(value) => setScope(value as ApiKeyScope)}>
+              <SelectTrigger className="w-28 shrink-0" aria-label="Type de clé">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="export">Export</SelectItem>
+                <SelectItem value="mcp">MCP</SelectItem>
+              </SelectContent>
+            </Select>
             <Button type="submit" size="sm" disabled={!label.trim() || create.isPending}>
               <Plus className="h-4 w-4" />
               Créer
@@ -297,7 +333,11 @@ const ApiKeysCard = () => {
         </div>
       </CardContent>
 
-      <CreatedKeyDialog created={created} endpoint={endpoint} onClose={() => setCreated(null)} />
+      <CreatedKeyDialog
+        created={created}
+        endpoint={created?.key.scope === 'mcp' ? mcpEndpoint : endpoint}
+        onClose={() => setCreated(null)}
+      />
     </Card>
   );
 };
@@ -311,6 +351,8 @@ const CreatedKeyDialog = ({
   endpoint: string;
   onClose: () => void;
 }) => {
+  const isMcp = created?.key.scope === 'mcp';
+  const mcpCommand = `claude mcp add --transport http aylabs-studio ${endpoint} --header "Authorization: Bearer ${created?.token}"`;
   const snippet = created
     ? [
         'rest:',
@@ -336,15 +378,26 @@ const CreatedKeyDialog = ({
         {created && (
           <div className="space-y-4">
             <CopyField value={created.token} label="la clé" />
-            <div className="space-y-1.5">
-              <Label>Pour Home Assistant (configuration.yaml)</Label>
-              <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">{snippet}</pre>
-              <p className="text-xs text-muted-foreground">
-                Mieux encore : range la ligne <code>Bearer …</code> dans <code>secrets.yaml</code>{' '}
-                et écris <code>Authorization: !secret creator_studio</code>. Les capteurs existants
-                (<code>value_json.youtube.thisMonth.views</code>…) restent valables.
-              </p>
-            </div>
+            {isMcp ? (
+              <div className="space-y-1.5">
+                <Label>Pour Claude Code</Label>
+                <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">{mcpCommand}</pre>
+                <p className="text-xs text-muted-foreground">
+                  Un connecteur Claude demande une adresse publique en https et n’accepte que
+                  l’adresse seule : ajoute-lui <code>?key=…</code>.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label>Pour Home Assistant (configuration.yaml)</Label>
+                <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">{snippet}</pre>
+                <p className="text-xs text-muted-foreground">
+                  Mieux encore : range la ligne <code>Bearer …</code> dans <code>secrets.yaml</code>{' '}
+                  et écris <code>Authorization: !secret creator_studio</code>. Les capteurs
+                  existants (<code>value_json.youtube.thisMonth.views</code>…) restent valables.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

@@ -49,6 +49,7 @@ const fullText = (draft: MailDraft): string =>
  */
 export const MailComposer = ({
   threadId,
+  preparedDraftId,
   draft,
   onChange,
   onClose,
@@ -58,6 +59,8 @@ export const MailComposer = ({
 }: {
   /** `null` pour un nouveau message : pas de fil, donc pas d'IA contextuelle. */
   threadId: string | null;
+  /** Le brouillon du MCP dont ce message est parti : l'API le retire après l'envoi. */
+  preparedDraftId?: string | null;
   draft: MailDraft;
   onChange: (draft: MailDraft) => void;
   onClose: () => void;
@@ -141,6 +144,7 @@ export const MailComposer = ({
         text: fullText(draft),
         threadId,
         from: draft.from || undefined,
+        draftId: preparedDraftId ?? undefined,
         confirm: true,
       },
       {

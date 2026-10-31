@@ -1966,6 +1966,35 @@ const migrations: Migration[] = [
       ALTER TABLE productions ADD COLUMN discord_announced_at TEXT;
     `,
   },
+  {
+    version: 58,
+    name: 'mcp_access',
+    // Le serveur MCP. "scope" separe les cles : celle de Home Assistant lit des chiffres,
+    // celle du MCP lit les mails et pilote le chronometre. Une cle existante reste "export".
+    //
+    // "mail_drafts" : une reponse preparee depuis le MCP, qui attend un geste humain.
+    // Seule l'EMPREINTE du jeton de confirmation est stockee. "sending_at" reserve
+    // l'envoi : deux clics ne doivent pas faire partir deux mails.
+    up: `
+      ALTER TABLE export_keys ADD COLUMN scope TEXT NOT NULL DEFAULT 'export'
+        CHECK (scope IN ('export', 'mcp'));
+
+      CREATE TABLE mail_drafts (
+        id           TEXT PRIMARY KEY,
+        thread_id    TEXT NOT NULL,
+        from_address TEXT,
+        to_json      TEXT NOT NULL,
+        cc_json      TEXT NOT NULL DEFAULT '[]',
+        subject      TEXT NOT NULL,
+        body         TEXT NOT NULL,
+        signature    TEXT NOT NULL DEFAULT '',
+        token_hash   TEXT NOT NULL,
+        created_at   TEXT NOT NULL,
+        sending_at   TEXT
+      );
+      CREATE INDEX idx_mail_drafts_created ON mail_drafts(created_at);
+    `,
+  },
 ];
 
 /**

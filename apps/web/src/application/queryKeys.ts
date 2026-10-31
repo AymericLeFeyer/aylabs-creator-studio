@@ -92,6 +92,7 @@ export const queryKeys = {
   mailStats: () => ['mails', 'stats'] as const,
   mailThreads: (filter: unknown) => ['mails', 'threads', filter] as const,
   mailThread: (id: string) => ['mails', 'thread', id] as const,
+  mailDraft: (id: string) => ['mails', 'draft', id] as const,
 };
 
 /** Racines à invalider après une écriture qui change les chiffres agrégés. */

@@ -45,6 +45,7 @@ import { externalAppsRouter } from './routes/externalApps.ts';
 import { exportRouter } from './routes/export.ts';
 import { mailsRouter } from './routes/mails.ts';
 import { aiRouter } from './routes/ai.ts';
+import { mcpRouter } from './routes/mcp.ts';
 
 export const createServer = (container: Container): express.Express => {
   const app = express();
@@ -105,9 +106,10 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/external-apps', externalAppsRouter(container));
   app.use('/api/mails', mailsRouter(container));
   app.use('/api/ai', aiRouter(container));
-  // La seule route protégée par une clé : elle est faite pour être lue depuis une autre
-  // machine (Home Assistant), et porte des montants.
+  // Les deux seules routes protégées par une clé : elles sont faites pour être appelées
+  // depuis une autre machine (Home Assistant, un assistant), et portent des montants.
   app.use('/api/export', exportRouter(container));
+  app.use('/api/mcp', mcpRouter(container));
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Route inconnue', code: 'NOT_FOUND' });

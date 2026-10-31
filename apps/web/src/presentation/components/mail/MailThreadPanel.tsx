@@ -17,6 +17,7 @@ import {
 import {
   useMailAi,
   useMailDateCheck,
+  useMailDraft,
   useMailThread,
   useMailVideoNote,
   useMoveMailThread,
@@ -178,6 +179,7 @@ export const MailThreadPanel = ({
   signature,
   senders,
   moveFolders,
+  preparedDraftId,
   onBack,
 }: {
   threadId: string;
@@ -186,9 +188,12 @@ export const MailThreadPanel = ({
   senders: string[];
   /** Les dossiers de rangement choisis dans les réglages. */
   moveFolders: string[];
+  /** Le brouillon préparé par le MCP à reprendre, depuis le lien qu'il a rendu. */
+  preparedDraftId: string | null;
   onBack: () => void;
 }) => {
   const { data: thread, isLoading, error } = useMailThread(threadId);
+  const { data: prepared } = useMailDraft(preparedDraftId);
   const update = useUpdateMailThread();
   const ai = useMailAi();
   const videoNote = useMailVideoNote();
@@ -198,6 +203,19 @@ export const MailThreadPanel = ({
   const { data: brands = [] } = useBrands();
   const { data: productions = [] } = useProductions({});
   const [draft, setDraft] = useState<MailDraft | null>(null);
+  const [resumedDraftId, setResumedDraftId] = useState<string | null>(null);
+  // Dérivé pendant le rendu, une seule fois : le lien ouvre le brouillon, il ne le réimpose pas.
+  if (prepared && prepared.threadId === threadId && prepared.id !== resumedDraftId) {
+    setResumedDraftId(prepared.id);
+    setDraft({
+      from: prepared.from ?? senders[0] ?? '',
+      to: formatAddresses(prepared.to),
+      cc: formatAddresses(prepared.cc),
+      subject: prepared.subject,
+      body: prepared.body,
+      signature: prepared.signature,
+    });
+  }
   const [pendingAi, setPendingAi] = useState<string | null>(null);
   const markedRef = useRef<string | null>(null);
 
@@ -473,6 +491,7 @@ export const MailThreadPanel = ({
       {draft && (
         <MailComposer
           threadId={thread.id}
+          preparedDraftId={resumedDraftId}
           draft={draft}
           onChange={setDraft}
           onClose={() => {

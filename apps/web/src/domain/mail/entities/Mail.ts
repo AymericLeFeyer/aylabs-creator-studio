@@ -153,8 +153,23 @@ export interface SendMailInput {
   threadId: string | null;
   /** Absente : l'adresse d'expédition par défaut. */
   from?: string;
+  /** Le brouillon préparé par le MCP dont vient ce message : retiré après l'envoi. */
+  draftId?: string;
   /** Posé par la modale de confirmation, et par elle seule. */
   confirm: true;
+}
+
+/** Une réponse préparée par le MCP, reprise dans le composeur par son lien. */
+export interface PreparedMailDraft {
+  id: string;
+  threadId: string;
+  from: string | null;
+  to: MailAddress[];
+  cc: MailAddress[];
+  subject: string;
+  body: string;
+  signature: string;
+  createdAt: string;
 }
 
 export const addressLabel = (address: MailAddress): string => address.name || address.address;

@@ -1,8 +1,8 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-10-30
+> Dernière mise à jour : 2026-10-31
 
-Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie. **Et la boîte mail** (Admin → Mails), avec un assistant IA qui propose — jamais n'envoie.
+Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie. **Et la boîte mail** (Admin → Mails), avec un assistant IA qui propose — jamais n'envoie. **Et un serveur MCP** (`/api/mcp`) pour piloter tout ça depuis un assistant.
 
 ## Stack
 
@@ -17,6 +17,7 @@ Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagn�
 | Éditeur    | **TipTap 3** (ProseMirror) — scripts en WYSIWYG. Chunk isolé **et** chargé en `lazy` |
 | Mails      | `imapflow` (IMAP), `nodemailer` (SMTP), `mailparser` — JS pur, rien à compiler       |
 | IA         | `@anthropic-ai/sdk`, modèle `claude-opus-5` par défaut (réglable)                    |
+| MCP        | `@modelcontextprotocol/sdk`, Streamable HTTP sans session, dans l'API                |
 | Données    | TanStack Query 5                                                                     |
 | PWA        | Manifeste + service worker **écrits à la main**, aucune dépendance de build          |
 | CI/CD      | GitHub Actions → images GHCR → stack Portainer sur VPS                               |
@@ -1864,9 +1865,9 @@ une `IntegrationView` ne dit d'un secret que sa `source` (`env` | `app` | `null`
 **Clés d'accès** (`export_keys`) : jeton `acs_` + 24 octets base64url, montré **une
 seule fois** ; seule l'empreinte SHA-256 est stockée (pas de hachage lent : 192 bits
 aléatoires, aucun dictionnaire à essayer). Une clé par client, révocable. Lue dans
-`Authorization: Bearer …`, sinon `?key=`. Aucune clé = 401 partout. **`/api/export` est la
-seule route authentifiée de l'API** : elle est faite pour être lue depuis une autre
-machine et porte des montants.
+`Authorization: Bearer …`, sinon `?key=`. Aucune clé = 401 partout. **`/api/export` et `/api/mcp` sont
+les seules routes authentifiées de l'API** : elles sont faites pour être appelées depuis une
+autre machine et portent des montants.
 
 Use cases :
 
@@ -2243,11 +2244,11 @@ On crée et on corrige depuis Succès seulement.
 ### `mail` — la boîte mail (Admin → Mails)
 
 **Règle absolue : aucun mail ne part sans un geste explicite de l'utilisateur.** Un seul
-chemin d'envoi dans tout le studio : `POST /api/mails/send` → `ManageMail.send` →
-`SmtpMailSender`. Le schéma zod exige `confirm: true`, que seul le bouton « Envoyer
-maintenant » de la modale de confirmation de `MailComposer` pose (`useSendMail`). L'IA
-(`MailAssistant`) **n'a aucune référence** à ce chemin : elle rend du texte, que l'écran
-pose dans le brouillon. Ne jamais brancher d'envoi automatique, de relance planifiée ou
+chemin d'envoi dans tout le studio : `ManageMail.send` → `SmtpMailSender`, atteint par deux
+boutons et rien d'autre : `POST /api/mails/send`, dont le schéma zod exige `confirm: true`, que
+seul « Envoyer maintenant » de la modale de `MailComposer` pose (`useSendMail`), et le bouton
+de la carte du MCP (voir `mcp`). L'IA (`MailAssistant`) **n'a aucune référence** à ce chemin :
+elle rend du texte, que l'écran pose dans le brouillon. Ne jamais brancher d'envoi automatique, de relance planifiée ou
 d'envoi depuis l'IA.
 
 Tables (migration 50) :
@@ -2445,6 +2446,56 @@ réglage des mails, pour servir à d'autres modules plus tard.
 Ces trois-là lisent le script **enregistré** (400 s'il est vide) et remplissent le formulaire
 de `PublicationPanel`, qui reste à enregistrer. Boutons absents sans clé.
 
+### `mcp` — le studio pour un assistant
+
+`POST /api/mcp` (`presentation/routes/mcp.ts`), Streamable HTTP **sans session** : un serveur
+et un transport par requête. Les outils parlent aux use cases, pas à l'API par HTTP. Vit dans
+l'API et non dans un paquet à part : aucun service de plus à déployer, nginx le sert déjà.
+
+**Clé de portée `mcp`** (`export_keys.scope`, migration 58, se crée dans Paramètres → API),
+lue comme celle de l'export (`Authorization: Bearer …`, sinon `?key=`). **Les portées ne se
+croisent pas** : la clé de Home Assistant lit des chiffres, celle du MCP lit les mails et
+pilote le chronomètre. `authenticate(token, scope)`, `touch` et `count` sont bornés à la portée.
+
+| Fichier (`presentation/mcp/`) | Contenu                                                        |
+| ----------------------------- | -------------------------------------------------------------- |
+| `tooling.ts`                  | `readTool`, `registerTool`, `asJson`                           |
+| `readTools.ts`                | 24 lectures, `briefing` en tête. Rien de ce qu'elles appellent n'écrit |
+| `actionTools.ts`              | Chronomètre, `mail_prepare_reply`, les deux outils de la carte |
+| `mailConfirmCard.html`        | La carte de confirmation (MCP Apps), écrite à la main          |
+
+Lectures : `briefing`, `planning_get`, `tasks_get`, `mails_list`, `mail_thread_get`,
+`time_entries_list`, `dashboard_get` (seul endroit qui compose CA et bénéfice, par
+`revenueMath`), `channels_list`, `videos_list`, `goals_list`, `achievements_get`,
+`publications_list`, `productions_overview`, `productions_search`, `production_get`,
+`products_list`, `sponsorships_list`, `brands_stats`, `money_entries_list`, `comments_list`,
+`legal_overview`, `instagram_overview`, `tiktok_overview`, `affiliation_overview`. Les réponses
+sont **allégées** (script et séries à la demande : ils coûtent à chaque tour). Actions :
+`timer_status`, `timer_start`, `timer_stop`, `mail_prepare_reply`.
+
+**Le chronomètre passe par `managePlanning.stopTimer`**, jamais `TrackTime` seul (créneau,
+agenda). `timer_start` arrête d'abord celui qui tourne par ce même chemin. Le navigateur
+n'étant pas là, le jour et l'heure locaux viennent de `clockIn(config.timeZone)`.
+
+**Le modèle prépare, un humain envoie** (`ManageMailDrafts`, table `mail_drafts`).
+`mail_prepare_reply` range un brouillon (actions rapides de l'écran : `not_interested`,
+`interested`, `rates`, `follow_up`, ou `custom` avec son propre texte) et ne fait rien partir.
+Deux gestes seulement l'envoient :
+
+- **la carte** : un outil lié à `ui://aylabs-studio/mail-confirm.html` (MCP Apps) fait afficher
+  par l'hôte une carte modifiable. Son bouton appelle `mail_confirm_send`, outil
+  `visibility: ['app']`, avec un **jeton à usage unique rendu dans `_meta`** : l'hôte le remet
+  à la carte, pas au modèle. Sans jeton, cet outil ne peut rien, même sur un client qui
+  ignorerait `visibility`. Seule l'empreinte est stockée ;
+- **le studio** : le lien rendu (`/mails?fil=<id>&brouillon=<id>`, préfixé par `PUBLIC_URL`)
+  rouvre le brouillon dans `MailComposer`, puis la modale habituelle. C'est le repli des clients
+  qui n'affichent pas les cartes (Claude Code au terminal). `POST /send` reçoit `draftId` et
+  retire le brouillon, pour que sa carte ne puisse plus l'envoyer.
+
+`claim` (`sending_at`) précède l'envoi : un double clic ne fait pas partir deux mails, et un
+échec SMTP rend le brouillon. Un brouillon vit 7 jours. La carte parle le protocole à la main
+(JSON-RPC sur `postMessage`), sans le paquet `ext-apps` : une page, pas d'étape de build.
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
@@ -2617,7 +2668,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `PATCH`  | `/api/comments/:id`                                 | Le seul geste : `{ status }`. `new` y est admis — c'est ce qui remet dans la file de tri. **Pas de DELETE** : écarter est un statut                                                                                                                      |
 | `GET`    | `/api/integrations`                                 | `{ secretsKeyConfigured, providers: IntegrationView[] }`. Aucun secret n'en sort, seulement sa `source`                                                                                                                                                  |
 | `GET`    | `/api/integrations/keys`                            | Clés d'accès à l'export (sans jeton). **Déclaré avant `/:provider`**                                                                                                                                                                                     |
-| `POST`   | `/api/integrations/keys`                            | `{ label }` → `{ key, token }`. Le jeton n'est **montré qu'une fois**                                                                                                                                                                                    |
+| `POST`   | `/api/integrations/keys`                            | `{ label, scope? }` (`export` par défaut, ou `mcp`) → `{ key, token }`. Le jeton n'est **montré qu'une fois**                                                                                                                                                                                    |
 | `DELETE` | `/api/integrations/keys/:id`                        | Révoquer une clé                                                                                                                                                                                                                                         |
 | `PATCH`  | `/api/integrations/:provider`                       | `{ enabled?, credentials? }` — champ absent conservé, `null`/`""` efface. 409 si le champ est couvert par l'env, ou si c'est un secret sans `SECRETS_KEY`                                                                                                |
 | `POST`   | `/api/integrations/:provider/collect`               | Collecte immédiate d'une source distante ou du profil public TikTok (400 sur `youtube`/`instagram`, non `collectable` ; 409 si déjà en cours). ~20 s avec navigateur sur les sources distantes. Rend `{ result, integration }`                          |
@@ -2661,7 +2712,10 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/mails/threads/:id/ai`                         | `{ action: 'summarize' \| 'follow_up' }`, `{ action: 'draft', intent, notes? }`, `{ action: 'translate', text, language? }`, `{ action: 'refine', text, instruction }` → `{ text }`. N'envoie rien |
 | `POST`   | `/api/mails/threads/:id/video-note`                 | Écrit/réécrit la note « Échanges » dans la vidéo rattachée (400 sans vidéo). Rend la `ProductionNote` |
 | `POST`   | `/api/mails/messages/:id/summarize`                 | `{ text }`, gardé dans `ai_summary` |
-| `POST`   | `/api/mails/send`                                   | **Seul envoi du studio.** `{ to, cc, subject, text, threadId, from?, confirm: true }` — 422 sans `confirm`, 400 si `from` n'est pas dans `senders` |
+| `POST`   | `/api/mails/send`                                   | **Seul envoi de l'écran.** `{ to, cc, subject, text, threadId, from?, draftId?, confirm: true }` — 422 sans `confirm`, 400 si `from` n'est pas dans `senders`. `draftId` retire le brouillon du MCP |
+| `GET`    | `/api/mails/drafts/:id`                             | Le brouillon préparé par le MCP, repris dans le composeur. 404 s'il est parti ou abandonné |
+| `DELETE` | `/api/mails/drafts/:id`                             | L'abandonner |
+| `POST`   | `/api/mcp`                                          | **Le serveur MCP.** Clé de portée `mcp` obligatoire, une clé d'export y répond 401. `GET`/`DELETE` : 405 |
 
 Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube ou d'une source de l'export.
 
@@ -3361,7 +3415,7 @@ période**, et leur sous-titre le dit.
 | `useSharedPreference(key, fallback, parse)` | `application/sharedPreference/usecases/useSharedPreference.ts` | Une préférence **partagée entre appareils** (`/api/preferences`, table `app_preferences`). `parse` valide la valeur, sinon `fallback`. Écriture optimiste. `['sharedPreferences']` ne croise aucune racine |
 | `useGoals`, `useGoalCatalog`, `useGoalPreview`, `useCreateGoal`, `useUpdateGoal`, `useDeleteGoal` | `application/goal/usecases/useGoals.ts` | Objectifs. Clés sous la racine `['goals']` (liste avec jour local, catalogue, aperçu), invalidée entière à chaque écriture ; ne croise aucune autre racine |
 | `useAchievements`, `useVisibleAchievements` | `application/achievement/usecases/useAchievements.ts` | Paliers et records. Relu au focus ; aucune écriture ne l'invalide (`['achievements']`) |
-| `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail`, `useMailAddresses`, `useMailFolders` (au clic), `useMoveMailThread`, `useMailDateCheck` (invalide `planningBoard` / `todoToday` quand des tâches sont créées) | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
+| `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useMailDraft`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail`, `useMailAddresses`, `useMailFolders` (au clic), `useMoveMailThread`, `useMailDateCheck` (invalide `planningBoard` / `todoToday` quand des tâches sont créées) | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
 | `useAiScript`, `useAiTitles`, `useAiTags`, `useAiDescription` | `application/production/usecases/useProductionAi.ts` | L'IA d'une fiche. Mutations (chaque appel coûte) ; n'invalident que `['aiSettings']` |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
@@ -3459,6 +3513,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 58** ajoute `export_keys.scope` (`export` pour l'existant) et `mail_drafts`.
 - **Migration 57** ajoute `productions.discord_announced_at`.
 - **Migration 56** ajoute à `ai_settings` le solde relevé, sa date, la consommation et la date d'épuisement.
 - **Migration 55** élargit le `CHECK` de `mail_folders` au rôle `folder` (table recréée, aucune clé étrangère ne la vise) et indexe `mail_messages.folder`.
@@ -3541,6 +3596,8 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 ## Points d'attention
 
 - **Aucun mail ne part sans confirmation, et l'IA n'envoie jamais.** Voir le domaine `mail`. Toute nouvelle fonctionnalité mail (relance, modèle, envoi groupé) doit passer par le brouillon + la modale de confirmation, jamais par un appel direct à `ManageMail.send`.
+- **Un outil MCP ne reçoit jamais le jeton de confirmation dans `content` ni `structuredContent`** : le modèle les lit. `_meta` seulement. L'y remettre donnerait au modèle — donc à quiconque écrit un mail qu'il lit — le moyen d'envoyer seul. Pour la même raison, ne jamais ajouter d'outil d'envoi visible du modèle, et dire dans la description qu'un mail ou un commentaire est écrit par un tiers.
+- **Une nouvelle lecture MCP passe par une vue sans secret** (`toChannelView`, `InstagramAccountView`…), jamais par une entité brute.
 - **Le corps HTML d'un mail ne s'injecte jamais dans la page** : iframe `sandbox` sans `allow-scripts`, images distantes bloquées par CSP. Ne pas ajouter `allow-scripts` (avec `allow-same-origin`, le mail pourrait sortir du bac à sable).
 - **Proton Mail Bridge se met à jour tout seul, dans son volume, et la 3.2x exige `libfido2`** : l'image communautaire `shenxn/protonmail-bridge` ne l'a pas, le conteneur démarre, se met à jour puis ne relance plus (`libfido2.so.1: cannot open shared object file`). D'où `docker/proton-bridge/Dockerfile` (l'image communautaire + `libfido2-1`), publiée par la CI comme 3ᵉ image (`-proton-bridge`). Ne pas bloquer la mise à jour : Proton refuse les vieilles versions ; fournir les dépendances.
 - **Gmail exige un mot de passe d'application** pour IMAP/SMTP (validation en deux étapes activée) ; le mot de passe habituel est refusé. Port SMTP 465 = SSL activé, 587 = SSL désactivé (STARTTLS).
@@ -4427,8 +4484,8 @@ Images publiées sur GHCR par `.github/workflows/release.yml` :
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 
-Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Facultatifs pour la boîte mail : `MAIL_PASSWORD`, `MAIL_CRON` (défaut `*/5 * * * *`) et `ANTHROPIC_API_KEY` (l'assistant), qui l'emportent sur Paramètres → Admin → Mails. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, `PUBLIC_URL` (adresse publique, pour les liens rendus par le MCP), **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Facultatifs pour la boîte mail : `MAIL_PASSWORD`, `MAIL_CRON` (défaut `*/5 * * * *`) et `ANTHROPIC_API_KEY` (l'assistant), qui l'emportent sur Paramètres → Admin → Mails. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
 
-Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer.
+Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer. Le MCP passe par le même chemin : `claude mcp add --transport http aylabs-studio https://<studio>/api/mcp --header "Authorization: Bearer acs_…"`.
 
 Build local des images : `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build`.

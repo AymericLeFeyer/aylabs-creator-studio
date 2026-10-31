@@ -93,6 +93,8 @@ import { SyncStudioTodos } from './application/todoApp/usecases/SyncStudioTodos.
 import { ManageMail } from './application/mail/usecases/ManageMail.ts';
 import { MailAssistant } from './application/mail/usecases/MailAssistant.ts';
 import { MailVideoNotes } from './application/mail/usecases/MailVideoNotes.ts';
+import { ManageMailDrafts } from './application/mail/usecases/ManageMailDrafts.ts';
+import { SqliteMailDraftRepository } from './infrastructure/mail/repositories/SqliteMailDraftRepository.ts';
 import { SqliteMailSettingsRepository } from './infrastructure/mail/repositories/SqliteMailSettingsRepository.ts';
 import { SqliteMailStore } from './infrastructure/mail/repositories/SqliteMailStore.ts';
 import { ImapMailServerFactory } from './infrastructure/mail/api/ImapMailServer.ts';
@@ -239,6 +241,8 @@ export interface Container {
   manageMail: ManageMail;
   /** Résumés, traductions, brouillons, dates et note de vidéo. N'envoie jamais rien. */
   mailAssistant: MailAssistant;
+  /** Les réponses préparées par le MCP. Le modèle prépare, seul un humain envoie. */
+  manageMailDrafts: ManageMailDrafts;
   /** L'assistant IA (Paramètres → API) : seul endroit où sa clé est déchiffrée. */
   manageAi: ManageAi;
   /** L'IA d'une fiche : script, titres, tags, description. Propose, n'écrit rien. */
@@ -362,6 +366,17 @@ export const buildContainer = (config: Config): Container => {
   );
   const mailVideoNotes = new MailVideoNotes(manageMail, mailStore, productionNotes);
   manageMail.onThreadsChanged((threadIds) => mailVideoNotes.refreshMany(threadIds));
+  const mailAssistant = new MailAssistant({
+    mail: manageMail,
+    store: mailStore,
+    ai: aiClient,
+    settings: manageAi,
+    notes: productionNotes,
+    productions,
+    todoTasks: manageTodoTasks,
+    todoLinks: new SqliteTodoLinkRepository(db),
+    videoNotes: mailVideoNotes,
+  });
 
   return {
     db,
@@ -374,17 +389,12 @@ export const buildContainer = (config: Config): Container => {
       ai: aiClient,
       settings: manageAi,
     }),
-    mailAssistant: new MailAssistant({
-      mail: manageMail,
-      store: mailStore,
-      ai: aiClient,
-      settings: manageAi,
-      notes: productionNotes,
-      productions,
-      todoTasks: manageTodoTasks,
-      todoLinks: new SqliteTodoLinkRepository(db),
-      videoNotes: mailVideoNotes,
-    }),
+    mailAssistant,
+    manageMailDrafts: new ManageMailDrafts(
+      new SqliteMailDraftRepository(db),
+      manageMail,
+      mailAssistant,
+    ),
     channels,
     metrics,
     categories,

@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Envoyer ce mail ?</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: var(--color-background-primary, Canvas);
+        --ink: var(--color-text-primary, CanvasText);
+        --muted: var(--color-text-secondary, GrayText);
+        --line: var(--color-border-primary, color-mix(in srgb, CanvasText 18%, transparent));
+        --accent: #2563eb;
+        --danger: #dc2626;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+      }
+      h1 {
+        margin: 0 0 2px;
+        font-size: 15px;
+      }
+      p {
+        margin: 0;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: 3.5rem minmax(0, 1fr);
+        gap: 2px 12px;
+        margin: 12px 0;
+      }
+      dt {
+        color: var(--muted);
+      }
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      textarea {
+        display: block;
+        width: 100%;
+        min-height: 200px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        resize: vertical;
+      }
+      .signature {
+        margin-top: 8px;
+        white-space: pre-wrap;
+      }
+      .warning {
+        margin-top: 8px;
+        color: var(--danger);
+        font-size: 12px;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      button {
+        min-height: 36px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #fff;
+        font-weight: 600;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.55;
+      }
+      button:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="waiting"><p class="muted">Préparation du brouillon…</p></main>
+
+    <main id="card" hidden>
+      <h1>Envoyer ce mail ?</h1>
+      <p class="muted">Relis-le : une fois parti, il ne se rattrape pas. Rien ne part sans ton clic.</p>
+      <dl>
+        <dt>De</dt>
+        <dd id="from"></dd>
+        <dt>À</dt>
+        <dd id="to"></dd>
+        <dt>Objet</dt>
+        <dd id="subject"></dd>
+      </dl>
+      <label class="muted" for="body">Message, modifiable</label>
+      <textarea id="body"></textarea>
+      <p id="signature" class="signature muted" hidden></p>
+      <p id="brackets" class="warning" hidden>
+        Le message contient encore des champs entre crochets à compléter.
+      </p>
+      <p id="error" class="warning" role="alert" hidden></p>
+      <div class="actions">
+        <button id="cancel">Abandonner</button>
+        <button id="studio" hidden>Ouvrir dans le studio</button>
+        <button id="send" class="primary">Envoyer maintenant</button>
+      </div>
+    </main>
+
+    <main id="done" hidden>
+      <h1 id="done-title"></h1>
+      <p id="done-detail" class="muted"></p>
+    </main>
+
+    <script>
+      // Écrit à la main, sans le paquet @modelcontextprotocol/ext-apps : une page d'un écran,
+      // sans étape de build, comme le service worker. Le protocole est du JSON-RPC sur
+      // postMessage avec l'hôte.
+      const $ = (id) => document.getElementById(id);
+      const TOKEN_META = 'acs/confirmToken';
+      const pending = new Map();
+      let nextId = 1;
+      let draft = null;
+      let token = null;
+      let link = null;
+
+      const post = (message) => window.parent.postMessage({ jsonrpc: '2.0', ...message }, '*');
+      const request = (method, params) =>
+        new Promise((resolve, reject) => {
+          const id = nextId++;
+          pending.set(id, { resolve, reject });
+          post({ id, method, params });
+        });
+
+      const notifySize = () =>
+        post({
+          method: 'ui/notifications/size-changed',
+          params: { height: document.documentElement.scrollHeight },
+        });
+
+      const show = (id) => {
+        for (const section of ['waiting', 'card', 'done']) $(section).hidden = section !== id;
+        notifySize();
+      };
+
+      const addresses = (list) =>
+        list.map(({ name, address }) => (name ? `${name} <${address}>` : address)).join(', ');
+
+      const checkBrackets = () => {
+        $('brackets').hidden = !/\[[^\]]+\]/.test($('body').value);
+        $('send').disabled = !$('body').value.trim();
+        notifySize();
+      };
+
+      const render = () => {
+        $('from').textContent = draft.from ?? 'Adresse par défaut';
+        $('to').textContent = addresses(draft.to);
+        $('subject').textContent = draft.subject || '(sans objet)';
+        $('body').value = draft.body;
+        $('signature').textContent = draft.signature;
+        $('signature').hidden = !draft.signature.trim();
+        // Sans PUBLIC_URL, le lien est relatif : un hôte ne saurait pas l'ouvrir.
+        $('studio').hidden = !/^https?:/.test(link ?? '');
+        // Sans jeton, l'hôte n'a pas transmis `_meta` : seul le studio peut envoyer.
+        $('send').hidden = !token;
+        $('cancel').hidden = !token;
+        checkBrackets();
+        show('card');
+      };
+
+      const finish = (title, detail) => {
+        $('done-title').textContent = title;
+        $('done-detail').textContent = detail;
+        show('done');
+      };
+
+      const callTool = async (name, args) => {
+        const result = await request('tools/call', { name, arguments: args });
+        if (result?.isError) {
+          throw new Error(result.content?.[0]?.text ?? 'Le serveur a refusé.');
+        }
+        return result;
+      };
+
+      const act = async (button, action) => {
+        const buttons = [$('send'), $('cancel')];
+        const label = button.textContent;
+        buttons.forEach((entry) => (entry.disabled = true));
+        $('error').hidden = true;
+        try {
+          await action();
+        } catch (error) {
+          $('error').textContent = error.message;
+          $('error').hidden = false;
+          buttons.forEach((entry) => (entry.disabled = false));
+          button.textContent = label;
+          notifySize();
+        }
+      };
+
+      $('body').addEventListener('input', checkBrackets);
+
+      $('send').addEventListener('click', () =>
+        act($('send'), async () => {
+          $('send').textContent = 'Envoi…';
+          await callTool('mail_confirm_send', {
+            draftId: draft.id,
+            token,
+            text: $('body').value,
+          });
+          finish('Mail envoyé', `À ${addresses(draft.to)}`);
+        }),
+      );
+
+      $('cancel').addEventListener('click', () =>
+        act($('cancel'), async () => {
+          await callTool('mail_cancel_draft', { draftId: draft.id, token });
+          finish('Brouillon abandonné', 'Rien n’est parti.');
+        }),
+      );
+
+      $('studio').addEventListener('click', () => request('ui/open-link', { url: link }));
+
+      const onToolResult = (result) => {
+        if (result?.isError) {
+          finish('Brouillon impossible', result.content?.[0]?.text ?? '');
+          return;
+        }
+        draft = result?.structuredContent?.draft ?? null;
+        link = result?.structuredContent?.link ?? null;
+        token = result?._meta?.[TOKEN_META] ?? null;
+        if (draft) render();
+      };
+
+      window.addEventListener('message', ({ source, data }) => {
+        if (source !== window.parent || data?.jsonrpc !== '2.0') return;
+        if (data.id !== undefined && pending.has(data.id)) {
+          const { resolve, reject } = pending.get(data.id);
+          pending.delete(data.id);
+          if (data.error) reject(new Error(data.error.message));
+          else resolve(data.result);
+          return;
+        }
+        if (data.method === 'ui/notifications/tool-result') onToolResult(data.params);
+        if (data.method === 'ui/notifications/host-context-changed' && data.params?.theme) {
+          document.documentElement.style.colorScheme = data.params.theme;
+        }
+        if (data.id !== undefined && data.method) post({ id: data.id, result: {} });
+      });
+
+      request('ui/initialize', {
+        appInfo: { name: 'aylabs-mail-confirm', version: '1.0.0' },
+        appCapabilities: {},
+        protocolVersion: '2026-01-26',
+      }).then((result) => {
+        const theme = result?.hostContext?.theme;
+        if (theme) document.documentElement.style.colorScheme = theme;
+        post({ method: 'ui/notifications/initialized', params: {} });
+        notifySize();
+      });
+    </script>
+  </body>
+</html>

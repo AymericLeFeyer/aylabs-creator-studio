@@ -268,9 +268,17 @@ export interface CollectIntegrationResult {
 }
 
 /** Une clé d'accès à l'export. Le jeton lui-même n'est connu qu'au moment de la création. */
+/**
+ * Ce qu'une clé ouvre. Deux portées et non une : la clé de Home Assistant lit des chiffres,
+ * celle du MCP lit les mails et pilote le chronomètre — fuir la première ne doit pas
+ * donner la seconde.
+ */
+export type ApiKeyScope = 'export' | 'mcp';
+
 export interface ExportKey {
   id: string;
   label: string;
+  scope: ApiKeyScope;
   /** Début du jeton, pour reconnaître une clé sans pouvoir la reconstituer. */
   prefix: string;
   createdAt: string;

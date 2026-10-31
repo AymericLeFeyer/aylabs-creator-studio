@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   PROVIDERS,
   providerDefinition,
+  type ApiKeyScope,
   type CreatedExportKey,
   type CredentialFieldView,
   type ExportKey,
@@ -189,9 +190,9 @@ export class ManageIntegrations {
    * garde que l'empreinte SHA-256. Un hachage lent n'apporterait rien ici — le jeton est
    * tiré au hasard sur 192 bits, il n'y a pas de dictionnaire à essayer.
    */
-  createKey(label: string): CreatedExportKey {
+  createKey(label: string, scope: ApiKeyScope = 'export'): CreatedExportKey {
     const token = `acs_${randomBytes(24).toString('base64url')}`;
-    const key = this.keys.create(label, hashToken(token), token.slice(0, 8));
+    const key = this.keys.create(label, hashToken(token), token.slice(0, 8), scope);
     return { key, token };
   }
 
@@ -199,16 +200,16 @@ export class ManageIntegrations {
     this.keys.delete(id);
   }
 
-  /** Lève une 401 si le jeton ne correspond à aucune clé. */
-  authenticate(token: string | null): void {
-    if (this.keys.count() === 0) {
+  /** Lève une 401 si le jeton ne correspond à aucune clé **de cette portée**. */
+  authenticate(token: string | null, scope: ApiKeyScope = 'export'): void {
+    if (this.keys.count(scope) === 0) {
       throw new AppError(
         'Aucune clé d’accès : crée-en une dans Paramètres → API.',
         401,
         'UNAUTHORIZED',
       );
     }
-    if (!token || !this.keys.touch(hashToken(token))) {
+    if (!token || !this.keys.touch(hashToken(token), scope)) {
       throw new AppError('Clé d’accès invalide ou révoquée', 401, 'UNAUTHORIZED');
     }
   }

@@ -539,9 +539,11 @@ export class ManageMail {
   // --- Envoi --------------------------------------------------------------------
 
   /**
-   * **Le seul chemin par lequel un mail quitte le studio.** Appelé par une seule route,
-   * qui exige `confirm: true` dans le corps — le bouton de l'écran ne le pose qu'après la
-   * confirmation explicite. L'assistant n'y a pas accès.
+   * **Le seul chemin par lequel un mail quitte le studio.** Appelé par deux gestes humains
+   * et rien d'autre : la route qui exige `confirm: true` (le bouton de l'écran ne le pose
+   * qu'après la confirmation explicite) et le bouton de la carte du MCP
+   * (`ManageMailDrafts.confirm`, derrière un jeton que le modèle ne voit pas). L'assistant
+   * n'y a pas accès.
    *
    * En réponse dans un fil, `In-Reply-To` et `References` sont repris du dernier message :
    * c'est ce qui fait apparaître la réponse dans le même fil chez le destinataire.

@@ -1,4 +1,5 @@
 import type {
+  ApiKeyScope,
   ExportKey,
   IntegrationProvider,
   IntegrationSnapshot,
@@ -33,11 +34,11 @@ export interface IntegrationRepository {
 
 export interface ExportKeyRepository {
   findAll(): ExportKey[];
-  create(label: string, tokenHash: string, prefix: string): ExportKey;
+  create(label: string, tokenHash: string, prefix: string, scope: ApiKeyScope): ExportKey;
   delete(id: string): void;
-  /** Horodate l'usage de la clé et dit si elle existe. */
-  touch(tokenHash: string): boolean;
-  count(): number;
+  /** Horodate l'usage de la clé et dit si elle existe **pour cette portée**. */
+  touch(tokenHash: string, scope: ApiKeyScope): boolean;
+  count(scope: ApiKeyScope): number;
 }
 
 /** Ce que l'export tire de ce que le studio collecte déjà. */

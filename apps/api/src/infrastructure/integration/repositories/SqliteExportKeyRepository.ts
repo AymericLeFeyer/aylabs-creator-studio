@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { ExportKey } from '../../../domain/integration/entities/Integration.ts';
+import type { ApiKeyScope, ExportKey } from '../../../domain/integration/entities/Integration.ts';
 import type { ExportKeyRepository } from '../../../domain/integration/repositories/IntegrationRepository.ts';
 import { newId } from '../../../shared/id.ts';
 import { notFound } from '../../../shared/errors.ts';
@@ -7,6 +7,7 @@ import { notFound } from '../../../shared/errors.ts';
 interface Row {
   id: string;
   label: string;
+  scope: ApiKeyScope;
   prefix: string;
   created_at: string;
   last_used_at: string | null;
@@ -15,6 +16,7 @@ interface Row {
 const toDomain = (row: Row): ExportKey => ({
   id: row.id,
   label: row.label,
+  scope: row.scope,
   prefix: row.prefix,
   createdAt: row.created_at,
   lastUsedAt: row.last_used_at,
@@ -31,19 +33,19 @@ export class SqliteExportKeyRepository implements ExportKeyRepository {
   findAll(): ExportKey[] {
     const rows = this.db
       .prepare(
-        'SELECT id, label, prefix, created_at, last_used_at FROM export_keys ORDER BY created_at',
+        'SELECT id, label, scope, prefix, created_at, last_used_at FROM export_keys ORDER BY created_at',
       )
       .all() as unknown as Row[];
     return rows.map(toDomain);
   }
 
-  create(label: string, tokenHash: string, prefix: string): ExportKey {
+  create(label: string, tokenHash: string, prefix: string, scope: ApiKeyScope): ExportKey {
     const id = newId();
     this.db
       .prepare(
-        'INSERT INTO export_keys (id, label, token_hash, prefix, created_at) VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO export_keys (id, label, scope, token_hash, prefix, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       )
-      .run(id, label, tokenHash, prefix, new Date().toISOString());
+      .run(id, label, scope, tokenHash, prefix, new Date().toISOString());
     return this.findAll().find((key) => key.id === id)!;
   }
 
@@ -52,15 +54,17 @@ export class SqliteExportKeyRepository implements ExportKeyRepository {
     if (result.changes === 0) throw notFound('Clé d’accès');
   }
 
-  touch(tokenHash: string): boolean {
+  touch(tokenHash: string, scope: ApiKeyScope): boolean {
     const result = this.db
-      .prepare('UPDATE export_keys SET last_used_at = ? WHERE token_hash = ?')
-      .run(new Date().toISOString(), tokenHash);
+      .prepare('UPDATE export_keys SET last_used_at = ? WHERE token_hash = ? AND scope = ?')
+      .run(new Date().toISOString(), tokenHash, scope);
     return result.changes > 0;
   }
 
-  count(): number {
-    const row = this.db.prepare('SELECT COUNT(*) AS n FROM export_keys').get() as { n: number };
+  count(scope: ApiKeyScope): number {
+    const row = this.db
+      .prepare('SELECT COUNT(*) AS n FROM export_keys WHERE scope = ?')
+      .get(scope) as { n: number };
     return row.n;
   }
 }

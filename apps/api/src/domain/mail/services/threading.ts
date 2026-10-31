@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { MailMessage } from '../entities/Mail.ts';
+import type { MailAddress, MailMessage } from '../entities/Mail.ts';
 
 /**
  * L'identifiant d'un fil, tiré de l'en-tête qui l'a ouvert.
@@ -114,3 +114,13 @@ export const sanitizeNoteHtml = (html: string): string =>
       return tag.startsWith('</') ? `</${lower}>` : `<${lower}>`;
     })
     .trim();
+
+/** À qui répondre : le dernier interlocuteur, quel que soit le sens du dernier message. */
+export const replyTargets = (messages: MailMessage[]): MailAddress[] => {
+  const lastIncoming = [...messages].reverse().find((message) => !message.outgoing);
+  if (lastIncoming) return [lastIncoming.from];
+  return messages.at(-1)?.to ?? [];
+};
+
+export const replySubject = (subject: string): string =>
+  /^(re|aw|rv|sv)\s*:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`;
