@@ -5,6 +5,7 @@ import type {
   UpsertVideoInput,
   Video,
   VideoRangeStats,
+  VideoLiveStatsUpdate,
   VideoStatsUpdate,
   VideoView,
 } from '../../../domain/video/entities/Video.ts';
@@ -249,6 +250,36 @@ export class SqliteVideoRepository implements VideoRepository {
         update.channelId,
         update.externalId,
       );
+    }
+    return count;
+  }
+
+  /**
+   * N'écrit que ce que l'API publique connaît : minutes vues, abonnés gagnés et revenus
+   * restent ceux de la dernière collecte. Pas de relevé daté non plus : `upsertStats` en
+   * écrit un par heure, et un rafraîchissement par minute n'y ajouterait rien.
+   */
+  updateLiveStats(updates: VideoLiveStatsUpdate[]): number {
+    if (updates.length === 0) return 0;
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(
+      `UPDATE videos
+          SET views = ?, likes = ?, comments = ?, stats_updated_at = ?, updated_at = ?
+        WHERE channel_id = ? AND external_id = ?`,
+    );
+
+    let count = 0;
+    for (const update of updates) {
+      const result = stmt.run(
+        update.views,
+        update.likes,
+        update.comments,
+        now,
+        now,
+        update.channelId,
+        update.externalId,
+      );
+      count += Number(result.changes);
     }
     return count;
   }

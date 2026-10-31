@@ -3,6 +3,7 @@ import type { DateRange } from '../../metrics/repositories/MetricsRepository.ts'
 import type {
   UpsertVideoInput,
   Video,
+  VideoLiveStatsUpdate,
   VideoRangeStats,
   VideoStatsUpdate,
   VideoView,
@@ -32,6 +33,8 @@ export interface VideoRepository {
   upsertMany(videos: UpsertVideoInput[]): number;
   /** Remplace les compteurs d'une vidéo. Les compteurs sont des cumuls, jamais additionnés. */
   upsertStats(updates: VideoStatsUpdate[]): number;
+  /** Relevé en direct : vues, likes et commentaires seulement, sans relevé daté. */
+  updateLiveStats(updates: VideoLiveStatsUpdate[]): number;
   /**
    * Marque comme retirées les vidéos de la chaîne absentes du lot collecté, dans la
    * fenêtre `since`. Lève le marquage de celles qui réapparaissent. Un lot vide ne

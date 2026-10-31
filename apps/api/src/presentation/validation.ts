@@ -164,6 +164,11 @@ export const videoQuerySchema = z.object({
 /** `PATCH /api/videos/:id` : masquer ou réafficher dans « Dernières sorties ». */
 export const setVideoHiddenSchema = z.object({ hidden: z.boolean() });
 
+export const liveVideosSchema = z.object({
+  channelIds: z.array(z.string()).default([]),
+  limit: z.number().int().min(1).max(50).default(10),
+});
+
 /** Filtre optionnel sur une période, pour les listes de revenus et de dépenses. */
 export const rangeQuerySchema = z.object({
   from: isoDate.optional(),

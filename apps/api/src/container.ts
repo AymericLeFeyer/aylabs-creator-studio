@@ -54,6 +54,7 @@ import { GetLegalOverview } from './application/legal/usecases/GetLegalOverview.
 import { CollectMetrics } from './application/metrics/usecases/CollectMetrics.ts';
 import { CollectComments } from './application/comment/usecases/CollectComments.ts';
 import { GetPreviousPublication } from './application/production/usecases/GetPreviousPublication.ts';
+import { RefreshLiveVideoStats } from './application/video/usecases/RefreshLiveVideoStats.ts';
 import { AnnounceOnDiscord } from './application/production/usecases/AnnounceOnDiscord.ts';
 import { GetAnalytics } from './application/analytics/usecases/GetAnalytics.ts';
 import { YouTubeDataClient } from './infrastructure/youtube/api/YouTubeDataClient.ts';
@@ -168,6 +169,7 @@ export interface Container {
    */
   collectComments: CollectComments;
   getPreviousPublication: GetPreviousPublication;
+  refreshLiveVideoStats: RefreshLiveVideoStats;
   announceOnDiscord: AnnounceOnDiscord;
   getAnalytics: GetAnalytics;
   /**
@@ -481,6 +483,11 @@ export const buildContainer = (config: Config): Container => {
     getAchievements: new GetAchievements(new SqliteAchievementSourceRepository(db)),
     manageGoals: new ManageGoals(new SqliteGoalRepository(db), new SqliteGoalSourceRepository(db)),
     getPreviousPublication: new GetPreviousPublication(productions, videos, channels, {
+      youtubeApiKey: config.youtubeApiKey,
+      gcpClientId: config.gcpClientId,
+      gcpClientSecret: config.gcpClientSecret,
+    }),
+    refreshLiveVideoStats: new RefreshLiveVideoStats(videos, channels, {
       youtubeApiKey: config.youtubeApiKey,
       gcpClientId: config.gcpClientId,
       gcpClientSecret: config.gcpClientSecret,

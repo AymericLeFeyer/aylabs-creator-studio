@@ -6,7 +6,7 @@ import { upstream } from '../../../shared/errors.ts';
 import { fetchUploads, type UploadItem } from './uploads.ts';
 import { fetchVideoSnippet, type VideoSnippet } from './videoDetails.ts';
 import { fetchChannelComments, type FetchCommentsOptions } from './comments.ts';
-import type { VideoStatRow } from './videoStats.ts';
+import { fetchPublicVideoStats, type VideoStatRow } from './videoStats.ts';
 
 /** Métriques demandées quand la chaîne est monétisée (scope monetary accordé). */
 const MONETARY_METRICS = [
@@ -229,6 +229,17 @@ export class YouTubeAnalyticsClient {
     }
 
     return rows;
+  }
+
+  /** Compteurs publics, quasi instantanés, là où `fetchVideoStats` a plusieurs jours de retard. */
+  async fetchPublicVideoStats(videoIds: string[]): Promise<VideoStatRow[]> {
+    try {
+      const youtube = google.youtube({ version: 'v3', auth: this.buildAuth() });
+      return await fetchPublicVideoStats(youtube, videoIds);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AppError') throw error;
+      throw upstream(`YouTube Data API (stats vidéo) : ${this.describe(error)}`);
+    }
   }
 
   private async queryVideos(

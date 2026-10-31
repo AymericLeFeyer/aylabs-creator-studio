@@ -290,6 +290,15 @@ export const registerReadTools = (server: McpServer, container: Container): void
 
   readTool(
     server,
+    'videos_live',
+    'Les dernières vidéos avec vues, likes et commentaires relus sur YouTube à l’instant, là où `videos_list` donne la dernière collecte. À préférer pour une vidéo qui vient de sortir. Heures vues, abonnés gagnés et AdSense restent ceux de YouTube Analytics, avec 2 à 3 jours de retard : à zéro sur une sortie récente, ils ne sont pas encore connus. Consomme du quota YouTube.',
+    { limit: z.number().int().min(1).max(10).default(3) },
+    async ({ limit }) =>
+      (await container.refreshLiveVideoStats.execute({ limit })).map(compactVideo),
+  );
+
+  readTool(
+    server,
     'goals_list',
     'Les objectifs : progression, valeur actuelle, échéance et statut. Les montants sont en centimes.',
     {},

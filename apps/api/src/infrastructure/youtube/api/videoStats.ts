@@ -56,3 +56,34 @@ export const fetchPublicVideoStats = async (
 
   return rows;
 };
+
+/**
+ * Pose les compteurs publics par-dessus ceux de YouTube Analytics.
+ *
+ * Analytics a jusqu'à trois jours de retard : sur une vidéo qui vient de sortir il ne
+ * renvoie rien, ou presque, alors que `videos.list` est à jour à quelques minutes près.
+ * Vues, likes et commentaires viennent donc du plus avancé des deux ; minutes vues,
+ * abonnés gagnés et revenus n'existent que dans Analytics. Une vidéo qu'Analytics ne
+ * connaît pas encore garde sa ligne publique, sinon elle resterait « pas encore mesurée ».
+ */
+export const overlayPublicStats = (
+  analytics: VideoStatRow[],
+  publicRows: VideoStatRow[],
+): VideoStatRow[] => {
+  const merged = new Map(publicRows.map((row) => [row.externalId, row]));
+  for (const row of analytics) {
+    const live = merged.get(row.externalId);
+    merged.set(
+      row.externalId,
+      live
+        ? {
+            ...row,
+            views: Math.max(row.views, live.views),
+            likes: Math.max(row.likes, live.likes),
+            comments: Math.max(row.comments, live.comments),
+          }
+        : row,
+    );
+  }
+  return [...merged.values()];
+};

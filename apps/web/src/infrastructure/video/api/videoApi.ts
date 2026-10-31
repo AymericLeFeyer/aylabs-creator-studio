@@ -22,6 +22,9 @@ export const videoApi = {
       },
     }),
 
+  live: (params: { channelIds: string[]; limit: number }) =>
+    request<Video[]>('/api/videos/live', { method: 'POST', body: params }),
+
   setHidden: (id: string, hidden: boolean) =>
     request<Video>(`/api/videos/${id}`, { method: 'PATCH', body: { hidden } }),
 };

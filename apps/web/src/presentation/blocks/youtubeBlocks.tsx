@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Clapperboard, Clock, Eye, Heart, Library, TrendingUp, Users, Video } from 'lucide-react';
 import { useChannels } from '../../application/channel/usecases/useChannels.ts';
-import { useVideos } from '../../application/video/usecases/useVideos.ts';
+import { useLatestVideos } from '../../application/video/usecases/useVideos.ts';
 import { useAchievements } from '../../application/achievement/usecases/useAchievements.ts';
 import type { AnalyticsResult } from '../../domain/analytics/entities/Analytics.ts';
 import { compareTotals } from '../../domain/analytics/services/revenueMath.ts';
@@ -564,13 +564,9 @@ export const YouTubeChannelLifetimeCard = ({
  */
 export const YouTubeLatestVideos = () => {
   const filters = useFilters();
-  // Filtré côté API (`hidden: false`) : masquer une vidéo fait entrer la suivante, et la
-  // liste compte toujours dix vraies dernières sorties.
-  const { data: videos = [] } = useVideos({
-    channelIds: filters.channelIds,
-    limit: 10,
-    hidden: false,
-  });
+  // Filtré côté API : masquer une vidéo fait entrer la suivante, et la liste compte toujours
+  // dix vraies dernières sorties.
+  const { data: videos = [] } = useLatestVideos(filters.channelIds, 10);
   return <LatestVideoCard videos={videos} channelIds={filters.channelIds} />;
 };
 

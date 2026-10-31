@@ -63,6 +63,15 @@ export interface VideoStatsUpdate {
   stats: Omit<VideoStats, 'updatedAt'>;
 }
 
+/** Ce qu'un relevé en direct peut savoir : le reste n'existe que dans YouTube Analytics. */
+export interface VideoLiveStatsUpdate {
+  channelId: string;
+  externalId: string;
+  views: number;
+  likes: number;
+  comments: number;
+}
+
 /**
  * Ce qu'une vidéo a fait **sur une période donnée**, reconstitué par différence entre
  * deux relevés de `video_stat_snapshots`.

@@ -6,7 +6,10 @@ import type { MetricsRepository } from '../../../domain/metrics/repositories/Met
 import type { DailyMetric } from '../../../domain/metrics/entities/DailyMetric.ts';
 import type { VideoRepository } from '../../../domain/video/repositories/VideoRepository.ts';
 import type { UploadItem } from '../../../infrastructure/youtube/api/uploads.ts';
-import type { VideoStatRow } from '../../../infrastructure/youtube/api/videoStats.ts';
+import {
+  overlayPublicStats,
+  type VideoStatRow,
+} from '../../../infrastructure/youtube/api/videoStats.ts';
 import { YouTubeDataClient } from '../../../infrastructure/youtube/api/YouTubeDataClient.ts';
 import { YouTubeAnalyticsClient } from '../../../infrastructure/youtube/api/YouTubeAnalyticsClient.ts';
 
@@ -182,9 +185,16 @@ export class CollectMetrics {
     const videosUpserted = await this.collectVideos(channel.id, (since) =>
       client.fetchUploads(since),
     );
-    const videoStatsUpdated = await this.collectVideoStats(channel.id, (ids, since) =>
-      client.fetchVideoStats(ids, since, to),
-    );
+    const videoStatsUpdated = await this.collectVideoStats(channel.id, async (ids, since) => {
+      const analytics = await client.fetchVideoStats(ids, since, to);
+      // Sans ces compteurs, le passage horaire ramènerait une vidéo du jour à ce
+      // qu'Analytics en sait, c'est-à-dire presque rien.
+      const publicRows = await client.fetchPublicVideoStats(ids).catch((error: unknown) => {
+        console.warn(`[collect] compteurs publics indisponibles (${channel.id}) : ${error}`);
+        return [];
+      });
+      return overlayPublicStats(analytics, publicRows);
+    });
 
     return {
       ...base,

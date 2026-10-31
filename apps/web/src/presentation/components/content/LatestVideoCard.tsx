@@ -3,7 +3,7 @@ import { ExternalLink, EyeOff, Radio } from 'lucide-react';
 import type { Video } from '../../../domain/video/entities/Video.ts';
 import { youtubeUrl } from '../../../domain/video/entities/Video.ts';
 import { useSetVideoHidden } from '../../../application/video/usecases/useVideos.ts';
-import { formatDate } from '../../../shared/format.ts';
+import { formatDate, formatDateTime } from '../../../shared/format.ts';
 import { usePrivacy } from '../../hooks/usePrivacy.tsx';
 import { Card } from '../ui/card.tsx';
 import { CarouselStats, LatestCarousel } from './LatestCarousel.tsx';
@@ -15,8 +15,9 @@ import { HiddenVideosDialog } from './HiddenVideosDialog.tsx';
  * Elles **ignorent la période** de la barre de filtres : « ma dernière vidéo marche
  * comment » ne se pose pas dans une fenêtre de temps, et une période de sept jours
  * viderait le bloc précisément quand on vient le lire. Les chiffres sont des cumuls
- * depuis la sortie, relevés par la collecte — ils ne s'additionnent pas avec les totaux
- * de la période affichés juste au-dessus, qui comptent aussi les vidéos plus anciennes.
+ * depuis la sortie — ils ne s'additionnent pas avec les totaux de la période affichés juste
+ * au-dessus, qui comptent aussi les vidéos plus anciennes. Vues, likes et commentaires sont
+ * relus en direct (`useLatestVideos`) ; le reste suit YouTube Analytics et son retard.
  *
  * `stats.updatedAt` à `null` veut dire « pas encore mesurée » et non « 0 vue » : le bloc
  * affiche alors « — » plutôt qu'une série de zéros, qui seraient un mensonge.
@@ -95,6 +96,12 @@ export const LatestVideoCard = ({
           const measured = video.stats.updatedAt !== null;
           /** « — » l'emporte sur « ••• » : ne pas savoir se dit avant de refuser de dire. */
           const value = (formatted: string) => (measured ? formatted : '—');
+          // Tout à zéro veut dire qu'Analytics ne sait pas encore, pas que rien n'a eu lieu.
+          const analyticsKnown =
+            video.stats.watchMinutes > 0 ||
+            video.stats.subscribersGained !== 0 ||
+            video.stats.estimatedRevenueCents > 0;
+          const analyticsValue = (formatted: string) => (analyticsKnown ? formatted : '—');
 
           return {
             main: (
@@ -143,7 +150,16 @@ export const LatestVideoCard = ({
                       {video.channelName}
                     </span>
                     <span className="tabular">{formatDate(video.date)}</span>
-                    {!measured && <span>pas encore mesurée</span>}
+                    {video.stats.updatedAt ? (
+                      <span
+                        className="tabular"
+                        title="Vues, likes et commentaires sont relus en direct. Heures vues, abonnés gagnés et AdSense viennent de YouTube Analytics, avec 2 à 3 jours de retard."
+                      >
+                        relevé {formatDateTime(video.stats.updatedAt)}
+                      </span>
+                    ) : (
+                      <span>pas encore mesurée</span>
+                    )}
                   </span>
                 </span>
               </a>
@@ -154,11 +170,13 @@ export const LatestVideoCard = ({
                   { label: 'Vues', value: value(privacy.count(video.stats.views, 'views')) },
                   {
                     label: 'Heures vues',
-                    value: value(privacy.hours(video.stats.watchMinutes / 60, 'views')),
+                    value: analyticsValue(privacy.hours(video.stats.watchMinutes / 60, 'views')),
                   },
                   {
                     label: 'Abonnés gagnés',
-                    value: value(privacy.signed(video.stats.subscribersGained, 'subscribers')),
+                    value: analyticsValue(
+                      privacy.signed(video.stats.subscribersGained, 'subscribers'),
+                    ),
                   },
                   { label: 'Likes', value: value(privacy.count(video.stats.likes, 'views')) },
                   {
@@ -167,7 +185,9 @@ export const LatestVideoCard = ({
                   },
                   {
                     label: 'AdSense',
-                    value: value(privacy.money(video.stats.estimatedRevenueCents, 'adsense')),
+                    value: analyticsValue(
+                      privacy.money(video.stats.estimatedRevenueCents, 'adsense'),
+                    ),
                   },
                 ]}
               />

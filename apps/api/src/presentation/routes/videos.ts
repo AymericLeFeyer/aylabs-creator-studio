@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Container } from '../../container.ts';
-import { setVideoHiddenSchema, videoQuerySchema } from '../validation.ts';
+import { liveVideosSchema, setVideoHiddenSchema, videoQuerySchema } from '../validation.ts';
 import { param } from '../helpers.ts';
 
 /**
@@ -23,6 +23,11 @@ export const videosRouter = (container: Container): Router => {
         hidden: query.hidden,
       }),
     );
+  });
+
+  /** Un POST : le relevé réécrit les compteurs et consomme du quota YouTube. */
+  router.post('/live', async (req, res) => {
+    res.json(await container.refreshLiveVideoStats.execute(liveVideosSchema.parse(req.body)));
   });
 
   /** Masquer / réafficher dans « Dernières sorties » — rien d'autre ne lit ce drapeau. */
