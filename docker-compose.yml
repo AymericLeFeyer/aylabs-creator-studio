@@ -46,6 +46,8 @@ services:
       MAIL_CRON: ${MAIL_CRON:-*/5 * * * *}
       # Assistant IA (Paramètres -> API). Facultatif, saisissable à l'écran.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Miniatures (Paramètres -> API -> OpenAI). Facultatif, saisissable à l'écran.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     volumes:
       - creator-studio-data:/app/data
     # Pas de ports exposés : seul nginx parle à l'API, sur le réseau interne.

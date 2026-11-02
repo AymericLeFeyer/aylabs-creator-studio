@@ -46,6 +46,7 @@ import { exportRouter } from './routes/export.ts';
 import { mailsRouter } from './routes/mails.ts';
 import { aiRouter } from './routes/ai.ts';
 import { mcpRouter } from './routes/mcp.ts';
+import { thumbnailsRouter } from './routes/thumbnails.ts';
 
 export const createServer = (container: Container): express.Express => {
   const app = express();
@@ -57,8 +58,9 @@ export const createServer = (container: Container): express.Express => {
       origin: container.config.corsOrigins.includes('*') ? true : container.config.corsOrigins,
     }),
   );
-  // Avant le parseur global : ce routeur reçoit des logos, et pose sa propre limite.
+  // Avant le parseur global : ces routeurs reçoivent des images, et posent leur propre limite.
   app.use('/api/branding', brandingRouter(container));
+  app.use('/api/thumbnails', thumbnailsRouter(container));
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/health', (_req, res) => {

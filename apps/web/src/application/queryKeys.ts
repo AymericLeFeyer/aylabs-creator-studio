@@ -47,6 +47,10 @@ export const queryKeys = {
   goalPreview: (params: unknown) => ['goals', 'preview', params] as const,
   // Préférences partagées entre appareils (`/api/preferences`) : ne croise aucune racine.
   sharedPreferences: () => ['sharedPreferences'] as const,
+  // Les miniatures : tout sous une racine, qui ne croise aucune autre.
+  thumbnailSettings: () => ['thumbnails', 'settings'] as const,
+  thumbnailAssets: () => ['thumbnails', 'assets'] as const,
+  thumbnails: (productionId: string | null) => ['thumbnails', 'list', productionId] as const,
   scriptPresets: (includeArchived: boolean) => ['scriptPresets', includeArchived] as const,
   shotAngles: (includeArchived: boolean) => ['shotAngles', includeArchived] as const,
   productionShotAngles: (id: string) => ['productionShotAngles', id] as const,

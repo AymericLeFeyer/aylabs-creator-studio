@@ -6,6 +6,7 @@ import {
   CalendarClock,
   ChevronDown,
   FileText,
+  ImagePlus,
   Instagram,
   KeyRound,
   Link2,
@@ -45,6 +46,8 @@ import { StepsPage } from './StepsPage.tsx';
 import { ScriptSettingsPage } from './ScriptSettingsPage.tsx';
 import { MailSettingsPage } from './MailSettingsPage.tsx';
 import { AiSettingsPage } from './AiSettingsPage.tsx';
+import { OpenAiSettingsPage } from './OpenAiSettingsPage.tsx';
+import { ThumbnailSettingsPage } from './ThumbnailSettingsPage.tsx';
 import { PlanningSettingsPage } from './PlanningSettingsPage.tsx';
 import { InstagramSettingsPage } from './InstagramSettingsPage.tsx';
 import { TikTokSettingsPage } from './TikTokSettingsPage.tsx';
@@ -117,6 +120,12 @@ const GROUPS: SettingsGroup[] = [
       },
       { id: 'script', label: 'Script', icon: FileText, render: () => <ScriptSettingsPage /> },
       { id: 'etapes', label: 'Étapes', icon: ListOrdered, render: () => <StepsPage /> },
+      {
+        id: 'miniatures',
+        label: 'Miniatures',
+        icon: ImagePlus,
+        render: () => <ThumbnailSettingsPage />,
+      },
     ],
   },
   {
@@ -163,6 +172,7 @@ const GROUPS: SettingsGroup[] = [
     entries: [
       { id: 'api', label: 'Export & sources', icon: KeyRound, render: () => <ApiSettingsPage /> },
       { id: 'ia', label: 'Assistant IA', icon: Sparkles, render: () => <AiSettingsPage /> },
+      { id: 'openai', label: 'OpenAI', icon: KeyRound, render: () => <OpenAiSettingsPage /> },
     ],
   },
   {

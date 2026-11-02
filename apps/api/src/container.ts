@@ -104,6 +104,9 @@ import { ManageAi } from './application/ai/usecases/ManageAi.ts';
 import { SqliteAiSettingsRepository } from './infrastructure/ai/repositories/SqliteAiSettingsRepository.ts';
 import { ClaudeAiClient } from './infrastructure/ai/api/ClaudeAiClient.ts';
 import { ProductionAssistant } from './application/production/usecases/ProductionAssistant.ts';
+import { ManageThumbnails } from './application/thumbnail/usecases/ManageThumbnails.ts';
+import { SqliteThumbnailRepository } from './infrastructure/thumbnail/repositories/SqliteThumbnailRepository.ts';
+import { OpenAiImageClient } from './infrastructure/thumbnail/api/OpenAiImageClient.ts';
 
 export interface Container {
   db: DatabaseSync;
@@ -251,6 +254,8 @@ export interface Container {
   productionAssistant: ProductionAssistant;
   /** La note « Échanges » d'un fil dans sa vidéo, pièces jointes comprises. */
   mailVideoNotes: MailVideoNotes;
+  /** Les miniatures et leur banque d'images : seul endroit où la clé d'OpenAI est déchiffrée. */
+  manageThumbnails: ManageThumbnails;
 }
 
 /** Assemble les implémentations concrètes derrière les interfaces du domaine. */
@@ -386,6 +391,13 @@ export const buildContainer = (config: Config): Container => {
     manageMail,
     manageAi,
     mailVideoNotes,
+    manageThumbnails: new ManageThumbnails(
+      new SqliteThumbnailRepository(db),
+      productions,
+      new OpenAiImageClient(),
+      secrets,
+      config.openaiApiKey,
+    ),
     productionAssistant: new ProductionAssistant({
       productions,
       ai: aiClient,

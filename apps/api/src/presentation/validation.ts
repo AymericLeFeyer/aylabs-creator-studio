@@ -1352,6 +1352,33 @@ export const updateAiSettingsSchema = z.object({
   creditBalance: z.number().min(0).max(1_000_000).nullable().optional(),
 });
 
+export const updateThumbnailSettingsSchema = z.object({
+  apiKey: z.string().trim().max(500).nullable().optional(),
+  model: z.string().trim().max(100).nullable().optional(),
+  quality: z.enum(['low', 'medium', 'high']).optional(),
+  generalPrompt: z.string().max(8000).optional(),
+});
+
+/** Le front réduit les images avant l'envoi : au-delà, ce n'est pas passé par lui. */
+const thumbnailImageSchema = z
+  .string()
+  .min(1)
+  .max(12_000_000)
+  .transform((value) => Uint8Array.from(Buffer.from(value.replace(/^data:[^,]*,/, ''), 'base64')));
+
+export const addThumbnailAssetSchema = z.object({
+  label: z.string().trim().min(1).max(200),
+  image: thumbnailImageSchema,
+});
+
+export const generateThumbnailSchema = z.object({
+  productionId: z.string().min(1).nullable().default(null),
+  format: z.enum(['16:9', '9:16']),
+  prompt: z.string().max(8000).default(''),
+  assetIds: z.array(z.string().min(1)).max(16).default([]),
+  images: z.array(thumbnailImageSchema).max(16).default([]),
+});
+
 export const productionAiScriptSchema = z.object({
   prompt: z.string().trim().min(1).max(4000),
   script: z.string().max(200_000).default(''),

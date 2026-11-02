@@ -58,6 +58,7 @@ export interface Config {
   mailPassword: string | null;
   /** La clé de l'assistant mail. Facultative : elle l'emporte sur l'écran. */
   anthropicApiKey: string | null;
+  openaiApiKey: string | null;
   /** Le rythme du relevé de la boîte mail, plus serré que la collecte horaire. */
   mailCron: string;
 }
@@ -85,5 +86,6 @@ export const loadConfig = (): Config => ({
   publicUrl: optional('PUBLIC_URL')?.replace(/\/+$/, '') ?? null,
   mailPassword: optional('MAIL_PASSWORD'),
   anthropicApiKey: optional('ANTHROPIC_API_KEY'),
+  openaiApiKey: optional('OPENAI_API_KEY'),
   mailCron: optional('MAIL_CRON') ?? '*/5 * * * *',
 });

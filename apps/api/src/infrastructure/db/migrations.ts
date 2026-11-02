@@ -1995,6 +1995,43 @@ const migrations: Migration[] = [
       CREATE INDEX idx_mail_drafts_created ON mail_drafts(created_at);
     `,
   },
+  {
+    version: 59,
+    name: 'miniatures : reglages OpenAI, banque d images et miniatures generees',
+    up: `
+      CREATE TABLE thumbnail_settings (
+        id             TEXT PRIMARY KEY,
+        api_key        TEXT,
+        model          TEXT,
+        quality        TEXT NOT NULL DEFAULT 'high' CHECK (quality IN ('low', 'medium', 'high')),
+        general_prompt TEXT NOT NULL DEFAULT '',
+        created_at     TEXT NOT NULL,
+        updated_at     TEXT NOT NULL
+      );
+      INSERT INTO thumbnail_settings (id, created_at, updated_at)
+      VALUES ('default', datetime('now'), datetime('now'));
+
+      CREATE TABLE thumbnail_assets (
+        id         TEXT PRIMARY KEY,
+        label      TEXT NOT NULL,
+        mime_type  TEXT NOT NULL,
+        data       BLOB NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE thumbnails (
+        id            TEXT PRIMARY KEY,
+        production_id TEXT REFERENCES productions(id) ON DELETE SET NULL,
+        title         TEXT,
+        format        TEXT NOT NULL CHECK (format IN ('16:9', '9:16')),
+        prompt        TEXT NOT NULL DEFAULT '',
+        mime_type     TEXT NOT NULL,
+        data          BLOB NOT NULL,
+        created_at    TEXT NOT NULL
+      );
+      CREATE INDEX idx_thumbnails_production ON thumbnails(production_id, created_at);
+    `,
+  },
 ];
 
 /**

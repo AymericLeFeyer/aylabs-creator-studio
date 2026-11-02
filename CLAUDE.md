@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-10-31
+> Dernière mise à jour : 2026-11-02
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie. **Et la boîte mail** (Admin → Mails), avec un assistant IA qui propose — jamais n'envoie. **Et un serveur MCP** (`/api/mcp`) pour piloter tout ça depuis un assistant.
 
@@ -2458,6 +2458,42 @@ réglage des mails, pour servir à d'autres modules plus tard.
 Ces trois-là lisent le script **enregistré** (400 s'il est vide) et remplissent le formulaire
 de `PublicationPanel`, qui reste à enregistrer. Boutons absents sans clé.
 
+### `thumbnail` — les miniatures (Production → Miniatures)
+
+`Thumbnail { id, productionId, title, format, prompt, createdAt }` — table `thumbnails` ;
+`ThumbnailAsset { id, label, createdAt }` — table `thumbnail_assets`, la **banque d'images**
+(photos de soi) ; `thumbnail_settings`, ligne unique : clé OpenAI **chiffrée** (contexte
+`thumbnail:openaiKey`), modèle, qualité, prompt général. Migration 59. Images en BLOB, que
+les listes ne lisent jamais.
+
+- **Réglages** : clé, modèle, qualité dans Paramètres → API → OpenAI (`OpenAiSettingsPage`) ;
+  banque et prompt général dans Paramètres → Production → Miniatures
+  (`ThumbnailSettingsPage`). `OPENAI_API_KEY` l'emporte sur l'écran (409).
+- `ManageThumbnails` — `view()`, `update(input)`, `listAssets()`, `addAsset(label, data)`,
+  `assetImage(id)`, `deleteAsset(id)`, `list(productionId?)`, `image(id)`, `delete(id)`,
+  `generate({ productionId, format, prompt, assetIds, images })`. **Seul endroit où la clé est
+  déchiffrée.** Port `ThumbnailRepository` (mêmes opérations, plus `settings`,
+  `updateSettings`), `ThumbnailImageClient.generate(credentials, { prompt, size, images })`.
+- **Le prompt** (`composeThumbnailPrompt`, pur) : format, prompt général, rôle des images,
+  titre public (`publishTitle || title`), 6 000 caractères du script sans balises, puis le
+  prompt personnalisé, en dernier pour pouvoir nuancer le général. Une vidéo **ou** un prompt
+  est obligatoire (400).
+- **Images envoyées** : la banque d'abord, les images ajoutées ensuite, 16 au maximum (limite
+  d'OpenAI). À l'écran, on retient les images **écartées** : une image ajoutée à la banque
+  arrive cochée. Les images ajoutées ne sont **jamais conservées**. `prepareImage` les réduit
+  à 1 536 px en WebP avant l'envoi ; l'API lit le vrai type dans les octets (`imageMimeType`,
+  Safari écrit du PNG).
+- **OpenAI** (`OpenAiImageClient`, `fetch` sans SDK) : `/v1/images/edits` en multipart
+  (`image[]`) avec des images, `/v1/images/generations` sans. Modèle par défaut
+  `gpt-image-2.5-sunburst`. **Tailles `1536x864` / `864x1536`** : les deux côtés doivent être
+  divisibles par 16, donc pas de 1920 × 1080. `gpt-image-1.5` n'accepte pas ces tailles. Sortie
+  **JPEG 90** : YouTube refuse une miniature de plus de 2 Mo.
+- **La génération est synchrone** : la requête reste ouverte jusqu'à deux minutes, délai coupé
+  à 280 s, sous les 300 s de nginx. Quitter l'écran n'annule rien : la miniature arrive dans
+  l'historique. Chaque clic est facturé par OpenAI, et aucun solde n'est suivi.
+- Le choix d'une vidéo restreint l'historique à ses miniatures. `production_id` passe à `NULL`
+  si la vidéo est supprimée, `title` est copié pour survivre.
+
 ### `mcp` — le studio pour un assistant
 
 `POST /api/mcp` (`presentation/routes/mcp.ts`), Streamable HTTP **sans session** : un serveur
@@ -2742,6 +2778,16 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/mails/drafts/:id`                             | Le brouillon préparé par le MCP, repris dans le composeur. 404 s'il est parti ou abandonné |
 | `DELETE` | `/api/mails/drafts/:id`                             | L'abandonner |
 | `POST`   | `/api/mcp`                                          | **Le serveur MCP.** Clé de portée `mcp` obligatoire, une clé d'export y répond 401. `GET`/`DELETE` : 405 |
+| `GET`    | `/api/thumbnails/settings`                          | `ThumbnailSettingsView`. La clé n'en sort jamais |
+| `PATCH`  | `/api/thumbnails/settings`                          | `{ apiKey?, model?, quality?, generalPrompt? }`. `apiKey: null` efface, 409 si `OPENAI_API_KEY` est définie |
+| `GET`    | `/api/thumbnails/assets`                            | La banque d'images |
+| `POST`   | `/api/thumbnails/assets`                            | `{ label, image }`, en base64. 400 si ce n'est ni un PNG, ni un JPEG, ni un WebP |
+| `GET`    | `/api/thumbnails/assets/:id/image`                  | L'image. **Sans extension** : nginx la chercherait sur le disque |
+| `DELETE` | `/api/thumbnails/assets/:id`                        | Retirer de la banque |
+| `GET`    | `/api/thumbnails`                                   | L'historique, le plus récent d'abord. Param `productionId` |
+| `POST`   | `/api/thumbnails`                                   | `{ productionId?, format, prompt?, assetIds?, images? }`. **Facturé**, jusqu'à 2 min. 400 sans clé, ou sans vidéo ni prompt ; 502 si OpenAI refuse |
+| `GET`    | `/api/thumbnails/:id/image`                         | Le JPEG |
+| `DELETE` | `/api/thumbnails/:id`                               | Supprimer |
 
 Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube ou d'une source de l'export.
 
@@ -2760,6 +2806,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
 | `/shorts`           | —                      | **Retiré** : redirige vers `/production`.                                                                                                                                                                                                                                                                                                                                     |
 | `/publications`     | `PublicationsPage`     | **Un couloir par jour** (vides compris, ouvert sur aujourd'hui), 6 cases par publication, archivage sans confirmation (vert quand tout est coché), archivées visibles grisées, « + » par jour. Pastille « -X jours »                                                                                                                                                          |
+| `/miniatures`       | `ThumbnailsPage`       | Vidéo, format 16:9 ou 9:16, images de la banque et images ajoutées, prompt personnalisé, puis l'historique à côté, restreint à la vidéo choisie. Voir le domaine `thumbnail` |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / **Notes** (plusieurs, en fichiers)                                                                                                                                                                                                           |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                    |
 | `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                                                                                                |
@@ -3443,6 +3490,7 @@ période**, et leur sous-titre le dit.
 | `useAchievements`, `useVisibleAchievements` | `application/achievement/usecases/useAchievements.ts` | Paliers et records. Relu au focus ; aucune écriture ne l'invalide (`['achievements']`) |
 | `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useMailDraft`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail`, `useMailAddresses`, `useMailFolders` (au clic), `useMoveMailThread`, `useMailDateCheck` (invalide `planningBoard` / `todoToday` quand des tâches sont créées) | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
 | `useAiScript`, `useAiTitles`, `useAiTags`, `useAiDescription` | `application/production/usecases/useProductionAi.ts` | L'IA d'une fiche. Mutations (chaque appel coûte) ; n'invalident que `['aiSettings']` |
+| `useThumbnailSettings`, `useUpdateThumbnailSettings`, `useThumbnailAssets`, `useAddThumbnailAsset`, `useDeleteThumbnailAsset`, `useThumbnails(productionId)`, `useGenerateThumbnail`, `useDeleteThumbnail` | `application/thumbnail/usecases/useThumbnails.ts` | Miniatures. Tout sous `['thumbnails']`, qui ne croise aucune racine |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
@@ -3539,6 +3587,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 59** ajoute `thumbnail_settings` (ligne unique), `thumbnail_assets` et `thumbnails`.
 - **Migration 58** ajoute `export_keys.scope` (`export` pour l'existant) et `mail_drafts`.
 - **Migration 57** ajoute `productions.discord_announced_at`.
 - **Migration 56** ajoute à `ai_settings` le solde relevé, sa date, la consommation et la date d'épuisement.
@@ -3623,6 +3672,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 
 - **Aucun mail ne part sans confirmation, et l'IA n'envoie jamais.** Voir le domaine `mail`. Toute nouvelle fonctionnalité mail (relance, modèle, envoi groupé) doit passer par le brouillon + la modale de confirmation, jamais par un appel direct à `ManageMail.send`.
 - **Un outil MCP ne reçoit jamais le jeton de confirmation dans `content` ni `structuredContent`** : le modèle les lit. `_meta` seulement. L'y remettre donnerait au modèle — donc à quiconque écrit un mail qu'il lit — le moyen d'envoyer seul. Pour la même raison, ne jamais ajouter d'outil d'envoi visible du modèle, et dire dans la description qu'un mail ou un commentaire est écrit par un tiers.
+- **Nginx refuse par défaut tout corps de plus de 1 Mo**, avant même l'API. `client_max_body_size 40m` dans `location ^~ /api/` couvre les images des miniatures et les logos. Toute limite d'`express.json` plus haute doit aussi être reportée dans `apps/web/nginx.conf`.
 - **Une nouvelle lecture MCP passe par une vue sans secret** (`toChannelView`, `InstagramAccountView`…), jamais par une entité brute.
 - **Le corps HTML d'un mail ne s'injecte jamais dans la page** : iframe `sandbox` sans `allow-scripts`, images distantes bloquées par CSP. Ne pas ajouter `allow-scripts` (avec `allow-same-origin`, le mail pourrait sortir du bac à sable).
 - **Proton Mail Bridge se met à jour tout seul, dans son volume, et la 3.2x exige `libfido2`** : l'image communautaire `shenxn/protonmail-bridge` ne l'a pas, le conteneur démarre, se met à jour puis ne relance plus (`libfido2.so.1: cannot open shared object file`). D'où `docker/proton-bridge/Dockerfile` (l'image communautaire + `libfido2-1`), publiée par la CI comme 3ᵉ image (`-proton-bridge`). Ne pas bloquer la mise à jour : Proton refuse les vieilles versions ; fournir les dépendances.
@@ -4510,7 +4560,7 @@ Images publiées sur GHCR par `.github/workflows/release.yml` :
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 
-Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, `PUBLIC_URL` (adresse publique, pour les liens rendus par le MCP), **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Facultatifs pour la boîte mail : `MAIL_PASSWORD`, `MAIL_CRON` (défaut `*/5 * * * *`) et `ANTHROPIC_API_KEY` (l'assistant), qui l'emportent sur Paramètres → Admin → Mails. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, `PUBLIC_URL` (adresse publique, pour les liens rendus par le MCP), `OPENAI_API_KEY` (facultative, les miniatures), **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Facultatifs pour la boîte mail : `MAIL_PASSWORD`, `MAIL_CRON` (défaut `*/5 * * * *`) et `ANTHROPIC_API_KEY` (l'assistant), qui l'emportent sur Paramètres → Admin → Mails. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
 
 Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer. Le MCP passe par le même chemin : `claude mcp add --transport http aylabs-studio https://<studio>/api/mcp --header "Authorization: Bearer acs_…"`.
 

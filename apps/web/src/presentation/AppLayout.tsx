@@ -38,6 +38,7 @@ const ROUTES_WITHOUT_FILTERS = [
   '/planning',
   '/production',
   '/publications',
+  '/miniatures',
   '/produits',
   '/sponsors',
   '/affiliations',

@@ -21,6 +21,7 @@ import { AffiliationsPage } from './presentation/pages/AffiliationsPage.tsx';
 import { CommentsPage } from './presentation/pages/CommentsPage.tsx';
 import { ExternalAppPage } from './presentation/pages/ExternalAppPage.tsx';
 import { PublicationsPage } from './presentation/pages/PublicationsPage.tsx';
+import { ThumbnailsPage } from './presentation/pages/ThumbnailsPage.tsx';
 import { MailsPage } from './presentation/pages/MailsPage.tsx';
 
 /** `/partenariats?onglet=…` → l'écran qui a remplacé l'onglet. */
@@ -70,6 +71,7 @@ export const App = () => (
                   dans Publications. L'ancienne adresse ramène à la file des vidéos. */}
               <Route path="shorts" element={<Navigate to="/production" replace />} />
               <Route path="publications" element={<PublicationsPage />} />
+              <Route path="miniatures" element={<ThumbnailsPage />} />
               <Route path="production/:id" element={<ProductionDetailPage />} />
               <Route path="produits" element={<ProductsPage />} />
               <Route path="sponsors" element={<SponsorsPage />} />
