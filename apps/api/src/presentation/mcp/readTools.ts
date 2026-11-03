@@ -269,20 +269,27 @@ export const registerReadTools = (server: McpServer, container: Container): void
   readTool(
     server,
     'videos_list',
-    'Les dernières vidéos publiées sur YouTube, la plus récente d’abord, avec leurs compteurs cumulés. Les vidéos masquées à la main (Shorts, directs) sont écartées sauf `includeHidden` : le premier résultat est donc la dernière vidéo longue. `search` cherche dans le titre. `stats.updatedAt` nul : compteurs pas encore relevés, ce n’est pas zéro vue.',
+    'Les vidéos publiées sur YouTube avec leurs compteurs cumulés, la plus récente d’abord. Meilleure vidéo, la plus vue, le top : `sort: "views"`, sinon seule la dernière sortie est classée. Les vidéos masquées à la main (Shorts, directs) sont écartées sauf `includeHidden` : le premier résultat est donc la dernière vidéo longue. `search` cherche dans le titre. `stats.updatedAt` nul : compteurs pas encore relevés, ce n’est pas zéro vue.',
     {
       limit: z.number().int().min(1).max(100).default(10),
       search: z.string().max(200).optional(),
       includeHidden: z.boolean().default(false),
+      sort: z
+        .enum(['recent', 'views'])
+        .default('recent')
+        .describe('`views` : la plus vue d’abord, sur toutes les vidéos.'),
     },
-    ({ limit, search, includeHidden }) => {
+    ({ limit, search, includeHidden, sort }) => {
       const wanted = search?.trim().toLowerCase();
-      return container.videos
+      const byViews = sort === 'views';
+      const videos = container.videos
         .findAllWithChannel({
           ...(includeHidden ? {} : { hidden: false }),
-          ...(wanted ? {} : { limit }),
+          // Couper avant le tri ne classerait que les dernières sorties.
+          ...(wanted || byViews ? {} : { limit }),
         })
-        .filter((video) => !wanted || video.title.toLowerCase().includes(wanted))
+        .filter((video) => !wanted || video.title.toLowerCase().includes(wanted));
+      return (byViews ? videos.sort((a, b) => b.stats.views - a.stats.views) : videos)
         .slice(0, limit)
         .map(compactVideo);
     },

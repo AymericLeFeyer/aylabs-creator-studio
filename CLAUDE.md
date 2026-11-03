@@ -2546,7 +2546,9 @@ modèle, car un client peut couper les résultats anciens. `publication_archive`
 publication incomplète sans `abandon: true`, qui ne compte pas comme validée. `production_get`
 explique qu'un identifiant de publication n'est pas une production.
 
-`videos_list` écarte les vidéos masquées (`includeHidden` pour les revoir) et cherche dans le
+`videos_list` trie par date, ou par vues avec `sort: "views"` (sur toutes les vidéos, avant `limit` :
+sans ce tri, un assistant demandant la « meilleure vidéo » avec `limit: 1` recevait la dernière sortie).
+Il écarte les vidéos masquées (`includeHidden` pour les revoir) et cherche dans le
 titre (`search`) : `hiddenAt` brut se lisait comme une sortie programmée, et un Short masqué
 passait pour la dernière vidéo. `productions_search` filtre par `format`. `briefing` allège ses
 sorties (`briefProduction`, sans tâches ni produits) : à 20 000 caractères, un client qui coupe
