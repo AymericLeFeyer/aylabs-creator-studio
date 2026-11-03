@@ -2032,6 +2032,16 @@ const migrations: Migration[] = [
       CREATE INDEX idx_thumbnails_production ON thumbnails(production_id, created_at);
     `,
   },
+  {
+    version: 60,
+    name: 'miniatures enregistrees sur une video',
+    up: `
+      -- Une miniature enregistree est celle qu on garde pour la video (onglet Miniatures de
+      -- la fiche) ; les autres ne sont que l historique des generations.
+      ALTER TABLE thumbnails ADD COLUMN saved_at TEXT;
+      CREATE INDEX idx_thumbnails_saved ON thumbnails(production_id, saved_at);
+    `,
+  },
 ];
 
 /**

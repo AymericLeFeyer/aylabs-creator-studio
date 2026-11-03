@@ -15,8 +15,15 @@ export interface ThumbnailRepository {
   assetImage(id: string): ThumbnailImage | null;
   deleteAsset(id: string): boolean;
 
-  list(productionId?: string): Thumbnail[];
-  add(thumbnail: Omit<Thumbnail, 'id' | 'createdAt'>, image: ThumbnailImage): Thumbnail;
+  /** `saved` : `true` les enregistrées seules, absent ne filtre pas. */
+  list(filter?: { productionId?: string; saved?: boolean }): Thumbnail[];
+  findById(id: string): Thumbnail | null;
+  add(thumbnail: Omit<Thumbnail, 'id' | 'createdAt' | 'savedAt'>, image: ThumbnailImage): Thumbnail;
+  /** Enregistre sur une vidéo (`savedAt` posé), ou retire l'enregistrement (`null`). */
+  setSaved(
+    id: string,
+    saved: { productionId: string; title: string | null; savedAt: string } | null,
+  ): Thumbnail | null;
   image(id: string): ThumbnailImage | null;
   delete(id: string): boolean;
 }

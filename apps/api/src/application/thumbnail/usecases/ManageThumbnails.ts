@@ -1,9 +1,15 @@
-import type { ProductionRepository } from '../../../domain/production/repositories/ProductionRepository.ts';
+import type {
+  ProductionRepository,
+  ProductionStepRepository,
+} from '../../../domain/production/repositories/ProductionRepository.ts';
+import { appliesTo } from '../../../domain/production/services/appliesTo.ts';
+import type { ManageTodos } from '../../production/usecases/ManageTodos.ts';
 import type { SecretCipher } from '../../../domain/integration/repositories/IntegrationRepository.ts';
 import {
   DEFAULT_THUMBNAIL_MODEL,
   MAX_THUMBNAIL_IMAGES,
   THUMBNAIL_SIZES,
+  THUMBNAIL_STEP_ID,
   type GenerateThumbnailInput,
   type Thumbnail,
   type ThumbnailAsset,
@@ -36,6 +42,8 @@ const toImage = (data: Uint8Array): ThumbnailImage => {
 export class ManageThumbnails {
   private readonly thumbnails: ThumbnailRepository;
   private readonly productions: ProductionRepository;
+  private readonly steps: ProductionStepRepository;
+  private readonly todos: ManageTodos;
   private readonly client: ThumbnailImageClient;
   private readonly cipher: SecretCipher;
   private readonly envKey: string | null;
@@ -43,12 +51,16 @@ export class ManageThumbnails {
   constructor(
     thumbnails: ThumbnailRepository,
     productions: ProductionRepository,
+    steps: ProductionStepRepository,
+    todos: ManageTodos,
     client: ThumbnailImageClient,
     cipher: SecretCipher,
     envKey: string | null,
   ) {
     this.thumbnails = thumbnails;
     this.productions = productions;
+    this.steps = steps;
+    this.todos = todos;
     this.client = client;
     this.cipher = cipher;
     this.envKey = envKey;
@@ -124,8 +136,44 @@ export class ManageThumbnails {
     if (!this.thumbnails.deleteAsset(id)) throw notFound('Image');
   }
 
-  list(productionId?: string): Thumbnail[] {
-    return this.thumbnails.list(productionId);
+  list(filter: { productionId?: string; saved?: boolean } = {}): Thumbnail[] {
+    return this.thumbnails.list(filter);
+  }
+
+  /**
+   * Garde la miniature pour une vidéo, et **coche l'étape « miniature »** de cette vidéo :
+   * une miniature enregistrée est une miniature faite. Passe par `ManageTodos.toggleStep`,
+   * comme une coche à la main, pour que les tâches de l'étape et la pile du planning
+   * suivent. Sans étape « miniature » active (supprimée, archivée, ou créée après la
+   * vidéo), rien n'est coché. Autant d'enregistrées par vidéo qu'on veut.
+   */
+  save(id: string, productionId: string | null): Thumbnail {
+    const thumbnail = this.thumbnails.findById(id);
+    if (!thumbnail) throw notFound('Miniature');
+    const targetId = productionId ?? thumbnail.productionId;
+    if (!targetId) throw badRequest('Choisis la vidéo à laquelle enregistrer la miniature.');
+    const production = this.productions.findById(targetId);
+    if (!production) throw notFound('Vidéo');
+
+    const saved = this.thumbnails.setSaved(id, {
+      productionId: production.id,
+      title: production.publishTitle || production.title,
+      // Réenregistrer garde la date d'origine : l'ordre de l'onglet ne doit pas bouger.
+      savedAt: thumbnail.savedAt ?? new Date().toISOString(),
+    })!;
+
+    const step = this.steps.findById(THUMBNAIL_STEP_ID);
+    if (step && !step.isArchived && appliesTo(step, production.createdAt)) {
+      this.todos.toggleStep(production.id, step.id, true);
+    }
+    return saved;
+  }
+
+  /** Retire l'enregistrement. L'étape reste cochée : on ne défait pas un travail fait. */
+  unsave(id: string): Thumbnail {
+    const thumbnail = this.thumbnails.setSaved(id, null);
+    if (!thumbnail) throw notFound('Miniature');
+    return thumbnail;
   }
 
   image(id: string): ThumbnailImage {

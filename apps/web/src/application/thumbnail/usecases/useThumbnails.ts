@@ -4,7 +4,7 @@ import type {
   GenerateThumbnailInput,
   ThumbnailSettingsInput,
 } from '../../../domain/thumbnail/entities/Thumbnail.ts';
-import { queryKeys } from '../../queryKeys.ts';
+import { PRODUCTION_ROOTS, queryKeys } from '../../queryKeys.ts';
 
 const LIST_ROOT = ['thumbnails', 'list'];
 
@@ -42,11 +42,14 @@ export const useAddThumbnailAsset = () =>
 export const useDeleteThumbnailAsset = () =>
   useAssetMutation((id: string) => thumbnailApi.deleteAsset(id));
 
-/** Sans vidéo, toutes les miniatures ; avec, celles de cette vidéo. */
-export const useThumbnails = (productionId: string | null) =>
+/**
+ * Sans vidéo, toutes les miniatures ; avec, celles de cette vidéo. `saved: true` ne garde
+ * que les enregistrées (l'onglet de la fiche).
+ */
+export const useThumbnails = (productionId: string | null, options: { saved?: boolean } = {}) =>
   useQuery({
-    queryKey: queryKeys.thumbnails(productionId),
-    queryFn: () => thumbnailApi.list(productionId),
+    queryKey: queryKeys.thumbnails(productionId, options.saved),
+    queryFn: () => thumbnailApi.list(productionId, options.saved),
   });
 
 const useListMutation = <T>(mutationFn: (input: T) => Promise<unknown>) => {
@@ -62,3 +65,24 @@ export const useGenerateThumbnail = () =>
   useListMutation((input: GenerateThumbnailInput) => thumbnailApi.generate(input));
 
 export const useDeleteThumbnail = () => useListMutation((id: string) => thumbnailApi.delete(id));
+
+/**
+ * Enregistrer coche l'étape « miniature » de la vidéo côté API : la fiche, la file et la
+ * pile du planning repartent avec la liste.
+ */
+export const useSaveThumbnail = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, productionId }: { id: string; productionId: string | null }) =>
+      thumbnailApi.save(id, productionId),
+    onSuccess: () =>
+      Promise.all(
+        [LIST_ROOT, ...PRODUCTION_ROOTS.map((root) => [root])].map((queryKey) =>
+          queryClient.invalidateQueries({ queryKey }),
+        ),
+      ),
+  });
+};
+
+/** Retirer l'enregistrement ne décoche rien : seule la liste bouge. */
+export const useUnsaveThumbnail = () => useListMutation((id: string) => thumbnailApi.unsave(id));

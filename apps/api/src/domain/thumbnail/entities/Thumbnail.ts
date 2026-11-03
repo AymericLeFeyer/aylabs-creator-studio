@@ -62,8 +62,19 @@ export interface Thumbnail {
   format: ThumbnailFormat;
   /** Le prompt personnalisé seul, pas le prompt envoyé en entier. */
   prompt: string;
+  /**
+   * Posé par « Enregistrer » : la miniature est gardée pour sa vidéo et s'affiche dans
+   * l'onglet Miniatures de la fiche. `null` = simple génération de l'historique.
+   */
+  savedAt: string | null;
   createdAt: string;
 }
+
+/**
+ * L'étape cochée quand une miniature est enregistrée sur une vidéo : identifiant fixe
+ * du seed (`seedDefaultSteps`), jamais le libellé, qui se renomme.
+ */
+export const THUMBNAIL_STEP_ID = 'miniature';
 
 export interface GenerateThumbnailInput {
   productionId: string | null;

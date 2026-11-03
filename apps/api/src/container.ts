@@ -394,6 +394,8 @@ export const buildContainer = (config: Config): Container => {
     manageThumbnails: new ManageThumbnails(
       new SqliteThumbnailRepository(db),
       productions,
+      productionSteps,
+      manageTodos,
       new OpenAiImageClient(),
       secrets,
       config.openaiApiKey,

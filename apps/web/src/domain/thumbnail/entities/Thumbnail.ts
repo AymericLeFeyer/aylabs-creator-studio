@@ -54,6 +54,8 @@ export interface Thumbnail {
   title: string | null;
   format: ThumbnailFormat;
   prompt: string;
+  /** Gardée pour sa vidéo (onglet Miniatures de la fiche). `null` = historique seul. */
+  savedAt: string | null;
   createdAt: string;
 }
 

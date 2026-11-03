@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-11-02
+> Dernière mise à jour : 2026-11-03
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie. **Et la boîte mail** (Admin → Mails), avec un assistant IA qui propose — jamais n'envoie. **Et un serveur MCP** (`/api/mcp`) pour piloter tout ça depuis un assistant.
 
@@ -2460,7 +2460,7 @@ de `PublicationPanel`, qui reste à enregistrer. Boutons absents sans clé.
 
 ### `thumbnail` — les miniatures (Production → Miniatures)
 
-`Thumbnail { id, productionId, title, format, prompt, createdAt }` — table `thumbnails` ;
+`Thumbnail { id, productionId, title, format, prompt, savedAt, createdAt }` — table `thumbnails` ;
 `ThumbnailAsset { id, label, createdAt }` — table `thumbnail_assets`, la **banque d'images**
 (photos de soi) ; `thumbnail_settings`, ligne unique : clé OpenAI **chiffrée** (contexte
 `thumbnail:openaiKey`), modèle, qualité, prompt général. Migration 59. Images en BLOB, que
@@ -2470,7 +2470,8 @@ les listes ne lisent jamais.
   banque et prompt général dans Paramètres → Production → Miniatures
   (`ThumbnailSettingsPage`). `OPENAI_API_KEY` l'emporte sur l'écran (409).
 - `ManageThumbnails` — `view()`, `update(input)`, `listAssets()`, `addAsset(label, data)`,
-  `assetImage(id)`, `deleteAsset(id)`, `list(productionId?)`, `image(id)`, `delete(id)`,
+  `assetImage(id)`, `deleteAsset(id)`, `list({ productionId?, saved? })`, `image(id)`,
+  `delete(id)`, `save(id, productionId)`, `unsave(id)`,
   `generate({ productionId, format, prompt, assetIds, images })`. **Seul endroit où la clé est
   déchiffrée.** Port `ThumbnailRepository` (mêmes opérations, plus `settings`,
   `updateSettings`), `ThumbnailImageClient.generate(credentials, { prompt, size, images })`.
@@ -2493,6 +2494,16 @@ les listes ne lisent jamais.
   l'historique. Chaque clic est facturé par OpenAI, et aucun solde n'est suivi.
 - Le choix d'une vidéo restreint l'historique à ses miniatures. `production_id` passe à `NULL`
   si la vidéo est supprimée, `title` est copié pour survivre.
+- **Enregistrer** (`saved_at`, migration 60 ; bouton sous chaque miniature de l'historique,
+  `ThumbnailCard`) garde la miniature pour sa vidéo, **sans limite de nombre** : elle
+  s'affiche dans l'onglet **Miniatures** de la fiche (`ProductionThumbnailsPanel`,
+  `?saved=true`, plus récemment gardée d'abord). Une miniature générée sans vidéo prend celle
+  choisie à l'écran (400 sans aucune). **Enregistrer coche l'étape `miniature`**
+  (`THUMBNAIL_STEP_ID`, identifiant fixe du seed) par `ManageTodos.toggleStep` — ses tâches et
+  la pile du planning suivent ; rien si l'étape est supprimée, archivée ou postérieure à la
+  vidéo. **Retirer l'enregistrement ne décoche rien** (on ne défait pas un travail fait), et
+  réenregistrer garde la date d'origine. `/miniatures?video=<id>` ouvre l'écran sur une vidéo
+  (lien « Générer une miniature » de l'onglet).
 
 ### `mcp` — le studio pour un assistant
 
@@ -2784,7 +2795,9 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/thumbnails/assets`                            | `{ label, image }`, en base64. 400 si ce n'est ni un PNG, ni un JPEG, ni un WebP |
 | `GET`    | `/api/thumbnails/assets/:id/image`                  | L'image. **Sans extension** : nginx la chercherait sur le disque |
 | `DELETE` | `/api/thumbnails/assets/:id`                        | Retirer de la banque |
-| `GET`    | `/api/thumbnails`                                   | L'historique, le plus récent d'abord. Param `productionId` |
+| `GET`    | `/api/thumbnails`                                   | L'historique, le plus récent d'abord. Params `productionId`, `saved` (`true` = les enregistrées, triées par `savedAt`) |
+| `POST`   | `/api/thumbnails/:id/save`                          | `{ productionId? }` (défaut : la vidéo de la miniature) → l'enregistre sur la vidéo **et coche l'étape `miniature`**. 400 sans vidéo |
+| `DELETE` | `/api/thumbnails/:id/save`                          | Retire l'enregistrement. L'étape reste cochée |
 | `POST`   | `/api/thumbnails`                                   | `{ productionId?, format, prompt?, assetIds?, images? }`. **Facturé**, jusqu'à 2 min. 400 sans clé, ou sans vidéo ni prompt ; 502 si OpenAI refuse |
 | `GET`    | `/api/thumbnails/:id/image`                         | Le JPEG |
 | `DELETE` | `/api/thumbnails/:id`                               | Supprimer |
@@ -2806,8 +2819,8 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                       |
 | `/shorts`           | —                      | **Retiré** : redirige vers `/production`.                                                                                                                                                                                                                                                                                                                                     |
 | `/publications`     | `PublicationsPage`     | **Un couloir par jour** (vides compris, ouvert sur aujourd'hui), 6 cases par publication, archivage sans confirmation (vert quand tout est coché), archivées visibles grisées, « + » par jour. Pastille « -X jours »                                                                                                                                                          |
-| `/miniatures`       | `ThumbnailsPage`       | Vidéo, format 16:9 ou 9:16, images de la banque et images ajoutées, prompt personnalisé, puis l'historique à côté, restreint à la vidéo choisie. Voir le domaine `thumbnail` |
-| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Temps passé** (prévu + réel) / Produits & sponsos / **Notes** (plusieurs, en fichiers)                                                                                                                                                                                                           |
+| `/miniatures`       | `ThumbnailsPage`       | Vidéo, format 16:9 ou 9:16, images de la banque et images ajoutées, prompt personnalisé, puis l'historique à côté, restreint à la vidéo choisie, avec **Enregistrer** sous chaque miniature. `?video=<id>` présélectionne. Voir le domaine `thumbnail` |
+| `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Miniatures** (les enregistrées) / **Temps passé** (prévu + réel) / Produits & sponsos / **Notes** (plusieurs, en fichiers)                                                                                                                                                                                                           |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                    |
 | `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                                                                                                |
 | `/affiliations`     | `AffiliationsPage`     | Trois onglets (`?onglet=`) : **Amazon** (mois en cours, période, graphique en onglets, entonnoir, mois par mois), **Domadoo** (collecté tout seul dès que la source est renseignée — 6 cartes, graphique en deux onglets : Solde + Commissions en attente sur la période, Clics sur les 30 derniers jours) et **Plateformes** (4 cartes, `PlatformsPanel`, rattachées à la main). Ex-`/plateformes`, qui redirige ici                                                                                                                                     |
@@ -3490,7 +3503,7 @@ période**, et leur sous-titre le dit.
 | `useAchievements`, `useVisibleAchievements` | `application/achievement/usecases/useAchievements.ts` | Paliers et records. Relu au focus ; aucune écriture ne l'invalide (`['achievements']`) |
 | `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useMailDraft`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail`, `useMailAddresses`, `useMailFolders` (au clic), `useMoveMailThread`, `useMailDateCheck` (invalide `planningBoard` / `todoToday` quand des tâches sont créées) | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
 | `useAiScript`, `useAiTitles`, `useAiTags`, `useAiDescription` | `application/production/usecases/useProductionAi.ts` | L'IA d'une fiche. Mutations (chaque appel coûte) ; n'invalident que `['aiSettings']` |
-| `useThumbnailSettings`, `useUpdateThumbnailSettings`, `useThumbnailAssets`, `useAddThumbnailAsset`, `useDeleteThumbnailAsset`, `useThumbnails(productionId)`, `useGenerateThumbnail`, `useDeleteThumbnail` | `application/thumbnail/usecases/useThumbnails.ts` | Miniatures. Tout sous `['thumbnails']`, qui ne croise aucune racine |
+| `useThumbnailSettings`, `useUpdateThumbnailSettings`, `useThumbnailAssets`, `useAddThumbnailAsset`, `useDeleteThumbnailAsset`, `useThumbnails(productionId, { saved? })`, `useGenerateThumbnail`, `useDeleteThumbnail`, `useSaveThumbnail`, `useUnsaveThumbnail` | `application/thumbnail/usecases/useThumbnails.ts` | Miniatures. Tout sous `['thumbnails']` ; seul `useSaveThumbnail` invalide aussi `PRODUCTION_ROOTS` (il coche l'étape) |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
@@ -3587,6 +3600,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 60** ajoute `thumbnails.saved_at` (miniature enregistrée sur sa vidéo).
 - **Migration 59** ajoute `thumbnail_settings` (ligne unique), `thumbnail_assets` et `thumbnails`.
 - **Migration 58** ajoute `export_keys.scope` (`export` pour l'existant) et `mail_drafts`.
 - **Migration 57** ajoute `productions.discord_announced_at`.

@@ -1,9 +1,8 @@
 import { useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { Check, Download, ImagePlus, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Check, ImagePlus, Loader2, Plus, X } from 'lucide-react';
 import { useProductions } from '../../application/production/usecases/useProductions.ts';
 import {
-  useDeleteThumbnail,
   useGenerateThumbnail,
   useThumbnailAssets,
   useThumbnails,
@@ -13,14 +12,13 @@ import {
   MAX_THUMBNAIL_IMAGES,
   THUMBNAIL_FORMATS,
   thumbnailAssetUrl,
-  thumbnailUrl,
-  type Thumbnail,
   type ThumbnailFormat,
 } from '../../domain/thumbnail/entities/Thumbnail.ts';
 import { cn } from '../../shared/cn.ts';
-import { formatDateTime } from '../../shared/format.ts';
 import { fromSelectValue, NONE, toSelectValue } from '../components/forms/selectNone.ts';
 import { prepareImage } from '../components/thumbnails/prepareImage.ts';
+import { ThumbnailCard } from '../components/thumbnails/ThumbnailCard.tsx';
+import { THUMBNAIL_RATIO } from '../components/thumbnails/thumbnailRatio.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.tsx';
 import { Textarea } from '../components/ui/input.tsx';
@@ -33,78 +31,21 @@ import {
   SelectValue,
 } from '../components/ui/select.tsx';
 
-const RATIO: Record<ThumbnailFormat, string> = {
-  '16:9': 'aspect-video',
-  '9:16': 'aspect-[9/16]',
-};
-
-const fileName = (thumbnail: Thumbnail): string => {
-  const slug = (thumbnail.title ?? 'miniature')
-    .normalize('NFD')
-    .replace(/[^\w\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .toLowerCase();
-  return `${slug || 'miniature'}.jpg`;
-};
-
-const ThumbnailCard = ({ thumbnail }: { thumbnail: Thumbnail }) => {
-  const remove = useDeleteThumbnail();
-  const url = thumbnailUrl(thumbnail.id);
-  return (
-    <figure className="min-w-0 space-y-1.5">
-      <a href={url} target="_blank" rel="noreferrer">
-        <img
-          src={url}
-          alt={thumbnail.title ?? 'Miniature'}
-          loading="lazy"
-          className={cn('w-full rounded-md border object-cover', RATIO[thumbnail.format])}
-        />
-      </a>
-      <figcaption className="flex items-start gap-1">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{thumbnail.title ?? 'Sans vidéo'}</p>
-          <p className="text-xs text-muted-foreground">
-            {thumbnail.format} · {formatDateTime(thumbnail.createdAt)}
-          </p>
-          {thumbnail.prompt && (
-            <p className="truncate text-xs text-muted-foreground" title={thumbnail.prompt}>
-              {thumbnail.prompt}
-            </p>
-          )}
-        </div>
-        <Button asChild variant="ghost" size="icon" aria-label="Télécharger">
-          <a href={url} download={fileName(thumbnail)}>
-            <Download className="h-4 w-4" />
-          </a>
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Supprimer"
-          onClick={() => {
-            if (window.confirm('Supprimer cette miniature ?')) remove.mutate(thumbnail.id);
-          }}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </figcaption>
-    </figure>
-  );
-};
-
 /**
  * Production → Miniatures : une vidéo, un format, des images, un prompt, et le résultat dans
  * l'historique à côté. Choisir une vidéo restreint l'historique à ses miniatures, pour
- * comparer les essais entre eux.
+ * comparer les essais entre eux. « Enregistrer » garde une miniature pour sa vidéo (onglet
+ * Miniatures de la fiche) et coche son étape. `?video=<id>` ouvre l'écran sur une vidéo :
+ * c'est le lien de cet onglet.
  */
 export const ThumbnailsPage = () => {
   const { data: settings } = useThumbnailSettings();
   const { data: assets = [] } = useThumbnailAssets();
   const { data: productions = [] } = useProductions();
   const generate = useGenerateThumbnail();
+  const [searchParams] = useSearchParams();
 
-  const [productionId, setProductionId] = useState<string | null>(null);
+  const [productionId, setProductionId] = useState<string | null>(searchParams.get('video'));
   const [format, setFormat] = useState<ThumbnailFormat>('16:9');
   const [prompt, setPrompt] = useState('');
   // On retient les **écartées** : une image ajoutée à la banque arrive cochée.
@@ -330,14 +271,18 @@ export const ThumbnailsPage = () => {
                 <div
                   className={cn(
                     'flex items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground',
-                    RATIO[format],
+                    THUMBNAIL_RATIO[format],
                   )}
                 >
                   Jusqu’à deux minutes…
                 </div>
               )}
               {thumbnails.map((thumbnail) => (
-                <ThumbnailCard key={thumbnail.id} thumbnail={thumbnail} />
+                <ThumbnailCard
+                  key={thumbnail.id}
+                  thumbnail={thumbnail}
+                  fallbackProductionId={productionId}
+                />
               ))}
             </div>
           )}

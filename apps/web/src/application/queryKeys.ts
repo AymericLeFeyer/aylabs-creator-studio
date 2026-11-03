@@ -50,7 +50,8 @@ export const queryKeys = {
   // Les miniatures : tout sous une racine, qui ne croise aucune autre.
   thumbnailSettings: () => ['thumbnails', 'settings'] as const,
   thumbnailAssets: () => ['thumbnails', 'assets'] as const,
-  thumbnails: (productionId: string | null) => ['thumbnails', 'list', productionId] as const,
+  thumbnails: (productionId: string | null, saved?: boolean) =>
+    ['thumbnails', 'list', productionId, saved ?? 'all'] as const,
   scriptPresets: (includeArchived: boolean) => ['scriptPresets', includeArchived] as const,
   shotAngles: (includeArchived: boolean) => ['shotAngles', includeArchived] as const,
   productionShotAngles: (id: string) => ['productionShotAngles', id] as const,

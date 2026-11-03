@@ -1379,6 +1379,10 @@ export const generateThumbnailSchema = z.object({
   images: z.array(thumbnailImageSchema).max(16).default([]),
 });
 
+export const saveThumbnailSchema = z.object({
+  productionId: z.string().min(1).nullable().default(null),
+});
+
 export const productionAiScriptSchema = z.object({
   prompt: z.string().trim().min(1).max(4000),
   script: z.string().max(200_000).default(''),

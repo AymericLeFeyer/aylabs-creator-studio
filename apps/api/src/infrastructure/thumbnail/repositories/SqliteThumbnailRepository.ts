@@ -37,8 +37,11 @@ interface ThumbnailRow {
   title: string | null;
   format: Thumbnail['format'];
   prompt: string;
+  saved_at: string | null;
   created_at: string;
 }
+
+const THUMBNAIL_COLUMNS = 'id, production_id, title, format, prompt, saved_at, created_at';
 
 interface ImageRow {
   data: Uint8Array;
@@ -57,6 +60,7 @@ const toThumbnail = (row: ThumbnailRow): Thumbnail => ({
   title: row.title,
   format: row.format,
   prompt: row.prompt,
+  savedAt: row.saved_at,
   createdAt: row.created_at,
 });
 
@@ -132,24 +136,43 @@ export class SqliteThumbnailRepository implements ThumbnailRepository {
     return Number(this.db.prepare('DELETE FROM thumbnail_assets WHERE id = ?').run(id).changes) > 0;
   }
 
-  list(productionId?: string): Thumbnail[] {
-    const columns = 'id, production_id, title, format, prompt, created_at';
-    const rows = (productionId
-      ? this.db
-          .prepare(
-            `SELECT ${columns} FROM thumbnails WHERE production_id = ? ORDER BY created_at DESC`,
-          )
-          .all(productionId)
-      : this.db
-          .prepare(`SELECT ${columns} FROM thumbnails ORDER BY created_at DESC`)
-          .all()) as unknown as ThumbnailRow[];
+  list(filter: { productionId?: string; saved?: boolean } = {}): Thumbnail[] {
+    const where: string[] = [];
+    const params: string[] = [];
+    if (filter.productionId) {
+      where.push('production_id = ?');
+      params.push(filter.productionId);
+    }
+    if (filter.saved === true) where.push('saved_at IS NOT NULL');
+    if (filter.saved === false) where.push('saved_at IS NULL');
+    // Les enregistrées se lisent dans l'ordre où on les a gardées, l'historique dans
+    // l'ordre des générations.
+    const order = filter.saved === true ? 'saved_at DESC' : 'created_at DESC';
+    const rows = this.db
+      .prepare(
+        `SELECT ${THUMBNAIL_COLUMNS} FROM thumbnails
+         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+         ORDER BY ${order}`,
+      )
+      .all(...params) as unknown as ThumbnailRow[];
     return rows.map(toThumbnail);
   }
 
-  add(thumbnail: Omit<Thumbnail, 'id' | 'createdAt'>, image: ThumbnailImage): Thumbnail {
+  findById(id: string): Thumbnail | null {
+    const row = this.db
+      .prepare(`SELECT ${THUMBNAIL_COLUMNS} FROM thumbnails WHERE id = ?`)
+      .get(id) as ThumbnailRow | undefined;
+    return row ? toThumbnail(row) : null;
+  }
+
+  add(
+    thumbnail: Omit<Thumbnail, 'id' | 'createdAt' | 'savedAt'>,
+    image: ThumbnailImage,
+  ): Thumbnail {
     const created: Thumbnail = {
       ...thumbnail,
       id: newId(),
+      savedAt: null,
       createdAt: new Date().toISOString(),
     };
     this.db
@@ -168,6 +191,20 @@ export class SqliteThumbnailRepository implements ThumbnailRepository {
         created.createdAt,
       );
     return created;
+  }
+
+  setSaved(
+    id: string,
+    saved: { productionId: string; title: string | null; savedAt: string } | null,
+  ): Thumbnail | null {
+    if (saved) {
+      this.db
+        .prepare('UPDATE thumbnails SET production_id = ?, title = ?, saved_at = ? WHERE id = ?')
+        .run(saved.productionId, saved.title, saved.savedAt, id);
+    } else {
+      this.db.prepare('UPDATE thumbnails SET saved_at = NULL WHERE id = ?').run(id);
+    }
+    return this.findById(id);
   }
 
   image(id: string): ThumbnailImage | null {

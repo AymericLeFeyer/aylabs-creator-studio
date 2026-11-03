@@ -19,6 +19,7 @@ import {
   useUpdateProduction,
 } from '../../application/production/usecases/useProductions.ts';
 import { useProductionNotes } from '../../application/production/usecases/useProductionNotes.ts';
+import { useThumbnails } from '../../application/thumbnail/usecases/useThumbnails.ts';
 import { useProducts, useUpdateProduct } from '../../application/product/usecases/useProducts.ts';
 import {
   useSponsorships,
@@ -46,6 +47,7 @@ import { StepTodosDialog } from '../components/production/StepTodosDialog.tsx';
 import { StartTimerDialog } from '../components/production/StartTimerDialog.tsx';
 import { TimeSpentPanel } from '../components/production/TimeSpentPanel.tsx';
 import { ProductionNotesPanel } from '../components/production/ProductionNotesPanel.tsx';
+import { ProductionThumbnailsPanel } from '../components/production/ProductionThumbnailsPanel.tsx';
 import { Confetti } from '../components/Confetti.tsx';
 import { ScriptEditor } from '../components/production/ScriptEditor.tsx';
 import { PublicationPanel } from '../components/production/PublicationPanel.tsx';
@@ -73,6 +75,7 @@ export const ProductionDetailPage = () => {
   const { data: steps = [] } = useProductionSteps();
   // Même requête que l'onglet : le compteur de l'onglet ne coûte aucun appel de plus.
   const { data: notes = [] } = useProductionNotes(id);
+  const { data: savedThumbnails = [] } = useThumbnails(id ?? null, { saved: true });
   // Toutes les fiches, pas seulement celles de cette vidéo : la même liste sert à
   // afficher les rattachées ET à proposer les autres au rattachement.
   const { data: allProducts = [] } = useProducts();
@@ -256,6 +259,9 @@ export const ProductionDetailPage = () => {
         <TabsList>
           <TabsTrigger value="script">Script</TabsTrigger>
           <TabsTrigger value="publication">Publication</TabsTrigger>
+          <TabsTrigger value="miniatures">
+            Miniatures{savedThumbnails.length > 0 && ` (${savedThumbnails.length})`}
+          </TabsTrigger>
           {/* Un seul onglet, une seule liste : un créneau n'est que du temps passé qu'on
               n'a pas encore vécu. Le prévu et le réel s'y lisent côte à côte. */}
           <TabsTrigger value="time">
@@ -287,6 +293,10 @@ export const ProductionDetailPage = () => {
 
         <TabsContent value="publication">
           <PublicationPanel production={production} />
+        </TabsContent>
+
+        <TabsContent value="miniatures">
+          <ProductionThumbnailsPanel productionId={production.id} />
         </TabsContent>
 
         <TabsContent value="money">

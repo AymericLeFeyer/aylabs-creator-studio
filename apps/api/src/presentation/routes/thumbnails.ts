@@ -5,11 +5,18 @@ import type { ThumbnailImage } from '../../domain/thumbnail/entities/Thumbnail.t
 import {
   addThumbnailAssetSchema,
   generateThumbnailSchema,
+  saveThumbnailSchema,
   updateThumbnailSettingsSchema,
 } from '../validation.ts';
 import { param } from '../helpers.ts';
 
-const querySchema = z.object({ productionId: z.string().min(1).optional() });
+const querySchema = z.object({
+  productionId: z.string().min(1).optional(),
+  saved: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
+});
 
 /** Une image donnée ne change jamais de contenu : son identifiant suffit à la mettre en cache. */
 const sendImage = (res: Response, image: ThumbnailImage) => {
@@ -56,11 +63,20 @@ export const thumbnailsRouter = (container: Container): Router => {
   });
 
   router.get('/', (req, res) => {
-    res.json(thumbnails.list(querySchema.parse(req.query).productionId));
+    res.json(thumbnails.list(querySchema.parse(req.query)));
   });
 
   router.post('/', async (req, res) => {
     res.status(201).json(await thumbnails.generate(generateThumbnailSchema.parse(req.body)));
+  });
+
+  router.post('/:id/save', (req, res) => {
+    const { productionId } = saveThumbnailSchema.parse(req.body ?? {});
+    res.json(thumbnails.save(param(req, 'id'), productionId));
+  });
+
+  router.delete('/:id/save', (req, res) => {
+    res.json(thumbnails.unsave(param(req, 'id')));
   });
 
   router.get('/:id/image', (req, res) => {
