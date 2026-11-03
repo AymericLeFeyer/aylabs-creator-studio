@@ -467,27 +467,6 @@ export const MailThreadPanel = ({
       {check && <MailDateCheckPanel check={check} onClose={() => setCheck(null)} />}
       {update.error && <p className="text-sm text-destructive">{update.error.message}</p>}
 
-      {thread.summary && (
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">
-            Résumé du fil{thread.summaryAt ? ` · ${formatDateTime(thread.summaryAt)}` : ''}
-          </p>
-          <AiText text={thread.summary} />
-        </div>
-      )}
-
-      <div className="space-y-2">
-        {thread.messages.map((message, index) => (
-          <MessageCard
-            key={message.id}
-            message={message}
-            threadId={thread.id}
-            aiConfigured={aiConfigured}
-            defaultOpen={index === thread.messages.length - 1 || !message.seen}
-          />
-        ))}
-      </div>
-
       {draft && (
         <MailComposer
           threadId={thread.id}
@@ -503,6 +482,28 @@ export const MailThreadPanel = ({
           senders={senders}
         />
       )}
+
+      {thread.summary && (
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">
+            Résumé du fil{thread.summaryAt ? ` · ${formatDateTime(thread.summaryAt)}` : ''}
+          </p>
+          <AiText text={thread.summary} />
+        </div>
+      )}
+
+      {/* Du plus récent au plus ancien : le message auquel on répond est juste sous le brouillon. */}
+      <div className="space-y-2">
+        {[...thread.messages].reverse().map((message, index) => (
+          <MessageCard
+            key={message.id}
+            message={message}
+            threadId={thread.id}
+            aiConfigured={aiConfigured}
+            defaultOpen={index === 0 || !message.seen}
+          />
+        ))}
+      </div>
     </div>
   );
 };

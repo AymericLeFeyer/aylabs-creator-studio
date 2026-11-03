@@ -275,8 +275,13 @@ export interface OutgoingMail {
 }
 
 /** Les boutons de pré-remplissage d'une réponse. */
-export type MailDraftIntent = 'not_interested' | 'interested' | 'rates';
-export const MAIL_DRAFT_INTENTS: MailDraftIntent[] = ['not_interested', 'interested', 'rates'];
+export type MailDraftIntent = 'not_interested' | 'interested' | 'rates' | 'reply';
+export const MAIL_DRAFT_INTENTS: MailDraftIntent[] = [
+  'not_interested',
+  'interested',
+  'rates',
+  'reply',
+];
 
 export type MailAiAction =
   | { action: 'summarize' }

@@ -1307,7 +1307,7 @@ export const mailAiSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('follow_up') }),
   z.object({
     action: z.literal('draft'),
-    intent: z.enum(['not_interested', 'interested', 'rates']),
+    intent: z.enum(['not_interested', 'interested', 'rates', 'reply']),
     notes: z.string().max(5_000).optional(),
   }),
   z.object({

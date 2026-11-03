@@ -19,7 +19,7 @@ const CARD_HTML = readFileSync(new URL('./mailConfirmCard.html', import.meta.url
 const CARD_ONLY = { ui: { visibility: ['app'] } };
 
 const replyRequest = (args: {
-  action: 'not_interested' | 'interested' | 'rates' | 'follow_up' | 'custom';
+  action: 'not_interested' | 'interested' | 'rates' | 'reply' | 'follow_up' | 'custom';
   notes?: string;
   text?: string;
 }): MailReplyRequest => {
@@ -178,12 +178,12 @@ export const registerActionTools = (server: McpServer, container: Container): vo
       title: 'Préparer une réponse',
       description: [
         'Prépare une réponse à un fil, sans rien envoyer.',
-        'Actions rapides de l’écran : `not_interested`, `interested`, `rates` (mes tarifs), `follow_up` (relance) — rédigées par l’assistant du studio, `notes` pour l’orienter. `custom` : ton propre texte dans `text`, sans signature.',
+        'Actions rapides de l’écran : `not_interested`, `interested`, `rates` (mes tarifs), `reply` (répondre seulement ce que dit `notes`, obligatoire), `follow_up` (relance) — rédigées par l’assistant du studio, `notes` pour l’orienter. `custom` : ton propre texte dans `text`, sans signature.',
         'L’envoi demande un clic de l’utilisateur sur la carte affichée, ou dans le studio par le lien rendu : tu ne peux pas envoyer toi-même. Ne dis jamais qu’un mail est parti.',
       ].join(' '),
       inputSchema: {
         threadId: z.string(),
-        action: z.enum(['not_interested', 'interested', 'rates', 'follow_up', 'custom']),
+        action: z.enum(['not_interested', 'interested', 'rates', 'reply', 'follow_up', 'custom']),
         notes: z.string().max(5_000).optional(),
         text: z.string().max(50_000).optional(),
       },

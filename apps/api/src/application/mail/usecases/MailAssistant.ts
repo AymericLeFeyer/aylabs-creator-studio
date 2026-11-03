@@ -40,7 +40,9 @@ const DRAFT_RULES = [
   'Rédige uniquement le corps du mail, en texte brut : pas d’objet, pas de Markdown, pas de signature (elle est ajoutée ensuite).',
   'Réponds dans la langue du dernier message reçu de l’interlocuteur, avec le même niveau de formalité (tutoiement ou vouvoiement compris).',
   'Ce qui ne peut pas être déduit des messages (un prix, une date, un détail personnel) reste un champ à compléter entre crochets, par exemple [date de tournage].',
-  'Sois bref et naturel : quelques phrases, pas de formules creuses.',
+  'Commence toujours par une salutation (« Bonjour [prénom], » avec le prénom de l’interlocuteur s’il est connu, sinon « Bonjour, ») et termine toujours par une formule de politesse professionnelle (« Bien cordialement, », « Belle journée, » ou l’équivalent dans la langue du fil), sans nom ni signature après.',
+  'Garde un ton professionnel et courtois : remerciements et formules d’usage, phrases complètes, ni familiarité ni argot, même en tutoyant.',
+  'Sois bref et clair : quelques phrases, sans remplissage.',
 ].join('\n- ');
 
 const INTENTS: Record<MailDraftIntent, (rates: string) => string> = {
@@ -52,6 +54,9 @@ const INTENTS: Record<MailDraftIntent, (rates: string) => string> = {
     rates.trim()
       ? `Présente mes tarifs, en reprenant fidèlement la grille ci-dessous (adapte la présentation à la langue, jamais les montants), puis propose la suite.\n\nMa grille :\n${rates.trim()}`
       : 'Présente mes tarifs : comme aucune grille n’est renseignée, laisse les montants en champs à compléter entre crochets, par exemple [tarif intégration], [tarif vidéo dédiée].',
+  // Ni accepter ni refuser à sa place : les indications sont tout le fond du message.
+  reply: () =>
+    'Rédige une réponse qui dit uniquement ce que demandent mes indications ci-dessous, ni plus ni moins. Ne prends aucune position sur la proposition (acceptation, refus, tarifs, questions) que mes indications ne contiennent pas. Le fil ne sert qu’à connaître l’interlocuteur, la langue et le contexte.',
 };
 
 /**
@@ -133,6 +138,9 @@ export class MailAssistant {
           transcript,
         );
       case 'draft':
+        if (request.intent === 'reply' && !request.notes?.trim()) {
+          throw badRequest('Écris d’abord ce que la réponse doit dire.');
+        }
         return this.ask(
           `${INTENTS[request.intent](this.mail.writingContext().rates)}\n- ${DRAFT_RULES}`,
           request.notes?.trim()

@@ -130,12 +130,13 @@ export interface MailStats {
   lastSyncError: string | null;
 }
 
-export type MailDraftIntent = 'not_interested' | 'interested' | 'rates';
+export type MailDraftIntent = 'not_interested' | 'interested' | 'rates' | 'reply';
 
 export const MAIL_DRAFT_INTENTS: Array<{ id: MailDraftIntent; label: string }> = [
   { id: 'not_interested', label: 'Pas intéressé' },
   { id: 'interested', label: 'Intéressé' },
   { id: 'rates', label: 'Voici mes tarifs' },
+  { id: 'reply', label: 'Répondre seulement' },
 ];
 
 export type MailAiRequest =

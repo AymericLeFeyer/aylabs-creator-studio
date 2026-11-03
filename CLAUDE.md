@@ -2315,11 +2315,14 @@ Tables (migration 50) :
   `contactEmail` d'une marque. **Vidéo** : `production_id` du fil.
 - **IA** (`MailAssistant`, sur le domaine `ai` — clé et modèle dans Paramètres → API) : résumé d'un message (gardé dans `ai_summary`), résumé
   du fil (gardé dans `mail_threads.summary`), relance, brouillons « Pas intéressé /
-  Intéressé / Voici mes tarifs » (+ indications libres), traduction du brouillon (dans la
+  Intéressé / Voici mes tarifs » (+ indications libres) et **« Répondre seulement »**
+  (`intent: 'reply'` : ne dit que ce que portent les indications, sans accepter ni refuser
+  à ma place ; grisé sans indications, 400 côté API), traduction du brouillon (dans la
   langue du fil, ou une langue saisie), **ajustement du brouillon** (`action: 'refine'`, champ
   libre + « Ajuster » : seule la modification demandée change, le reste reste mot pour mot,
   et « Annuler » rend le texte d'avant). Brouillons : texte brut, langue et registre du
-  dernier message reçu, **champs inconnus entre crochets** (la modale de confirmation
+  dernier message reçu, **toujours une salutation en tête et une formule de politesse
+  professionnelle en fin** (sans nom : la signature suit, `DRAFT_RULES`), **champs inconnus entre crochets** (la modale de confirmation
   avertit s'il en reste), jamais de montant inventé — les tarifs viennent de
   `mail_settings.rates`. Le transcript retire les citations (`stripQuoted`) et tronque
   explicitement au-delà de 12 000 caractères par message.
@@ -2392,6 +2395,10 @@ Use cases : `ManageMail` — `view()`, `update(input)`, `test()`, `stats()`, `sy
 
 Front : `/mails` (`MailsPage` : liste à gauche — Réception, Non lus, Rattachés, Tous,
 recherche — fil à droite, `?fil=<id>`), `MailThreadPanel`, `MailComposer`, `MailBody`.
+Dans `MailThreadPanel`, **le brouillon de réponse est en haut** (sous les boutons) et **les
+messages vont du plus récent au plus ancien** (le plus récent ouvert d'office) : on répond
+au message qu'on a sous les yeux. L'API rend toujours les messages dans l'ordre
+chronologique (le transcript de l'IA en dépend) ; seul l'écran les inverse.
 Réglages : Paramètres → Admin → Mails (`MailSettingsPage`, préréglages Proton Bridge,
 Gmail, Outlook, OVH, iCloud, Infomaniak ; « Tester la connexion » ; `MailAddressesCard` ;
 `MailFoldersCard`). Dans un fil : « Résumer le fil », « Proposer une relance »,

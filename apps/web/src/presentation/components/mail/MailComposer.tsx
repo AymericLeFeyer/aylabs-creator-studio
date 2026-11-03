@@ -211,7 +211,7 @@ export const MailComposer = ({
           <Input
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Indications facultatives (« dispo en mars », « budget minimum 800 € »…)"
+            placeholder="Indications (« dispo en mars », « budget minimum 800 € »…) — seules prises en compte par « Répondre seulement »"
             className="h-8 text-xs"
           />
           <div className="flex flex-wrap gap-2">
@@ -220,7 +220,13 @@ export const MailComposer = ({
                 key={intent.id}
                 size="sm"
                 variant="outline"
-                disabled={busy}
+                // « Répondre seulement » n'a pas d'autre fond que les indications.
+                disabled={busy || (intent.id === 'reply' && !notes.trim())}
+                title={
+                  intent.id === 'reply'
+                    ? 'Rédige une réponse qui dit seulement ce que tu as écrit dans les indications'
+                    : undefined
+                }
                 onClick={() => prefill(intent.id)}
               >
                 {pending === intent.id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
