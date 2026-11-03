@@ -174,5 +174,8 @@ export const useMailFolders = () =>
   });
 
 /** Range un fil sur le serveur. Il quitte la réception : liste, fil et pastille repartent. */
+/** Envoie le fil dans la corbeille du serveur (récupérable depuis le webmail). */
+export const useTrashMailThread = () => useMailMutation((id: string) => mailApi.trash(id));
+
 export const useMoveMailThread = () =>
   useMailMutation(({ id, folder }: { id: string; folder: string }) => mailApi.move(id, folder));

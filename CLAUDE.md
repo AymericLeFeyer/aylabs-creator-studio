@@ -2389,6 +2389,12 @@ Tables (migration 50) :
   (`mail_settings.move_folders`) ; seuls ceux-là sont admis (400 sinon). IMAP `MOVE` des
   messages du fil encore dans la réception, puis `removed_at` posé localement : le fil sort
   de « Réception », reste lisible dans « Tous » et ses rattachements. Un relevé suit aussitôt.
+- **Supprimer** (`ManageMail.trash`, `POST /threads/:id/trash`, bouton « Supprimer » d'un fil,
+  avec confirmation) : les messages actifs du fil, **tous dossiers**, partent dans la
+  **corbeille du serveur** (`\Trash`, sinon un dossier nommé Corbeille / Trash / Deleted /
+  Bin ; 400 s'il n'y en a pas) — jamais un effacement définitif, le webmail les rend pendant
+  le délai de sa corbeille. Puis `removed_at` comme après un rangement : le fil quitte la
+  réception, garde marque, vidéo, note et pièces jointes (téléchargées d'office avant).
 - **Dossiers lisibles** : les dossiers de rangement sont **relevés** (rôle `folder`, migration
   55, après la réception et les envoyés) et s'ouvrent dans la rangée à défilement horizontal
   de `/mails` (`GET /threads?folder=`). `insert` fait **suivre sa ligne** à un mail rangé (même
@@ -2813,6 +2819,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/mails/folders`                                | Dossiers du serveur, lus en direct (`[{ path, name, specialUse }]`) — à cocher comme dossiers de rangement |
 | `GET`    | `/api/mails/attachments/:id`                        | Télécharge une pièce jointe (relue sur le serveur la 1ʳᵉ fois, puis gardée en base). 404 si le message n'est plus sur le serveur et la pièce jamais téléchargée |
 | `POST`   | `/api/mails/threads/:id/move`                       | `{ folder }` → range le fil sur le serveur (IMAP `MOVE`). 400 si le dossier n'est pas dans `moveFolders` |
+| `POST`   | `/api/mails/threads/:id/trash`                      | Met le fil à la corbeille **du serveur** (récupérable). 400 sans dossier corbeille |
 | `POST`   | `/api/mails/threads/:id/check-dates`                | `?today=` (jour local) → `MailDateCheck` : résumé, tâches posées dans Todo, incohérences avec la vidéo |
 | `GET`    | `/api/ai/settings`                                  | `{ keySource, model, secretsKeyConfigured, configured, credit }` — la clé n'en sort jamais |
 | `PATCH`  | `/api/ai/settings`                                  | `{ apiKey?, model?, creditBalance? }` — `apiKey: null` efface (409 si `ANTHROPIC_API_KEY` est définie). `creditBalance` : solde relevé **en dollars**, remet la consommation à zéro |
@@ -3542,7 +3549,7 @@ période**, et leur sous-titre le dit.
 | `useSharedPreference(key, fallback, parse)` | `application/sharedPreference/usecases/useSharedPreference.ts` | Une préférence **partagée entre appareils** (`/api/preferences`, table `app_preferences`). `parse` valide la valeur, sinon `fallback`. Écriture optimiste. `['sharedPreferences']` ne croise aucune racine |
 | `useGoals`, `useGoalCatalog`, `useGoalPreview`, `useCreateGoal`, `useUpdateGoal`, `useDeleteGoal` | `application/goal/usecases/useGoals.ts` | Objectifs. Clés sous la racine `['goals']` (liste avec jour local, catalogue, aperçu), invalidée entière à chaque écriture ; ne croise aucune autre racine |
 | `useAchievements`, `useVisibleAchievements` | `application/achievement/usecases/useAchievements.ts` | Paliers et records. Relu au focus ; aucune écriture ne l'invalide (`['achievements']`) |
-| `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useMailDraft`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail`, `useMailAddresses`, `useMailFolders` (au clic), `useMoveMailThread`, `useMailDateCheck` (invalide `planningBoard` / `todoToday` quand des tâches sont créées) | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
+| `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useMailDraft`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail`, `useMailAddresses`, `useMailFolders` (au clic), `useMoveMailThread`, `useTrashMailThread`, `useMailDateCheck` (invalide `planningBoard` / `todoToday` quand des tâches sont créées) | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
 | `useAiScript`, `useAiTitles`, `useAiTags`, `useAiDescription` | `application/production/usecases/useProductionAi.ts` | L'IA d'une fiche. Mutations (chaque appel coûte) ; n'invalident que `['aiSettings']` |
 | `useThumbnailSettings`, `useUpdateThumbnailSettings`, `useThumbnailAssets`, `useAddThumbnailAsset`, `useDeleteThumbnailAsset`, `useThumbnails(productionId, { saved? })`, `useGenerateThumbnail`, `useDeleteThumbnail`, `useSaveThumbnail`, `useUnsaveThumbnail` | `application/thumbnail/usecases/useThumbnails.ts` | Miniatures. Tout sous `['thumbnails']` ; seul `useSaveThumbnail` invalide aussi `PRODUCTION_ROOTS` (il coche l'étape) |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |

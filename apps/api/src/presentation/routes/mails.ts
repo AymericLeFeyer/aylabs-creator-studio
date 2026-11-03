@@ -82,6 +82,11 @@ export const mailsRouter = (container: Container): Router => {
     res.json(read === undefined ? mail.thread(id) : await mail.setRead(id, read));
   });
 
+  /** Supprimer = envoyer dans la corbeille du serveur, jamais effacer pour de bon. */
+  router.post('/threads/:id/trash', async (req, res) => {
+    res.json(await mail.trash(param(req, 'id')));
+  });
+
   router.post('/threads/:id/move', async (req, res) => {
     res.json(await mail.move(param(req, 'id'), moveMailThreadSchema.parse(req.body).folder));
   });

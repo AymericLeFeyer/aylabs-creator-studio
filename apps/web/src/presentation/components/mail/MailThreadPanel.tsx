@@ -13,6 +13,7 @@ import {
   Reply,
   RotateCcw,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import {
   useMailAi,
@@ -21,6 +22,7 @@ import {
   useMailThread,
   useMailVideoNote,
   useMoveMailThread,
+  useTrashMailThread,
   useSummarizeMailMessage,
   useUpdateMailThread,
 } from '../../../application/mail/usecases/useMails.ts';
@@ -199,6 +201,7 @@ export const MailThreadPanel = ({
   const videoNote = useMailVideoNote();
   const dateCheck = useMailDateCheck();
   const move = useMoveMailThread();
+  const trash = useTrashMailThread();
   const [check, setCheck] = useState<MailDateCheck | null>(null);
   const { data: brands = [] } = useBrands();
   const { data: contacts = [] } = useBrandContacts();
@@ -475,10 +478,33 @@ export const MailThreadPanel = ({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        <Button
+          size="sm"
+          variant="outline"
+          className="text-destructive"
+          disabled={trash.isPending}
+          onClick={() => {
+            if (
+              !window.confirm(
+                'Mettre ce fil à la corbeille ? Il reste récupérable depuis le webmail.',
+              )
+            )
+              return;
+            trash.mutate(thread.id, { onSuccess: () => onBack() });
+          }}
+        >
+          {trash.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
+          Supprimer
+        </Button>
       </div>
       {ai.error && <p className="text-sm text-destructive">{ai.error.message}</p>}
       {dateCheck.error && <p className="text-sm text-destructive">{dateCheck.error.message}</p>}
       {move.error && <p className="text-sm text-destructive">{move.error.message}</p>}
+      {trash.error && <p className="text-sm text-destructive">{trash.error.message}</p>}
       {check && <MailDateCheckPanel check={check} onClose={() => setCheck(null)} />}
       {update.error && <p className="text-sm text-destructive">{update.error.message}</p>}
 

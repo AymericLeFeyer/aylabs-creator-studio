@@ -20,6 +20,8 @@ export const mailApi = {
   updateSettings: (input: MailSettingsInput) =>
     request<MailSettingsView>('/api/mails/settings', { method: 'PATCH', body: input }),
   folders: () => request<MailFolderInfo[]>('/api/mails/folders'),
+  trash: (id: string) =>
+    request<MailThreadView>(`/api/mails/threads/${id}/trash`, { method: 'POST' }),
   move: (id: string, folder: string) =>
     request<MailThreadView>(`/api/mails/threads/${id}/move`, { method: 'POST', body: { folder } }),
   addresses: () => request<MailAddressCandidate[]>('/api/mails/addresses'),

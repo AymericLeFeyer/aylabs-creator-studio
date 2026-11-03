@@ -3,6 +3,7 @@ import type {
   MailAddressCandidate,
   MailConnection,
   MailFolderInfo,
+  MailMessage,
   MailScope,
   MailSettingsInput,
   MailSettingsView,
@@ -53,6 +54,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * `ManageIntegrations` pour les secrets de l'export. La connexion en clair n'existe que le
  * temps d'un appel et ne sort jamais d'ici.
  */
+/** Les noms usuels de la corbeille, quand le serveur ne la marque pas `\Trash`. */
+const TRASH_NAMES = /(^|\/)(trash|corbeille|deleted( items| messages)?|bin|papierkorb)$/i;
+
 export class ManageMail {
   private readonly settings: MailSettingsRepository;
   private readonly store: MailStore;
@@ -449,6 +453,40 @@ export class ManageMail {
     this.store.markMessagesRemoved(messages.map((message) => message.id));
     // Le relevé retrouve aussitôt le fil dans son dossier, s'il fait partie des suivis.
     await this.sync();
+    return this.thread(id);
+  }
+
+  /**
+   * Supprime un fil : ses messages partent dans la **corbeille du serveur** (`\Trash`, sinon
+   * un dossier nommé Corbeille / Trash / Deleted), jamais effacés pour de bon — on les
+   * retrouve dans le webmail pendant le délai de la corbeille. Ici, ils sont marqués partis
+   * comme après un rangement : le fil sort de la réception, ses rattachements (marque, vidéo,
+   * note, pièces jointes déjà téléchargées) restent.
+   */
+  async trash(id: string): Promise<MailThreadView> {
+    const thread = this.thread(id);
+    const server = await this.servers.open(this.connection());
+    let moved: MailMessage[];
+    try {
+      const folders = await server.listFolders();
+      const trash =
+        folders.find((folder) => folder.specialUse === '\\Trash') ??
+        folders.find((folder) => TRASH_NAMES.test(folder.name) || TRASH_NAMES.test(folder.path));
+      if (!trash) throw badRequest('Aucun dossier « Corbeille » trouvé sur le serveur.');
+      moved = thread.messages.filter(
+        (message) => !message.removedAt && message.folder !== trash.path,
+      );
+      if (moved.length === 0) return thread;
+      await this.cacheAttachments(thread, server);
+      const byFolder = new Map<string, number[]>();
+      for (const message of moved) {
+        byFolder.set(message.folder, [...(byFolder.get(message.folder) ?? []), message.uid]);
+      }
+      for (const [folder, uids] of byFolder) await server.move(folder, uids, trash.path);
+    } finally {
+      await server.close();
+    }
+    this.store.markMessagesRemoved(moved.map((message) => message.id));
     return this.thread(id);
   }
 
