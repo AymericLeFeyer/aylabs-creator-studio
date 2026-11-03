@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import {
   AppWindow,
   Building2,
@@ -14,7 +14,6 @@ import {
   Music2,
   Palette,
   SlidersHorizontal,
-  Tags,
   Wallet,
   Youtube,
   type LucideIcon,
@@ -41,7 +40,6 @@ import {
 } from '../components/ui/dropdown-menu.tsx';
 import { ChannelsPage } from './ChannelsPage.tsx';
 import { CategoriesPage } from './CategoriesPage.tsx';
-import { BrandsPage } from './BrandsPage.tsx';
 import { StepsPage } from './StepsPage.tsx';
 import { ScriptSettingsPage } from './ScriptSettingsPage.tsx';
 import { MailSettingsPage } from './MailSettingsPage.tsx';
@@ -158,7 +156,6 @@ const GROUPS: SettingsGroup[] = [
         icon: Wallet,
         render: () => <CategoriesPage />,
       },
-      { id: 'marques', label: 'Marques', icon: Tags, render: () => <BrandsPage /> },
       {
         id: 'affiliation',
         label: 'Affiliation',
@@ -217,6 +214,9 @@ export const SettingsPage = () => {
   const { data: aiSettings } = useAiSettings();
   const entryBadge = (entryId: string) =>
     entryId === 'ia' ? aiCreditBadge(aiSettings?.credit) : undefined;
+
+  // Les marques ont quitté les réglages pour leur propre écran (Admin → Marques).
+  if (requested === 'marques') return <Navigate to="/marques" replace />;
 
   return (
     <div className="space-y-4">

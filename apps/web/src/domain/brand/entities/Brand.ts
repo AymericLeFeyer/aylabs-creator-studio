@@ -35,3 +35,38 @@ export interface BrandStats {
   /** Argent promis, pas encore encaissé : jamais mélangé au reste. */
   sponsorshipsPendingCents: number;
 }
+
+/**
+ * Une personne chez une marque : le carnet de contacts (Admin → Marques). Contrat de
+ * `/api/brands/contacts`. Rempli tout seul par les fils de mails rattachés à la marque
+ * (`source: 'mail'`), complété à la main (`'manual'`).
+ */
+export interface BrandContact {
+  id: string;
+  brandId: string;
+  brandName: string;
+  brandColor: string;
+  email: string;
+  name: string;
+  role: string;
+  phone: string;
+  notes: string;
+  source: 'mail' | 'manual';
+  /** Dernier message échangé, `null` pour un contact saisi à la main. */
+  lastContactAt: string | null;
+  hiddenAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BrandContactInput {
+  email: string;
+  name?: string;
+  role?: string;
+  phone?: string;
+  notes?: string;
+}
+
+/** « Prénom Nom », sinon l'adresse. */
+export const contactLabel = (contact: Pick<BrandContact, 'name' | 'email'>): string =>
+  contact.name.trim() || contact.email;

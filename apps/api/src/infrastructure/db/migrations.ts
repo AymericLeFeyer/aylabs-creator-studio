@@ -2042,6 +2042,70 @@ const migrations: Migration[] = [
       CREATE INDEX idx_thumbnails_saved ON thumbnails(production_id, saved_at);
     `,
   },
+  {
+    version: 61,
+    name: 'carnet de contacts des marques',
+    up: `
+      -- Une personne chez une marque, une fois par adresse (en minuscules). Rempli par les
+      -- fils de mails rattaches a la marque ; "hidden_at" retire du carnet sans oublier,
+      -- pour qu un contact ecarte ne revienne pas au releve suivant.
+      CREATE TABLE brand_contacts (
+        id              TEXT PRIMARY KEY,
+        brand_id        TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+        email           TEXT NOT NULL,
+        name            TEXT NOT NULL DEFAULT '',
+        role            TEXT NOT NULL DEFAULT '',
+        phone           TEXT NOT NULL DEFAULT '',
+        notes           TEXT NOT NULL DEFAULT '',
+        source          TEXT NOT NULL CHECK (source IN ('mail', 'manual')),
+        last_contact_at TEXT,
+        hidden_at       TEXT,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL,
+        UNIQUE (brand_id, email)
+      );
+      CREATE INDEX idx_brand_contacts_brand ON brand_contacts(brand_id);
+
+      -- Le contact deja saisi sur la fiche de la marque.
+      INSERT OR IGNORE INTO brand_contacts
+        (id, brand_id, email, name, source, created_at, updated_at)
+      SELECT lower(hex(randomblob(16))), id, lower(trim(contact_email)),
+             coalesce(trim(contact_name), ''), 'manual', created_at, updated_at
+      FROM brands
+      WHERE contact_email IS NOT NULL AND instr(contact_email, '@') > 0;
+
+      -- Les fils deja rattaches : expediteurs des messages recus, destinataires des messages
+      -- envoyes, sans mes propres adresses (celles qui ont expedie un message envoye).
+      WITH mine AS (
+        SELECT DISTINCT lower(from_address) AS address FROM mail_messages WHERE outgoing = 1
+      ),
+      people AS (
+        SELECT t.brand_id, lower(m.from_address) AS email, m.from_name AS name, m.date
+        FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id
+        WHERE t.brand_id IS NOT NULL AND m.outgoing = 0
+        UNION ALL
+        SELECT t.brand_id, lower(json_extract(r.value, '$.address')),
+               coalesce(json_extract(r.value, '$.name'), ''), m.date
+        FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id,
+             json_each(m.to_json) r
+        WHERE t.brand_id IS NOT NULL AND m.outgoing = 1
+        UNION ALL
+        SELECT t.brand_id, lower(json_extract(r.value, '$.address')),
+               coalesce(json_extract(r.value, '$.name'), ''), m.date
+        FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id,
+             json_each(m.cc_json) r
+        WHERE t.brand_id IS NOT NULL AND m.outgoing = 1
+      )
+      INSERT INTO brand_contacts
+        (id, brand_id, email, name, source, last_contact_at, created_at, updated_at)
+      SELECT lower(hex(randomblob(16))), brand_id, email, max(name), 'mail', max(date),
+             strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      FROM people
+      WHERE instr(email, '@') > 0 AND email NOT IN (SELECT address FROM mine)
+      GROUP BY brand_id, email
+      ON CONFLICT (brand_id, email) DO UPDATE SET last_contact_at = excluded.last_contact_at;
+    `,
+  },
 ];
 
 /**

@@ -166,7 +166,7 @@ export const PlatformDialog = ({ open, onOpenChange, platform }: PlatformDialogP
             <Label>Marques disponibles sur cette plateforme</Label>
             {brands.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                Aucune marque enregistrée. Elles se créent dans Paramètres → Marques, ou depuis un
+                Aucune marque enregistrée. Elles se créent dans Admin → Marques, ou depuis un
                 produit et une sponso.
               </p>
             ) : (

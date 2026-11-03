@@ -16,6 +16,7 @@ export const queryKeys = {
 
   brands: (includeArchived: boolean) => ['brands', includeArchived] as const,
   brandStats: (params: BrandStatsParams) => ['brandStats', params] as const,
+  brandContacts: (brandId: string | null) => ['brandContacts', brandId ?? 'all'] as const,
   productions: (params: unknown) => ['productions', params] as const,
   production: (id: string) => ['productions', 'detail', id] as const,
   // Le format fait partie de la clé, mais sous la même racine : une écriture qui invalide

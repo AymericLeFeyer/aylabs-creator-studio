@@ -28,7 +28,7 @@ const CREATE_INDEX = -2;
  * seul champ, alors que le comportement tient en une liste filtrée et quatre touches.
  *
  * La création ne demande **que le nom** : la couleur est attribuée en rotation côté API,
- * et le reste (contact, site, notes) se complète dans Paramètres → Marques. Demander
+ * et le reste (contact, site, notes) se complète dans Admin → Marques. Demander
  * quoi que ce soit de plus ici ferait renoncer à créer.
  */
 export const BrandCombobox = ({ id, value, onChange }: BrandComboboxProps) => {

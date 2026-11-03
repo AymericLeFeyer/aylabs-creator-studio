@@ -235,6 +235,22 @@ export const brandQuerySchema = z.object({
     .transform((value) => value === 'true'),
 });
 
+/** Un contact du carnet d'une marque. L'adresse est la clé, le reste se complète. */
+export const createBrandContactSchema = z.object({
+  email: z.string().trim().email('Adresse invalide').max(320),
+  name: z.string().trim().max(200).optional(),
+  role: z.string().trim().max(200).optional(),
+  phone: z.string().trim().max(60).optional(),
+  notes: z.string().trim().max(4000).optional(),
+});
+
+export const updateBrandContactSchema = createBrandContactSchema.partial();
+
+export const brandContactQuerySchema = z.object({
+  brandId: z.string().optional(),
+  search: z.string().optional(),
+});
+
 /** Bornes des classements du dashboard : mêmes paramètres que `/api/analytics`. */
 export const brandStatsQuerySchema = z.object({
   from: isoDate.optional(),

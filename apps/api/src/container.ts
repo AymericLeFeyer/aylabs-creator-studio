@@ -8,6 +8,8 @@ import { SqliteRevenueEntryRepository } from './infrastructure/revenue/repositor
 import { SqliteExpenseRepository } from './infrastructure/expense/repositories/SqliteExpenseRepository.ts';
 import { SqliteVideoRepository } from './infrastructure/video/repositories/SqliteVideoRepository.ts';
 import { SqliteBrandRepository } from './infrastructure/brand/repositories/SqliteBrandRepository.ts';
+import { SqliteBrandContactRepository } from './infrastructure/brand/repositories/SqliteBrandContactRepository.ts';
+import { ManageBrandContacts } from './application/brand/usecases/ManageBrandContacts.ts';
 import { SqliteProductionRepository } from './infrastructure/production/repositories/SqliteProductionRepository.ts';
 import { SqliteProductionStepRepository } from './infrastructure/production/repositories/SqliteProductionStepRepository.ts';
 import { SqliteProductionSlotRepository } from './infrastructure/production/repositories/SqliteProductionSlotRepository.ts';
@@ -118,6 +120,8 @@ export interface Container {
   expenses: SqliteExpenseRepository;
   videos: SqliteVideoRepository;
   brands: SqliteBrandRepository;
+  brandContacts: SqliteBrandContactRepository;
+  manageBrandContacts: ManageBrandContacts;
   productions: SqliteProductionRepository;
   productionSteps: SqliteProductionStepRepository;
   productionSlots: SqliteProductionSlotRepository;
@@ -372,7 +376,12 @@ export const buildContainer = (config: Config): Container => {
     manageAi,
   );
   const mailVideoNotes = new MailVideoNotes(manageMail, mailStore, productionNotes);
-  manageMail.onThreadsChanged((threadIds) => mailVideoNotes.refreshMany(threadIds));
+  const brandContacts = new SqliteBrandContactRepository(db);
+  const manageBrandContacts = new ManageBrandContacts(brandContacts, manageMail);
+  manageMail.onThreadsChanged(async (threadIds) => {
+    manageBrandContacts.recordThreads(threadIds);
+    await mailVideoNotes.refreshMany(threadIds);
+  });
   const mailAssistant = new MailAssistant({
     mail: manageMail,
     store: mailStore,
@@ -390,6 +399,8 @@ export const buildContainer = (config: Config): Container => {
     config,
     manageMail,
     manageAi,
+    brandContacts,
+    manageBrandContacts,
     mailVideoNotes,
     manageThumbnails: new ManageThumbnails(
       new SqliteThumbnailRepository(db),

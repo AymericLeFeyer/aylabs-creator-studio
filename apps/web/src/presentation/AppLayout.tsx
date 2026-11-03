@@ -48,6 +48,8 @@ const ROUTES_WITHOUT_FILTERS = [
   '/legal',
   // Une boîte mail se lit en entier : aucune période ni chaîne n'y pilote quoi que ce soit.
   '/mails',
+  // Un carnet de contacts n'a pas de période.
+  '/marques',
   // Une app embarquée a sa propre interface : une barre de période au-dessus d'elle ne
   // piloterait rien.
   '/apps',

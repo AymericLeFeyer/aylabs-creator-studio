@@ -77,6 +77,8 @@ export const mailsRouter = (container: Container): Router => {
     if (links.brandId !== undefined || links.productionId !== undefined) mail.link(id, links);
     // Rattacher à une vidéo y fait naître la note des pièces jointes déjà reçues.
     if (links.productionId) await container.mailVideoNotes.refresh(id);
+    // Rattacher à une marque range ses interlocuteurs dans le carnet de la marque.
+    if (links.brandId) container.manageBrandContacts.recordThread(id);
     res.json(read === undefined ? mail.thread(id) : await mail.setRead(id, read));
   });
 

@@ -96,6 +96,8 @@ export const useUpdateMailThread = () => {
       queryClient.setQueryData<MailThreadView>(queryKeys.mailThread(thread.id), thread);
       void queryClient.invalidateQueries({ queryKey: ['mails', 'threads'] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.mailStats() });
+      // Rattacher une marque range les interlocuteurs du fil dans son carnet.
+      void queryClient.invalidateQueries({ queryKey: ['brandContacts'] });
     },
   });
 };

@@ -17,18 +17,22 @@ interface BrandDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   brand?: Brand | null;
+  /** La marque créée, pour l'ouvrir aussitôt. */
+  onCreated?: (brand: Brand) => void;
 }
 
+/**
+ * Nom, couleur, site et notes. Les personnes ne sont plus ici : elles vivent dans le carnet
+ * de contacts de la marque (écran Marques), où un fil de mails rattaché les range tout seul.
+ */
 const EMPTY = {
   name: '',
   website: '',
-  contactName: '',
-  contactEmail: '',
   color: '#64748b',
   notes: '',
 };
 
-export const BrandDialog = ({ open, onOpenChange, brand }: BrandDialogProps) => {
+export const BrandDialog = ({ open, onOpenChange, brand, onCreated }: BrandDialogProps) => {
   const create = useCreateBrand();
   const update = useUpdateBrand();
   const [error, setError] = useState<string | null>(null);
@@ -44,8 +48,6 @@ export const BrandDialog = ({ open, onOpenChange, brand }: BrandDialogProps) => 
         ? {
             name: brand.name,
             website: brand.website ?? '',
-            contactName: brand.contactName ?? '',
-            contactEmail: brand.contactEmail ?? '',
             color: brand.color,
             notes: brand.notes ?? '',
           }
@@ -60,15 +62,16 @@ export const BrandDialog = ({ open, onOpenChange, brand }: BrandDialogProps) => 
     const payload = {
       name: form.name.trim(),
       website: form.website.trim() || null,
-      contactName: form.contactName.trim() || null,
-      contactEmail: form.contactEmail.trim() || null,
       color: form.color,
       notes: form.notes.trim() || null,
     };
 
     try {
       if (brand) await update.mutateAsync({ id: brand.id, input: payload });
-      else await create.mutateAsync(payload);
+      else {
+        const created = await create.mutateAsync(payload);
+        onCreated?.(created);
+      }
       onOpenChange(false);
     } catch (mutationError) {
       setError(
@@ -110,26 +113,6 @@ export const BrandDialog = ({ open, onOpenChange, brand }: BrandDialogProps) => 
                 className="h-9 p-1"
                 value={form.color}
                 onChange={(event) => setForm((f) => ({ ...f, color: event.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="brand-contact">Contact</Label>
-              <Input
-                id="brand-contact"
-                placeholder="Prénom Nom"
-                value={form.contactName}
-                onChange={(event) => setForm((f) => ({ ...f, contactName: event.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="brand-email">E-mail</Label>
-              <Input
-                id="brand-email"
-                type="email"
-                value={form.contactEmail}
-                onChange={(event) => setForm((f) => ({ ...f, contactEmail: event.target.value }))}
               />
             </div>
           </div>

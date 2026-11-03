@@ -8,6 +8,7 @@ import {
   Instagram,
   Link2,
   Mail,
+  Tags,
   Trophy,
   MessagesSquare,
   Music2,
@@ -104,6 +105,9 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       // Mails en tête : c'est l'écran qu'on ouvre chaque jour, le légal une fois par mois.
       { to: '/mails', label: 'Mails', icon: Mail, end: false },
+      // Juste après les mails : on y cherche qui joindre chez une marque, et ce qu'on s'est
+      // écrit — le carnet se remplit depuis les fils rattachés.
+      { to: '/marques', label: 'Marques', icon: Tags, end: false },
       { to: '/legal', label: 'Légal', icon: ScrollText, end: false },
     ],
   },
@@ -277,6 +281,7 @@ const TITLES: Array<[string, string]> = [
   ['/chiffre-affaires', "Chiffre d'affaires"],
   ['/legal', 'Légal'],
   ['/mails', 'Mails'],
+  ['/marques', 'Marques'],
   ['/parametres', 'Paramètres'],
   // Repli seulement : `AppLayout` affiche le nom de l'app ouverte.
   ['/apps/', 'Application'],

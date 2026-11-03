@@ -24,7 +24,7 @@ import {
   useSummarizeMailMessage,
   useUpdateMailThread,
 } from '../../../application/mail/usecases/useMails.ts';
-import { useBrands } from '../../../application/brand/usecases/useBrands.ts';
+import { useBrandContacts, useBrands } from '../../../application/brand/usecases/useBrands.ts';
 import { useProductions } from '../../../application/production/usecases/useProductions.ts';
 import {
   addressLabel,
@@ -201,6 +201,7 @@ export const MailThreadPanel = ({
   const move = useMoveMailThread();
   const [check, setCheck] = useState<MailDateCheck | null>(null);
   const { data: brands = [] } = useBrands();
+  const { data: contacts = [] } = useBrandContacts();
   const { data: productions = [] } = useProductions({});
   const [draft, setDraft] = useState<MailDraft | null>(null);
   const [resumedDraftId, setResumedDraftId] = useState<string | null>(null);
@@ -269,15 +270,29 @@ export const MailThreadPanel = ({
     );
   };
 
-  // Une marque dont le site ou l'adresse de contact partage le domaine d'un interlocuteur.
+  // Une marque dont le carnet connaît un interlocuteur, sinon dont le site ou l'adresse
+  // de contact partage son domaine.
+  const participantAddresses = new Set(
+    thread.participants.map((person) => person.address.toLowerCase()),
+  );
   const participantDomains = new Set(thread.participants.map((person) => domainOf(person.address)));
+  const knownContact = contacts.find(
+    (contact) =>
+      participantAddresses.has(contact.email) &&
+      brands.some((brand) => brand.id === contact.brandId),
+  );
   const suggestedBrand = thread.brandId
     ? null
-    : (brands.find(
-        (brand) =>
-          (domainOf(brand.website) && participantDomains.has(domainOf(brand.website))) ||
-          (domainOf(brand.contactEmail) && participantDomains.has(domainOf(brand.contactEmail))),
-      ) ?? null);
+    : knownContact
+      ? { id: knownContact.brandId, name: knownContact.brandName, reason: 'contact connu' }
+      : (brands
+          .filter(
+            (brand) =>
+              (domainOf(brand.website) && participantDomains.has(domainOf(brand.website))) ||
+              (domainOf(brand.contactEmail) &&
+                participantDomains.has(domainOf(brand.contactEmail))),
+          )
+          .map((brand) => ({ id: brand.id, name: brand.name, reason: 'même domaine' }))[0] ?? null);
 
   const openProductions = productions.filter(
     (production) => production.status !== 'done' || production.id === thread.productionId,
@@ -333,7 +348,7 @@ export const MailThreadPanel = ({
                 update.mutate({ id: thread.id, input: { brandId: suggestedBrand.id } })
               }
             >
-              Suggestion : {suggestedBrand.name} (même domaine) — associer
+              Suggestion : {suggestedBrand.name} ({suggestedBrand.reason}) — associer
             </button>
           )}
         </div>
