@@ -552,9 +552,16 @@ export class ManagePublishTests {
       this.repository.updateAttempt(attempt.id, { status: 'processing' });
 
       const deadline = Date.now() + TIKTOK_POLL_MAX_MS;
+      let last = '';
       while (Date.now() < deadline) {
         await sleep(TIKTOK_POLL_INTERVAL_MS);
         const state = await client.status(publishId);
+        if (state.status !== last) {
+          // L'état TikTok tel quel, dans les journaux du conteneur : c'est lui qui dit où un
+          // envoi resté « en traitement » s'est arrêté.
+          console.log(`[publish] TikTok ${publishId} : ${state.status}`);
+          last = state.status;
+        }
         if (state.status === 'SEND_TO_USER_INBOX') {
           this.repository.updateAttempt(attempt.id, { status: 'ready' });
           return;
@@ -574,7 +581,9 @@ export class ManagePublishTests {
           throw new Error(`TikTok a refusé la vidéo (${state.failReason ?? 'raison inconnue'})`);
         }
       }
-      throw new Error('TikTok n’a pas fini de traiter la vidéo en 10 minutes');
+      throw new Error(
+        `TikTok n’a pas fini de traiter la vidéo en 10 minutes (dernier état : ${last || 'aucun'})`,
+      );
     })().catch((error: unknown) => {
       this.repository.updateAttempt(attempt.id, { status: 'failed', error: messageOf(error) });
     });
