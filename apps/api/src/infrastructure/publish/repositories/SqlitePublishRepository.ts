@@ -34,6 +34,7 @@ interface AttemptRow {
   external_id: string | null;
   url: string | null;
   error: string | null;
+  thumbnail_set_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -59,6 +60,7 @@ const toAttempt = (row: AttemptRow): PublishAttempt => ({
   externalId: row.external_id,
   url: row.url,
   error: row.error,
+  thumbnailSetAt: row.thumbnail_set_at,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -148,7 +150,8 @@ export class SqlitePublishRepository implements PublishRepository {
     this.db
       .prepare(
         `UPDATE publish_attempts
-            SET status = ?, external_id = ?, url = ?, error = ?, updated_at = ?
+            SET status = ?, external_id = ?, url = ?, error = ?, thumbnail_set_at = ?,
+                updated_at = ?
           WHERE id = ?`,
       )
       .run(
@@ -156,6 +159,7 @@ export class SqlitePublishRepository implements PublishRepository {
         input.externalId === undefined ? current.externalId : input.externalId,
         input.url === undefined ? current.url : input.url,
         input.error === undefined ? current.error : input.error,
+        input.thumbnailSetAt === undefined ? current.thumbnailSetAt : input.thumbnailSetAt,
         new Date().toISOString(),
         id,
       );

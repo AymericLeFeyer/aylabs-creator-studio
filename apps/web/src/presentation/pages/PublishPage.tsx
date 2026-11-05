@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent, type FormEvent, type ReactNode } from 'react';
-import { ExternalLink, Instagram, Loader2, Music2, Trash2, Upload, Youtube } from 'lucide-react';
+import { ExternalLink, Instagram, Loader2, Music2, Trash2, Upload, X, Youtube } from 'lucide-react';
 import {
   useDeletePublishVideo,
   usePrepareInstagram,
@@ -7,6 +7,7 @@ import {
   usePublishTargets,
   usePublishUploads,
   useSendToYouTube,
+  useSetYouTubeThumbnail,
   useUploadPublishVideo,
 } from '../../application/publish/usecases/usePublish.ts';
 import {
@@ -40,6 +41,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select.tsx';
+import {
+  YouTubeThumbnailPicker,
+  type PickedThumbnail,
+} from '../components/publish/YouTubeThumbnailPicker.tsx';
+
+/** L'aperçu de la vidéo, vu des panneaux : lire l'instant affiché, y revenir. */
+interface VideoPlayer {
+  currentMs: () => number | null;
+  seek: (ms: number) => void;
+}
 
 const formatSize = (bytes: number): string =>
   bytes >= 1024 ** 3
@@ -174,6 +185,14 @@ const UploadCard = ({
 }) => {
   const remove = useDeletePublishVideo();
   const running = upload.attempts.some(isAttemptRunning);
+  const video = useRef<HTMLVideoElement>(null);
+  // L'aperçu est à cette carte : c'est elle qui le lit et le déplace.
+  const player: VideoPlayer = {
+    currentMs: () => (video.current ? Math.round(video.current.currentTime * 1000) : null),
+    seek: (ms) => {
+      if (video.current) video.current.currentTime = ms / 1000;
+    },
+  };
 
   return (
     <Card className="min-w-0">
@@ -204,13 +223,14 @@ const UploadCard = ({
       </CardHeader>
       <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <video
+          ref={video}
           src={publishFileUrl(upload)}
           controls
           preload="metadata"
           className="max-h-80 w-full rounded-md bg-black object-contain"
         />
         <YouTubePanel upload={upload} channels={targets?.youtube ?? []} />
-        <InstagramPanel upload={upload} accounts={targets?.instagram ?? []} />
+        <InstagramPanel upload={upload} accounts={targets?.instagram ?? []} player={player} />
         <TikTokPanel reason={targets?.tiktok.reason ?? ''} />
       </CardContent>
     </Card>
@@ -299,6 +319,8 @@ const YouTubePanel = ({
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
   const [privacy, setPrivacy] = useState<YouTubePrivacy>('private');
+  const [thumbnail, setThumbnail] = useState<PickedThumbnail | null>(null);
+  const setThumbnailLater = useSetYouTubeThumbnail();
   const selected = channelId || channels[0]?.id || '';
   const attempts = upload.attempts.filter((a) => a.platform === 'youtube');
 
@@ -316,6 +338,7 @@ const YouTubePanel = ({
           .map((tag) => tag.trim())
           .filter(Boolean),
         privacy,
+        thumbnail: thumbnail?.source,
       },
     });
   };
@@ -366,16 +389,43 @@ const YouTubePanel = ({
               <SelectItem value="unlisted">{PRIVACY_LABELS.unlisted}</SelectItem>
             </SelectContent>
           </Select>
+          <YouTubeThumbnailPicker value={thumbnail} onChange={setThumbnail} />
           <Button type="submit" size="sm" disabled={send.isPending || !title.trim()}>
             Envoyer sur YouTube
           </Button>
           <p className="text-xs text-muted-foreground">
-            Il faut le scope youtube.upload sur le token. Vertical et 3 min max : c’est un Short.
+            Il faut le scope youtube.upload sur le token. Vertical et 3 min max : c’est un Short. La
+            miniature personnalisée demande une chaîne vérifiée.
           </p>
           {send.error && <p className="text-xs text-[var(--negative)]">{send.error.message}</p>}
+          {setThumbnailLater.error && (
+            <p className="text-xs text-[var(--negative)]">{setThumbnailLater.error.message}</p>
+          )}
         </>
       )}
-      <AttemptList attempts={attempts} />
+      <AttemptList
+        attempts={attempts}
+        action={(attempt) =>
+          attempt.status === 'published' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {attempt.thumbnailSetAt && <Badge variant="positive">Miniature posée</Badge>}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!thumbnail || setThumbnailLater.isPending}
+                title={thumbnail ? undefined : 'Choisis une miniature au-dessus'}
+                onClick={() =>
+                  thumbnail &&
+                  setThumbnailLater.mutate({ attemptId: attempt.id, source: thumbnail.source })
+                }
+              >
+                {attempt.thumbnailSetAt ? 'Remplacer la miniature' : 'Poser la miniature'}
+              </Button>
+            </div>
+          ) : null
+        }
+      />
     </form>
   );
 };
@@ -383,11 +433,14 @@ const YouTubePanel = ({
 const InstagramPanel = ({
   upload,
   accounts,
+  player,
 }: {
   upload: PublishUploadView;
   accounts: PublishTarget[];
+  player: VideoPlayer;
 }) => {
   const prepare = usePrepareInstagram();
+  const [coverMs, setCoverMs] = useState<number | null>(null);
   const publish = usePublishInstagram();
   const [accountId, setAccountId] = useState('');
   const [caption, setCaption] = useState('');
@@ -398,7 +451,10 @@ const InstagramPanel = ({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!selected) return;
-    prepare.mutate({ uploadId: upload.id, input: { accountId: selected, caption, shareToFeed } });
+    prepare.mutate({
+      uploadId: upload.id,
+      input: { accountId: selected, caption, shareToFeed, coverOffsetMs: coverMs ?? undefined },
+    });
   };
 
   const confirmPublish = (attempt: PublishAttempt) => {
@@ -440,6 +496,7 @@ const InstagramPanel = ({
             />
             Afficher aussi dans le fil
           </label>
+          <CoverFramePicker player={player} value={coverMs} onChange={setCoverMs} />
           <Button type="submit" size="sm" disabled={prepare.isPending}>
             Préparer (sans publier)
           </Button>
@@ -480,5 +537,70 @@ const TikTokPanel = ({ reason }: { reason: string }) => (
   <div className="min-w-0 space-y-2">
     <PanelTitle icon={<Music2 className="size-4" />} label="TikTok" />
     <p className="text-xs text-muted-foreground">{reason || 'Pas encore branché.'}</p>
+    <p className="text-xs text-muted-foreground">
+      Couverture : comme Instagram, TikTok ne prend qu’une image de la vidéo
+      (video_cover_timestamp_ms), pas d’image à part.
+    </p>
+  </div>
+);
+
+const formatSeconds = (ms: number): string =>
+  `${(ms / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s`;
+
+/**
+ * La couverture d'un Reel : l'image affichée dans l'aperçu au moment du clic. Instagram ne
+ * reçoit une image à part que par adresse publique (`cover_url`), que le studio n'a pas.
+ */
+const CoverFramePicker = ({
+  player,
+  value,
+  onChange,
+}: {
+  player: VideoPlayer;
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) => (
+  <div className="space-y-1 text-xs">
+    <span className="font-medium">Couverture</span>
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          const current = player.currentMs();
+          if (current !== null) onChange(current);
+        }}
+      >
+        Prendre l’image affichée
+      </Button>
+      {value === null ? (
+        <span className="text-muted-foreground">Par défaut : la première image</span>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="text-primary hover:underline"
+            onClick={() => {
+              player.seek(value);
+            }}
+          >
+            à {formatSeconds(value)}
+          </button>
+          <button
+            type="button"
+            aria-label="Revenir à la première image"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => onChange(null)}
+          >
+            <X className="size-3" />
+          </button>
+        </>
+      )}
+    </div>
+    <p className="text-muted-foreground">
+      Mets la vidéo de gauche sur l’image voulue. Instagram n’accepte pas d’image à part sans
+      adresse publique.
+    </p>
   </div>
 );

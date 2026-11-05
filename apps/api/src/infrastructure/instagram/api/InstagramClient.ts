@@ -371,8 +371,12 @@ export class InstagramClient {
 
   async createReelContainer(
     igUserId: string,
-    input: { caption: string; shareToFeed: boolean },
+    input: { caption: string; shareToFeed: boolean; coverOffsetMs?: number },
   ): Promise<{ id: string; uploadUri: string }> {
+    // La couverture ne peut être qu'une image de la vidéo : `cover_url` exigerait une
+    // adresse publique.
+    const cover: Record<string, string> =
+      input.coverOffsetMs === undefined ? {} : { thumb_offset: String(input.coverOffsetMs) };
     const row = await this.call<{ id: string; uri?: string }>(
       `/${igUserId}/media`,
       {
@@ -380,6 +384,7 @@ export class InstagramClient {
         upload_type: 'resumable',
         caption: input.caption,
         share_to_feed: String(input.shareToFeed),
+        ...cover,
       },
       'POST',
     );

@@ -2579,7 +2579,7 @@ sur Publications (rework à venir). **Aucune configuration propre** : il reprend
 
 `PublishUpload { id, fileName, mimeType, sizeBytes, publicToken, createdAt }` — table
 `publish_uploads` ; `PublishAttempt { id, uploadId, platform, targetId, targetName, status,
-privacy, title, externalId, url, error }` — table `publish_attempts` (cascade). Migration 63.
+privacy, title, externalId, url, error }` — table `publish_attempts` (cascade). Migration 63, `thumbnail_set_at` en migration 64.
 `status` : `uploading → processing → ready → publishing → published`, ou `failed`.
 
 - **La vidéo vit sur le disque**, à côté de la base (`<dossier de la base>/publish-uploads/<id>.<ext>`,
@@ -2592,6 +2592,17 @@ privacy, title, externalId, url, error }` — table `publish_attempts` (cascade)
   l'écran. Exige le scope **`youtube.upload`** sur le refresh token (les tokens de collecte ne
   l'ont pas : les régénérer) ; un projet GCP non audité force le privé ; ~1 600 unités de quota.
   Un Short = vertical, 3 min max, aucun drapeau d'API.
+- **Miniatures / couvertures, et pourquoi elles diffèrent** : YouTube prend une **image**
+  (`thumbnails.set`, JPEG/PNG ≤ 2 Mo, chaîne **vérifiée** obligatoire, 50 unités) — une
+  miniature générée (`{ thumbnailId }`, lue par `ManageThumbnails.image`) ou une image
+  importée (`{ image }` base64, ramenée en JPEG 1 280 px par `YouTubeThumbnailPicker`).
+  Vérifiée **avant** l'envoi ; posée après, et son refus ne fait pas échouer la vidéo
+  (`error` renseigné, `thumbnailSetAt` reste `null`, se repose par
+  `/attempts/:id/youtube-thumbnail`). **Instagram** n'accepte une image à part que par
+  `cover_url` (adresse publique, donc impossible) : on choisit une **image de la vidéo**
+  (`thumb_offset`, `coverOffsetMs`, lu sur l'aperçu de la carte). **TikTok** n'offre de toute
+  façon que `video_cover_timestamp_ms`. Le routeur a son propre `express.json` de 5 Mo,
+  monté avant le global.
 - **Le studio n'a pas d'adresse publique, et rien ne doit en exiger une** : c'est le serveur
   qui **pousse** la vidéo à chaque plateforme. Ne jamais revenir au `video_url` d'Instagram
   (Meta viendrait la chercher). `/api/publish/files/<publicToken>` ne sert que l'aperçu.
@@ -2912,8 +2923,9 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/publish/uploads`                              | Vidéos déposées et leurs envois, la plus récente d'abord |
 | `POST`   | `/api/publish/uploads`                              | **Corps brut** `video/*`, `X-File-Name` (encodé). 2 Go max (nginx : `location ^~ /api/publish/`) |
 | `DELETE` | `/api/publish/uploads/:id`                          | Retire la vidéo du studio (ce qui est publié reste en ligne) |
-| `POST`   | `/api/publish/uploads/:id/youtube`                  | `{ channelId, title, description?, tags?, privacy? }` → 202, envoi en arrière-plan |
-| `POST`   | `/api/publish/uploads/:id/instagram`                | `{ accountId, caption?, shareToFeed? }` → 202, conteneur préparé **sans publier** |
+| `POST`   | `/api/publish/uploads/:id/youtube`                  | `{ channelId, title, description?, tags?, privacy?, thumbnail? }` → 202, envoi en arrière-plan. `thumbnail` : `{ thumbnailId }` ou `{ image }` (base64 JPEG/PNG ≤ 2 Mo, 400 sinon) |
+| `POST`   | `/api/publish/attempts/:id/youtube-thumbnail`       | `{ thumbnailId }` ou `{ image }` → pose ou remplace la miniature d'une vidéo envoyée. 409 si elle n'est pas en ligne |
+| `POST`   | `/api/publish/uploads/:id/instagram`                | `{ accountId, caption?, shareToFeed?, coverOffsetMs? }` → 202, conteneur préparé **sans publier**. La couverture est une image de la vidéo |
 | `POST`   | `/api/publish/attempts/:id/instagram-publish`       | `{ confirm: true }` → publie le conteneur prêt (**public**). 409 s'il n'est pas prêt |
 | `GET`    | `/api/publish/files/:token`                         | La vidéo, pour l'aperçu de l'écran. `Range` géré |
 
@@ -3621,7 +3633,7 @@ période**, et leur sous-titre le dit.
 | `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useMailDraft`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail`, `useMailAddresses`, `useMailFolders` (au clic), `useMoveMailThread`, `useTrashMailThread`, `useMailDateCheck` (invalide `planningBoard` / `todoToday` quand des tâches sont créées) | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
 | `useAiScript`, `useAiTitles`, `useAiTags`, `useAiDescription` | `application/production/usecases/useProductionAi.ts` | L'IA d'une fiche. Mutations (chaque appel coûte) ; n'invalident que `['aiSettings']` |
 | `useThumbnailSettings`, `useUpdateThumbnailSettings`, `useThumbnailAssets`, `useAddThumbnailAsset`, `useDeleteThumbnailAsset`, `useThumbnails(productionId, { saved? })`, `useGenerateThumbnail`, `useDeleteThumbnail`, `useSaveThumbnail`, `useUnsaveThumbnail` | `application/thumbnail/usecases/useThumbnails.ts` | Miniatures. Tout sous `['thumbnails']` ; seul `useSaveThumbnail` invalide aussi `PRODUCTION_ROOTS` (il coche l'étape) |
-| `usePublishTargets`, `usePublishUploads` (relu toutes les 3 s tant qu'un envoi tourne), `useUploadPublishVideo`, `useDeletePublishVideo`, `useSendToYouTube`, `usePrepareInstagram`, `usePublishInstagram` | `application/publish/usecases/usePublish.ts` | Banc d'essai de publication. Tout sous `['publish']`, ne croise aucune racine |
+| `usePublishTargets`, `usePublishUploads` (relu toutes les 3 s tant qu'un envoi tourne), `useUploadPublishVideo`, `useDeletePublishVideo`, `useSendToYouTube`, `useSetYouTubeThumbnail`, `usePrepareInstagram`, `usePublishInstagram` | `application/publish/usecases/usePublish.ts` | Banc d'essai de publication. Tout sous `['publish']`, ne croise aucune racine |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftsForProduction(id)`, `usePrepareVideoPosts`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
@@ -3718,6 +3730,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 64** ajoute `publish_attempts.thumbnail_set_at`.
 - **Migration 63** ajoute `publish_uploads` et `publish_attempts` (banc d'essai Production → Publish).
 - **Migration 62** ajoute `post_drafts.production_id` (`ON DELETE SET NULL`) et coche `metricool` sur les publications archivées.
 - **Migration 61** ajoute `brand_contacts` (carnet de contacts des marques), rempli depuis les fils déjà rattachés et `brands.contact_email`.

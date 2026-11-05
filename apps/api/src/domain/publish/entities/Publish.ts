@@ -47,9 +47,17 @@ export interface PublishAttempt {
   externalId: string | null;
   url: string | null;
   error: string | null;
+  /** YouTube : quand la miniature a été posée, `null` sinon. */
+  thumbnailSetAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+/**
+ * La miniature d'un envoi YouTube : une miniature générée dans Production → Miniatures, ou
+ * une image envoyée par l'écran (base64, JPEG ou PNG — YouTube refuse le WebP).
+ */
+export type YouTubeThumbnailSource = { thumbnailId: string } | { image: string };
 
 export interface PublishUploadView extends PublishUpload {
   attempts: PublishAttempt[];
@@ -84,4 +92,5 @@ export interface UpdateAttemptInput {
   externalId?: string | null;
   url?: string | null;
   error?: string | null;
+  thumbnailSetAt?: string | null;
 }

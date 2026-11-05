@@ -6,6 +6,7 @@ import type {
   PublishUpload,
   PublishUploadView,
   StartYouTubeInput,
+  YouTubeThumbnailSource,
 } from '../../../domain/publish/entities/Publish.ts';
 
 export const publishApi = {
@@ -18,6 +19,11 @@ export const publishApi = {
     request<PublishAttempt>(`/api/publish/uploads/${uploadId}/youtube`, {
       method: 'POST',
       body: input,
+    }),
+  youtubeThumbnail: (attemptId: string, source: YouTubeThumbnailSource) =>
+    request<PublishAttempt>(`/api/publish/attempts/${attemptId}/youtube-thumbnail`, {
+      method: 'POST',
+      body: source,
     }),
   prepareInstagram: (uploadId: string, input: PrepareInstagramInput) =>
     request<PublishAttempt>(`/api/publish/uploads/${uploadId}/instagram`, {

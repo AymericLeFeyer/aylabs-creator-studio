@@ -4,6 +4,7 @@ import {
   isAttemptRunning,
   type PrepareInstagramInput,
   type StartYouTubeInput,
+  type YouTubeThumbnailSource,
 } from '../../../domain/publish/entities/Publish.ts';
 
 /** Racine `['publish']` : elle ne croise aucune autre (banc d'essai, rien n'en dépend). */
@@ -41,6 +42,12 @@ export const useDeletePublishVideo = () =>
 export const useSendToYouTube = () =>
   usePublishMutation(({ uploadId, input }: { uploadId: string; input: StartYouTubeInput }) =>
     publishApi.youtube(uploadId, input),
+  );
+
+export const useSetYouTubeThumbnail = () =>
+  usePublishMutation(
+    ({ attemptId, source }: { attemptId: string; source: YouTubeThumbnailSource }) =>
+      publishApi.youtubeThumbnail(attemptId, source),
   );
 
 export const usePrepareInstagram = () =>

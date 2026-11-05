@@ -62,6 +62,7 @@ export const createServer = (container: Container): express.Express => {
   // Avant le parseur global : ces routeurs reçoivent des images, et posent leur propre limite.
   app.use('/api/branding', brandingRouter(container));
   app.use('/api/thumbnails', thumbnailsRouter(container));
+  app.use('/api/publish', publishRouter(container));
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/health', (_req, res) => {
@@ -90,7 +91,6 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/sponsorships', sponsorshipsRouter(container));
   app.use('/api/ideas', ideasRouter(container));
   app.use('/api/post-drafts', postDraftsRouter(container));
-  app.use('/api/publish', publishRouter(container));
   app.use('/api/dashboard', dashboardRouter(container));
   app.use('/api/preferences', preferencesRouter(container));
   app.use('/api/script-presets', scriptPresetsRouter(container));

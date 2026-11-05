@@ -399,6 +399,16 @@ export const buildContainer = (config: Config): Container => {
     videoNotes: mailVideoNotes,
   });
 
+  const manageThumbnails = new ManageThumbnails(
+    new SqliteThumbnailRepository(db),
+    productions,
+    productionSteps,
+    manageTodos,
+    new OpenAiImageClient(),
+    secrets,
+    config.openaiApiKey,
+  );
+
   return {
     db,
     config,
@@ -411,6 +421,7 @@ export const buildContainer = (config: Config): Container => {
       new SqlitePublishRepository(db),
       channels,
       instagramAccounts,
+      (id) => manageThumbnails.image(id),
       {
         storageDir:
           config.databasePath === ':memory:'
@@ -420,15 +431,7 @@ export const buildContainer = (config: Config): Container => {
         gcpClientSecret: config.gcpClientSecret,
       },
     ),
-    manageThumbnails: new ManageThumbnails(
-      new SqliteThumbnailRepository(db),
-      productions,
-      productionSteps,
-      manageTodos,
-      new OpenAiImageClient(),
-      secrets,
-      config.openaiApiKey,
-    ),
+    manageThumbnails,
     productionAssistant: new ProductionAssistant({
       productions,
       ai: aiClient,

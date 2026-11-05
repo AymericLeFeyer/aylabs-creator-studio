@@ -2159,6 +2159,13 @@ const migrations: Migration[] = [
       CREATE INDEX idx_publish_attempts_upload ON publish_attempts(upload_id);
     `,
   },
+  {
+    version: 64,
+    name: 'miniature posee sur un envoi YouTube',
+    up: `
+      ALTER TABLE publish_attempts ADD COLUMN thumbnail_set_at TEXT;
+    `,
+  },
 ];
 
 /**

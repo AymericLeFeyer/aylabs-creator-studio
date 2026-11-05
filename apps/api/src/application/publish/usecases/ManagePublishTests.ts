@@ -5,12 +5,15 @@ import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ChannelRepository } from '../../../domain/channel/repositories/ChannelRepository.ts';
 import type { InstagramAccountRepository } from '../../../domain/instagram/repositories/InstagramRepository.ts';
+import type { ThumbnailImage } from '../../../domain/thumbnail/entities/Thumbnail.ts';
+import { imageMimeType } from '../../../domain/thumbnail/services/imageType.ts';
 import type {
   PublishAttempt,
   PublishTargets,
   PublishUpload,
   PublishUploadView,
   YouTubePrivacy,
+  YouTubeThumbnailSource,
 } from '../../../domain/publish/entities/Publish.ts';
 import type { PublishRepository } from '../../../domain/publish/repositories/PublishRepository.ts';
 import { InstagramClient } from '../../../infrastructure/instagram/api/InstagramClient.ts';
@@ -50,13 +53,25 @@ export interface StartYouTubeInput {
   description: string;
   tags: string[];
   privacy: YouTubePrivacy;
+  thumbnail?: YouTubeThumbnailSource;
 }
 
 export interface PrepareInstagramInput {
   accountId: string;
   caption: string;
   shareToFeed: boolean;
+  /**
+   * L'image de couverture, **prise dans la vidéo** (millisecondes). Instagram n'accepte une
+   * image à part que par adresse publique (`cover_url`), que le studio n'a pas.
+   */
+  coverOffsetMs?: number;
 }
+
+/** Une miniature générée (Production → Miniatures), lue par son identifiant. */
+export type ThumbnailImageReader = (id: string) => ThumbnailImage;
+
+/** YouTube : JPEG ou PNG, 2 Mo maximum. */
+const MAX_THUMBNAIL_BYTES = 2 * 1024 ** 2;
 
 /**
  * Production → Publish : le banc d'essai, **temporaire**, de la publication directe.
@@ -74,16 +89,19 @@ export class ManagePublishTests {
   private readonly channels: ChannelRepository;
   private readonly instagramAccounts: InstagramAccountRepository;
   private readonly config: PublishConfig;
+  private readonly thumbnailImage: ThumbnailImageReader;
 
   constructor(
     repository: PublishRepository,
     channels: ChannelRepository,
     instagramAccounts: InstagramAccountRepository,
+    thumbnailImage: ThumbnailImageReader,
     config: PublishConfig,
   ) {
     this.repository = repository;
     this.channels = channels;
     this.instagramAccounts = instagramAccounts;
+    this.thumbnailImage = thumbnailImage;
     this.config = config;
     mkdirSync(config.storageDir, { recursive: true });
     // Les envois vivent en mémoire : un redémarrage les a coupés net.
@@ -172,10 +190,22 @@ export class ManagePublishTests {
 
   // --- YouTube ------------------------------------------------------------------
 
-  startYouTube(uploadId: string, input: StartYouTubeInput): PublishAttempt {
-    const upload = this.repository.findUpload(uploadId);
-    if (!upload) throw notFound('Vidéo');
-    const channel = this.channels.findById(input.channelId);
+  /** Lit et vérifie la miniature **avant** tout envoi : une image refusée ne coûte rien. */
+  private resolveThumbnail(source: YouTubeThumbnailSource): ThumbnailImage {
+    const data =
+      'thumbnailId' in source
+        ? this.thumbnailImage(source.thumbnailId).data
+        : Buffer.from(source.image.replace(/^data:[^,]*,/, ''), 'base64');
+    const mimeType = imageMimeType(data);
+    if (mimeType !== 'image/jpeg' && mimeType !== 'image/png') {
+      throw badRequest('Miniature YouTube : JPEG ou PNG attendu');
+    }
+    if (data.length > MAX_THUMBNAIL_BYTES) throw badRequest('Miniature YouTube : 2 Mo maximum');
+    return { data, mimeType };
+  }
+
+  private youtubeClient(channelId: string): { client: YouTubeUploadClient; name: string } {
+    const channel = this.channels.findById(channelId);
     if (!channel) throw notFound('Chaîne');
     if (channel.mode !== 'oauth' || !channel.refreshToken) {
       throw badRequest('Cette chaîne n’a pas de refresh token OAuth (Paramètres → YouTube)');
@@ -183,41 +213,77 @@ export class ManagePublishTests {
     if (!this.config.gcpClientId || !this.config.gcpClientSecret) {
       throw badRequest('GCP_CLIENT_ID / GCP_CLIENT_SECRET absents de la configuration');
     }
+    return {
+      name: channel.name,
+      client: new YouTubeUploadClient({
+        clientId: this.config.gcpClientId,
+        clientSecret: this.config.gcpClientSecret,
+        refreshToken: channel.refreshToken,
+      }),
+    };
+  }
+
+  /** Pose (ou remplace) la miniature d'une vidéo déjà envoyée. */
+  async setYouTubeThumbnail(
+    attemptId: string,
+    source: YouTubeThumbnailSource,
+  ): Promise<PublishAttempt> {
+    const attempt = this.repository.findAttempt(attemptId);
+    if (!attempt || attempt.platform !== 'youtube') throw notFound('Envoi YouTube');
+    if (attempt.status !== 'published' || !attempt.externalId) {
+      throw conflict('La vidéo n’est pas encore sur YouTube');
+    }
+    const image = this.resolveThumbnail(source);
+    const { client } = this.youtubeClient(attempt.targetId);
+    await client.setThumbnail(attempt.externalId, image);
+    return this.repository.updateAttempt(attemptId, {
+      thumbnailSetAt: new Date().toISOString(),
+      error: null,
+    });
+  }
+
+  startYouTube(uploadId: string, input: StartYouTubeInput): PublishAttempt {
+    const upload = this.repository.findUpload(uploadId);
+    if (!upload) throw notFound('Vidéo');
+    const { client, name } = this.youtubeClient(input.channelId);
+    const thumbnail = input.thumbnail ? this.resolveThumbnail(input.thumbnail) : null;
 
     const attempt = this.repository.createAttempt({
       uploadId,
       platform: 'youtube',
-      targetId: channel.id,
-      targetName: channel.name,
+      targetId: input.channelId,
+      targetName: name,
       status: 'uploading',
       privacy: input.privacy,
       title: input.title,
     });
 
-    const client = new YouTubeUploadClient({
-      clientId: this.config.gcpClientId,
-      clientSecret: this.config.gcpClientSecret,
-      refreshToken: channel.refreshToken,
-    });
-    void client
-      .upload({
+    void (async () => {
+      const { videoId } = await client.upload({
         filePath: this.filePath(upload),
         mimeType: upload.mimeType,
         title: input.title,
         description: input.description,
         tags: input.tags,
         privacy: input.privacy,
-      })
-      .then(({ videoId }) => {
-        this.repository.updateAttempt(attempt.id, {
-          status: 'published',
-          externalId: videoId,
-          url: `https://studio.youtube.com/video/${videoId}/edit`,
-        });
-      })
-      .catch((error: unknown) => {
-        this.repository.updateAttempt(attempt.id, { status: 'failed', error: messageOf(error) });
       });
+      this.repository.updateAttempt(attempt.id, {
+        status: 'published',
+        externalId: videoId,
+        url: `https://studio.youtube.com/video/${videoId}/edit`,
+      });
+      if (!thumbnail) return;
+      // La vidéo est en ligne : une miniature refusée ne la fait pas échouer, elle se
+      // repose depuis l'écran.
+      try {
+        await client.setThumbnail(videoId, thumbnail);
+        this.repository.updateAttempt(attempt.id, { thumbnailSetAt: new Date().toISOString() });
+      } catch (error) {
+        this.repository.updateAttempt(attempt.id, { error: messageOf(error) });
+      }
+    })().catch((error: unknown) => {
+      this.repository.updateAttempt(attempt.id, { status: 'failed', error: messageOf(error) });
+    });
 
     return attempt;
   }
@@ -253,6 +319,7 @@ export class ManagePublishTests {
       const { id: containerId, uploadUri } = await client.createReelContainer(igUserId, {
         caption: input.caption,
         shareToFeed: input.shareToFeed,
+        coverOffsetMs: input.coverOffsetMs,
       });
       this.repository.updateAttempt(attempt.id, { externalId: containerId });
       // Le serveur pousse la vidéo : aucune adresse publique n'est nécessaire.

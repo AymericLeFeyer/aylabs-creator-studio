@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
 import { google } from 'googleapis';
 import { upstream } from '../../../shared/errors.ts';
 import type { YouTubePrivacy } from '../../../domain/publish/entities/Publish.ts';
@@ -61,9 +62,28 @@ export class YouTubeUploadClient {
       throw upstream(describeUploadError(error));
     }
   }
+
+  /**
+   * Pose la miniature (`thumbnails.set`, 50 unités). JPEG ou PNG, 2 Mo maximum. La chaîne
+   * doit être **vérifiée** (validation par téléphone) pour avoir le droit aux miniatures
+   * personnalisées.
+   */
+  async setThumbnail(videoId: string, image: { data: Uint8Array; mimeType: string }) {
+    const auth = new google.auth.OAuth2(this.credentials.clientId, this.credentials.clientSecret);
+    auth.setCredentials({ refresh_token: this.credentials.refreshToken });
+    const youtube = google.youtube({ version: 'v3', auth });
+    try {
+      await youtube.thumbnails.set({
+        videoId,
+        media: { mimeType: image.mimeType, body: Readable.from(Buffer.from(image.data)) },
+      });
+    } catch (error) {
+      throw upstream(describeUploadError(error, 'miniature'));
+    }
+  }
 }
 
-const describeUploadError = (error: unknown): string => {
+const describeUploadError = (error: unknown, what = 'envoi'): string => {
   const anyError = error as {
     response?: {
       data?: {
@@ -93,9 +113,16 @@ const describeUploadError = (error: unknown): string => {
       'Paramètres → YouTube.'
     );
   }
+  if (what === 'miniature' && /permission|forbidden/i.test(message)) {
+    return (
+      'YouTube refuse la miniature personnalisée : la chaîne doit être vérifiée ' +
+      '(youtube.com/verify). ' +
+      message
+    );
+  }
   if (reason === 'quotaExceeded')
     return 'Quota YouTube épuisé pour aujourd’hui (≈ 1 600 unités par envoi).';
   if (reason === 'uploadLimitExceeded')
     return 'La chaîne a atteint sa limite d’envois pour aujourd’hui.';
-  return `YouTube (envoi) : ${message}`;
+  return `YouTube (${what}) : ${message}`;
 };

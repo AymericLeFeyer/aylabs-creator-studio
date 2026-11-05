@@ -49,6 +49,8 @@ export interface PublishAttempt {
   externalId: string | null;
   url: string | null;
   error: string | null;
+  /** YouTube : quand la miniature a été posée, `null` sinon. */
+  thumbnailSetAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,16 +98,22 @@ export const PRIVACY_LABELS: Record<YouTubePrivacy, string> = {
   public: 'Publique',
 };
 
+/** Une miniature générée (Production → Miniatures), ou une image en base64 (JPEG). */
+export type YouTubeThumbnailSource = { thumbnailId: string } | { image: string };
+
 export interface StartYouTubeInput {
   channelId: string;
   title: string;
   description: string;
   tags: string[];
   privacy: YouTubePrivacy;
+  thumbnail?: YouTubeThumbnailSource;
 }
 
 export interface PrepareInstagramInput {
   accountId: string;
   caption: string;
   shareToFeed: boolean;
+  /** La couverture, prise dans la vidéo (ms) : Instagram n'accepte pas d'image à part sans adresse publique. */
+  coverOffsetMs?: number;
 }

@@ -1,7 +1,13 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { z } from 'zod';
 import type { Container } from '../../container.ts';
 import { param } from '../helpers.ts';
+
+/** Une miniature générée, ou une image en base64 (vérifiée JPEG/PNG ≤ 2 Mo par le use case). */
+const thumbnailSchema = z.union([
+  z.object({ thumbnailId: z.string().min(1) }),
+  z.object({ image: z.string().min(1).max(4_000_000) }),
+]);
 
 const youtubeSchema = z.object({
   channelId: z.string().min(1),
@@ -10,12 +16,14 @@ const youtubeSchema = z.object({
   tags: z.array(z.string().trim().min(1)).max(50).default([]),
   // Public est admis par l'API, mais l'écran ne le propose pas tant qu'on teste.
   privacy: z.enum(['private', 'unlisted', 'public']).default('private'),
+  thumbnail: thumbnailSchema.optional(),
 });
 
 const instagramSchema = z.object({
   accountId: z.string().min(1),
   caption: z.string().max(2200).default(''),
   shareToFeed: z.boolean().default(true),
+  coverOffsetMs: z.number().int().min(0).optional(),
 });
 
 const publishInstagramSchema = z.object({
@@ -35,6 +43,8 @@ const publishInstagramSchema = z.object({
  */
 export const publishRouter = (container: Container): Router => {
   const router = Router();
+  // Une miniature en base64 dépasse le parseur global de 1 Mo : monté avant lui.
+  router.use(express.json({ limit: '5mb' }));
   const publish = container.managePublishTests;
 
   router.get('/targets', (_req, res) => {
@@ -70,6 +80,10 @@ export const publishRouter = (container: Container): Router => {
     res
       .status(202)
       .json(publish.prepareInstagram(param(req, 'id'), instagramSchema.parse(req.body)));
+  });
+
+  router.post('/attempts/:id/youtube-thumbnail', async (req, res) => {
+    res.json(await publish.setYouTubeThumbnail(param(req, 'id'), thumbnailSchema.parse(req.body)));
   });
 
   router.post('/attempts/:id/instagram-publish', async (req, res) => {
