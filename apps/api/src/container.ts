@@ -23,6 +23,7 @@ import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/reposi
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
 import { SqlitePublishRepository } from './infrastructure/publish/repositories/SqlitePublishRepository.ts';
 import { ManagePublishTests } from './application/publish/usecases/ManagePublishTests.ts';
+import { S3PublishStaging } from './infrastructure/publish/api/S3PublishStaging.ts';
 import { SqlitePostDraftRepository } from './infrastructure/postDraft/repositories/SqlitePostDraftRepository.ts';
 import { SqliteDashboardWidgetRepository } from './infrastructure/dashboard/repositories/SqliteDashboardWidgetRepository.ts';
 import { SqliteBrandingRepository } from './infrastructure/branding/repositories/SqliteBrandingRepository.ts';
@@ -422,6 +423,7 @@ export const buildContainer = (config: Config): Container => {
       channels,
       instagramAccounts,
       (id) => manageThumbnails.image(id),
+      new S3PublishStaging(config.publishS3),
       {
         storageDir:
           config.databasePath === ':memory:'

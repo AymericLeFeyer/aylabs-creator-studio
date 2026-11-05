@@ -18,6 +18,7 @@ Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagn�
 | Mails      | `imapflow` (IMAP), `nodemailer` (SMTP), `mailparser` — JS pur, rien à compiler       |
 | IA         | `@anthropic-ai/sdk`, modèle `claude-opus-5` par défaut (réglable)                    |
 | MCP        | `@modelcontextprotocol/sdk`, Streamable HTTP sans session, dans l'API                |
+| Stockage   | `@aws-sdk/client-s3` + presigner : dépôt éphémère des Reels (R2), liens signés       |
 | Données    | TanStack Query 5                                                                     |
 | PWA        | Manifeste + service worker **écrits à la main**, aucune dépendance de build          |
 | CI/CD      | GitHub Actions → images GHCR → stack Portainer sur VPS                               |
@@ -2598,21 +2599,26 @@ privacy, title, externalId, url, error }` — table `publish_attempts` (cascade)
   importée (`{ image }` base64, ramenée en JPEG 1 280 px par `YouTubeThumbnailPicker`).
   Vérifiée **avant** l'envoi ; posée après, et son refus ne fait pas échouer la vidéo
   (`error` renseigné, `thumbnailSetAt` reste `null`, se repose par
-  `/attempts/:id/youtube-thumbnail`). **Instagram** n'accepte une image à part que par
-  `cover_url` (adresse publique, donc impossible) : on choisit une **image de la vidéo**
-  (`thumb_offset`, `coverOffsetMs`, lu sur l'aperçu de la carte). **TikTok** n'offre de toute
-  façon que `video_cover_timestamp_ms`. Le routeur a son propre `express.json` de 5 Mo,
+  `/attempts/:id/youtube-thumbnail`). **Instagram** prend une image (`coverImage`, JPEG
+  ≤ 8 Mo, déposée au stockage éphémère et passée en `cover_url`) **ou** une image de la vidéo
+  (`thumb_offset`, `coverOffsetMs`, lu sur l'aperçu de la carte) ; l'image l'emporte.
+  **TikTok** n'offre que `video_cover_timestamp_ms`. Le routeur a son propre `express.json` de 5 Mo,
   monté avant le global.
-- **Le studio n'a pas d'adresse publique, et rien ne doit en exiger une** : c'est le serveur
-  qui **pousse** la vidéo à chaque plateforme. Ne jamais revenir au `video_url` d'Instagram
-  (Meta viendrait la chercher). `/api/publish/files/<publicToken>` ne sert que l'aperçu.
-- **Instagram** (`InstagramClient.createReelContainer` / `uploadReelVideo` / `containerStatus` /
-  `publishContainer`) : conteneur en `upload_type=resumable`, puis les octets en flux vers
-  l'`uri` rendue (rupload.facebook.com, en-têtes `Authorization: OAuth`, `offset`, `file_size`).
-  **L'API n'a pas de mode privé** : « Préparer » envoie et attend `FINISHED` (`ready`, rien de
-  visible) ; « Publier (public) » demande une confirmation et `confirm: true`. Permission
-  `instagram_business_content_publish`. Un échec de publication rend le conteneur `ready`
-  (valable 24 h).
+- **Le studio n'a pas d'adresse publique, et rien ne doit l'exposer.** YouTube reçoit la
+  vidéo poussée par le serveur. **Instagram ne sait que la télécharger** : l'envoi direct
+  (`upload_type=resumable`) n'est pas ouvert via Instagram Login (« The parameter video_url
+  is required », vérifié). D'où le **stockage éphémère S3** (`PublishStaging`,
+  `S3PublishStaging`, Cloudflare R2 par défaut, `PUBLISH_S3_*`) : la vidéo y est déposée
+  (`publish/<attemptId>/…`), Meta reçoit un **lien signé d'une heure**, et les fichiers sont
+  **effacés** dès que le conteneur est prêt ou a échoué (`finally`). Bucket privé ; une règle
+  de cycle de vie d'un jour ramasse ce qu'un redémarrage aurait laissé. Le studio n'y fait
+  que des connexions sortantes. `/api/publish/files/<publicToken>` ne sert que l'aperçu.
+- **Instagram** (`InstagramClient.createReelContainer` / `containerStatus` /
+  `publishContainer`, appels **versionnés** `v23.0`) : conteneur `REELS` + `video_url`, puis
+  attente de `FINISHED`. **L'API n'a pas de mode privé** : « Préparer » s'arrête au conteneur
+  prêt (`ready`, rien de visible) ; « Publier (public) » demande une confirmation et
+  `confirm: true`. Permission `instagram_business_content_publish`. Un échec de publication
+  rend le conteneur `ready` (valable 24 h).
 - **TikTok** : pas branché (aucune connexion), la carte dit ce qu'il manque.
 
 ### `mcp` — le studio pour un assistant
@@ -2919,13 +2925,13 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/thumbnails`                                   | `{ productionId?, format, prompt?, assetIds?, images? }`. **Facturé**, jusqu'à 2 min. 400 sans clé, ou sans vidéo ni prompt ; 502 si OpenAI refuse |
 | `GET`    | `/api/thumbnails/:id/image`                         | Le JPEG |
 | `DELETE` | `/api/thumbnails/:id`                               | Supprimer |
-| `GET`    | `/api/publish/targets`                              | Chaînes OAuth et comptes Instagram à jeton, raison TikTok |
+| `GET`    | `/api/publish/targets`                              | Chaînes OAuth et comptes Instagram à jeton, `stagingConfigured`, raison TikTok |
 | `GET`    | `/api/publish/uploads`                              | Vidéos déposées et leurs envois, la plus récente d'abord |
 | `POST`   | `/api/publish/uploads`                              | **Corps brut** `video/*`, `X-File-Name` (encodé). 2 Go max (nginx : `location ^~ /api/publish/`) |
 | `DELETE` | `/api/publish/uploads/:id`                          | Retire la vidéo du studio (ce qui est publié reste en ligne) |
 | `POST`   | `/api/publish/uploads/:id/youtube`                  | `{ channelId, title, description?, tags?, privacy?, thumbnail? }` → 202, envoi en arrière-plan. `thumbnail` : `{ thumbnailId }` ou `{ image }` (base64 JPEG/PNG ≤ 2 Mo, 400 sinon) |
 | `POST`   | `/api/publish/attempts/:id/youtube-thumbnail`       | `{ thumbnailId }` ou `{ image }` → pose ou remplace la miniature d'une vidéo envoyée. 409 si elle n'est pas en ligne |
-| `POST`   | `/api/publish/uploads/:id/instagram`                | `{ accountId, caption?, shareToFeed?, coverOffsetMs? }` → 202, conteneur préparé **sans publier**. La couverture est une image de la vidéo |
+| `POST`   | `/api/publish/uploads/:id/instagram`                | `{ accountId, caption?, shareToFeed?, coverImage?, coverOffsetMs? }` → 202 : vidéo déposée au stockage S3, conteneur préparé **sans publier**. 400 sans `PUBLISH_S3_*` |
 | `POST`   | `/api/publish/attempts/:id/instagram-publish`       | `{ confirm: true }` → publie le conteneur prêt (**public**). 409 s'il n'est pas prêt |
 | `GET`    | `/api/publish/files/:token`                         | La vidéo, pour l'aperçu de l'écran. `Range` géré |
 
@@ -4708,7 +4714,7 @@ Images publiées sur GHCR par `.github/workflows/release.yml` :
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 
-Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, `PUBLIC_URL` (adresse publique, pour les liens rendus par le MCP), `OPENAI_API_KEY` (facultative, les miniatures), **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Facultatifs pour la boîte mail : `MAIL_PASSWORD`, `MAIL_CRON` (défaut `*/5 * * * *`) et `ANTHROPIC_API_KEY` (l'assistant), qui l'emportent sur Paramètres → Admin → Mails. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, `PUBLIC_URL` (adresse publique, pour les liens rendus par le MCP), `OPENAI_API_KEY` (facultative, les miniatures), `PUBLISH_S3_ENDPOINT` / `PUBLISH_S3_BUCKET` / `PUBLISH_S3_ACCESS_KEY_ID` / `PUBLISH_S3_SECRET_ACCESS_KEY` / `PUBLISH_S3_REGION` (défaut `auto`) (facultatives : le stockage éphémère des Reels, bucket R2 **privé** avec une règle d'expiration d'un jour sur `publish/`), **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Facultatifs pour la boîte mail : `MAIL_PASSWORD`, `MAIL_CRON` (défaut `*/5 * * * *`) et `ANTHROPIC_API_KEY` (l'assistant), qui l'emportent sur Paramètres → Admin → Mails. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
 
 Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer. Le MCP passe par le même chemin : `claude mcp add --transport http aylabs-studio https://<studio>/api/mcp --header "Authorization: Bearer acs_…"`.
 

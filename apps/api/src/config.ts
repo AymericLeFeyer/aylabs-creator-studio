@@ -61,6 +61,17 @@ export interface Config {
   openaiApiKey: string | null;
   /** Le rythme du relevé de la boîte mail, plus serré que la collecte horaire. */
   mailCron: string;
+  /**
+   * Le stockage S3 éphémère de Production → Publish (Cloudflare R2 par défaut) : Meta
+   * télécharge les Reels et leur couverture à une adresse publique, que le studio n'a pas.
+   */
+  publishS3: {
+    endpoint: string | null;
+    bucket: string | null;
+    accessKeyId: string | null;
+    secretAccessKey: string | null;
+    region: string;
+  };
 }
 
 export const loadConfig = (): Config => ({
@@ -88,4 +99,12 @@ export const loadConfig = (): Config => ({
   anthropicApiKey: optional('ANTHROPIC_API_KEY'),
   openaiApiKey: optional('OPENAI_API_KEY'),
   mailCron: optional('MAIL_CRON') ?? '*/5 * * * *',
+  publishS3: {
+    endpoint: optional('PUBLISH_S3_ENDPOINT'),
+    bucket: optional('PUBLISH_S3_BUCKET'),
+    accessKeyId: optional('PUBLISH_S3_ACCESS_KEY_ID'),
+    secretAccessKey: optional('PUBLISH_S3_SECRET_ACCESS_KEY'),
+    // R2 attend « auto » ; un autre fournisseur donne sa région.
+    region: optional('PUBLISH_S3_REGION') ?? 'auto',
+  },
 });

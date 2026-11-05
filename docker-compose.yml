@@ -48,6 +48,12 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Miniatures (Paramètres -> API -> OpenAI). Facultatif, saisissable à l'écran.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Production -> Publish : stockage S3 ephemere (Cloudflare R2) ou Meta telecharge les Reels.
+      PUBLISH_S3_ENDPOINT: ${PUBLISH_S3_ENDPOINT:-}
+      PUBLISH_S3_BUCKET: ${PUBLISH_S3_BUCKET:-}
+      PUBLISH_S3_ACCESS_KEY_ID: ${PUBLISH_S3_ACCESS_KEY_ID:-}
+      PUBLISH_S3_SECRET_ACCESS_KEY: ${PUBLISH_S3_SECRET_ACCESS_KEY:-}
+      PUBLISH_S3_REGION: ${PUBLISH_S3_REGION:-auto}
     volumes:
       - creator-studio-data:/app/data
     # Pas de ports exposés : seul nginx parle à l'API, sur le réseau interne.

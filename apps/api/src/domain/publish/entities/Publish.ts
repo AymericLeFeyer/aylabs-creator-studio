@@ -73,6 +73,11 @@ export interface PublishTarget {
 export interface PublishTargets {
   youtube: PublishTarget[];
   instagram: PublishTarget[];
+  /**
+   * Le stockage S3 éphémère est configuré : sans lui, Instagram est impossible (Meta
+   * télécharge la vidéo à une adresse publique, que le studio n'a pas).
+   */
+  stagingConfigured: boolean;
   /** TikTok n'a encore aucune connexion : la raison s'affiche à l'écran. */
   tiktok: { available: false; reason: string };
 }

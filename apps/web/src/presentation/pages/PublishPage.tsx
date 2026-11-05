@@ -230,7 +230,12 @@ const UploadCard = ({
           className="max-h-80 w-full rounded-md bg-black object-contain"
         />
         <YouTubePanel upload={upload} channels={targets?.youtube ?? []} />
-        <InstagramPanel upload={upload} accounts={targets?.instagram ?? []} player={player} />
+        <InstagramPanel
+          upload={upload}
+          accounts={targets?.instagram ?? []}
+          stagingConfigured={targets?.stagingConfigured ?? false}
+          player={player}
+        />
         <TikTokPanel reason={targets?.tiktok.reason ?? ''} />
       </CardContent>
     </Card>
@@ -433,14 +438,17 @@ const YouTubePanel = ({
 const InstagramPanel = ({
   upload,
   accounts,
+  stagingConfigured,
   player,
 }: {
   upload: PublishUploadView;
   accounts: PublishTarget[];
+  stagingConfigured: boolean;
   player: VideoPlayer;
 }) => {
   const prepare = usePrepareInstagram();
   const [coverMs, setCoverMs] = useState<number | null>(null);
+  const [coverImage, setCoverImage] = useState<PickedThumbnail | null>(null);
   const publish = usePublishInstagram();
   const [accountId, setAccountId] = useState('');
   const [caption, setCaption] = useState('');
@@ -453,7 +461,13 @@ const InstagramPanel = ({
     if (!selected) return;
     prepare.mutate({
       uploadId: upload.id,
-      input: { accountId: selected, caption, shareToFeed, coverOffsetMs: coverMs ?? undefined },
+      input: {
+        accountId: selected,
+        caption,
+        shareToFeed,
+        coverImage: coverImage?.source,
+        coverOffsetMs: coverImage ? undefined : (coverMs ?? undefined),
+      },
     });
   };
 
@@ -473,6 +487,12 @@ const InstagramPanel = ({
       {accounts.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           Aucun compte à jeton : connecte-en un dans Paramètres → Instagram.
+        </p>
+      ) : !stagingConfigured ? (
+        <p className="text-xs text-muted-foreground">
+          Stockage de publication absent : renseigne PUBLISH_S3_ENDPOINT, PUBLISH_S3_BUCKET,
+          PUBLISH_S3_ACCESS_KEY_ID et PUBLISH_S3_SECRET_ACCESS_KEY (Cloudflare R2). Meta télécharge
+          la vidéo depuis un lien signé d’une heure, effacé après traitement.
         </p>
       ) : (
         <>
@@ -496,14 +516,21 @@ const InstagramPanel = ({
             />
             Afficher aussi dans le fil
           </label>
-          <CoverFramePicker player={player} value={coverMs} onChange={setCoverMs} />
+          <YouTubeThumbnailPicker
+            label="Couverture (image)"
+            value={coverImage}
+            onChange={setCoverImage}
+          />
+          {!coverImage && (
+            <CoverFramePicker player={player} value={coverMs} onChange={setCoverMs} />
+          )}
           <Button type="submit" size="sm" disabled={prepare.isPending}>
             Préparer (sans publier)
           </Button>
           <p className="text-xs text-muted-foreground">
-            Le studio envoie la vidéo à Meta, qui la traite. Rien n’est visible tant que tu n’as pas
-            cliqué « Publier » : l’API ne connaît pas de mode privé. Permission
-            instagram_business_content_publish requise.
+            La vidéo passe par un lien signé du stockage, effacé une fois traitée. Rien n’est
+            visible tant que tu n’as pas cliqué « Publier » : l’API ne connaît pas de mode privé.
+            Permission instagram_business_content_publish requise.
           </p>
           {prepare.error && (
             <p className="text-xs text-[var(--negative)]">{prepare.error.message}</p>
@@ -538,8 +565,8 @@ const TikTokPanel = ({ reason }: { reason: string }) => (
     <PanelTitle icon={<Music2 className="size-4" />} label="TikTok" />
     <p className="text-xs text-muted-foreground">{reason || 'Pas encore branché.'}</p>
     <p className="text-xs text-muted-foreground">
-      Couverture : comme Instagram, TikTok ne prend qu’une image de la vidéo
-      (video_cover_timestamp_ms), pas d’image à part.
+      Couverture : TikTok ne prend qu’une image de la vidéo (video_cover_timestamp_ms), pas d’image
+      à part.
     </p>
   </div>
 );
@@ -561,7 +588,7 @@ const CoverFramePicker = ({
   onChange: (value: number | null) => void;
 }) => (
   <div className="space-y-1 text-xs">
-    <span className="font-medium">Couverture</span>
+    <span className="font-medium">Ou une image de la vidéo</span>
     <div className="flex flex-wrap items-center gap-2">
       <Button
         type="button"
@@ -598,9 +625,6 @@ const CoverFramePicker = ({
         </>
       )}
     </div>
-    <p className="text-muted-foreground">
-      Mets la vidéo de gauche sur l’image voulue. Instagram n’accepte pas d’image à part sans
-      adresse publique.
-    </p>
+    <p className="text-muted-foreground">Sans image, mets la vidéo de gauche sur l’image voulue.</p>
   </div>
 );

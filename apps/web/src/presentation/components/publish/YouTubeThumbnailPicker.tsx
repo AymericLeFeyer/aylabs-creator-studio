@@ -31,15 +31,18 @@ const toJpegDataUrl = async (file: File): Promise<string> => {
 };
 
 /**
- * La miniature d'un envoi YouTube : une des dernières miniatures générées dans
- * Production → Miniatures, ou une image importée. Un clic sur la sélection la retire.
+ * Une image pour un envoi (miniature YouTube, couverture Instagram) : une des dernières
+ * miniatures générées dans Production → Miniatures, ou une image importée, toujours ramenée
+ * en JPEG. Un clic sur la sélection la retire.
  */
 export const YouTubeThumbnailPicker = ({
   value,
   onChange,
+  label = 'Miniature',
 }: {
   value: PickedThumbnail | null;
   onChange: (value: PickedThumbnail | null) => void;
+  label?: string;
 }) => {
   const { data: thumbnails = [] } = useThumbnails(null);
   const input = useRef<HTMLInputElement>(null);
@@ -62,7 +65,7 @@ export const YouTubeThumbnailPicker = ({
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-xs">
-        <span className="font-medium">Miniature</span>
+        <span className="font-medium">{label}</span>
         {value && (
           <button
             type="button"

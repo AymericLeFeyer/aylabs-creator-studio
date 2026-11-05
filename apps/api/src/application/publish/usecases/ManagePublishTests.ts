@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { createWriteStream, mkdirSync, rmSync } from 'node:fs';
+import { createReadStream, createWriteStream, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -16,6 +16,7 @@ import type {
   YouTubeThumbnailSource,
 } from '../../../domain/publish/entities/Publish.ts';
 import type { PublishRepository } from '../../../domain/publish/repositories/PublishRepository.ts';
+import type { PublishStaging } from '../../../domain/publish/repositories/PublishStaging.ts';
 import { InstagramClient } from '../../../infrastructure/instagram/api/InstagramClient.ts';
 import { YouTubeUploadClient } from '../../../infrastructure/youtube/api/YouTubeUploadClient.ts';
 import { AppError, badRequest, conflict, notFound } from '../../../shared/errors.ts';
@@ -60,12 +61,17 @@ export interface PrepareInstagramInput {
   accountId: string;
   caption: string;
   shareToFeed: boolean;
-  /**
-   * L'image de couverture, **prise dans la vidéo** (millisecondes). Instagram n'accepte une
-   * image à part que par adresse publique (`cover_url`), que le studio n'a pas.
-   */
+  /** Une image de couverture (déposée au stockage éphémère) ; l'emporte sur `coverOffsetMs`. */
+  coverImage?: YouTubeThumbnailSource;
+  /** Sinon, une image prise dans la vidéo (millisecondes). */
   coverOffsetMs?: number;
 }
+
+/** Durée des liens signés donnés à Meta : le téléchargement se fait dans la minute. */
+const STAGING_LINK_SECONDS = 60 * 60;
+
+/** Couverture Instagram : JPEG, 8 Mo maximum. */
+const MAX_COVER_BYTES = 8 * 1024 ** 2;
 
 /** Une miniature générée (Production → Miniatures), lue par son identifiant. */
 export type ThumbnailImageReader = (id: string) => ThumbnailImage;
@@ -90,18 +96,21 @@ export class ManagePublishTests {
   private readonly instagramAccounts: InstagramAccountRepository;
   private readonly config: PublishConfig;
   private readonly thumbnailImage: ThumbnailImageReader;
+  private readonly staging: PublishStaging;
 
   constructor(
     repository: PublishRepository,
     channels: ChannelRepository,
     instagramAccounts: InstagramAccountRepository,
     thumbnailImage: ThumbnailImageReader,
+    staging: PublishStaging,
     config: PublishConfig,
   ) {
     this.repository = repository;
     this.channels = channels;
     this.instagramAccounts = instagramAccounts;
     this.thumbnailImage = thumbnailImage;
+    this.staging = staging;
     this.config = config;
     mkdirSync(config.storageDir, { recursive: true });
     // Les envois vivent en mémoire : un redémarrage les a coupés net.
@@ -122,6 +131,7 @@ export class ManagePublishTests {
           name: `@${account.username}`,
           color: account.color,
         })),
+      stagingConfigured: this.staging.configured,
       tiktok: {
         available: false,
         reason:
@@ -190,18 +200,33 @@ export class ManagePublishTests {
 
   // --- YouTube ------------------------------------------------------------------
 
-  /** Lit et vérifie la miniature **avant** tout envoi : une image refusée ne coûte rien. */
-  private resolveThumbnail(source: YouTubeThumbnailSource): ThumbnailImage {
+  /** Lit et vérifie une image **avant** tout envoi : une image refusée ne coûte rien. */
+  private resolveImage(
+    source: YouTubeThumbnailSource,
+    rules: { label: string; types: string[]; maxBytes: number },
+  ): ThumbnailImage {
     const data =
       'thumbnailId' in source
         ? this.thumbnailImage(source.thumbnailId).data
         : Buffer.from(source.image.replace(/^data:[^,]*,/, ''), 'base64');
     const mimeType = imageMimeType(data);
-    if (mimeType !== 'image/jpeg' && mimeType !== 'image/png') {
-      throw badRequest('Miniature YouTube : JPEG ou PNG attendu');
+    if (!mimeType || !rules.types.includes(mimeType)) {
+      throw badRequest(
+        `${rules.label} : ${rules.types.map((t) => t.slice(6).toUpperCase()).join(' ou ')} attendu`,
+      );
     }
-    if (data.length > MAX_THUMBNAIL_BYTES) throw badRequest('Miniature YouTube : 2 Mo maximum');
+    if (data.length > rules.maxBytes) {
+      throw badRequest(`${rules.label} : ${rules.maxBytes / 1024 ** 2} Mo maximum`);
+    }
     return { data, mimeType };
+  }
+
+  private resolveThumbnail(source: YouTubeThumbnailSource): ThumbnailImage {
+    return this.resolveImage(source, {
+      label: 'Miniature YouTube',
+      types: ['image/jpeg', 'image/png'],
+      maxBytes: MAX_THUMBNAIL_BYTES,
+    });
   }
 
   private youtubeClient(channelId: string): { client: YouTubeUploadClient; name: string } {
@@ -291,8 +316,10 @@ export class ManagePublishTests {
   // --- Instagram -----------------------------------------------------------------
 
   /**
-   * Crée le conteneur du Reel et attend qu'il soit prêt. **Rien n'est publié** : c'est
-   * `publishInstagram`, sur un second clic, qui rend la vidéo visible.
+   * Dépose la vidéo (et sa couverture) au stockage éphémère, crée le conteneur du Reel à
+   * partir des liens signés et attend qu'il soit prêt. **Rien n'est publié** : c'est
+   * `publishInstagram`, sur un second clic, qui rend la vidéo visible. Les fichiers déposés
+   * sont effacés dès que Meta a fini, quelle que soit l'issue.
    */
   prepareInstagram(uploadId: string, input: PrepareInstagramInput): PublishAttempt {
     const upload = this.repository.findUpload(uploadId);
@@ -301,6 +328,18 @@ export class ManagePublishTests {
     if (!account) throw notFound('Compte Instagram');
     const token = account.accessToken;
     if (!token) throw badRequest('Ce compte n’a pas de jeton (Paramètres → Instagram)');
+    if (!this.staging.configured) {
+      throw badRequest(
+        'Stockage de publication absent (PUBLISH_S3_*) : Meta télécharge la vidéo à une adresse publique.',
+      );
+    }
+    const cover = input.coverImage
+      ? this.resolveImage(input.coverImage, {
+          label: 'Couverture Instagram',
+          types: ['image/jpeg'],
+          maxBytes: MAX_COVER_BYTES,
+        })
+      : null;
 
     const attempt = this.repository.createAttempt({
       uploadId,
@@ -314,31 +353,54 @@ export class ManagePublishTests {
     const client = new InstagramClient(token);
     const igUserId = account.igUserId;
     const filePath = this.filePath(upload);
+    // Une clé par envoi : deux essais de la même vidéo ne se marchent pas dessus.
+    const videoKey = `publish/${attempt.id}/${filePath.split(/[\\/]/).pop()}`;
+    const coverKey = `publish/${attempt.id}/cover.jpg`;
 
     void (async () => {
-      const { id: containerId, uploadUri } = await client.createReelContainer(igUserId, {
-        caption: input.caption,
-        shareToFeed: input.shareToFeed,
-        coverOffsetMs: input.coverOffsetMs,
-      });
-      this.repository.updateAttempt(attempt.id, { externalId: containerId });
-      // Le serveur pousse la vidéo : aucune adresse publique n'est nécessaire.
-      await client.uploadReelVideo(uploadUri, filePath, upload.sizeBytes);
-      this.repository.updateAttempt(attempt.id, { status: 'processing', externalId: containerId });
+      try {
+        await this.staging.put(
+          videoKey,
+          createReadStream(filePath),
+          upload.sizeBytes,
+          upload.mimeType,
+        );
+        if (cover) await this.staging.put(coverKey, cover.data, cover.data.length, cover.mimeType);
 
-      const deadline = Date.now() + IG_POLL_MAX_MS;
-      while (Date.now() < deadline) {
-        await sleep(IG_POLL_INTERVAL_MS);
-        const { statusCode, status } = await client.containerStatus(containerId);
-        if (statusCode === 'FINISHED') {
-          this.repository.updateAttempt(attempt.id, { status: 'ready' });
-          return;
+        const containerId = await client.createReelContainer(igUserId, {
+          videoUrl: await this.staging.signedUrl(videoKey, STAGING_LINK_SECONDS),
+          coverUrl: cover
+            ? await this.staging.signedUrl(coverKey, STAGING_LINK_SECONDS)
+            : undefined,
+          coverOffsetMs: input.coverOffsetMs,
+          caption: input.caption,
+          shareToFeed: input.shareToFeed,
+        });
+        this.repository.updateAttempt(attempt.id, {
+          status: 'processing',
+          externalId: containerId,
+        });
+
+        const deadline = Date.now() + IG_POLL_MAX_MS;
+        while (Date.now() < deadline) {
+          await sleep(IG_POLL_INTERVAL_MS);
+          const { statusCode, status } = await client.containerStatus(containerId);
+          if (statusCode === 'FINISHED') {
+            this.repository.updateAttempt(attempt.id, { status: 'ready' });
+            return;
+          }
+          if (statusCode === 'ERROR' || statusCode === 'EXPIRED') {
+            throw new Error(
+              `Meta a refusé la vidéo (${statusCode}${status ? ` : ${status}` : ''})`,
+            );
+          }
         }
-        if (statusCode === 'ERROR' || statusCode === 'EXPIRED') {
-          throw new Error(`Meta a refusé la vidéo (${statusCode}${status ? ` : ${status}` : ''})`);
-        }
+        throw new Error('Meta n’a pas fini de traiter la vidéo en 10 minutes');
+      } finally {
+        // Meta a sa copie (ou a renoncé) : rien ne doit rester exposé.
+        await this.staging.remove(videoKey);
+        if (cover) await this.staging.remove(coverKey);
       }
-      throw new Error('Meta n’a pas fini de traiter la vidéo en 10 minutes');
     })().catch((error: unknown) => {
       this.repository.updateAttempt(attempt.id, { status: 'failed', error: messageOf(error) });
     });

@@ -23,6 +23,7 @@ const instagramSchema = z.object({
   accountId: z.string().min(1),
   caption: z.string().max(2200).default(''),
   shareToFeed: z.boolean().default(true),
+  coverImage: thumbnailSchema.optional(),
   coverOffsetMs: z.number().int().min(0).optional(),
 });
 

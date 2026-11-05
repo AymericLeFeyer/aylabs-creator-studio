@@ -1,5 +1,3 @@
-import { createReadStream } from 'node:fs';
-import { Readable } from 'node:stream';
 import type { IsoDate } from '../../../shared/dates.ts';
 import { upstream } from '../../../shared/errors.ts';
 
@@ -31,12 +29,8 @@ import { upstream } from '../../../shared/errors.ts';
 
 const GRAPH_INSTAGRAM = 'https://graph.instagram.com';
 /** L'adresse d'envoi est rendue par la création du conteneur ; celle-ci n'est qu'un repli. */
-/**
- * Version **explicite** des appels de publication. Sans version, Meta retombe sur la plus
- * ancienne de l'app, qui ignore `upload_type=resumable` et répond « video_url is required ».
- */
+/** Version explicite des appels de publication : sans elle, Meta prend la plus ancienne de l'app. */
 const PUBLISH_API_VERSION = 'v23.0';
-const RUPLOAD_INSTAGRAM = `https://rupload.facebook.com/ig-api-upload/${PUBLISH_API_VERSION}`;
 
 interface GraphError {
   error?: { message?: string; type?: string; code?: number; error_subcode?: number };
@@ -364,80 +358,43 @@ export class InstagramClient {
    */
   // --- Publication d'un Reel (Content Publishing API) ------------------------
   //
-  // Quatre temps, et seul le dernier rend la vidéo visible : créer un conteneur en
-  // **upload reprenable**, y pousser les octets (rupload.facebook.com), attendre que son
-  // `status_code` passe à `FINISHED`, puis `media_publish`.
-  //
-  // Reprenable et non `video_url` : avec `video_url`, Meta vient chercher la vidéo, ce qui
-  // exige une adresse publique — or le studio n'en a pas. Ici, c'est le serveur qui pousse.
+  // Trois temps, et seul le dernier rend la vidéo visible : créer un conteneur (Meta
+  // **télécharge** la vidéo depuis `videoUrl`), attendre que son `status_code` passe à
+  // `FINISHED`, puis `media_publish`. L'envoi direct (`upload_type=resumable`) n'est pas
+  // ouvert via Instagram Login (« video_url is required ») : la vidéo passe par un lien
+  // signé du stockage éphémère, le studio n'ayant pas d'adresse publique.
   //
   // **L'API ne connaît ni privé ni brouillon** : publier est public. Il faut la permission
   // `instagram_business_content_publish` sur le jeton.
 
   async createReelContainer(
     igUserId: string,
-    input: { caption: string; shareToFeed: boolean; coverOffsetMs?: number },
-  ): Promise<{ id: string; uploadUri: string }> {
-    // La couverture ne peut être qu'une image de la vidéo : `cover_url` exigerait une
-    // adresse publique.
-    const cover: Record<string, string> =
-      input.coverOffsetMs === undefined ? {} : { thumb_offset: String(input.coverOffsetMs) };
-    const row = await this.call<{ id: string; uri?: string }>(
+    input: {
+      videoUrl: string;
+      caption: string;
+      shareToFeed: boolean;
+      coverUrl?: string;
+      coverOffsetMs?: number;
+    },
+  ): Promise<string> {
+    // Une image de couverture l'emporte ; sinon, une image prise dans la vidéo.
+    const cover: Record<string, string> = input.coverUrl
+      ? { cover_url: input.coverUrl }
+      : input.coverOffsetMs === undefined
+        ? {}
+        : { thumb_offset: String(input.coverOffsetMs) };
+    const row = await this.call<{ id: string }>(
       `/${PUBLISH_API_VERSION}/${igUserId}/media`,
       {
         media_type: 'REELS',
-        upload_type: 'resumable',
+        video_url: input.videoUrl,
         caption: input.caption,
         share_to_feed: String(input.shareToFeed),
         ...cover,
       },
       'POST',
-    ).catch((error: unknown) => {
-      // Meta qui réclame `video_url` = l'envoi reprenable n'a pas été reconnu.
-      if (error instanceof Error && /video_url/i.test(error.message)) {
-        throw upstream(
-          `Instagram n’a pas accepté l’envoi direct (upload reprenable) : ${error.message}`,
-        );
-      }
-      throw error;
-    });
-    return { id: row.id, uploadUri: row.uri ?? `${RUPLOAD_INSTAGRAM}/${row.id}` };
-  }
-
-  /** Pousse tout le fichier en un envoi (`offset: 0`), en flux depuis le disque. */
-  async uploadReelVideo(uploadUri: string, filePath: string, sizeBytes: number): Promise<void> {
-    let response: Response;
-    try {
-      response = await fetch(uploadUri, {
-        method: 'POST',
-        headers: {
-          Authorization: `OAuth ${this.token}`,
-          offset: '0',
-          file_size: String(sizeBytes),
-        },
-        body: Readable.toWeb(createReadStream(filePath)) as ReadableStream,
-        duplex: 'half',
-        signal: AbortSignal.timeout(15 * 60_000),
-      } as RequestInit & { duplex: 'half' });
-    } catch (error) {
-      throw upstream(
-        `Envoi vers Instagram interrompu : ${error instanceof Error ? error.message : 'erreur réseau'}`,
-      );
-    }
-    const text = await response.text();
-    if (!response.ok) {
-      let message = `Instagram a refusé l’envoi (${response.status})`;
-      try {
-        const payload = JSON.parse(text) as {
-          debug_info?: { message?: string };
-          error?: { message?: string };
-        };
-        message = payload.debug_info?.message ?? payload.error?.message ?? message;
-      } catch {
-        if (text) message = `${message} : ${text.slice(0, 200)}`;
-      }
-      throw upstream(message);
-    }
+    );
+    return row.id;
   }
 
   /** `IN_PROGRESS`, `FINISHED`, `ERROR`, `EXPIRED` (24 h) ou `PUBLISHED`. */

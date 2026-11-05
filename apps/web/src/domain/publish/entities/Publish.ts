@@ -69,6 +69,11 @@ export interface PublishTarget {
 export interface PublishTargets {
   youtube: PublishTarget[];
   instagram: PublishTarget[];
+  /**
+   * Le stockage S3 éphémère est configuré : sans lui, Instagram est impossible (Meta
+   * télécharge la vidéo à une adresse publique, que le studio n'a pas).
+   */
+  stagingConfigured: boolean;
   /** TikTok n'a encore aucune connexion : la raison s'affiche à l'écran. */
   tiktok: { available: false; reason: string };
 }
@@ -114,6 +119,8 @@ export interface PrepareInstagramInput {
   accountId: string;
   caption: string;
   shareToFeed: boolean;
-  /** La couverture, prise dans la vidéo (ms) : Instagram n'accepte pas d'image à part sans adresse publique. */
+  /** Une image de couverture ; l'emporte sur `coverOffsetMs`. */
+  coverImage?: YouTubeThumbnailSource;
+  /** Sinon, une image prise dans la vidéo (ms). */
   coverOffsetMs?: number;
 }
