@@ -2592,13 +2592,16 @@ privacy, title, externalId, url, error }` — table `publish_attempts` (cascade)
   l'écran. Exige le scope **`youtube.upload`** sur le refresh token (les tokens de collecte ne
   l'ont pas : les régénérer) ; un projet GCP non audité force le privé ; ~1 600 unités de quota.
   Un Short = vertical, 3 min max, aucun drapeau d'API.
-- **Instagram** (`InstagramClient.createReelContainer` / `containerStatus` / `publishContainer`) :
-  **l'API n'a pas de mode privé**. « Préparer » crée le conteneur et attend `FINISHED` (`ready`,
-  rien de visible) ; « Publier (public) » demande une confirmation et `confirm: true`. Meta
-  **télécharge la vidéo lui-même** : `PUBLIC_URL` obligatoire, adresse
-  `/api/publish/files/<publicToken>` (sans authentification, jeton de 192 bits, `Range` géré
-  par `sendFile`). Permission `instagram_business_content_publish`. Un échec de publication
-  rend le conteneur `ready` (valable 24 h).
+- **Le studio n'a pas d'adresse publique, et rien ne doit en exiger une** : c'est le serveur
+  qui **pousse** la vidéo à chaque plateforme. Ne jamais revenir au `video_url` d'Instagram
+  (Meta viendrait la chercher). `/api/publish/files/<publicToken>` ne sert que l'aperçu.
+- **Instagram** (`InstagramClient.createReelContainer` / `uploadReelVideo` / `containerStatus` /
+  `publishContainer`) : conteneur en `upload_type=resumable`, puis les octets en flux vers
+  l'`uri` rendue (rupload.facebook.com, en-têtes `Authorization: OAuth`, `offset`, `file_size`).
+  **L'API n'a pas de mode privé** : « Préparer » envoie et attend `FINISHED` (`ready`, rien de
+  visible) ; « Publier (public) » demande une confirmation et `confirm: true`. Permission
+  `instagram_business_content_publish`. Un échec de publication rend le conteneur `ready`
+  (valable 24 h).
 - **TikTok** : pas branché (aucune connexion), la carte dit ce qu'il manque.
 
 ### `mcp` — le studio pour un assistant
@@ -2905,14 +2908,14 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/thumbnails`                                   | `{ productionId?, format, prompt?, assetIds?, images? }`. **Facturé**, jusqu'à 2 min. 400 sans clé, ou sans vidéo ni prompt ; 502 si OpenAI refuse |
 | `GET`    | `/api/thumbnails/:id/image`                         | Le JPEG |
 | `DELETE` | `/api/thumbnails/:id`                               | Supprimer |
-| `GET`    | `/api/publish/targets`                              | Chaînes OAuth et comptes Instagram à jeton, `publicUrlConfigured`, raison TikTok |
+| `GET`    | `/api/publish/targets`                              | Chaînes OAuth et comptes Instagram à jeton, raison TikTok |
 | `GET`    | `/api/publish/uploads`                              | Vidéos déposées et leurs envois, la plus récente d'abord |
 | `POST`   | `/api/publish/uploads`                              | **Corps brut** `video/*`, `X-File-Name` (encodé). 2 Go max (nginx : `location ^~ /api/publish/`) |
 | `DELETE` | `/api/publish/uploads/:id`                          | Retire la vidéo du studio (ce qui est publié reste en ligne) |
 | `POST`   | `/api/publish/uploads/:id/youtube`                  | `{ channelId, title, description?, tags?, privacy? }` → 202, envoi en arrière-plan |
 | `POST`   | `/api/publish/uploads/:id/instagram`                | `{ accountId, caption?, shareToFeed? }` → 202, conteneur préparé **sans publier** |
 | `POST`   | `/api/publish/attempts/:id/instagram-publish`       | `{ confirm: true }` → publie le conteneur prêt (**public**). 409 s'il n'est pas prêt |
-| `GET`    | `/api/publish/files/:token`                         | La vidéo, **sans authentification** (Meta la télécharge). `Range` géré |
+| `GET`    | `/api/publish/files/:token`                         | La vidéo, pour l'aperçu de l'écran. `Range` géré |
 
 Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube ou d'une source de l'export.
 
