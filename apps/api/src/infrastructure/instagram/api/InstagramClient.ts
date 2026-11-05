@@ -31,7 +31,12 @@ import { upstream } from '../../../shared/errors.ts';
 
 const GRAPH_INSTAGRAM = 'https://graph.instagram.com';
 /** L'adresse d'envoi est rendue par la création du conteneur ; celle-ci n'est qu'un repli. */
-const RUPLOAD_INSTAGRAM = 'https://rupload.facebook.com/ig-api-upload/v23.0';
+/**
+ * Version **explicite** des appels de publication. Sans version, Meta retombe sur la plus
+ * ancienne de l'app, qui ignore `upload_type=resumable` et répond « video_url is required ».
+ */
+const PUBLISH_API_VERSION = 'v23.0';
+const RUPLOAD_INSTAGRAM = `https://rupload.facebook.com/ig-api-upload/${PUBLISH_API_VERSION}`;
 
 interface GraphError {
   error?: { message?: string; type?: string; code?: number; error_subcode?: number };
@@ -378,7 +383,7 @@ export class InstagramClient {
     const cover: Record<string, string> =
       input.coverOffsetMs === undefined ? {} : { thumb_offset: String(input.coverOffsetMs) };
     const row = await this.call<{ id: string; uri?: string }>(
-      `/${igUserId}/media`,
+      `/${PUBLISH_API_VERSION}/${igUserId}/media`,
       {
         media_type: 'REELS',
         upload_type: 'resumable',
@@ -387,7 +392,15 @@ export class InstagramClient {
         ...cover,
       },
       'POST',
-    );
+    ).catch((error: unknown) => {
+      // Meta qui réclame `video_url` = l'envoi reprenable n'a pas été reconnu.
+      if (error instanceof Error && /video_url/i.test(error.message)) {
+        throw upstream(
+          `Instagram n’a pas accepté l’envoi direct (upload reprenable) : ${error.message}`,
+        );
+      }
+      throw error;
+    });
     return { id: row.id, uploadUri: row.uri ?? `${RUPLOAD_INSTAGRAM}/${row.id}` };
   }
 
@@ -431,15 +444,18 @@ export class InstagramClient {
   async containerStatus(
     containerId: string,
   ): Promise<{ statusCode: string; status: string | null }> {
-    const row = await this.call<{ status_code?: string; status?: string }>(`/${containerId}`, {
-      fields: 'status_code,status',
-    });
+    const row = await this.call<{ status_code?: string; status?: string }>(
+      `/${PUBLISH_API_VERSION}/${containerId}`,
+      {
+        fields: 'status_code,status',
+      },
+    );
     return { statusCode: row.status_code ?? 'UNKNOWN', status: row.status ?? null };
   }
 
   async publishContainer(igUserId: string, containerId: string): Promise<string> {
     const row = await this.call<{ id: string }>(
-      `/${igUserId}/media_publish`,
+      `/${PUBLISH_API_VERSION}/${igUserId}/media_publish`,
       { creation_id: containerId },
       'POST',
     );
