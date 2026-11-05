@@ -45,6 +45,7 @@ export class ManageTodos {
     if (checked) {
       this.todos.check(productionId, todoId);
       this.planningItems.closeForTodo(productionId, todoId);
+      this.startIfIdea(productionId);
     } else {
       this.todos.uncheck(productionId, todoId);
       this.planningItems.reopenForTodo(productionId, todoId);
@@ -104,6 +105,18 @@ export class ManageTodos {
 
     if (checked) this.productions.checkStep(productionId, stepId);
     else this.productions.uncheckStep(productionId, stepId);
+    if (checked) this.startIfIdea(productionId);
+  }
+
+  /**
+   * Cocher quoi que ce soit sur une vidéo à l'état d'idée la passe **en cours** : `idea`
+   * veut dire « notée, pas commencée », et une étape faite dit le contraire. Une vidéo en
+   * pause ou terminée ne bouge pas — le statut y dit autre chose que l'avancement.
+   */
+  private startIfIdea(productionId: string): void {
+    if (this.productions.findById(productionId)?.status === 'idea') {
+      this.productions.update(productionId, { status: 'in_progress' });
+    }
   }
 
   /** Ajoute une tâche ponctuelle et rouvre l'étape si elle était close. */

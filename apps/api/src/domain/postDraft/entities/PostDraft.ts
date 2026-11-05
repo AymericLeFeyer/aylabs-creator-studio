@@ -1,14 +1,15 @@
 import type { IsoDate } from '../../../shared/dates.ts';
 
 /**
- * Les six cases d'une publication, dans l'ordre où on les coche : la fabrication, puis la
- * mise en ligne sur chaque plateforme. Une liste **fermée** : en ajouter une se fait ici,
- * des deux côtés, sans migration (la colonne est un texte).
+ * Les six cases d'une publication, dans l'ordre où on les coche : la fabrication, la
+ * programmation dans Metricool, puis la mise en ligne sur chaque plateforme. Une liste
+ * **fermée** : en ajouter une se fait ici, des deux côtés, sans migration (la colonne est un
+ * texte, et une clé retirée — `sous_titres` — disparaît simplement à la lecture).
  */
 export const POST_DRAFT_STEPS = [
   'montage',
-  'sous_titres',
   'miniature',
+  'metricool',
   'youtube',
   'instagram',
   'tiktok',
@@ -35,6 +36,8 @@ export interface PostDraft {
   title: string;
   description: string;
   plannedDate: IsoDate | null;
+  /** La vidéo dont la publication est tirée (teaser, insert), `null` sinon. */
+  productionId: string | null;
   /** Les cases cochées, toujours dans l'ordre de `POST_DRAFT_STEPS`. */
   steps: PostDraftStep[];
   /** Instant UTC de l'archivage, `null` tant qu'elle est dans la liste. */
@@ -51,6 +54,28 @@ export interface CreatePostDraftInput {
   title: string;
   description?: string;
   plannedDate?: IsoDate | null;
+  productionId?: string | null;
+}
+
+/**
+ * Les publications qu'une vidéo terminée peut engendrer, dans l'ordre où elles sortent :
+ * le teaser le jour de la sortie, puis un insert par jour. Un insert non retenu ne laisse
+ * pas de trou — l'insert sponso sort à J+1 s'il n'y a pas d'insert produit.
+ */
+export const VIDEO_POST_KINDS = ['teaser', 'product', 'sponsorship'] as const;
+export type VideoPostKind = (typeof VIDEO_POST_KINDS)[number];
+
+export const VIDEO_POST_KIND_LABELS: Record<VideoPostKind, string> = {
+  teaser: 'Teaser vidéo',
+  product: 'Insert produit',
+  sponsorship: 'Insert sponso',
+};
+
+export interface PrepareVideoPostsInput {
+  productionId: string;
+  kinds: VideoPostKind[];
+  /** Le jour « pour tous » de la sortie, J du teaser. */
+  releaseDate: IsoDate;
 }
 
 export interface UpdatePostDraftInput extends Partial<CreatePostDraftInput> {

@@ -4,7 +4,7 @@ import {
   EXTERNAL_APP_ICONS,
   EXTERNAL_APP_SECTIONS,
 } from '../domain/externalApp/entities/ExternalApp.ts';
-import { POST_DRAFT_STEPS } from '../domain/postDraft/entities/PostDraft.ts';
+import { POST_DRAFT_STEPS, VIDEO_POST_KINDS } from '../domain/postDraft/entities/PostDraft.ts';
 import { GOAL_METRICS, type GoalMetricId } from '../domain/goal/entities/Goal.ts';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date attendue au format AAAA-MM-JJ');
@@ -538,6 +538,13 @@ export const createPostDraftSchema = z.object({
   // 2 200 caractères : la limite d'une légende Instagram.
   description: z.string().max(2200).optional(),
   plannedDate: isoDate.nullable().optional(),
+  productionId: z.string().min(1).nullable().optional(),
+});
+
+export const prepareVideoPostsSchema = z.object({
+  productionId: z.string().min(1),
+  kinds: z.array(z.enum(VIDEO_POST_KINDS)).min(1, 'Choisis au moins une publication'),
+  releaseDate: isoDate,
 });
 
 export const updatePostDraftSchema = createPostDraftSchema.partial().extend({
@@ -551,6 +558,7 @@ export const postDraftQuerySchema = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((value) => value === 'true'),
+  productionId: z.string().min(1).optional(),
 });
 
 /** `format` absent = les idées des deux carnets. */

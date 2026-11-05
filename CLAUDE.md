@@ -1,6 +1,6 @@
 # Aylabs Creator Studio
 
-> Dernière mise à jour : 2026-11-03
+> Dernière mise à jour : 2026-11-05
 
 Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagné — multi-chaînes, avec vue par chaîne et vue cumulée. **Et le pilotage de la production** : calendrier des vidéos, scripts, créneaux de travail, produits reçus et sponsos, dont l'argent rejoint la comptabilité sans ressaisie. **Et la boîte mail** (Admin → Mails), avec un assistant IA qui propose — jamais n'envoie. **Et un serveur MCP** (`/api/mcp`) pour piloter tout ça depuis un assistant.
 
@@ -407,6 +407,18 @@ réécrire la règle. Aucun montant dans le texte d'une alerte : le masquage de
 confidentialité ne s'applique pas à une phrase.
 
 `sortOrder` n'est plus qu'un départage à date de sortie égale (posé en fin de file à la création) : l'ordre de la file suit `plannedDate`.
+
+**À l'écran, la file se regroupe par statut** (`QUEUE_STATUS_RANK`, `ProductionQueueBlock`) :
+en cours, en pause, terminées (pas encore sorties), puis idées ; tri stable, donc la sortie
+visée départage à l'intérieur d'un groupe. L'API garde son tri par date (planning, MCP).
+
+**Cocher une étape ou une tâche sur une vidéo `idea` la passe `in_progress`**
+(`ManageTodos.startIfIdea`, appelé par `toggle` et `toggleStep` — donc aussi par
+l'approbation d'un créneau ou l'enregistrement d'une miniature). Une vidéo en pause ou
+terminée ne bouge pas.
+
+Sur la fiche, **une vidéo terminée a une seconde ligne de boutons** : Annonce Discord (si une
+sortie est rattachée), Préparer les publications, et le lien vers ses publications.
 
 `ProductionView` embarque tout ce qu'une carte de file affiche (chaîne, vidéo, étapes cochées, prochain créneau, produits et sponsos rattachés) en **une** requête. Elle porte les **listes** et non des compteurs : « 2 produits » ne dit pas lesquels, et c'est précisément ce qu'on veut savoir au survol. Compteurs et montants en attente se dérivent côté front (`partnerCounts`) — une seule source, rien à resynchroniser. Produits et sponsos sont chargés par deux requêtes pour tout le lot (`loadPartners`), comme les étapes cochées : les joindre à la ligne de production produirait un produit cartésien, trois produits face à deux sponsos donnant six lignes à dédupliquer.
 
@@ -821,18 +833,32 @@ Volontairement pauvre : un texte, et rien d'autre. Lui donner une chaîne, une d
 
 ### `postDraft` — les publications à venir
 
-`PostDraft { id, title, description, plannedDate, steps, archivedAt, createdAt, updatedAt }`
-— table `post_drafts` (migration 30, `steps` / `archived_at` en migration 31). Écran
+`PostDraft { id, title, description, plannedDate, productionId, steps, archivedAt, createdAt, updatedAt }`
+— table `post_drafts` (migration 30, `steps` / `archived_at` en migration 31, `production_id` en migration 62). Écran
 **Production → Publications** (`/publications`), **un couloir par jour**.
 
 Une publication **avant** sa parution : un titre, une description (la légende, 2 200
 caractères max — la limite d'Instagram, vérifiée par zod et par le compteur du
 formulaire), une date prévue **facultative**, et **six cases** (`POST_DRAFT_STEPS`, liste
-fermée dupliquée des deux côtés) : `montage`, `sous_titres`, `miniature`, puis `youtube`,
-`instagram`, `tiktok`. Pas de script, pas de créneaux : c'est un outil d'organisation, pas
+fermée dupliquée des deux côtés) : `montage`, `miniature`, `metricool`, puis `youtube`,
+`instagram`, `tiktok`. **Cocher Metricool coche aussi les trois plateformes** (`toggleStep`,
+front) ; le décocher ne décoche que lui. `sous_titres` a été retirée (2026-11-05) : elle
+disparaît à la lecture (`parseSteps` filtre sur la liste connue), et la migration 62 a coché
+`metricool` sur toutes les publications déjà archivées. Pas de script, pas de créneaux : c'est un outil d'organisation, pas
 une production. **Aucun lien avec `ig_media`** : ce qui est paru se lit dans Audience →
 Instagram.
 
+- **Publications tirées d'une vidéo** : sur une fiche `done`, « Préparer les publications »
+  (`PreparePostsDialog`) propose Teaser vidéo (coché d'office), Insert produit, Insert sponso.
+  `POST /api/post-drafts/prepare` crée un brouillon par type, `productionId` posé, titre
+  « <type> — <titre public> », **un jour chacun à partir de la sortie, sans trou**
+  (`planVideoPosts`, `domain/postDraft/services/videoPosts.ts` : teaser J, puis les inserts
+  retenus J+1, J+2 — l'insert sponso sort à J+1 sans insert produit). Sortie proposée :
+  `plannedDate ?? videoDate`, modifiable. Navigation : la fiche affiche « N publications »
+  (`usePostDraftsForProduction`, `?productionId=`, archivées comprises) qui ouvre
+  `/publications?publication=<id>` — l'écran s'ouvre sur cette ligne, encadrée ; une ligne
+  rattachée porte une icône clap vers `/production/<id>`. Supprimer la vidéo détache
+  (`ON DELETE SET NULL`).
 - `steps` est une colonne **texte** (clés séparées par des virgules), lue et écrite dans
   l'ordre canonique et filtrée sur la liste connue. Six valeurs fixes ne justifient pas une
   table de coches. `PATCH { steps }` **remplace** la liste entière.
@@ -2716,8 +2742,9 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/productions/:id/shot-angles`                  | Créer un angle **ponctuel**. Rend la liste complète, comme les tâches                                                                                                                                                                                    |
 | `PATCH`  | `/api/productions/:id/shot-angles/:angleId`         | Modifier un angle ponctuel                                                                                                                                                                                                                               |
 | `DELETE` | `/api/productions/:id/shot-angles/:angleId`         | Retirer un angle ponctuel                                                                                                                                                                                                                                |
-| `GET`    | `/api/post-drafts`                                  | La liste, date prévue la plus proche en tête. `?archived=true` : les archives, plus récentes d'abord                                                                                                                                                     |
+| `GET`    | `/api/post-drafts`                                  | La liste, date prévue la plus proche en tête. `?archived=true` : les archives, plus récentes d'abord. `?productionId=` : celles d'une vidéo, archivées comprises                                                                                                                                                     |
 | `GET`    | `/api/post-drafts/summary`                          | `{ lastPublishedAt, pending }` — la pastille « -X » du menu. **Déclaré avant `/:id`**                                                                                                                                                                    |
+| `POST`   | `/api/post-drafts/prepare`                          | `{ productionId, kinds: ('teaser'\|'product'\|'sponsorship')[], releaseDate }` → crée un brouillon par type, J, J+1… sans trou, rattachés à la vidéo. 404 si la vidéo n'existe pas. **Déclaré avant `/:id`** |
 | `POST`   | `/api/post-drafts`                                  | `{ title, description?, plannedDate? }`. `description` ≤ 2 200 caractères                                                                                                                                                                                |
 | `PATCH`  | `/api/post-drafts/:id`                              | Modifier. `steps` remplace toutes les cases, `archived: true/false` archive ou restaure, `plannedDate: null` efface la date                                                                                                                              |
 | `DELETE` | `/api/post-drafts/:id`                              | Supprimer                                                                                                                                                                                                                                                |
@@ -3554,7 +3581,7 @@ période**, et leur sous-titre le dit.
 | `useThumbnailSettings`, `useUpdateThumbnailSettings`, `useThumbnailAssets`, `useAddThumbnailAsset`, `useDeleteThumbnailAsset`, `useThumbnails(productionId, { saved? })`, `useGenerateThumbnail`, `useDeleteThumbnail`, `useSaveThumbnail`, `useUnsaveThumbnail` | `application/thumbnail/usecases/useThumbnails.ts` | Miniatures. Tout sous `['thumbnails']` ; seul `useSaveThumbnail` invalide aussi `PRODUCTION_ROOTS` (il coche l'étape) |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
-| `usePostDrafts(archived)`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
+| `usePostDrafts(archived)`, `usePostDraftsForProduction(id)`, `usePrepareVideoPosts`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
 | `useIntegrations`, `useUpdateIntegration`, `useCollectIntegration`, `useExportKeys`, `useCreateExportKey`, `useDeleteExportKey`, `useDomadooOverview`, `useAmazonOverview`                                                                                                                                                                          | `application/integration/usecases/useIntegrations.ts`   | Sources de l'export et clés d'accès. `useUpdateIntegration` sert aussi `ProviderCredentialsCard`, monté hors de Paramètres → API (Instagram, Affiliation, Discord). `useDomadooOverview` / `useAmazonOverview` alimentent `/affiliations` → Domadoo / Amazon                          |
 
 Toute mutation d'argent invalide `['analytics', 'revenues', 'expenses']` (`MONEY_ROOTS`, `application/queryKeys.ts`). Une mutation de catégorie invalide en plus `['categories']` : elle change les couleurs et les libellés de tous les graphiques.
@@ -3648,6 +3675,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 62** ajoute `post_drafts.production_id` (`ON DELETE SET NULL`) et coche `metricool` sur les publications archivées.
 - **Migration 61** ajoute `brand_contacts` (carnet de contacts des marques), rempli depuis les fils déjà rattachés et `brands.contact_email`.
 - **Migration 60** ajoute `thumbnails.saved_at` (miniature enregistrée sur sa vidéo).
 - **Migration 59** ajoute `thumbnail_settings` (ligne unique), `thumbnail_assets` et `thumbnails`.

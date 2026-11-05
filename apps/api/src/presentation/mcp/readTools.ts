@@ -94,6 +94,7 @@ const compactDraft = (draft: PostDraft) => {
     id: draft.id,
     title: draft.title,
     plannedDate: draft.plannedDate,
+    productionId: draft.productionId,
     readyToArchive: missing.length === 0,
     missing,
     checked: draft.steps,

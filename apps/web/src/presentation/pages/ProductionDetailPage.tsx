@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
+  CalendarDays,
   ExternalLink,
   Gift,
+  Megaphone,
   Handshake,
   Pencil,
   Plus,
@@ -60,6 +62,8 @@ import {
 } from '../components/forms/AttachExistingSelect.tsx';
 import { PublishDialog } from '../components/forms/PublishDialog.tsx';
 import { DiscordAnnounceDialog } from '../components/forms/DiscordAnnounceDialog.tsx';
+import { PreparePostsDialog } from '../components/forms/PreparePostsDialog.tsx';
+import { usePostDraftsForProduction } from '../../application/postDraft/usecases/usePostDrafts.ts';
 import { DiscordIcon } from '../components/icons/DiscordIcon.tsx';
 import { cn } from '../../shared/cn.ts';
 
@@ -72,6 +76,7 @@ export const ProductionDetailPage = () => {
   const initialTab = searchParams.get('onglet') ?? 'script';
 
   const { data: production, isLoading } = useProduction(id);
+  const { data: postDrafts = [] } = usePostDraftsForProduction(id);
   const { data: steps = [] } = useProductionSteps();
   // Même requête que l'onglet : le compteur de l'onglet ne coûte aucun appel de plus.
   const { data: notes = [] } = useProductionNotes(id);
@@ -89,6 +94,7 @@ export const ProductionDetailPage = () => {
   const [editOpen, setEditOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [announceOpen, setAnnounceOpen] = useState(false);
+  const [prepareOpen, setPrepareOpen] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
   const [sponsorshipOpen, setSponsorshipOpen] = useState(false);
   /** L'étape dont on regarde les tâches. Cliquer une pastille ne coche plus rien. */
@@ -210,22 +216,6 @@ export const ProductionDetailPage = () => {
               <Upload className="h-4 w-4" />
               {production.videoId ? 'Changer la sortie' : 'Marquer publiée'}
             </Button>
-            {production.videoId && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={production.discordAnnouncedAt !== null}
-                title={
-                  production.discordAnnouncedAt
-                    ? `Annoncée le ${formatDate(production.discordAnnouncedAt.slice(0, 10))}`
-                    : undefined
-                }
-                onClick={() => setAnnounceOpen(true)}
-              >
-                <DiscordIcon className="h-4 w-4" />
-                {production.discordAnnouncedAt ? 'Annoncée sur Discord' : 'Annonce Discord'}
-              </Button>
-            )}
             <Button
               variant="ghost"
               size="icon"
@@ -242,6 +232,42 @@ export const ProductionDetailPage = () => {
             </Button>
           </div>
         </div>
+
+        {/* La vie d'après la sortie, sur sa propre ligne : annoncer, puis relayer. */}
+        {(production.status === 'done' || postDrafts.length > 0) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {production.videoId && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={production.discordAnnouncedAt !== null}
+                title={
+                  production.discordAnnouncedAt
+                    ? `Annoncée le ${formatDate(production.discordAnnouncedAt.slice(0, 10))}`
+                    : undefined
+                }
+                onClick={() => setAnnounceOpen(true)}
+              >
+                <DiscordIcon className="h-4 w-4" />
+                {production.discordAnnouncedAt ? 'Annoncée sur Discord' : 'Annonce Discord'}
+              </Button>
+            )}
+            {production.status === 'done' && (
+              <Button variant="outline" size="sm" onClick={() => setPrepareOpen(true)}>
+                <Megaphone className="h-4 w-4" />
+                Préparer les publications
+              </Button>
+            )}
+            {postDrafts.length > 0 && (
+              <Button variant="ghost" size="sm" asChild>
+                <Link to={`/publications?publication=${postDrafts[0]!.id}`}>
+                  <CalendarDays className="h-4 w-4" />
+                  {postDrafts.length === 1 ? '1 publication' : `${postDrafts.length} publications`}
+                </Link>
+              </Button>
+            )}
+          </div>
+        )}
 
         {production.status === 'paused' && production.pausedReason && (
           <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
@@ -467,6 +493,12 @@ export const ProductionDetailPage = () => {
         open={announceOpen}
         onOpenChange={setAnnounceOpen}
         production={production}
+      />
+      <PreparePostsDialog
+        open={prepareOpen}
+        onOpenChange={setPrepareOpen}
+        production={production}
+        existingCount={postDrafts.length}
       />
       <Confetti active={celebrating} onDone={() => setCelebrating(false)} />
       <StepTodosDialog

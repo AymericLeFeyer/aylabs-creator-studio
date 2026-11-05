@@ -4,6 +4,7 @@ import type {
   PostDraft,
   PostDraftInput,
   PostDraftUpdate,
+  PrepareVideoPostsInput,
 } from '../../../domain/postDraft/entities/PostDraft.ts';
 import { queryKeys } from '../../queryKeys.ts';
 
@@ -38,6 +39,18 @@ export const usePostDraftSummary = () =>
     queryFn: () => postDraftApi.summary(),
     staleTime: 60_000,
   });
+
+/** Les publications tirées d'une vidéo, archivées comprises (sous `['postDrafts']`). */
+export const usePostDraftsForProduction = (productionId: string | undefined) =>
+  useQuery({
+    queryKey: ['postDrafts', 'production', productionId ?? ''],
+    queryFn: () => postDraftApi.forProduction(productionId!),
+    enabled: Boolean(productionId),
+    staleTime: 30_000,
+  });
+
+export const usePrepareVideoPosts = () =>
+  usePostDraftMutation((input: PrepareVideoPostsInput) => postDraftApi.prepare(input));
 
 export const useCreatePostDraft = () =>
   usePostDraftMutation((input: PostDraftInput) => postDraftApi.create(input));

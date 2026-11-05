@@ -12,6 +12,8 @@ export interface PostDraftRepository {
    * archivé au plus ancien.
    */
   findAll(options?: { archived?: boolean }): PostDraft[];
+  /** Toutes les publications tirées d'une vidéo, archivées comprises, par date prévue. */
+  findByProduction(productionId: string): PostDraft[];
   findById(id: string): PostDraft | null;
   summary(): PostDraftSummary;
   create(input: CreatePostDraftInput): PostDraft;

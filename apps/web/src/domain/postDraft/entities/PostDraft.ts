@@ -3,8 +3,8 @@
 /** Les six cases, dans l'ordre où on les coche. Liste fermée, identique côté API. */
 export const POST_DRAFT_STEPS = [
   'montage',
-  'sous_titres',
   'miniature',
+  'metricool',
   'youtube',
   'instagram',
   'tiktok',
@@ -14,8 +14,8 @@ export type PostDraftStep = (typeof POST_DRAFT_STEPS)[number];
 
 export const POST_DRAFT_STEP_LABELS: Record<PostDraftStep, string> = {
   montage: 'Montage',
-  sous_titres: 'Sous-titres',
   miniature: 'Miniature',
+  metricool: 'Metricool',
   youtube: 'YouTube',
   instagram: 'Insta',
   tiktok: 'TikTok',
@@ -32,6 +32,8 @@ export interface PostDraft {
   /** Jamais `null` : un champ vide est une chaîne vide. */
   description: string;
   plannedDate: string | null;
+  /** La vidéo dont la publication est tirée (teaser, insert), `null` sinon. */
+  productionId: string | null;
   /** Les cases cochées, dans l'ordre de `POST_DRAFT_STEPS`. */
   steps: PostDraftStep[];
   archivedAt: string | null;
@@ -64,14 +66,53 @@ export const CAPTION_MAX_LENGTH = 2200;
 export const isPostDraftComplete = (steps: readonly PostDraftStep[]): boolean =>
   POST_DRAFT_STEPS.every((step) => steps.includes(step));
 
-/** Coche ou décoche une case, en gardant l'ordre canonique. */
+/** Les plateformes que Metricool programme d'un coup. */
+const METRICOOL_PLATFORMS: readonly PostDraftStep[] = ['youtube', 'instagram', 'tiktok'];
+
+/**
+ * Coche ou décoche une case, en gardant l'ordre canonique.
+ *
+ * Cocher **Metricool** coche aussi YouTube, Insta et TikTok : c'est lui qui les programme
+ * tous les trois. Le décocher ne décoche que lui — les publications, elles, sont peut-être
+ * déjà parties.
+ */
 export const toggleStep = (
   steps: readonly PostDraftStep[],
   step: PostDraftStep,
-): PostDraftStep[] =>
-  steps.includes(step)
-    ? steps.filter((entry) => entry !== step)
-    : POST_DRAFT_STEPS.filter((entry) => entry === step || steps.includes(entry));
+): PostDraftStep[] => {
+  if (steps.includes(step)) return steps.filter((entry) => entry !== step);
+  const added = step === 'metricool' ? [step, ...METRICOOL_PLATFORMS] : [step];
+  return POST_DRAFT_STEPS.filter((entry) => added.includes(entry) || steps.includes(entry));
+};
+
+/**
+ * Les publications qu'une vidéo terminée peut engendrer, dans l'ordre où elles sortent :
+ * le teaser le jour de la sortie, puis un insert par jour, sans trou. Calcul côté API
+ * (`planVideoPosts`) ; l'écran n'en montre qu'un aperçu (`previewVideoPosts`).
+ */
+export const VIDEO_POST_KINDS = ['teaser', 'product', 'sponsorship'] as const;
+export type VideoPostKind = (typeof VIDEO_POST_KINDS)[number];
+
+export const VIDEO_POST_KIND_LABELS: Record<VideoPostKind, string> = {
+  teaser: 'Teaser vidéo',
+  product: 'Insert produit',
+  sponsorship: 'Insert sponso',
+};
+
+export interface PrepareVideoPostsInput {
+  productionId: string;
+  kinds: VideoPostKind[];
+  releaseDate: string;
+}
+
+/** Même règle que l'API : un jour par publication retenue, à partir de la sortie. */
+export const previewVideoPosts = (
+  kinds: readonly VideoPostKind[],
+): Array<{ kind: VideoPostKind; offset: number }> =>
+  VIDEO_POST_KINDS.filter((kind) => kinds.includes(kind)).map((kind, offset) => ({
+    kind,
+    offset,
+  }));
 
 /**
  * Nombre de jours entre deux dates sans heure — négatif si `date` est avant `today`.

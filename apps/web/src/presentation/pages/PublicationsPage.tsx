@@ -1,7 +1,16 @@
 import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
-import { Archive, ArchiveRestore, Check, Copy, GripVertical, Pencil, Plus } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  Clapperboard,
+  Copy,
+  GripVertical,
+  Pencil,
+  Plus,
+} from 'lucide-react';
 import {
   usePostDrafts,
   useUpdatePostDraft,
@@ -80,6 +89,9 @@ export const PublicationsPage = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const today = localToday();
+  /** `?publication=<id>` : venu d'une fiche de vidéo, on s'ouvre sur cette publication. */
+  const [searchParams] = useSearchParams();
+  const targetId = searchParams.get('publication');
 
   // Une même publication peut figurer dans les deux listes le temps d'un aller-retour
   // (archivée à l'instant) : la première occurrence l'emporte.
@@ -126,10 +138,19 @@ export const PublicationsPage = () => {
   const positioned = useRef(false);
   const loaded = activeLoaded && archivedLoaded;
   useLayoutEffect(() => {
-    if (positioned.current || !loaded || !scrollRef.current || !todayRef.current) return;
-    scrollRef.current.scrollTop = todayRef.current.offsetTop;
+    const container = scrollRef.current;
+    if (positioned.current || !loaded || !container || !todayRef.current) return;
+    const target = targetId
+      ? container.querySelector<HTMLElement>(`[data-publication-id="${CSS.escape(targetId)}"]`)
+      : null;
+    container.scrollTop = target
+      ? container.scrollTop +
+        target.getBoundingClientRect().top -
+        container.getBoundingClientRect().top -
+        48
+      : todayRef.current.offsetTop;
     positioned.current = true;
-  }, [loaded]);
+  }, [loaded, targetId]);
 
   // L'écriture est optimiste (`useUpdatePostDraft`) : la ligne change de couloir au lâcher.
   const { drag, start } = useDraftDrag(scrollRef, (id, day) => {
@@ -163,6 +184,7 @@ export const PublicationsPage = () => {
         update.mutate({ id: draft.id, input: { steps: toggleStep(draft.steps, step) } })
       }
       onArchive={(value) => update.mutate({ id: draft.id, input: { archived: value } })}
+      highlighted={draft.id === targetId}
       dragging={drag?.id === draft.id}
       onDragStart={draft.archivedAt ? undefined : (event) => start(event, draft)}
     />
@@ -327,6 +349,8 @@ interface DraftRowProps {
   onToggle: (step: PostDraftStep) => void;
   onArchive: (archived: boolean) => void;
   dragging: boolean;
+  /** Celle qu'on est venu voir depuis une fiche de vidéo. */
+  highlighted: boolean;
   /** Absent sur une publication archivée : elle ne se déplace pas. */
   onDragStart?: (event: PointerEvent) => void;
 }
@@ -342,6 +366,7 @@ const DraftRow = ({
   onEdit,
   onToggle,
   onArchive,
+  highlighted,
   dragging,
   onDragStart,
 }: DraftRowProps) => {
@@ -349,8 +374,10 @@ const DraftRow = ({
   const complete = isPostDraftComplete(draft.steps);
   return (
     <div
+      data-publication-id={draft.id}
       className={cn(
         'flex flex-col gap-2 px-4 py-2 lg:flex-row lg:items-center lg:gap-4',
+        highlighted && 'bg-primary/10 ring-2 ring-inset ring-primary',
         isArchived && 'opacity-55',
         dragging && 'opacity-40',
       )}
@@ -407,6 +434,13 @@ const DraftRow = ({
       </div>
 
       <div className="flex shrink-0 items-center gap-1 self-end lg:self-auto">
+        {draft.productionId && (
+          <Button variant="ghost" size="icon" className="h-8 w-8" title="Voir la vidéo" asChild>
+            <Link to={`/production/${draft.productionId}`}>
+              <Clapperboard className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"

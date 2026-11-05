@@ -2106,6 +2106,24 @@ const migrations: Migration[] = [
       ON CONFLICT (brand_id, email) DO UPDATE SET last_contact_at = excluded.last_contact_at;
     `,
   },
+  {
+    version: 62,
+    name: 'publications rattachees a une video, case metricool',
+    up: `
+      -- Le teaser et les inserts tires d une video gardent le lien vers elle, pour naviguer
+      -- de l une a l autre. Supprimer la video detache la publication.
+      ALTER TABLE post_drafts ADD COLUMN production_id TEXT
+        REFERENCES productions(id) ON DELETE SET NULL;
+      CREATE INDEX idx_post_drafts_production ON post_drafts(production_id);
+
+      -- Nouvelle case "metricool" : les publications deja archivees sont passees par la.
+      -- La case "sous_titres" disparait d elle-meme a la lecture (liste fermee cote code).
+      UPDATE post_drafts
+         SET steps = CASE WHEN steps = '' THEN 'metricool' ELSE steps || ',metricool' END
+       WHERE archived_at IS NOT NULL
+         AND instr(',' || steps || ',', ',metricool,') = 0;
+    `,
+  },
 ];
 
 /**

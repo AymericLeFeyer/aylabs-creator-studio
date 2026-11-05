@@ -472,6 +472,22 @@ export const IdeaBoxBlock = ({ format }: FormatProps) => {
  * rien à montrer. Ce n'est qu'un défaut — le chevron rouvre la carte (`exceptions`), et le
  * réglage global l'emporte dès qu'on le change.
  */
+/**
+ * Rang d'affichage dans la file : ce qu'on est en train de faire d'abord (en cours, puis en
+ * pause — commencée aussi, bloquée par un tiers), puis les vidéos terminées qui attendent
+ * leur sortie, puis les idées. Le tri est stable : à statut égal, l'ordre de l'API (sortie
+ * visée la plus proche) est gardé.
+ */
+const QUEUE_STATUS_RANK: Record<Production['status'], number> = {
+  in_progress: 0,
+  paused: 1,
+  done: 2,
+  idea: 3,
+};
+
+const sortQueueByStatus = (queue: Production[]): Production[] =>
+  [...queue].sort((a, b) => QUEUE_STATUS_RANK[a.status] - QUEUE_STATUS_RANK[b.status]);
+
 export const ProductionQueueBlock = ({ format }: FormatProps) => {
   const { data: overview } = useProductionOverview(format);
   const { data: steps = [] } = useProductionSteps();
@@ -505,7 +521,7 @@ export const ProductionQueueBlock = ({ format }: FormatProps) => {
     setExceptions(new Set());
   }
 
-  const queue = overview?.queue ?? [];
+  const queue = useMemo(() => sortQueueByStatus(overview?.queue ?? []), [overview]);
   const editing = queue.find((production) => production.id === editingId) ?? null;
 
   const isCompact = (production: Production) => {
@@ -523,7 +539,7 @@ export const ProductionQueueBlock = ({ format }: FormatProps) => {
 
   return (
     <div className="min-w-0 space-y-2.5">
-      {/* Triée par sortie visée côté API : l'échéance la plus proche en tête. */}
+      {/* Par statut, puis par sortie visée (ordre de l'API, conservé par le tri stable). */}
       {queue.map((production) => (
         <ProductionCard
           key={production.id}

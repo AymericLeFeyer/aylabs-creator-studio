@@ -17,6 +17,7 @@ interface PostDraftRow {
   title: string;
   description: string;
   planned_date: string | null;
+  production_id: string | null;
   steps: string;
   archived_at: string | null;
   created_at: string;
@@ -40,6 +41,7 @@ const toDomain = (row: PostDraftRow): PostDraft => ({
   title: row.title,
   description: row.description,
   plannedDate: row.planned_date,
+  productionId: row.production_id,
   steps: parseSteps(row.steps),
   archivedAt: row.archived_at,
   createdAt: row.created_at,
@@ -66,6 +68,16 @@ export class SqlitePostDraftRepository implements PostDraftRepository {
                 ORDER BY planned_date IS NULL, planned_date, created_at`,
           )
           .all()) as unknown as PostDraftRow[];
+    return rows.map(toDomain);
+  }
+
+  findByProduction(productionId: string): PostDraft[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM post_drafts WHERE production_id = ?
+            ORDER BY planned_date IS NULL, planned_date, created_at`,
+      )
+      .all(productionId) as unknown as PostDraftRow[];
     return rows.map(toDomain);
   }
 
@@ -98,10 +110,19 @@ export class SqlitePostDraftRepository implements PostDraftRepository {
     const now = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO post_drafts (id, title, description, planned_date, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO post_drafts
+           (id, title, description, planned_date, production_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, input.title, input.description ?? '', input.plannedDate ?? null, now, now);
+      .run(
+        id,
+        input.title,
+        input.description ?? '',
+        input.plannedDate ?? null,
+        input.productionId ?? null,
+        now,
+        now,
+      );
     return this.findById(id)!;
   }
 
@@ -121,8 +142,8 @@ export class SqlitePostDraftRepository implements PostDraftRepository {
     this.db
       .prepare(
         `UPDATE post_drafts
-            SET title = ?, description = ?, planned_date = ?, steps = ?, archived_at = ?,
-                updated_at = ?
+            SET title = ?, description = ?, planned_date = ?, production_id = ?, steps = ?,
+                archived_at = ?, updated_at = ?
           WHERE id = ?`,
       )
       .run(
@@ -130,6 +151,7 @@ export class SqlitePostDraftRepository implements PostDraftRepository {
         input.description ?? existing.description,
         // `null` efface la date, absent la conserve.
         input.plannedDate === undefined ? existing.plannedDate : input.plannedDate,
+        input.productionId === undefined ? existing.productionId : input.productionId,
         serializeSteps(input.steps ?? existing.steps),
         archivedAt,
         now,
