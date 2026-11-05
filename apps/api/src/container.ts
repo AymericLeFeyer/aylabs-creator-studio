@@ -79,6 +79,8 @@ import { SqliteExternalAppRepository } from './infrastructure/externalApp/reposi
 import { SqliteTikTokRepository } from './infrastructure/tiktok/repositories/SqliteTikTokRepository.ts';
 import { CollectTikTok } from './application/tiktok/usecases/CollectTikTok.ts';
 import { GetTikTokOverview } from './application/tiktok/usecases/GetTikTokOverview.ts';
+import { ManageTikTokConnection } from './application/tiktok/usecases/ManageTikTokConnection.ts';
+import { SqliteTikTokConnectionRepository } from './infrastructure/tiktok/repositories/SqliteTikTokConnectionRepository.ts';
 import { GetAchievements } from './application/achievement/usecases/GetAchievements.ts';
 import { ManageGoals } from './application/goal/usecases/ManageGoals.ts';
 import { SqliteGoalRepository } from './infrastructure/goal/repositories/SqliteGoalRepository.ts';
@@ -217,6 +219,8 @@ export interface Container {
   /** Écrit le relevé public TikTok dans les tables du module — appelé par `collectIntegrations`. */
   collectTikTok: CollectTikTok;
   getTikTokOverview: GetTikTokOverview;
+  /** Connexions OAuth TikTok, pour publier depuis Production → Publish. */
+  manageTikTokConnection: ManageTikTokConnection;
   getAchievements: GetAchievements;
   /** Les objectifs de l'écran Succès : CRUD, progression et prévision. */
   manageGoals: ManageGoals;
@@ -329,6 +333,15 @@ export const buildContainer = (config: Config): Container => {
 
   // Un seul coffre pour tous les secrets saisis à l'écran : même clé, même format.
   const secrets = new SecretBox(config.secretsKey);
+  const manageTikTokConnection = new ManageTikTokConnection(
+    new SqliteTikTokConnectionRepository(db),
+    secrets,
+    {
+      clientKey: config.tiktokClientKey,
+      clientSecret: config.tiktokClientSecret,
+      redirectUri: config.tiktokRedirectUri,
+    },
+  );
 
   const integrations = new SqliteIntegrationRepository(db);
   const domadooSnapshots = new SqliteDomadooSnapshotRepository(db);
@@ -418,10 +431,12 @@ export const buildContainer = (config: Config): Container => {
     brandContacts,
     manageBrandContacts,
     mailVideoNotes,
+    manageTikTokConnection,
     managePublishTests: new ManagePublishTests(
       new SqlitePublishRepository(db),
       channels,
       instagramAccounts,
+      manageTikTokConnection,
       (id) => manageThumbnails.image(id),
       new S3PublishStaging(config.publishS3),
       {

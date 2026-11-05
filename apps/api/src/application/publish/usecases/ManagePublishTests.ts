@@ -12,11 +12,14 @@ import type {
   PublishTargets,
   PublishUpload,
   PublishUploadView,
+  TikTokMode,
   YouTubePrivacy,
   YouTubeThumbnailSource,
 } from '../../../domain/publish/entities/Publish.ts';
 import type { PublishRepository } from '../../../domain/publish/repositories/PublishRepository.ts';
 import type { PublishStaging } from '../../../domain/publish/repositories/PublishStaging.ts';
+import type { TikTokPublishAccess } from '../../../domain/publish/repositories/TikTokPublishAccess.ts';
+import { TikTokApiClient } from '../../../infrastructure/tiktok/api/TikTokApiClient.ts';
 import { InstagramClient } from '../../../infrastructure/instagram/api/InstagramClient.ts';
 import { YouTubeUploadClient } from '../../../infrastructure/youtube/api/YouTubeUploadClient.ts';
 import { AppError, badRequest, conflict, notFound } from '../../../shared/errors.ts';
@@ -35,6 +38,12 @@ export const MAX_UPLOAD_BYTES = 2 * 1024 ** 3;
 /** Un Reel se traite en quelques dizaines de secondes ; au-delà de 10 min, on abandonne. */
 const IG_POLL_INTERVAL_MS = 5_000;
 const IG_POLL_MAX_MS = 10 * 60_000;
+
+/** TikTok traite une vidéo en quelques dizaines de secondes, comme Meta. */
+const TIKTOK_POLL_INTERVAL_MS = 5_000;
+const TIKTOK_POLL_MAX_MS = 10 * 60_000;
+/** Les seuls formats que TikTok accepte en envoi direct. */
+const TIKTOK_TYPES = ['video/mp4', 'video/quicktime', 'video/webm'];
 
 /** `media_publish` échoue parfois de façon passagère : deux nouveaux essais, espacés. */
 const PUBLISH_RETRIES = 2;
@@ -71,6 +80,15 @@ export interface PrepareInstagramInput {
   coverOffsetMs?: number;
 }
 
+export interface StartTikTokInput {
+  connectionId: string;
+  mode: TikTokMode;
+  /** Légende (publication directe seulement : un brouillon se légende dans l'app). */
+  title: string;
+  /** L'image de couverture, prise dans la vidéo (millisecondes). */
+  coverOffsetMs?: number;
+}
+
 /**
  * Les fichiers déposés pour Meta restent 24 h : Meta peut relire vidéo et couverture
  * jusqu'à la publication. Les liens signés valent autant, le nettoyage passe toutes les
@@ -104,6 +122,7 @@ export class ManagePublishTests {
   private readonly repository: PublishRepository;
   private readonly channels: ChannelRepository;
   private readonly instagramAccounts: InstagramAccountRepository;
+  private readonly tiktok: TikTokPublishAccess;
   private readonly config: PublishConfig;
   private readonly thumbnailImage: ThumbnailImageReader;
   private readonly staging: PublishStaging;
@@ -112,6 +131,7 @@ export class ManagePublishTests {
     repository: PublishRepository,
     channels: ChannelRepository,
     instagramAccounts: InstagramAccountRepository,
+    tiktok: TikTokPublishAccess,
     thumbnailImage: ThumbnailImageReader,
     staging: PublishStaging,
     config: PublishConfig,
@@ -119,6 +139,7 @@ export class ManagePublishTests {
     this.repository = repository;
     this.channels = channels;
     this.instagramAccounts = instagramAccounts;
+    this.tiktok = tiktok;
     this.thumbnailImage = thumbnailImage;
     this.staging = staging;
     this.config = config;
@@ -147,12 +168,7 @@ export class ManagePublishTests {
           color: account.color,
         })),
       stagingConfigured: this.staging.configured,
-      tiktok: {
-        available: false,
-        reason:
-          'Aucune connexion TikTok : il faut une app développeur TikTok, son OAuth et le ' +
-          'scope video.upload (la vidéo arrive en brouillon dans la boîte de réception).',
-      },
+      tiktok: { configured: this.tiktok.configured, accounts: this.tiktok.targets() },
     };
   }
 
@@ -475,5 +491,94 @@ export class ManagePublishTests {
         await sleep(PUBLISH_RETRY_DELAY_MS * (round + 1));
       }
     }
+  }
+
+  // --- TikTok --------------------------------------------------------------------
+
+  /**
+   * Envoie la vidéo à TikTok, **poussée par le serveur** (`FILE_UPLOAD`, morceau par
+   * morceau) : TikTok n'a pas besoin de la télécharger, donc pas de stockage éphémère.
+   *
+   * - `draft` (`video.upload`) : la vidéo arrive dans la boîte de réception de l'app, on
+   *   finit (légende, son, visibilité) et on publie depuis le téléphone. → `ready`.
+   * - `private` (`video.publish`) : publication directe en « Moi uniquement ». Tant que l'app
+   *   TikTok n'est pas auditée, TikTok ne l'accepte que sur un compte **privé**. → `published`.
+   */
+  async startTikTok(uploadId: string, input: StartTikTokInput): Promise<PublishAttempt> {
+    const upload = this.repository.findUpload(uploadId);
+    if (!upload) throw notFound('Vidéo');
+    if (!TIKTOK_TYPES.includes(upload.mimeType)) {
+      throw badRequest('TikTok n’accepte que le MP4, le MOV et le WebM');
+    }
+    const session = await this.tiktok.session(input.connectionId);
+    const client = new TikTokApiClient(session.accessToken);
+
+    // Vérifié avant d'envoyer quoi que ce soit : un refus ici ne coûte rien.
+    if (input.mode === 'private') {
+      const creator = await client.creatorInfo();
+      if (!creator.privacyLevelOptions.includes('SELF_ONLY')) {
+        throw badRequest(
+          `TikTok ne propose pas « Moi uniquement » pour ce compte (${creator.privacyLevelOptions.join(', ') || 'aucune option'})`,
+        );
+      }
+    }
+
+    const attempt = this.repository.createAttempt({
+      uploadId,
+      platform: 'tiktok',
+      targetId: input.connectionId,
+      targetName: session.name,
+      status: 'uploading',
+      privacy: input.mode,
+      title: input.mode === 'private' ? (input.title.split('\n')[0]?.slice(0, 100) ?? '') : '',
+    });
+
+    void (async () => {
+      const { publishId, uploadUrl } =
+        input.mode === 'draft'
+          ? await client.initInboxUpload(upload.sizeBytes)
+          : await client.initDirectPost(upload.sizeBytes, {
+              title: input.title,
+              privacyLevel: 'SELF_ONLY',
+              coverTimestampMs: input.coverOffsetMs,
+            });
+      this.repository.updateAttempt(attempt.id, { externalId: publishId });
+      await TikTokApiClient.uploadFile(
+        uploadUrl,
+        this.filePath(upload),
+        upload.sizeBytes,
+        upload.mimeType,
+      );
+      this.repository.updateAttempt(attempt.id, { status: 'processing' });
+
+      const deadline = Date.now() + TIKTOK_POLL_MAX_MS;
+      while (Date.now() < deadline) {
+        await sleep(TIKTOK_POLL_INTERVAL_MS);
+        const state = await client.status(publishId);
+        if (state.status === 'SEND_TO_USER_INBOX') {
+          this.repository.updateAttempt(attempt.id, { status: 'ready' });
+          return;
+        }
+        if (state.status === 'PUBLISH_COMPLETE') {
+          const postId = state.postIds[0];
+          const profile = session.username ? `https://www.tiktok.com/@${session.username}` : null;
+          this.repository.updateAttempt(attempt.id, {
+            status: 'published',
+            // Le lien d'une vidéo n'existe qu'une fois publique et modérée : en « Moi
+            // uniquement », on renvoie vers le profil.
+            url: postId && profile ? `${profile}/video/${postId}` : profile,
+          });
+          return;
+        }
+        if (state.status === 'FAILED') {
+          throw new Error(`TikTok a refusé la vidéo (${state.failReason ?? 'raison inconnue'})`);
+        }
+      }
+      throw new Error('TikTok n’a pas fini de traiter la vidéo en 10 minutes');
+    })().catch((error: unknown) => {
+      this.repository.updateAttempt(attempt.id, { status: 'failed', error: messageOf(error) });
+    });
+
+    return attempt;
   }
 }

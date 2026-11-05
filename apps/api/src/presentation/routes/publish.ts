@@ -27,6 +27,13 @@ const instagramSchema = z.object({
   coverOffsetMs: z.number().int().min(0).optional(),
 });
 
+const tiktokSchema = z.object({
+  connectionId: z.string().min(1),
+  mode: z.enum(['draft', 'private']).default('draft'),
+  title: z.string().max(2200).default(''),
+  coverOffsetMs: z.number().int().min(0).optional(),
+});
+
 const publishInstagramSchema = z.object({
   // Même garde que l'envoi d'un mail : une publication Instagram est publique.
   confirm: z.literal(true),
@@ -81,6 +88,10 @@ export const publishRouter = (container: Container): Router => {
     res
       .status(202)
       .json(publish.prepareInstagram(param(req, 'id'), instagramSchema.parse(req.body)));
+  });
+
+  router.post('/uploads/:id/tiktok', async (req, res) => {
+    res.status(202).json(await publish.startTikTok(param(req, 'id'), tiktokSchema.parse(req.body)));
   });
 
   router.post('/attempts/:id/youtube-thumbnail', async (req, res) => {

@@ -65,6 +65,14 @@ export interface Config {
    * Le stockage S3 éphémère de Production → Publish (Cloudflare R2 par défaut) : Meta
    * télécharge les Reels et leur couverture à une adresse publique, que le studio n'a pas.
    */
+  /**
+   * L'app développeur TikTok (Login Kit + Content Posting API), pour publier depuis
+   * Production → Publish. `tiktokRedirectUri` doit être déclarée telle quelle dans le
+   * portail TikTok (https obligatoire) ; par défaut `PUBLIC_URL/api/tiktok/oauth/callback`.
+   */
+  tiktokClientKey: string | null;
+  tiktokClientSecret: string | null;
+  tiktokRedirectUri: string | null;
   publishS3: {
     endpoint: string | null;
     bucket: string | null;
@@ -99,6 +107,13 @@ export const loadConfig = (): Config => ({
   anthropicApiKey: optional('ANTHROPIC_API_KEY'),
   openaiApiKey: optional('OPENAI_API_KEY'),
   mailCron: optional('MAIL_CRON') ?? '*/5 * * * *',
+  tiktokClientKey: optional('TIKTOK_CLIENT_KEY'),
+  tiktokClientSecret: optional('TIKTOK_CLIENT_SECRET'),
+  tiktokRedirectUri:
+    optional('TIKTOK_REDIRECT_URI') ??
+    (optional('PUBLIC_URL')
+      ? `${optional('PUBLIC_URL')!.replace(/\/+$/, '')}/api/tiktok/oauth/callback`
+      : null),
   publishS3: {
     endpoint: optional('PUBLISH_S3_ENDPOINT'),
     bucket: optional('PUBLISH_S3_BUCKET'),

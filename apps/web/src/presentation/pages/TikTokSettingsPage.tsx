@@ -10,6 +10,7 @@ import {
 } from '../../application/integration/usecases/useIntegrations.ts';
 import { formatCount } from '../../domain/tiktok/entities/TikTok.ts';
 import { ProviderCredentialsCard } from '../components/integration/ProviderCredentialsCard.tsx';
+import { TikTokConnectionCard } from '../components/tiktok/TikTokConnectionCard.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
@@ -49,6 +50,8 @@ export const TikTokSettingsPage = () => {
           développeur.
         </p>
       </div>
+
+      <TikTokConnectionCard />
 
       <ProviderCredentialsCard provider="tiktok" title="Profil public à suivre" />
 

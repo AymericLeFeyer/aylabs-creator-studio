@@ -3,6 +3,7 @@ import { publishApi } from '../../../infrastructure/publish/api/publishApi.ts';
 import {
   isAttemptRunning,
   type PrepareInstagramInput,
+  type StartTikTokInput,
   type StartYouTubeInput,
   type YouTubeThumbnailSource,
 } from '../../../domain/publish/entities/Publish.ts';
@@ -57,3 +58,8 @@ export const usePrepareInstagram = () =>
 
 export const usePublishInstagram = () =>
   usePublishMutation((attemptId: string) => publishApi.publishInstagram(attemptId));
+
+export const useSendToTikTok = () =>
+  usePublishMutation(({ uploadId, input }: { uploadId: string; input: StartTikTokInput }) =>
+    publishApi.tiktok(uploadId, input),
+  );

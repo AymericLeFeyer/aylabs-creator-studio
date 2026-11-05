@@ -95,3 +95,32 @@ export interface TikTokCollectResult {
 /** « 1 234 » — mêmes compteurs qu'Instagram, même lecture. */
 export const formatCount = (value: number | null): string =>
   value === null ? '—' : value.toLocaleString('fr-FR');
+
+/**
+ * Une connexion OAuth à un compte TikTok, pour **publier** depuis Production → Publish.
+ * Rien à voir avec `TikTokAccount` (le profil public suivi) : aucun jeton n'en sort.
+ */
+export interface TikTokConnection {
+  id: string;
+  openId: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  scopes: string[];
+  refreshExpiresAt: string;
+  /** `false` : `SECRETS_KEY` a changé, il faut reconnecter. */
+  readable: boolean;
+}
+
+export interface TikTokOAuthStatus {
+  /** `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` renseignées. */
+  configured: boolean;
+  /** L'adresse de retour à déclarer dans le portail TikTok. */
+  redirectUri: string | null;
+  secretsKeyConfigured: boolean;
+  scopes: string[];
+  connections: TikTokConnection[];
+}
+
+export const tiktokConnectionName = (connection: TikTokConnection): string =>
+  connection.username ? `@${connection.username}` : (connection.displayName ?? 'Compte TikTok');

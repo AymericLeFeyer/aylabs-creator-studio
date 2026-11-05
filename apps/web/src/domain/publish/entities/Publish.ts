@@ -35,6 +35,12 @@ export type PublishStatus =
 
 export type YouTubePrivacy = 'private' | 'unlisted' | 'public';
 
+/** TikTok : brouillon dans la boîte de l'app, ou publication directe en « Moi uniquement ». */
+export type TikTokMode = 'draft' | 'private';
+
+/** La colonne `privacy` : visibilité YouTube, ou mode TikTok. */
+export type PublishPrivacy = YouTubePrivacy | TikTokMode;
+
 export interface PublishAttempt {
   id: string;
   uploadId: string;
@@ -43,7 +49,7 @@ export interface PublishAttempt {
   targetId: string;
   targetName: string;
   status: PublishStatus;
-  privacy: YouTubePrivacy | null;
+  privacy: PublishPrivacy | null;
   title: string;
   /** Identifiant de la vidéo YouTube, du conteneur puis du média Instagram. */
   externalId: string | null;
@@ -74,8 +80,8 @@ export interface PublishTargets {
    * télécharge la vidéo à une adresse publique, que le studio n'a pas).
    */
   stagingConfigured: boolean;
-  /** TikTok n'a encore aucune connexion : la raison s'affiche à l'écran. */
-  tiktok: { available: false; reason: string };
+  /** Comptes TikTok connectés (Paramètres → TikTok) ; `configured` = app TikTok renseignée. */
+  tiktok: { configured: boolean; accounts: PublishTarget[] };
 }
 
 /** Adresse de la vidéo, pour l'aperçu à l'écran. */
@@ -97,11 +103,27 @@ export const PUBLISH_STATUS_LABELS: Record<PublishStatus, string> = {
   failed: 'Échec',
 };
 
-export const PRIVACY_LABELS: Record<YouTubePrivacy, string> = {
+export const PRIVACY_LABELS: Record<PublishPrivacy, string> = {
   private: 'Privée',
   unlisted: 'Non répertoriée',
   public: 'Publique',
+  draft: 'Brouillon',
 };
+
+/** Un brouillon TikTok « prêt » est arrivé dans l'app : il n'y a rien à cliquer ici. */
+export const attemptStatusLabel = (attempt: PublishAttempt): string =>
+  attempt.platform === 'tiktok' && attempt.status === 'ready'
+    ? 'Dans ta boîte TikTok'
+    : PUBLISH_STATUS_LABELS[attempt.status];
+
+export interface StartTikTokInput {
+  connectionId: string;
+  mode: TikTokMode;
+  /** Légende, en publication directe seulement. */
+  title: string;
+  /** Couverture : une image de la vidéo (ms). */
+  coverOffsetMs?: number;
+}
 
 /** Une miniature générée (Production → Miniatures), ou une image en base64 (JPEG). */
 export type YouTubeThumbnailSource = { thumbnailId: string } | { image: string };

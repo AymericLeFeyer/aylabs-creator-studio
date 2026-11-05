@@ -5,6 +5,7 @@ import type {
   PublishTargets,
   PublishUpload,
   PublishUploadView,
+  StartTikTokInput,
   StartYouTubeInput,
   YouTubeThumbnailSource,
 } from '../../../domain/publish/entities/Publish.ts';
@@ -27,6 +28,11 @@ export const publishApi = {
     }),
   prepareInstagram: (uploadId: string, input: PrepareInstagramInput) =>
     request<PublishAttempt>(`/api/publish/uploads/${uploadId}/instagram`, {
+      method: 'POST',
+      body: input,
+    }),
+  tiktok: (uploadId: string, input: StartTikTokInput) =>
+    request<PublishAttempt>(`/api/publish/uploads/${uploadId}/tiktok`, {
       method: 'POST',
       body: input,
     }),

@@ -7,7 +7,7 @@ import type {
   PublishUpload,
   PublishUploadView,
   UpdateAttemptInput,
-  YouTubePrivacy,
+  PublishPrivacy,
 } from '../../../domain/publish/entities/Publish.ts';
 import type { PublishRepository } from '../../../domain/publish/repositories/PublishRepository.ts';
 import { newId } from '../../../shared/id.ts';
@@ -29,7 +29,7 @@ interface AttemptRow {
   target_id: string;
   target_name: string;
   status: PublishStatus;
-  privacy: YouTubePrivacy | null;
+  privacy: PublishPrivacy | null;
   title: string;
   external_id: string | null;
   url: string | null;

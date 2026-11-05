@@ -1,8 +1,13 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import type { Container } from '../../container.ts';
 import type { Granularity } from '../../shared/dates.ts';
 import { tiktokQuerySchema, updateTikTokAccountSchema } from '../validation.ts';
 import { param } from '../helpers.ts';
+
+const completeSchema = z.object({ url: z.string().trim().min(1).max(4000) });
+
+const queryValue = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 
 /**
  * TikTok : le profil public suivi, ses relevés, et l'écran qui les lit.
@@ -36,6 +41,49 @@ export const tiktokRouter = (container: Container): Router => {
     res
       .status(200)
       .json(container.tiktokAccounts.findAll(true).find((a) => a.id === param(req, 'id')));
+  });
+
+  // --- Connexion OAuth (publication depuis Production → Publish) -------------------
+
+  router.get('/connections', (_req, res) => {
+    res.json(container.manageTikTokConnection.status());
+  });
+
+  router.post('/oauth/start', (_req, res) => {
+    res.json(container.manageTikTokConnection.start());
+  });
+
+  /**
+   * Le retour de TikTok, atteint **par le navigateur** (TikTok n'appelle jamais le studio).
+   * Toujours une redirection vers l'écran, avec le résultat dans l'adresse : une erreur
+   * en JSON brut laisserait l'utilisateur sur une page illisible.
+   */
+  router.get('/oauth/callback', async (req, res) => {
+    const target = new URLSearchParams({ onglet: 'tiktok' });
+    try {
+      await container.manageTikTokConnection.complete({
+        code: queryValue(req.query.code),
+        state: queryValue(req.query.state),
+        error: queryValue(req.query.error),
+        errorDescription: queryValue(req.query.error_description),
+      });
+      target.set('tiktok', 'connecte');
+    } catch (error) {
+      target.set('tiktok', 'erreur');
+      target.set('message', error instanceof Error ? error.message.slice(0, 300) : 'erreur');
+    }
+    res.redirect(302, `/parametres?${target.toString()}`);
+  });
+
+  /** Le repli : l'adresse de retour collée dans l'écran. */
+  router.post('/oauth/complete', async (req, res) => {
+    const { url } = completeSchema.parse(req.body);
+    res.json(await container.manageTikTokConnection.completeFromUrl(url));
+  });
+
+  router.delete('/connections/:id', (req, res) => {
+    container.manageTikTokConnection.disconnect(param(req, 'id'));
+    res.status(204).end();
   });
 
   /** Supprime le compte **et tout son historique** (cascade) : irrécupérable. */

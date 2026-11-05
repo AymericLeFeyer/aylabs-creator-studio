@@ -23,7 +23,8 @@ export type PublishPlatform = 'youtube' | 'instagram' | 'tiktok';
 /**
  * - `uploading` : le fichier part (YouTube) ou le conteneur se crée (Instagram) ;
  * - `processing` : la plateforme traite la vidéo (Instagram) ;
- * - `ready` : le conteneur Instagram est prêt, **rien n'est encore publié** ;
+ * - `ready` : le conteneur Instagram est prêt, **rien n'est encore publié** — ou le
+ *   brouillon TikTok est arrivé dans la boîte de réception de l'app ;
  * - `publishing` : la publication Instagram est demandée ;
  * - `published` : en ligne (en privé pour YouTube tant qu'on teste) ;
  * - `failed` : `error` dit pourquoi.
@@ -33,6 +34,15 @@ export type PublishStatus =
 
 export type YouTubePrivacy = 'private' | 'unlisted' | 'public';
 
+/**
+ * TikTok : `draft` = brouillon dans la boîte de réception de l'app (on finit dans l'app) ;
+ * `private` = publication directe en « Moi uniquement » (`SELF_ONLY`).
+ */
+export type TikTokMode = 'draft' | 'private';
+
+/** Ce que porte la colonne `privacy` : la visibilité YouTube, ou le mode TikTok. */
+export type PublishPrivacy = YouTubePrivacy | TikTokMode;
+
 export interface PublishAttempt {
   id: string;
   uploadId: string;
@@ -41,7 +51,7 @@ export interface PublishAttempt {
   targetId: string;
   targetName: string;
   status: PublishStatus;
-  privacy: YouTubePrivacy | null;
+  privacy: PublishPrivacy | null;
   title: string;
   /** Identifiant de la vidéo YouTube, du conteneur puis du média Instagram. */
   externalId: string | null;
@@ -78,8 +88,8 @@ export interface PublishTargets {
    * télécharge la vidéo à une adresse publique, que le studio n'a pas).
    */
   stagingConfigured: boolean;
-  /** TikTok n'a encore aucune connexion : la raison s'affiche à l'écran. */
-  tiktok: { available: false; reason: string };
+  /** Les comptes TikTok connectés (Paramètres → TikTok) ; `configured` = app TikTok renseignée. */
+  tiktok: { configured: boolean; accounts: PublishTarget[] };
 }
 
 export interface CreateAttemptInput {
@@ -88,7 +98,7 @@ export interface CreateAttemptInput {
   targetId: string;
   targetName: string;
   status: PublishStatus;
-  privacy?: YouTubePrivacy | null;
+  privacy?: PublishPrivacy | null;
   title?: string;
 }
 

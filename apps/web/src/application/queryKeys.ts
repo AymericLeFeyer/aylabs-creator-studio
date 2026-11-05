@@ -75,6 +75,7 @@ export const queryKeys = {
 
   tiktokOverview: (params: unknown) => ['tiktokOverview', params] as const,
   tiktokAccounts: (includeArchived: boolean) => ['tiktokAccounts', includeArchived] as const,
+  tiktokConnections: () => ['tiktokConnections'] as const,
 
   // Paramètres → API. Aucune autre racine ne les croise : ce que le studio publie à
   // l'extérieur ne change ni un chiffre, ni une alerte, ni une file.

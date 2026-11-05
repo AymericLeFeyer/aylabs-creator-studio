@@ -1632,6 +1632,30 @@ relisent la vue plutôt que de renvoyer l'entité qu'elles viennent d'écrire.
 
 ### `tiktok` — le profil public, en attendant mieux
 
+#### Connexion OAuth (publication, depuis le 2026-11-05)
+
+`TikTokConnection { id, openId, username, displayName, avatarUrl, scopes, encryptedAccessToken,
+encryptedRefreshToken, accessExpiresAt, refreshExpiresAt }` — table `tiktok_connections`
+(migration 65, `open_id` unique), **sans lien avec `tiktok_accounts`** (le profil public suivi).
+Une app développeur TikTok **sandbox** (Login Kit + Content Posting API, Direct Post activé,
+son compte en « Target users ») : `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, et la redirect URI
+`TIKTOK_REDIRECT_URI` (défaut `PUBLIC_URL/api/tiktok/oauth/callback`, https obligatoire, à
+déclarer **au caractère près** dans Login Kit). Scopes `user.info.basic,video.upload,video.publish`.
+
+- `ManageTikTokConnection` — `status()`, `start()` (`state` en mémoire, 15 min), `complete()`,
+  `completeFromUrl(url)`, `disconnect(id)`, et pour Publish `targets()` / `session(id)`. **Seul
+  endroit où les jetons sont déchiffrés** (`SecretBox`, contextes `tiktok:access:<openId>` /
+  `tiktok:refresh:<openId>`, 409 sans `SECRETS_KEY`).
+- **Le studio n'est pas exposé, et TikTok ne l'appelle jamais** : c'est le navigateur qui revient
+  sur la redirect URI. Si c'est le studio, `GET /api/tiktok/oauth/callback` termine et redirige
+  vers `/parametres?onglet=tiktok&tiktok=connecte|erreur&message=`. Sinon (adresse https d'un
+  autre site), on colle l'adresse de la page de retour dans `TikTokConnectionCard`
+  (`POST /oauth/complete`), dans les minutes qui suivent.
+- **Le refresh token tourne** : chaque rafraîchissement (5 min avant l'échéance du jeton
+  d'accès) en rend un neuf, écrit aussitôt ; il vit 180 jours, au-delà il faut reconnecter.
+- Écran : carte « Publier sur TikTok » en tête de Paramètres → TikTok (redirect URI à copier,
+  comptes connectés, Connecter dans un nouvel onglet, champ de repli).
+
 Ajouté le 2026-09-23, en même temps qu'Instagram migrait vers l'API Graph : TikTok
 n'ouvre la sienne (`Display API`, `Content Posting API`) qu'à des partenaires validés,
 hors de portée d'un studio individuel. Le module reprend donc **l'architecture de
@@ -2576,7 +2600,7 @@ les listes ne lisent jamais.
 
 **Temporaire** : valider l'envoi direct sur chaque plateforme, pas à pas, avant de le brancher
 sur Publications (rework à venir). **Aucune configuration propre** : il reprend les chaînes
-`oauth` à refresh token et les comptes Instagram à jeton (`targets()`).
+`oauth` à refresh token, les comptes Instagram à jeton et les connexions TikTok (`targets()`).
 
 `PublishUpload { id, fileName, mimeType, sizeBytes, publicToken, createdAt }` — table
 `publish_uploads` ; `PublishAttempt { id, uploadId, platform, targetId, targetName, status,
@@ -2626,7 +2650,18 @@ privacy, title, externalId, url, error }` — table `publish_attempts` (cascade)
   par `fetchMedia(…, 1)`) — sinon deux nouveaux essais espacés (`PUBLISH_RETRIES`, 5 puis
   10 s). Un échec final rend le conteneur `ready` (valable 24 h), `failed` s'il a expiré ;
   l'erreur affichée porte l'état du conteneur.
-- **TikTok** : pas branché (aucune connexion), la carte dit ce qu'il manque.
+- **TikTok** (`startTikTok`, `POST /uploads/:id/tiktok`) : vidéo **poussée par le serveur**
+  (`FILE_UPLOAD`, `TikTokApiClient.uploadFile` : un morceau jusqu'à 64 Mo, sinon 10 Mo, dans
+  l'ordre), donc ni stockage éphémère ni adresse publique. MP4 / MOV / WebM seulement. Deux
+  modes (`privacy` porte `draft` | `private`, colonne sans `CHECK`) : **`draft`**
+  (`video.upload`, inbox) → `ready`, affiché « Dans ta boîte TikTok », on finit dans l'app
+  (5 brouillons en attente max par 24 h) ; **`private`** (`video.publish`) → `creator_info`
+  d'abord (`SELF_ONLY` doit y figurer), puis publication directe en « Moi uniquement » avec
+  légende et `video_cover_timestamp_ms` → `published`. **App non auditée : la publication
+  directe n'est acceptée que sur un compte TikTok privé** (`unaudited_client_can_only_post_to_private_accounts`,
+  traduit). Les identifiants de publication sont des int64 : `TikTokApiClient.call` les
+  met entre guillemets avant `JSON.parse`. Les connexions viennent du domaine `tiktok`
+  (voir « Connexion OAuth »), par le port `TikTokPublishAccess`.
 
 ### `mcp` — le studio pour un assistant
 
@@ -2864,6 +2899,11 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `GET`    | `/api/tiktok/overview`                              | Séries et totaux du profil public. Params `from`, `to` (obligatoires), `granularity`, `accountIds`                                                                                                                                                       |
 | `GET`    | `/api/tiktok/accounts`                              | Comptes suivis. Param `includeArchived`                                                                                                                                                                                                                  |
 | `PATCH`  | `/api/tiktok/accounts/:id`                          | Modifier / archiver. `exportEnabled` pilote `/api/export` (Paramètres → API). Pas de `POST` : un compte se crée tout seul au premier relevé (`/api/integrations/tiktok/collect`)                                                                        |
+| `GET`    | `/api/tiktok/connections`                           | `TikTokOAuthStatus` : app configurée, redirect URI, comptes connectés. Aucun jeton n'en sort |
+| `POST`   | `/api/tiktok/oauth/start`                           | → `{ url }`, l'adresse de consentement TikTok. 400 sans app ni redirect URI, 409 sans `SECRETS_KEY` |
+| `GET`    | `/api/tiktok/oauth/callback`                        | Retour du **navigateur** depuis TikTok : échange le code, puis 302 vers `/parametres?onglet=tiktok&tiktok=connecte\|erreur` |
+| `POST`   | `/api/tiktok/oauth/complete`                        | `{ url }` : l'adresse de retour collée à la main (repli). 400 si `state` inconnu ou expiré |
+| `DELETE` | `/api/tiktok/connections/:id`                       | Déconnecter un compte |
 | `DELETE` | `/api/tiktok/accounts/:id`                          | Supprimer **et tout l'historique** (cascade). Irrécupérable                                                                                                                                                                                              |
 | `GET`    | `/api/comments`                                     | Commentaires archivés. Params `statuses` (CSV), `channelIds`, `from`/`to`, `search`, `limit` (500). Période **facultative** : on trie sa file en entier                                                                                                  |
 | `GET`    | `/api/comments/stats`                               | Compte par statut, pour les pastilles des onglets. Param `channelIds`. **Déclaré avant `/:id`**                                                                                                                                                          |
@@ -2939,6 +2979,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/publish/uploads/:id/youtube`                  | `{ channelId, title, description?, tags?, privacy?, thumbnail? }` → 202, envoi en arrière-plan. `thumbnail` : `{ thumbnailId }` ou `{ image }` (base64 JPEG/PNG ≤ 2 Mo, 400 sinon) |
 | `POST`   | `/api/publish/attempts/:id/youtube-thumbnail`       | `{ thumbnailId }` ou `{ image }` → pose ou remplace la miniature d'une vidéo envoyée. 409 si elle n'est pas en ligne |
 | `POST`   | `/api/publish/uploads/:id/instagram`                | `{ accountId, caption?, shareToFeed?, coverImage?, coverOffsetMs? }` → 202 : vidéo déposée au stockage S3, conteneur préparé **sans publier**. 400 sans `PUBLISH_S3_*` |
+| `POST`   | `/api/publish/uploads/:id/tiktok`                   | `{ connectionId, mode: 'draft' \| 'private', title?, coverOffsetMs? }` → 202, envoi en arrière-plan. 400 hors MP4/MOV/WebM, ou sans « Moi uniquement » proposé |
 | `POST`   | `/api/publish/attempts/:id/instagram-publish`       | `{ confirm: true }` → publie le conteneur prêt (**public**). 409 s'il n'est pas prêt |
 | `GET`    | `/api/publish/files/:token`                         | La vidéo, pour l'aperçu de l'écran. `Range` géré |
 
@@ -3634,7 +3675,7 @@ période**, et leur sous-titre le dit.
 | `useToggleTodoTask`, `usePlaceTodoTask`, `useUnplaceTodoTask`                                                                                                                                                                                                                                                                  | `application/planning/usecases/usePlanning.ts`          | Tâches Todo du planning. N'invalident **que** `planningBoard` : une coche Todo ne touche ni la pile ni la file                                      |
 | `usePlanningSettings`, `useUpdatePlanningSettings`, `useWorkHours`, `useReplaceWorkHours`, `useCalendars`                                                                                                                                                                                                                      | idem                                                    | Horaires de travail et connexion à l'agenda                                                                                                         |
 | `useInstagramOverview`, `useInstagramAccounts`, `useCollectInstagram`, `useCollectInstagramAccount`, `useCreateInstagramAccount`, `useUpdateInstagramAccount`, `useDeleteInstagramAccount`, `useRefreshInstagramToken`                                                                     | `application/instagram/usecases/useInstagram.ts`        | Comptes Instagram (API Graph), séries et collecte                                                                                                   |
-| `useTikTokOverview`, `useTikTokAccounts`, `useUpdateTikTokAccount`, `useDeleteTikTokAccount`                                                                                                                                                                                                                                   | `application/tiktok/usecases/useTikTok.ts`               | Profil public TikTok, séries — pas de création : le compte se crée tout seul au premier relevé (`useCollectIntegration('tiktok')`)                  |
+| `useTikTokOverview`, `useTikTokAccounts`, `useUpdateTikTokAccount`, `useDeleteTikTokAccount`, `useTikTokConnections`, `useStartTikTokOAuth`, `useCompleteTikTokOAuth`, `useDisconnectTikTok` (ces deux-là invalident `['tiktokConnections']` et `['publish', 'targets']`)                                                                                                                                                                                                                                   | `application/tiktok/usecases/useTikTok.ts`               | Profil public TikTok, séries — pas de création : le compte se crée tout seul au premier relevé (`useCollectIntegration('tiktok')`)                  |
 | `useSlotFromTimeEntry`                                                                                                                                                                                                                                                                                                         | idem                                                    | Transforme une session de travail en créneau approuvé                                                                                               |
 | `useScriptPresets`, `useShotAngles`, `useProductionShotAngles`, `useCreateScriptPreset`, `useUpdateScriptPreset`, `useDeleteScriptPreset`, `useReorderScriptPresets`, `useCreateShotAngle`, `useUpdateShotAngle`, `useDeleteShotAngle`, `useReorderShotAngles`, `useCreateProductionShotAngle`, `useDeleteProductionShotAngle` | `application/script/usecases/useScript.ts`              | Gabarits et angles de vue (cache 5 min)                                                                                                             |
 | `useComments`, `useCommentCounts`, `useSetCommentStatus`, `useCollectComments`                                                                                                                                                                                                                                                 | `application/comment/usecases/useComments.ts`           | Commentaires archivés, leur tri et leur collecte                                                                                                    |
@@ -3646,7 +3687,7 @@ période**, et leur sous-titre le dit.
 | `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useMailDraft`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail`, `useMailAddresses`, `useMailFolders` (au clic), `useMoveMailThread`, `useTrashMailThread`, `useMailDateCheck` (invalide `planningBoard` / `todoToday` quand des tâches sont créées) | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
 | `useAiScript`, `useAiTitles`, `useAiTags`, `useAiDescription` | `application/production/usecases/useProductionAi.ts` | L'IA d'une fiche. Mutations (chaque appel coûte) ; n'invalident que `['aiSettings']` |
 | `useThumbnailSettings`, `useUpdateThumbnailSettings`, `useThumbnailAssets`, `useAddThumbnailAsset`, `useDeleteThumbnailAsset`, `useThumbnails(productionId, { saved? })`, `useGenerateThumbnail`, `useDeleteThumbnail`, `useSaveThumbnail`, `useUnsaveThumbnail` | `application/thumbnail/usecases/useThumbnails.ts` | Miniatures. Tout sous `['thumbnails']` ; seul `useSaveThumbnail` invalide aussi `PRODUCTION_ROOTS` (il coche l'étape) |
-| `usePublishTargets`, `usePublishUploads` (relu toutes les 3 s tant qu'un envoi tourne), `useUploadPublishVideo`, `useDeletePublishVideo`, `useSendToYouTube`, `useSetYouTubeThumbnail`, `usePrepareInstagram`, `usePublishInstagram` | `application/publish/usecases/usePublish.ts` | Banc d'essai de publication. Tout sous `['publish']`, ne croise aucune racine |
+| `usePublishTargets`, `usePublishUploads` (relu toutes les 3 s tant qu'un envoi tourne), `useUploadPublishVideo`, `useDeletePublishVideo`, `useSendToYouTube`, `useSetYouTubeThumbnail`, `usePrepareInstagram`, `usePublishInstagram`, `useSendToTikTok` | `application/publish/usecases/usePublish.ts` | Banc d'essai de publication. Tout sous `['publish']`, ne croise aucune racine |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftsForProduction(id)`, `usePrepareVideoPosts`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
@@ -3743,6 +3784,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 65** ajoute `tiktok_connections` (connexions OAuth TikTok, jetons chiffrés).
 - **Migration 64** ajoute `publish_attempts.thumbnail_set_at`.
 - **Migration 63** ajoute `publish_uploads` et `publish_attempts` (banc d'essai Production → Publish).
 - **Migration 62** ajoute `post_drafts.production_id` (`ON DELETE SET NULL`) et coche `metricool` sur les publications archivées.
@@ -4721,7 +4763,7 @@ Images publiées sur GHCR par `.github/workflows/release.yml` :
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 
-Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, `PUBLIC_URL` (adresse publique, pour les liens rendus par le MCP), `OPENAI_API_KEY` (facultative, les miniatures), `PUBLISH_S3_ENDPOINT` / `PUBLISH_S3_BUCKET` / `PUBLISH_S3_ACCESS_KEY_ID` / `PUBLISH_S3_SECRET_ACCESS_KEY` / `PUBLISH_S3_REGION` (défaut `auto`) (facultatives : le stockage éphémère des Reels, bucket R2 **privé** avec une règle d'expiration d'un jour sur `publish/`), **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Facultatifs pour la boîte mail : `MAIL_PASSWORD`, `MAIL_CRON` (défaut `*/5 * * * *`) et `ANTHROPIC_API_KEY` (l'assistant), qui l'emportent sur Paramètres → Admin → Mails. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, `PUBLIC_URL` (adresse publique, pour les liens rendus par le MCP), `OPENAI_API_KEY` (facultative, les miniatures), `PUBLISH_S3_ENDPOINT` / `PUBLISH_S3_BUCKET` / `PUBLISH_S3_ACCESS_KEY_ID` / `PUBLISH_S3_SECRET_ACCESS_KEY` / `PUBLISH_S3_REGION` (défaut `auto`) (facultatives : le stockage éphémère des Reels, bucket R2 **privé** avec une règle d'expiration d'un jour sur `publish/`), `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` / `TIKTOK_REDIRECT_URI` (facultatives : l'app TikTok sandbox, publication depuis Production → Publish), **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Facultatifs pour la boîte mail : `MAIL_PASSWORD`, `MAIL_CRON` (défaut `*/5 * * * *`) et `ANTHROPIC_API_KEY` (l'assistant), qui l'emportent sur Paramètres → Admin → Mails. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
 
 Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer. Le MCP passe par le même chemin : `claude mcp add --transport http aylabs-studio https://<studio>/api/mcp --header "Authorization: Bearer acs_…"`.
 

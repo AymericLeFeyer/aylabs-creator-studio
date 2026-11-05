@@ -6,18 +6,20 @@ import {
   usePublishInstagram,
   usePublishTargets,
   usePublishUploads,
+  useSendToTikTok,
   useSendToYouTube,
   useSetYouTubeThumbnail,
   useUploadPublishVideo,
 } from '../../application/publish/usecases/usePublish.ts';
 import {
+  attemptStatusLabel,
   isAttemptRunning,
   PRIVACY_LABELS,
-  PUBLISH_STATUS_LABELS,
   publishFileUrl,
   type PublishAttempt,
   type PublishTarget,
   type PublishUploadView,
+  type TikTokMode,
   type YouTubePrivacy,
 } from '../../domain/publish/entities/Publish.ts';
 import { formatDateTime } from '../../shared/format.ts';
@@ -236,7 +238,12 @@ const UploadCard = ({
           stagingConfigured={targets?.stagingConfigured ?? false}
           player={player}
         />
-        <TikTokPanel reason={targets?.tiktok.reason ?? ''} />
+        <TikTokPanel
+          upload={upload}
+          accounts={targets?.tiktok.accounts ?? []}
+          configured={targets?.tiktok.configured ?? false}
+          player={player}
+        />
       </CardContent>
     </Card>
   );
@@ -263,7 +270,7 @@ const AttemptList = ({
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge variant={STATUS_VARIANTS[attempt.status]}>
               {isAttemptRunning(attempt) && <Loader2 className="mr-1 size-3 animate-spin" />}
-              {PUBLISH_STATUS_LABELS[attempt.status]}
+              {attemptStatusLabel(attempt)}
             </Badge>
             {attempt.privacy && <Badge variant="outline">{PRIVACY_LABELS[attempt.privacy]}</Badge>}
             <span className="text-muted-foreground">{attempt.targetName}</span>
@@ -560,16 +567,107 @@ const InstagramPanel = ({
   );
 };
 
-const TikTokPanel = ({ reason }: { reason: string }) => (
-  <div className="min-w-0 space-y-2">
-    <PanelTitle icon={<Music2 className="size-4" />} label="TikTok" />
-    <p className="text-xs text-muted-foreground">{reason || 'Pas encore branché.'}</p>
-    <p className="text-xs text-muted-foreground">
-      Couverture : TikTok ne prend qu’une image de la vidéo (video_cover_timestamp_ms), pas d’image
-      à part.
-    </p>
-  </div>
-);
+const TIKTOK_TYPES = ['video/mp4', 'video/quicktime', 'video/webm'];
+
+/**
+ * TikTok : la vidéo est poussée par le serveur, sans stockage éphémère. Deux modes : le
+ * brouillon arrive dans la boîte de réception de l'app (on finit sur le téléphone), la
+ * publication directe part en « Moi uniquement ».
+ */
+const TikTokPanel = ({
+  upload,
+  accounts,
+  configured,
+  player,
+}: {
+  upload: PublishUploadView;
+  accounts: PublishTarget[];
+  configured: boolean;
+  player: VideoPlayer;
+}) => {
+  const send = useSendToTikTok();
+  const [connectionId, setConnectionId] = useState('');
+  const [mode, setMode] = useState<TikTokMode>('draft');
+  const [title, setTitle] = useState('');
+  const [coverMs, setCoverMs] = useState<number | null>(null);
+  const selected = connectionId || accounts[0]?.id || '';
+  const attempts = upload.attempts.filter((a) => a.platform === 'tiktok');
+  const supported = TIKTOK_TYPES.includes(upload.mimeType);
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!selected) return;
+    send.mutate({
+      uploadId: upload.id,
+      input: {
+        connectionId: selected,
+        mode,
+        title: mode === 'private' ? title : '',
+        coverOffsetMs: mode === 'private' ? (coverMs ?? undefined) : undefined,
+      },
+    });
+  };
+
+  return (
+    <form onSubmit={submit} className="min-w-0 space-y-2">
+      <PanelTitle icon={<Music2 className="size-4" />} label="TikTok" />
+      {!configured ? (
+        <p className="text-xs text-muted-foreground">
+          App TikTok absente : renseigne TIKTOK_CLIENT_KEY et TIKTOK_CLIENT_SECRET, puis connecte un
+          compte dans Paramètres → TikTok.
+        </p>
+      ) : accounts.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Aucun compte connecté : connecte-en un dans Paramètres → TikTok.
+        </p>
+      ) : !supported ? (
+        <p className="text-xs text-muted-foreground">
+          TikTok n’accepte que le MP4, le MOV et le WebM.
+        </p>
+      ) : (
+        <>
+          <TargetSelect
+            targets={accounts}
+            value={selected}
+            onChange={setConnectionId}
+            placeholder="Compte"
+          />
+          <Select value={mode} onValueChange={(value) => setMode(value as TikTokMode)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="draft">Brouillon dans l’app</SelectItem>
+              <SelectItem value="private">Publier en « Moi uniquement »</SelectItem>
+            </SelectContent>
+          </Select>
+          {mode === 'private' && (
+            <>
+              <Textarea
+                value={title}
+                maxLength={2200}
+                rows={4}
+                placeholder="Légende (hashtags compris)"
+                onChange={(event) => setTitle(event.target.value)}
+              />
+              <CoverFramePicker player={player} value={coverMs} onChange={setCoverMs} />
+            </>
+          )}
+          <Button type="submit" size="sm" disabled={send.isPending}>
+            {mode === 'draft' ? 'Envoyer en brouillon' : 'Publier (moi uniquement)'}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            {mode === 'draft'
+              ? 'La vidéo arrive dans ta boîte de réception TikTok : légende, son et visibilité se règlent dans l’app. 5 brouillons en attente maximum par 24 h.'
+              : 'Visible par toi seul. Tant que l’app TikTok n’est pas validée, TikTok n’accepte la publication directe que sur un compte privé.'}
+          </p>
+          {send.error && <p className="text-xs text-[var(--negative)]">{send.error.message}</p>}
+        </>
+      )}
+      <AttemptList attempts={attempts} />
+    </form>
+  );
+};
 
 const formatSeconds = (ms: number): string =>
   `${(ms / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s`;

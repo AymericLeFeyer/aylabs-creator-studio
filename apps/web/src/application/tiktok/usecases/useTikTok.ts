@@ -47,3 +47,34 @@ export const useUpdateTikTokAccount = () =>
   );
 
 export const useDeleteTikTokAccount = () => useTikTokMutation((id: string) => tiktokApi.remove(id));
+
+/**
+ * Les connexions OAuth (publication). Une écriture relit aussi les cibles de Production →
+ * Publish (`['publish', 'targets']`), qui listent les comptes connectés — rien d'autre.
+ */
+const useConnectionMutation = <TVariables, TData>(
+  mutationFn: (variables: TVariables) => Promise<TData>,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tiktokConnections() });
+      void queryClient.invalidateQueries({ queryKey: ['publish', 'targets'] });
+    },
+  });
+};
+
+export const useTikTokConnections = () =>
+  useQuery({
+    queryKey: queryKeys.tiktokConnections(),
+    queryFn: () => tiktokApi.connections(),
+  });
+
+export const useStartTikTokOAuth = () => useMutation({ mutationFn: () => tiktokApi.startOAuth() });
+
+export const useCompleteTikTokOAuth = () =>
+  useConnectionMutation((url: string) => tiktokApi.completeOAuth(url));
+
+export const useDisconnectTikTok = () =>
+  useConnectionMutation((id: string) => tiktokApi.disconnect(id));

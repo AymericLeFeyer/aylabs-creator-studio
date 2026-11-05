@@ -2166,6 +2166,29 @@ const migrations: Migration[] = [
       ALTER TABLE publish_attempts ADD COLUMN thumbnail_set_at TEXT;
     `,
   },
+  {
+    version: 65,
+    name: 'connexions OAuth TikTok',
+    up: `
+      -- Une ligne par compte TikTok connecte (Login Kit), pour publier depuis
+      -- Production -> Publish. Jetons chiffres (SecretBox). Sans lien avec tiktok_accounts,
+      -- qui suit le profil public sans jeton.
+      CREATE TABLE tiktok_connections (
+        id                 TEXT PRIMARY KEY,
+        open_id            TEXT NOT NULL UNIQUE,
+        username           TEXT,
+        display_name       TEXT,
+        avatar_url         TEXT,
+        scopes             TEXT NOT NULL DEFAULT '',
+        access_token       TEXT NOT NULL,
+        refresh_token      TEXT NOT NULL,
+        access_expires_at  TEXT NOT NULL,
+        refresh_expires_at TEXT NOT NULL,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 /**
