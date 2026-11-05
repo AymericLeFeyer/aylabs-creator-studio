@@ -2609,16 +2609,23 @@ privacy, title, externalId, url, error }` — table `publish_attempts` (cascade)
   (`upload_type=resumable`) n'est pas ouvert via Instagram Login (« The parameter video_url
   is required », vérifié). D'où le **stockage éphémère S3** (`PublishStaging`,
   `S3PublishStaging`, Cloudflare R2 par défaut, `PUBLISH_S3_*`) : la vidéo y est déposée
-  (`publish/<attemptId>/…`), Meta reçoit un **lien signé d'une heure**, et les fichiers sont
-  **effacés** dès que le conteneur est prêt ou a échoué (`finally`). Bucket privé ; une règle
-  de cycle de vie d'un jour ramasse ce qu'un redémarrage aurait laissé. Le studio n'y fait
-  que des connexions sortantes. `/api/publish/files/<publicToken>` ne sert que l'aperçu.
+  (`publish/<attemptId>/…`, `stagingKeys`), Meta reçoit un **lien signé de 24 h**, et les
+  fichiers **restent 24 h**, succès ou échec : Meta peut relire vidéo et couverture au moment
+  de `media_publish`, et les effacer dès le conteneur prêt est le suspect n° 1 d'un échec à
+  la publication. Le studio les efface lui-même ensuite (`removeOlderThan('publish/', 24 h)`,
+  au démarrage puis toutes les heures, `ListObjectsV2` + `DeleteObject`, échec avalé). Bucket
+  privé ; une règle de cycle de vie d'un jour reste un bon filet. Le studio n'y fait que des
+  connexions sortantes. `/api/publish/files/<publicToken>` ne sert que l'aperçu.
 - **Instagram** (`InstagramClient.createReelContainer` / `containerStatus` /
   `publishContainer`, appels **versionnés** `v23.0`) : conteneur `REELS` + `video_url`, puis
   attente de `FINISHED`. **L'API n'a pas de mode privé** : « Préparer » s'arrête au conteneur
   prêt (`ready`, rien de visible) ; « Publier (public) » demande une confirmation et
-  `confirm: true`. Permission `instagram_business_content_publish`. Un échec de publication
-  rend le conteneur `ready` (valable 24 h).
+  `confirm: true`. Permission `instagram_business_content_publish`. **`media_publish`
+  répond parfois « An unexpected error has occurred »** (vu en vrai) : après chaque erreur,
+  l'état du conteneur est relu — `PUBLISHED` vaut succès (média retrouvé en tête du compte
+  par `fetchMedia(…, 1)`) — sinon deux nouveaux essais espacés (`PUBLISH_RETRIES`, 5 puis
+  10 s). Un échec final rend le conteneur `ready` (valable 24 h), `failed` s'il a expiré ;
+  l'erreur affichée porte l'état du conteneur.
 - **TikTok** : pas branché (aucune connexion), la carte dit ce qu'il manque.
 
 ### `mcp` — le studio pour un assistant

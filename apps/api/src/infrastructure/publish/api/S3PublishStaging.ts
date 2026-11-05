@@ -2,6 +2,7 @@ import type { Readable } from 'node:stream';
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -82,12 +83,31 @@ export class S3PublishStaging implements PublishStaging {
     });
   }
 
-  async remove(key: string): Promise<void> {
-    if (!this.client) return;
+  async removeOlderThan(prefix: string, ageMs: number): Promise<number> {
+    if (!this.client) return 0;
+    const limit = Date.now() - ageMs;
+    let removed = 0;
+    let token: string | undefined;
     try {
-      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+      do {
+        const page = await this.client.send(
+          new ListObjectsV2Command({
+            Bucket: this.bucket,
+            Prefix: prefix,
+            ContinuationToken: token,
+          }),
+        );
+        for (const object of page.Contents ?? []) {
+          if (!object.Key || !object.LastModified) continue;
+          if (object.LastModified.getTime() > limit) continue;
+          await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: object.Key }));
+          removed += 1;
+        }
+        token = page.IsTruncated ? page.NextContinuationToken : undefined;
+      } while (token);
     } catch (error) {
-      console.warn(`[publish] fichier temporaire non supprimé (${key}) :`, error);
+      console.warn('[publish] nettoyage du stockage éphémère impossible :', error);
     }
+    return removed;
   }
 }

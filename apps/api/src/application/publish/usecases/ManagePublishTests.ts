@@ -36,6 +36,10 @@ export const MAX_UPLOAD_BYTES = 2 * 1024 ** 3;
 const IG_POLL_INTERVAL_MS = 5_000;
 const IG_POLL_MAX_MS = 10 * 60_000;
 
+/** `media_publish` échoue parfois de façon passagère : deux nouveaux essais, espacés. */
+const PUBLISH_RETRIES = 2;
+const PUBLISH_RETRY_DELAY_MS = 5_000;
+
 const EXTENSIONS: Record<string, string> = {
   'video/mp4': 'mp4',
   'video/quicktime': 'mov',
@@ -67,8 +71,14 @@ export interface PrepareInstagramInput {
   coverOffsetMs?: number;
 }
 
-/** Durée des liens signés donnés à Meta : le téléchargement se fait dans la minute. */
-const STAGING_LINK_SECONDS = 60 * 60;
+/**
+ * Les fichiers déposés pour Meta restent 24 h : Meta peut relire vidéo et couverture
+ * jusqu'à la publication. Les liens signés valent autant, le nettoyage passe toutes les
+ * heures et efface ce qui est plus vieux.
+ */
+const STAGING_TTL_MS = 24 * 60 * 60_000;
+const STAGING_LINK_SECONDS = STAGING_TTL_MS / 1000;
+const STAGING_SWEEP_MS = 60 * 60_000;
 
 /** Couverture Instagram : JPEG, 8 Mo maximum. */
 const MAX_COVER_BYTES = 8 * 1024 ** 2;
@@ -115,6 +125,11 @@ export class ManagePublishTests {
     mkdirSync(config.storageDir, { recursive: true });
     // Les envois vivent en mémoire : un redémarrage les a coupés net.
     repository.failInterrupted('Interrompu par un redémarrage du serveur');
+    if (staging.configured) {
+      const sweep = () => void staging.removeOlderThan('publish/', STAGING_TTL_MS);
+      sweep();
+      setInterval(sweep, STAGING_SWEEP_MS).unref();
+    }
   }
 
   targets(): PublishTargets {
@@ -353,54 +368,43 @@ export class ManagePublishTests {
     const client = new InstagramClient(token);
     const igUserId = account.igUserId;
     const filePath = this.filePath(upload);
-    // Une clé par envoi : deux essais de la même vidéo ne se marchent pas dessus.
-    const videoKey = `publish/${attempt.id}/${filePath.split(/[\\/]/).pop()}`;
-    const coverKey = `publish/${attempt.id}/cover.jpg`;
+    const { videoKey, coverKey } = this.stagingKeys(attempt.id, upload);
 
+    // Les fichiers déposés restent, succès ou échec : le nettoyage les efface au bout de 24 h.
     void (async () => {
-      try {
-        await this.staging.put(
-          videoKey,
-          createReadStream(filePath),
-          upload.sizeBytes,
-          upload.mimeType,
-        );
-        if (cover) await this.staging.put(coverKey, cover.data, cover.data.length, cover.mimeType);
+      await this.staging.put(
+        videoKey,
+        createReadStream(filePath),
+        upload.sizeBytes,
+        upload.mimeType,
+      );
+      if (cover) await this.staging.put(coverKey, cover.data, cover.data.length, cover.mimeType);
 
-        const containerId = await client.createReelContainer(igUserId, {
-          videoUrl: await this.staging.signedUrl(videoKey, STAGING_LINK_SECONDS),
-          coverUrl: cover
-            ? await this.staging.signedUrl(coverKey, STAGING_LINK_SECONDS)
-            : undefined,
-          coverOffsetMs: input.coverOffsetMs,
-          caption: input.caption,
-          shareToFeed: input.shareToFeed,
-        });
-        this.repository.updateAttempt(attempt.id, {
-          status: 'processing',
-          externalId: containerId,
-        });
+      const containerId = await client.createReelContainer(igUserId, {
+        videoUrl: await this.staging.signedUrl(videoKey, STAGING_LINK_SECONDS),
+        coverUrl: cover ? await this.staging.signedUrl(coverKey, STAGING_LINK_SECONDS) : undefined,
+        coverOffsetMs: input.coverOffsetMs,
+        caption: input.caption,
+        shareToFeed: input.shareToFeed,
+      });
+      this.repository.updateAttempt(attempt.id, {
+        status: 'processing',
+        externalId: containerId,
+      });
 
-        const deadline = Date.now() + IG_POLL_MAX_MS;
-        while (Date.now() < deadline) {
-          await sleep(IG_POLL_INTERVAL_MS);
-          const { statusCode, status } = await client.containerStatus(containerId);
-          if (statusCode === 'FINISHED') {
-            this.repository.updateAttempt(attempt.id, { status: 'ready' });
-            return;
-          }
-          if (statusCode === 'ERROR' || statusCode === 'EXPIRED') {
-            throw new Error(
-              `Meta a refusé la vidéo (${statusCode}${status ? ` : ${status}` : ''})`,
-            );
-          }
+      const deadline = Date.now() + IG_POLL_MAX_MS;
+      while (Date.now() < deadline) {
+        await sleep(IG_POLL_INTERVAL_MS);
+        const { statusCode, status } = await client.containerStatus(containerId);
+        if (statusCode === 'FINISHED') {
+          this.repository.updateAttempt(attempt.id, { status: 'ready' });
+          return;
         }
-        throw new Error('Meta n’a pas fini de traiter la vidéo en 10 minutes');
-      } finally {
-        // Meta a sa copie (ou a renoncé) : rien ne doit rester exposé.
-        await this.staging.remove(videoKey);
-        if (cover) await this.staging.remove(coverKey);
+        if (statusCode === 'ERROR' || statusCode === 'EXPIRED') {
+          throw new Error(`Meta a refusé la vidéo (${statusCode}${status ? ` : ${status}` : ''})`);
+        }
       }
+      throw new Error('Meta n’a pas fini de traiter la vidéo en 10 minutes');
     })().catch((error: unknown) => {
       this.repository.updateAttempt(attempt.id, { status: 'failed', error: messageOf(error) });
     });
@@ -408,11 +412,32 @@ export class ManagePublishTests {
     return attempt;
   }
 
-  /** Publie un conteneur prêt. **Public** : Instagram n'a pas de mode privé. */
+  /** Une clé par envoi : deux essais de la même vidéo ne se marchent pas dessus. */
+  private stagingKeys(
+    attemptId: string,
+    upload: Pick<PublishUpload, 'id' | 'mimeType'>,
+  ): { videoKey: string; coverKey: string } {
+    const fileName = this.filePath(upload).split(/[\\/]/).pop() ?? upload.id;
+    return {
+      videoKey: `publish/${attemptId}/${fileName}`,
+      coverKey: `publish/${attemptId}/cover.jpg`,
+    };
+  }
+
+  /**
+   * Publie un conteneur prêt. **Public** : Instagram n'a pas de mode privé.
+   *
+   * `media_publish` répond parfois « An unexpected error has occurred » alors que le Reel
+   * est bel et bien publié, ou parce que le conteneur à peine prêt n'est pas encore
+   * publiable. Après chaque erreur, on relit donc l'état du conteneur : `PUBLISHED` vaut
+   * succès (le média est retrouvé en tête du compte) ; sinon on réessaie, deux fois, en
+   * espaçant. Les fichiers du stockage éphémère restent 24 h, publication faite ou non.
+   */
   async publishInstagram(attemptId: string): Promise<PublishAttempt> {
     const attempt = this.repository.findAttempt(attemptId);
     if (!attempt || attempt.platform !== 'instagram') throw notFound('Envoi Instagram');
-    if (attempt.status !== 'ready' || !attempt.externalId) {
+    const containerId = attempt.externalId;
+    if (attempt.status !== 'ready' || !containerId) {
       throw conflict('Le conteneur n’est pas prêt (ou a déjà été publié)');
     }
     const account = this.instagramAccounts.findById(attempt.targetId);
@@ -420,18 +445,35 @@ export class ManagePublishTests {
 
     this.repository.updateAttempt(attemptId, { status: 'publishing', error: null });
     const client = new InstagramClient(account.accessToken);
-    try {
-      const mediaId = await client.publishContainer(account.igUserId, attempt.externalId);
-      const permalink = await client.mediaPermalink(mediaId).catch(() => null);
+    const done = async (mediaId: string, permalink: string | null) => {
       return this.repository.updateAttempt(attemptId, {
         status: 'published',
         externalId: mediaId,
         url: permalink,
+        error: null,
       });
-    } catch (error) {
-      // Le conteneur reste valable 24 h : on le rend « prêt » pour pouvoir réessayer.
-      this.repository.updateAttempt(attemptId, { status: 'ready', error: messageOf(error) });
-      throw error;
+    };
+
+    for (let round = 0; ; round += 1) {
+      try {
+        const mediaId = await client.publishContainer(account.igUserId, containerId);
+        return await done(mediaId, await client.mediaPermalink(mediaId).catch(() => null));
+      } catch (error) {
+        const state = await client.containerStatus(containerId).catch(() => null);
+        if (state?.statusCode === 'PUBLISHED') {
+          const [latest] = await client.fetchMedia(account.igUserId, 1).catch(() => []);
+          return await done(latest?.id ?? containerId, latest?.permalink ?? null);
+        }
+        if (round >= PUBLISH_RETRIES || state?.statusCode === 'EXPIRED') {
+          // Le conteneur reste valable 24 h : on le rend « prêt » pour pouvoir réessayer.
+          this.repository.updateAttempt(attemptId, {
+            status: state?.statusCode === 'EXPIRED' ? 'failed' : 'ready',
+            error: `${messageOf(error)}${state ? ` (conteneur : ${state.statusCode})` : ''}`,
+          });
+          throw error;
+        }
+        await sleep(PUBLISH_RETRY_DELAY_MS * (round + 1));
+      }
     }
   }
 }
