@@ -13,6 +13,7 @@ import {
   MessagesSquare,
   Music2,
   ScrollText,
+  Send,
   Wallet,
   Youtube,
   type LucideIcon,
@@ -93,6 +94,8 @@ export const NAV_SECTIONS: NavSection[] = [
       // sous Audience → Instagram qui ne montre que ce qui est réellement paru.
       { to: '/publications', label: 'Publications', icon: Images, end: false },
       { to: '/miniatures', label: 'Miniatures', icon: ImagePlus, end: false },
+      // Banc d'essai temporaire de la publication directe (YouTube, Instagram, TikTok).
+      { to: '/publish', label: 'Publish', icon: Send, end: false },
     ],
   },
   {
@@ -268,6 +271,7 @@ const TITLES: Array<[string, string]> = [
   ['/production', 'Vidéos'],
   ['/publications', 'Publications'],
   ['/miniatures', 'Miniatures'],
+  ['/publish', 'Publish'],
   ['/planning', 'Planning'],
   ['/youtube', 'YouTube'],
   ['/instagram', 'Instagram'],

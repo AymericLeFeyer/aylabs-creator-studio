@@ -47,6 +47,7 @@ import { mailsRouter } from './routes/mails.ts';
 import { aiRouter } from './routes/ai.ts';
 import { mcpRouter } from './routes/mcp.ts';
 import { thumbnailsRouter } from './routes/thumbnails.ts';
+import { publishRouter } from './routes/publish.ts';
 
 export const createServer = (container: Container): express.Express => {
   const app = express();
@@ -89,6 +90,7 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/sponsorships', sponsorshipsRouter(container));
   app.use('/api/ideas', ideasRouter(container));
   app.use('/api/post-drafts', postDraftsRouter(container));
+  app.use('/api/publish', publishRouter(container));
   app.use('/api/dashboard', dashboardRouter(container));
   app.use('/api/preferences', preferencesRouter(container));
   app.use('/api/script-presets', scriptPresetsRouter(container));

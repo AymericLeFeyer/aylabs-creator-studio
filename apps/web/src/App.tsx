@@ -21,6 +21,7 @@ import { AffiliationsPage } from './presentation/pages/AffiliationsPage.tsx';
 import { CommentsPage } from './presentation/pages/CommentsPage.tsx';
 import { ExternalAppPage } from './presentation/pages/ExternalAppPage.tsx';
 import { PublicationsPage } from './presentation/pages/PublicationsPage.tsx';
+import { PublishPage } from './presentation/pages/PublishPage.tsx';
 import { ThumbnailsPage } from './presentation/pages/ThumbnailsPage.tsx';
 import { MailsPage } from './presentation/pages/MailsPage.tsx';
 import { BrandsPage } from './presentation/pages/BrandsPage.tsx';
@@ -73,6 +74,7 @@ export const App = () => (
               <Route path="shorts" element={<Navigate to="/production" replace />} />
               <Route path="publications" element={<PublicationsPage />} />
               <Route path="miniatures" element={<ThumbnailsPage />} />
+              <Route path="publish" element={<PublishPage />} />
               <Route path="production/:id" element={<ProductionDetailPage />} />
               <Route path="produits" element={<ProductsPage />} />
               <Route path="sponsors" element={<SponsorsPage />} />

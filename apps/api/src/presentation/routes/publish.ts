@@ -1,0 +1,91 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import type { Container } from '../../container.ts';
+import { param } from '../helpers.ts';
+
+const youtubeSchema = z.object({
+  channelId: z.string().min(1),
+  title: z.string().trim().min(1).max(100),
+  description: z.string().max(5000).default(''),
+  tags: z.array(z.string().trim().min(1)).max(50).default([]),
+  // Public est admis par l'API, mais l'écran ne le propose pas tant qu'on teste.
+  privacy: z.enum(['private', 'unlisted', 'public']).default('private'),
+});
+
+const instagramSchema = z.object({
+  accountId: z.string().min(1),
+  caption: z.string().max(2200).default(''),
+  shareToFeed: z.boolean().default(true),
+});
+
+const publishInstagramSchema = z.object({
+  // Même garde que l'envoi d'un mail : une publication Instagram est publique.
+  confirm: z.literal(true),
+});
+
+/**
+ * Production → Publish (banc d'essai temporaire).
+ *
+ * Le dépôt d'une vidéo est un **corps brut** (`Content-Type: video/*`, nom dans
+ * `X-File-Name`), écrit en flux sur le disque. `express.json` ne lit que les corps JSON et laisse
+ * celui-ci intact ; nginx a sa propre limite pour cette route.
+ *
+ * `/files/:token` est **sans authentification**, comme tout le reste de l'API hors export et
+ * MCP — mais c'est la seule adresse faite pour être lue par un tiers (Meta). Le jeton
+ * aléatoire de 192 bits en est la seule clé.
+ */
+export const publishRouter = (container: Container): Router => {
+  const router = Router();
+  const publish = container.managePublishTests;
+
+  router.get('/targets', (_req, res) => {
+    res.json(publish.targets());
+  });
+
+  router.get('/uploads', (_req, res) => {
+    res.json(publish.list());
+  });
+
+  router.post('/uploads', async (req, res) => {
+    const rawName = req.header('x-file-name') ?? 'video';
+    let fileName = rawName;
+    try {
+      fileName = decodeURIComponent(rawName);
+    } catch {
+      // Un nom mal encodé ne doit pas faire échouer l'envoi.
+    }
+    const mimeType = (req.header('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+    res.status(201).json(await publish.receive(req, fileName, mimeType));
+  });
+
+  router.delete('/uploads/:id', (req, res) => {
+    publish.delete(param(req, 'id'));
+    res.status(204).end();
+  });
+
+  router.post('/uploads/:id/youtube', (req, res) => {
+    res.status(202).json(publish.startYouTube(param(req, 'id'), youtubeSchema.parse(req.body)));
+  });
+
+  router.post('/uploads/:id/instagram', (req, res) => {
+    res
+      .status(202)
+      .json(publish.prepareInstagram(param(req, 'id'), instagramSchema.parse(req.body)));
+  });
+
+  router.post('/attempts/:id/instagram-publish', async (req, res) => {
+    publishInstagramSchema.parse(req.body);
+    res.json(await publish.publishInstagram(param(req, 'id')));
+  });
+
+  /** La vidéo, lue par Meta (et par l'aperçu de l'écran). `sendFile` gère les `Range`. */
+  router.get('/files/:token', (req, res, next) => {
+    const { upload, path } = publish.fileByToken(param(req, 'token'));
+    res.setHeader('Content-Type', upload.mimeType);
+    res.sendFile(path, { headers: { 'Cache-Control': 'private, max-age=3600' } }, (error) => {
+      if (error && !res.headersSent) next(error);
+    });
+  });
+
+  return router;
+};

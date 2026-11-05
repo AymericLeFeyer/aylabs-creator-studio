@@ -77,14 +77,24 @@ export class InstagramClient {
     this.token = token;
   }
 
-  private async call<T>(path: string, params: Record<string, string> = {}): Promise<T> {
+  private async call<T>(
+    path: string,
+    params: Record<string, string> = {},
+    method: 'GET' | 'POST' = 'GET',
+  ): Promise<T> {
     const url = new URL(`${GRAPH_INSTAGRAM}${path}`);
-    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-    url.searchParams.set('access_token', this.token);
+    // En POST, les paramètres partent dans le corps : une légende de 2 200 caractères n'a
+    // rien à faire dans une adresse.
+    const body = method === 'POST' ? new URLSearchParams(params) : undefined;
+    if (body) body.set('access_token', this.token);
+    else {
+      for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+      url.searchParams.set('access_token', this.token);
+    }
 
     let response: Response;
     try {
-      response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+      response = await fetch(url, { method, body, signal: AbortSignal.timeout(60_000) });
     } catch (error) {
       throw upstream(
         `Instagram injoignable : ${error instanceof Error ? error.message : 'erreur réseau'}`,
@@ -343,6 +353,55 @@ export class InstagramClient {
    * identifiant d'app** — le jeton de connexion directe se suffit à lui-même. Seule
    * condition posée par Meta : il doit avoir au moins 24 h d'existence.
    */
+  // --- Publication d'un Reel (Content Publishing API) ------------------------
+  //
+  // Trois temps, et seul le dernier rend la vidéo visible : créer un conteneur (Meta
+  // télécharge la vidéo depuis `videoUrl`, qui doit donc être PUBLIQUE), attendre que son
+  // `status_code` passe à `FINISHED`, puis `media_publish`. **L'API ne connaît ni privé ni
+  // brouillon** : publier est public. Il faut la permission
+  // `instagram_business_content_publish` sur le jeton.
+
+  async createReelContainer(
+    igUserId: string,
+    input: { videoUrl: string; caption: string; shareToFeed: boolean },
+  ): Promise<string> {
+    const row = await this.call<{ id: string }>(
+      `/${igUserId}/media`,
+      {
+        media_type: 'REELS',
+        video_url: input.videoUrl,
+        caption: input.caption,
+        share_to_feed: String(input.shareToFeed),
+      },
+      'POST',
+    );
+    return row.id;
+  }
+
+  /** `IN_PROGRESS`, `FINISHED`, `ERROR`, `EXPIRED` (24 h) ou `PUBLISHED`. */
+  async containerStatus(
+    containerId: string,
+  ): Promise<{ statusCode: string; status: string | null }> {
+    const row = await this.call<{ status_code?: string; status?: string }>(`/${containerId}`, {
+      fields: 'status_code,status',
+    });
+    return { statusCode: row.status_code ?? 'UNKNOWN', status: row.status ?? null };
+  }
+
+  async publishContainer(igUserId: string, containerId: string): Promise<string> {
+    const row = await this.call<{ id: string }>(
+      `/${igUserId}/media_publish`,
+      { creation_id: containerId },
+      'POST',
+    );
+    return row.id;
+  }
+
+  async mediaPermalink(mediaId: string): Promise<string | null> {
+    const row = await this.call<{ permalink?: string }>(`/${mediaId}`, { fields: 'permalink' });
+    return row.permalink ?? null;
+  }
+
   static async refreshLongLivedToken(
     token: string,
   ): Promise<{ token: string; expiresAt: string | null }> {

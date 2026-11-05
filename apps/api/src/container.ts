@@ -1,3 +1,4 @@
+import { dirname, join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Config } from './config.ts';
 import { getDatabase } from './infrastructure/db/database.ts';
@@ -20,6 +21,8 @@ import { SqliteRecurringExpenseRepository } from './infrastructure/expense/repos
 import { SqliteProductRepository } from './infrastructure/product/repositories/SqliteProductRepository.ts';
 import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/repositories/SqliteSponsorshipRepository.ts';
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
+import { SqlitePublishRepository } from './infrastructure/publish/repositories/SqlitePublishRepository.ts';
+import { ManagePublishTests } from './application/publish/usecases/ManagePublishTests.ts';
 import { SqlitePostDraftRepository } from './infrastructure/postDraft/repositories/SqlitePostDraftRepository.ts';
 import { SqliteDashboardWidgetRepository } from './infrastructure/dashboard/repositories/SqliteDashboardWidgetRepository.ts';
 import { SqliteBrandingRepository } from './infrastructure/branding/repositories/SqliteBrandingRepository.ts';
@@ -260,6 +263,8 @@ export interface Container {
   mailVideoNotes: MailVideoNotes;
   /** Les miniatures et leur banque d'images : seul endroit où la clé d'OpenAI est déchiffrée. */
   manageThumbnails: ManageThumbnails;
+  /** Production → Publish : banc d'essai de la publication directe (temporaire). */
+  managePublishTests: ManagePublishTests;
 }
 
 /** Assemble les implémentations concrètes derrière les interfaces du domaine. */
@@ -402,6 +407,20 @@ export const buildContainer = (config: Config): Container => {
     brandContacts,
     manageBrandContacts,
     mailVideoNotes,
+    managePublishTests: new ManagePublishTests(
+      new SqlitePublishRepository(db),
+      channels,
+      instagramAccounts,
+      {
+        storageDir:
+          config.databasePath === ':memory:'
+            ? join(process.cwd(), 'data', 'publish-uploads')
+            : join(dirname(config.databasePath), 'publish-uploads'),
+        gcpClientId: config.gcpClientId,
+        gcpClientSecret: config.gcpClientSecret,
+        publicUrl: config.publicUrl,
+      },
+    ),
     manageThumbnails: new ManageThumbnails(
       new SqliteThumbnailRepository(db),
       productions,

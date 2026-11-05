@@ -2124,6 +2124,41 @@ const migrations: Migration[] = [
          AND instr(',' || steps || ',', ',metricool,') = 0;
     `,
   },
+  {
+    version: 63,
+    name: 'banc d essai de la publication directe',
+    up: `
+      -- Production -> Publish, temporaire : la video vit sur le disque, la table ne garde
+      -- que ses metadonnees et le jeton de son adresse publique (Meta vient la chercher).
+      CREATE TABLE publish_uploads (
+        id           TEXT PRIMARY KEY,
+        file_name    TEXT NOT NULL,
+        mime_type    TEXT NOT NULL,
+        size_bytes   INTEGER NOT NULL,
+        public_token TEXT NOT NULL UNIQUE,
+        created_at   TEXT NOT NULL
+      );
+
+      -- Un envoi par plateforme et par cible (chaine, compte).
+      CREATE TABLE publish_attempts (
+        id          TEXT PRIMARY KEY,
+        upload_id   TEXT NOT NULL REFERENCES publish_uploads(id) ON DELETE CASCADE,
+        platform    TEXT NOT NULL CHECK (platform IN ('youtube', 'instagram', 'tiktok')),
+        target_id   TEXT NOT NULL,
+        target_name TEXT NOT NULL,
+        status      TEXT NOT NULL CHECK (status IN
+                      ('uploading', 'processing', 'ready', 'publishing', 'published', 'failed')),
+        privacy     TEXT,
+        title       TEXT NOT NULL DEFAULT '',
+        external_id TEXT,
+        url         TEXT,
+        error       TEXT,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+      CREATE INDEX idx_publish_attempts_upload ON publish_attempts(upload_id);
+    `,
+  },
 ];
 
 /**

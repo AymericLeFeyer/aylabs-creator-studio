@@ -2571,6 +2571,36 @@ les listes ne lisent jamais.
   réenregistrer garde la date d'origine. `/miniatures?video=<id>` ouvre l'écran sur une vidéo
   (lien « Générer une miniature » de l'onglet).
 
+### `publish` — le banc d'essai de la publication directe (Production → Publish)
+
+**Temporaire** : valider l'envoi direct sur chaque plateforme, pas à pas, avant de le brancher
+sur Publications (rework à venir). **Aucune configuration propre** : il reprend les chaînes
+`oauth` à refresh token et les comptes Instagram à jeton (`targets()`).
+
+`PublishUpload { id, fileName, mimeType, sizeBytes, publicToken, createdAt }` — table
+`publish_uploads` ; `PublishAttempt { id, uploadId, platform, targetId, targetName, status,
+privacy, title, externalId, url, error }` — table `publish_attempts` (cascade). Migration 63.
+`status` : `uploading → processing → ready → publishing → published`, ou `failed`.
+
+- **La vidéo vit sur le disque**, à côté de la base (`<dossier de la base>/publish-uploads/<id>.<ext>`,
+  donc dans le volume), jamais en BLOB. Dépôt en **corps brut** (`Content-Type: video/*`, nom dans
+  `X-File-Name`), écrit en flux (`ManagePublishTests.receive`), 2 Go max. Côté front, seul
+  `uploadFile` (`httpClient.ts`) passe par `XMLHttpRequest`, pour la progression.
+- **Les envois tournent en arrière-plan**, état en base ; l'écran relit toutes les 3 s tant
+  qu'un envoi tourne. Au démarrage, ce qui était en cours passe `failed` (`failInterrupted`).
+- **YouTube** (`YouTubeUploadClient`, `videos.insert`) : privé ou non répertorié seulement à
+  l'écran. Exige le scope **`youtube.upload`** sur le refresh token (les tokens de collecte ne
+  l'ont pas : les régénérer) ; un projet GCP non audité force le privé ; ~1 600 unités de quota.
+  Un Short = vertical, 3 min max, aucun drapeau d'API.
+- **Instagram** (`InstagramClient.createReelContainer` / `containerStatus` / `publishContainer`) :
+  **l'API n'a pas de mode privé**. « Préparer » crée le conteneur et attend `FINISHED` (`ready`,
+  rien de visible) ; « Publier (public) » demande une confirmation et `confirm: true`. Meta
+  **télécharge la vidéo lui-même** : `PUBLIC_URL` obligatoire, adresse
+  `/api/publish/files/<publicToken>` (sans authentification, jeton de 192 bits, `Range` géré
+  par `sendFile`). Permission `instagram_business_content_publish`. Un échec de publication
+  rend le conteneur `ready` (valable 24 h).
+- **TikTok** : pas branché (aucune connexion), la carte dit ce qu'il manque.
+
 ### `mcp` — le studio pour un assistant
 
 `POST /api/mcp` (`presentation/routes/mcp.ts`), Streamable HTTP **sans session** : un serveur
@@ -2875,6 +2905,14 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST`   | `/api/thumbnails`                                   | `{ productionId?, format, prompt?, assetIds?, images? }`. **Facturé**, jusqu'à 2 min. 400 sans clé, ou sans vidéo ni prompt ; 502 si OpenAI refuse |
 | `GET`    | `/api/thumbnails/:id/image`                         | Le JPEG |
 | `DELETE` | `/api/thumbnails/:id`                               | Supprimer |
+| `GET`    | `/api/publish/targets`                              | Chaînes OAuth et comptes Instagram à jeton, `publicUrlConfigured`, raison TikTok |
+| `GET`    | `/api/publish/uploads`                              | Vidéos déposées et leurs envois, la plus récente d'abord |
+| `POST`   | `/api/publish/uploads`                              | **Corps brut** `video/*`, `X-File-Name` (encodé). 2 Go max (nginx : `location ^~ /api/publish/`) |
+| `DELETE` | `/api/publish/uploads/:id`                          | Retire la vidéo du studio (ce qui est publié reste en ligne) |
+| `POST`   | `/api/publish/uploads/:id/youtube`                  | `{ channelId, title, description?, tags?, privacy? }` → 202, envoi en arrière-plan |
+| `POST`   | `/api/publish/uploads/:id/instagram`                | `{ accountId, caption?, shareToFeed? }` → 202, conteneur préparé **sans publier** |
+| `POST`   | `/api/publish/attempts/:id/instagram-publish`       | `{ confirm: true }` → publie le conteneur prêt (**public**). 409 s'il n'est pas prêt |
+| `GET`    | `/api/publish/files/:token`                         | La vidéo, **sans authentification** (Meta la télécharge). `Range` géré |
 
 Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `422` pour une validation zod (avec `details[].field`), `409` pour un conflit métier, `502` pour une erreur YouTube ou d'une source de l'export.
 
@@ -2894,6 +2932,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/shorts`           | —                      | **Retiré** : redirige vers `/production`.                                                                                                                                                                                                                                                                                                                                     |
 | `/publications`     | `PublicationsPage`     | **Un couloir par jour** (vides compris, ouvert sur aujourd'hui), 6 cases par publication, archivage sans confirmation (vert quand tout est coché), archivées visibles grisées, « + » par jour. Pastille « -X jours »                                                                                                                                                          |
 | `/miniatures`       | `ThumbnailsPage`       | Vidéo, format 16:9 ou 9:16, images de la banque et images ajoutées, prompt personnalisé, puis l'historique à côté, restreint à la vidéo choisie, avec **Enregistrer** sous chaque miniature. `?video=<id>` présélectionne. Voir le domaine `thumbnail` |
+| `/publish`          | `PublishPage`          | **Temporaire.** Dépôt d'une vidéo (glisser-déposer), puis une carte par plateforme : YouTube (privé / non répertorié), Instagram (préparer, puis publier sur confirmation), TikTok (pas branché). Voir le domaine `publish` |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Miniatures** (les enregistrées) / **Temps passé** (prévu + réel) / Produits & sponsos / **Notes** (plusieurs, en fichiers)                                                                                                                                                                                                           |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                    |
 | `/sponsors`         | `SponsorsPage`         | Raisons de la pastille, 4 cartes (Paiements en attente, À livrer, À encaisser, Encaissées sur la période), table. Bouton **Script** par sponso                                                                                                                                                                                                                                |
@@ -3579,6 +3618,7 @@ période**, et leur sous-titre le dit.
 | `useMailSettings`, `useUpdateMailSettings`, `useTestMail`, `useMailStats`, `useSyncMail`, `useMailThreads`, `useMailThread`, `useMailDraft`, `useUpdateMailThread`, `useMailAi`, `useSummarizeMailMessage`, `useMailVideoNote`, `useSendMail`, `useMailAddresses`, `useMailFolders` (au clic), `useMoveMailThread`, `useTrashMailThread`, `useMailDateCheck` (invalide `planningBoard` / `todoToday` quand des tâches sont créées) | `application/mail/usecases/useMails.ts` | Boîte mail. Tout sous `['mails']` ; la note de vidéo invalide en plus `productionNotes`. `useSendMail` n'est appelé que par la modale de confirmation |
 | `useAiScript`, `useAiTitles`, `useAiTags`, `useAiDescription` | `application/production/usecases/useProductionAi.ts` | L'IA d'une fiche. Mutations (chaque appel coûte) ; n'invalident que `['aiSettings']` |
 | `useThumbnailSettings`, `useUpdateThumbnailSettings`, `useThumbnailAssets`, `useAddThumbnailAsset`, `useDeleteThumbnailAsset`, `useThumbnails(productionId, { saved? })`, `useGenerateThumbnail`, `useDeleteThumbnail`, `useSaveThumbnail`, `useUnsaveThumbnail` | `application/thumbnail/usecases/useThumbnails.ts` | Miniatures. Tout sous `['thumbnails']` ; seul `useSaveThumbnail` invalide aussi `PRODUCTION_ROOTS` (il coche l'étape) |
+| `usePublishTargets`, `usePublishUploads` (relu toutes les 3 s tant qu'un envoi tourne), `useUploadPublishVideo`, `useDeletePublishVideo`, `useSendToYouTube`, `usePrepareInstagram`, `usePublishInstagram` | `application/publish/usecases/usePublish.ts` | Banc d'essai de publication. Tout sous `['publish']`, ne croise aucune racine |
 | `useBranding`, `useUpdateBrandingName`, `useSetBrandingLogo`, `useClearBrandingLogo` | `application/branding/usecases/useBranding.ts` | Nom et logo. `initialData` = reflet local (premier rendu sans flash), relu aussitôt et au focus. Les écritures posent la réponse en cache. `['branding']` ne croise aucune racine |
 | `useDashboardWidgets`, `useAddWidget`, `useUpdateWidget`, `useRemoveWidget`, `useReorderWidgets` | `application/dashboard/usecases/useDashboard.ts` | Blocs du dashboard. Relu toutes les 15 s et au focus (synchro entre appareils). Écritures **optimistes**, relecture après la dernière en vol. `['dashboardWidgets']` ne croise aucune racine |
 | `usePostDrafts(archived)`, `usePostDraftsForProduction(id)`, `usePrepareVideoPosts`, `usePostDraftSummary`, `useCreatePostDraft`, `useUpdatePostDraft`, `useDeletePostDraft`                                                                                                                                                                                                             | `application/postDraft/usecases/usePostDrafts.ts`       | Publications à venir. `useUpdatePostDraft` est **optimiste** (cases en rafale). N'invalident que `['postDrafts']`                                   |
@@ -3675,6 +3715,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 63** ajoute `publish_uploads` et `publish_attempts` (banc d'essai Production → Publish).
 - **Migration 62** ajoute `post_drafts.production_id` (`ON DELETE SET NULL`) et coche `metricool` sur les publications archivées.
 - **Migration 61** ajoute `brand_contacts` (carnet de contacts des marques), rempli depuis les fils déjà rattachés et `brands.contact_email`.
 - **Migration 60** ajoute `thumbnails.saved_at` (miniature enregistrée sur sa vidéo).
@@ -3763,7 +3804,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 
 - **Aucun mail ne part sans confirmation, et l'IA n'envoie jamais.** Voir le domaine `mail`. Toute nouvelle fonctionnalité mail (relance, modèle, envoi groupé) doit passer par le brouillon + la modale de confirmation, jamais par un appel direct à `ManageMail.send`.
 - **Un outil MCP ne reçoit jamais le jeton de confirmation dans `content` ni `structuredContent`** : le modèle les lit. `_meta` seulement. L'y remettre donnerait au modèle — donc à quiconque écrit un mail qu'il lit — le moyen d'envoyer seul. Pour la même raison, ne jamais ajouter d'outil d'envoi visible du modèle, et dire dans la description qu'un mail ou un commentaire est écrit par un tiers.
-- **Nginx refuse par défaut tout corps de plus de 1 Mo**, avant même l'API. `client_max_body_size 40m` dans `location ^~ /api/` couvre les images des miniatures et les logos. Toute limite d'`express.json` plus haute doit aussi être reportée dans `apps/web/nginx.conf`.
+- **Nginx refuse par défaut tout corps de plus de 1 Mo**, avant même l'API. `client_max_body_size 40m` dans `location ^~ /api/` couvre les images des miniatures et les logos. Toute limite d'`express.json` plus haute doit aussi être reportée dans `apps/web/nginx.conf`. Exception : `location ^~ /api/publish/` (2 Go, `proxy_request_buffering off`, 900 s) pour les vidéos de Production → Publish.
 - **Une nouvelle lecture MCP passe par une vue sans secret** (`toChannelView`, `InstagramAccountView`…), jamais par une entité brute.
 - **Le corps HTML d'un mail ne s'injecte jamais dans la page** : iframe `sandbox` sans `allow-scripts`, images distantes bloquées par CSP. Ne pas ajouter `allow-scripts` (avec `allow-same-origin`, le mail pourrait sortir du bac à sable).
 - **Proton Mail Bridge se met à jour tout seul, dans son volume, et la 3.2x exige `libfido2`** : l'image communautaire `shenxn/protonmail-bridge` ne l'a pas, le conteneur démarre, se met à jour puis ne relance plus (`libfido2.so.1: cannot open shared object file`). D'où `docker/proton-bridge/Dockerfile` (l'image communautaire + `libfido2-1`), publiée par la CI comme 3ᵉ image (`-proton-bridge`). Ne pas bloquer la mise à jour : Proton refuse les vieilles versions ; fournir les dépendances.

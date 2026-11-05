@@ -70,3 +70,36 @@ export const request = async <T>(path: string, options: RequestOptions = {}): Pr
 
   return payload as T;
 };
+
+/**
+ * Envoi d'un fichier en **corps brut**, avec sa progression. `fetch` ne sait pas rapporter
+ * l'avancement d'un envoi : c'est le seul endroit de l'application qui passe par
+ * `XMLHttpRequest`, pour une vidéo de plusieurs centaines de Mo.
+ */
+export const uploadFile = <T>(
+  path: string,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', new URL(`${BASE_URL}${path}`, window.location.origin).toString());
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+    };
+    xhr.onerror = () => reject(new ApiError('Envoi interrompu (réseau)', 0, 'NETWORK'));
+    xhr.onload = () => {
+      const payload = xhr.responseText ? (JSON.parse(xhr.responseText) as unknown) : null;
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(payload as T);
+        return;
+      }
+      const error = payload as { error?: string; code?: string } | null;
+      reject(
+        new ApiError(error?.error ?? `Erreur ${xhr.status}`, xhr.status, error?.code ?? 'UNKNOWN'),
+      );
+    };
+    xhr.send(file);
+  });
