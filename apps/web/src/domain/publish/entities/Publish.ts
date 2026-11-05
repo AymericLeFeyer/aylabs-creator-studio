@@ -6,9 +6,10 @@
  * branchement avant de les rattacher aux publications planifiées.
  *
  * Le fichier vit sur le disque (à côté de la base), jamais en BLOB : une vidéo pèse des
- * centaines de mégaoctets. `publicToken` est la seule clé de son adresse publique
- * (`/api/publish/files/<token>`), lue sans authentification parce que **Meta vient
- * chercher la vidéo lui-même** pour un Reel.
+ * centaines de mégaoctets. `publicToken` est la clé de son adresse d'aperçu
+ * (`/api/publish/files/<token>`). Aucune plateforme ne vient la chercher : le studio n'a
+ * pas d'adresse publique, c'est **le serveur qui pousse** la vidéo à YouTube comme à
+ * Instagram (upload reprenable).
  */
 export interface PublishUpload {
   id: string;
@@ -66,13 +67,11 @@ export interface PublishTarget {
 export interface PublishTargets {
   youtube: PublishTarget[];
   instagram: PublishTarget[];
-  /** Sans `PUBLIC_URL`, Meta ne peut pas venir chercher la vidéo. */
-  publicUrlConfigured: boolean;
   /** TikTok n'a encore aucune connexion : la raison s'affiche à l'écran. */
   tiktok: { available: false; reason: string };
 }
 
-/** Adresse de la vidéo (aperçu à l'écran, et ce que Meta télécharge). */
+/** Adresse de la vidéo, pour l'aperçu à l'écran. */
 export const publishFileUrl = (upload: Pick<PublishUpload, 'publicToken'>): string =>
   `/api/publish/files/${upload.publicToken}`;
 

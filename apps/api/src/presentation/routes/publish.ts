@@ -30,9 +30,8 @@ const publishInstagramSchema = z.object({
  * `X-File-Name`), écrit en flux sur le disque. `express.json` ne lit que les corps JSON et laisse
  * celui-ci intact ; nginx a sa propre limite pour cette route.
  *
- * `/files/:token` est **sans authentification**, comme tout le reste de l'API hors export et
- * MCP — mais c'est la seule adresse faite pour être lue par un tiers (Meta). Le jeton
- * aléatoire de 192 bits en est la seule clé.
+ * `/files/:token` sert l'aperçu de l'écran, sans authentification comme le reste de l'API
+ * (hors export et MCP) : le studio reste derrière le réseau privé.
  */
 export const publishRouter = (container: Container): Router => {
   const router = Router();
@@ -78,7 +77,7 @@ export const publishRouter = (container: Container): Router => {
     res.json(await publish.publishInstagram(param(req, 'id')));
   });
 
-  /** La vidéo, lue par Meta (et par l'aperçu de l'écran). `sendFile` gère les `Range`. */
+  /** La vidéo, pour l'aperçu. `sendFile` gère les `Range` (le lecteur avance sans tout charger). */
   router.get('/files/:token', (req, res, next) => {
     const { upload, path } = publish.fileByToken(param(req, 'token'));
     res.setHeader('Content-Type', upload.mimeType);

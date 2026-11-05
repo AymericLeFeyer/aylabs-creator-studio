@@ -23,7 +23,6 @@ export interface PublishConfig {
   storageDir: string;
   gcpClientId: string | null;
   gcpClientSecret: string | null;
-  publicUrl: string | null;
 }
 
 /** 2 Go : au-delà, ce n'est plus un essai. */
@@ -105,7 +104,6 @@ export class ManagePublishTests {
           name: `@${account.username}`,
           color: account.color,
         })),
-      publicUrlConfigured: Boolean(this.config.publicUrl),
       tiktok: {
         available: false,
         reason:
@@ -237,11 +235,6 @@ export class ManagePublishTests {
     if (!account) throw notFound('Compte Instagram');
     const token = account.accessToken;
     if (!token) throw badRequest('Ce compte n’a pas de jeton (Paramètres → Instagram)');
-    if (!this.config.publicUrl) {
-      throw badRequest(
-        'PUBLIC_URL n’est pas configurée : Meta doit pouvoir télécharger la vidéo depuis une adresse publique.',
-      );
-    }
 
     const attempt = this.repository.createAttempt({
       uploadId,
@@ -253,15 +246,17 @@ export class ManagePublishTests {
     });
 
     const client = new InstagramClient(token);
-    const videoUrl = `${this.config.publicUrl}/api/publish/files/${upload.publicToken}`;
     const igUserId = account.igUserId;
+    const filePath = this.filePath(upload);
 
     void (async () => {
-      const containerId = await client.createReelContainer(igUserId, {
-        videoUrl,
+      const { id: containerId, uploadUri } = await client.createReelContainer(igUserId, {
         caption: input.caption,
         shareToFeed: input.shareToFeed,
       });
+      this.repository.updateAttempt(attempt.id, { externalId: containerId });
+      // Le serveur pousse la vidéo : aucune adresse publique n'est nécessaire.
+      await client.uploadReelVideo(uploadUri, filePath, upload.sizeBytes);
       this.repository.updateAttempt(attempt.id, { status: 'processing', externalId: containerId });
 
       const deadline = Date.now() + IG_POLL_MAX_MS;

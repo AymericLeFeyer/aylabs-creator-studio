@@ -418,7 +418,6 @@ export const buildContainer = (config: Config): Container => {
             : join(dirname(config.databasePath), 'publish-uploads'),
         gcpClientId: config.gcpClientId,
         gcpClientSecret: config.gcpClientSecret,
-        publicUrl: config.publicUrl,
       },
     ),
     manageThumbnails: new ManageThumbnails(

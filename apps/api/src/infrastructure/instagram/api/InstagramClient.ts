@@ -1,3 +1,5 @@
+import { createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
 import type { IsoDate } from '../../../shared/dates.ts';
 import { upstream } from '../../../shared/errors.ts';
 
@@ -28,6 +30,8 @@ import { upstream } from '../../../shared/errors.ts';
  */
 
 const GRAPH_INSTAGRAM = 'https://graph.instagram.com';
+/** L'adresse d'envoi est rendue par la création du conteneur ; celle-ci n'est qu'un repli. */
+const RUPLOAD_INSTAGRAM = 'https://rupload.facebook.com/ig-api-upload/v23.0';
 
 interface GraphError {
   error?: { message?: string; type?: string; code?: number; error_subcode?: number };
@@ -355,27 +359,67 @@ export class InstagramClient {
    */
   // --- Publication d'un Reel (Content Publishing API) ------------------------
   //
-  // Trois temps, et seul le dernier rend la vidéo visible : créer un conteneur (Meta
-  // télécharge la vidéo depuis `videoUrl`, qui doit donc être PUBLIQUE), attendre que son
-  // `status_code` passe à `FINISHED`, puis `media_publish`. **L'API ne connaît ni privé ni
-  // brouillon** : publier est public. Il faut la permission
+  // Quatre temps, et seul le dernier rend la vidéo visible : créer un conteneur en
+  // **upload reprenable**, y pousser les octets (rupload.facebook.com), attendre que son
+  // `status_code` passe à `FINISHED`, puis `media_publish`.
+  //
+  // Reprenable et non `video_url` : avec `video_url`, Meta vient chercher la vidéo, ce qui
+  // exige une adresse publique — or le studio n'en a pas. Ici, c'est le serveur qui pousse.
+  //
+  // **L'API ne connaît ni privé ni brouillon** : publier est public. Il faut la permission
   // `instagram_business_content_publish` sur le jeton.
 
   async createReelContainer(
     igUserId: string,
-    input: { videoUrl: string; caption: string; shareToFeed: boolean },
-  ): Promise<string> {
-    const row = await this.call<{ id: string }>(
+    input: { caption: string; shareToFeed: boolean },
+  ): Promise<{ id: string; uploadUri: string }> {
+    const row = await this.call<{ id: string; uri?: string }>(
       `/${igUserId}/media`,
       {
         media_type: 'REELS',
-        video_url: input.videoUrl,
+        upload_type: 'resumable',
         caption: input.caption,
         share_to_feed: String(input.shareToFeed),
       },
       'POST',
     );
-    return row.id;
+    return { id: row.id, uploadUri: row.uri ?? `${RUPLOAD_INSTAGRAM}/${row.id}` };
+  }
+
+  /** Pousse tout le fichier en un envoi (`offset: 0`), en flux depuis le disque. */
+  async uploadReelVideo(uploadUri: string, filePath: string, sizeBytes: number): Promise<void> {
+    let response: Response;
+    try {
+      response = await fetch(uploadUri, {
+        method: 'POST',
+        headers: {
+          Authorization: `OAuth ${this.token}`,
+          offset: '0',
+          file_size: String(sizeBytes),
+        },
+        body: Readable.toWeb(createReadStream(filePath)) as ReadableStream,
+        duplex: 'half',
+        signal: AbortSignal.timeout(15 * 60_000),
+      } as RequestInit & { duplex: 'half' });
+    } catch (error) {
+      throw upstream(
+        `Envoi vers Instagram interrompu : ${error instanceof Error ? error.message : 'erreur réseau'}`,
+      );
+    }
+    const text = await response.text();
+    if (!response.ok) {
+      let message = `Instagram a refusé l’envoi (${response.status})`;
+      try {
+        const payload = JSON.parse(text) as {
+          debug_info?: { message?: string };
+          error?: { message?: string };
+        };
+        message = payload.debug_info?.message ?? payload.error?.message ?? message;
+      } catch {
+        if (text) message = `${message} : ${text.slice(0, 200)}`;
+      }
+      throw upstream(message);
+    }
   }
 
   /** `IN_PROGRESS`, `FINISHED`, `ERROR`, `EXPIRED` (24 h) ou `PUBLISHED`. */

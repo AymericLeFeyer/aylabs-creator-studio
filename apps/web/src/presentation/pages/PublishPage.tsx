@@ -210,11 +210,7 @@ const UploadCard = ({
           className="max-h-80 w-full rounded-md bg-black object-contain"
         />
         <YouTubePanel upload={upload} channels={targets?.youtube ?? []} />
-        <InstagramPanel
-          upload={upload}
-          accounts={targets?.instagram ?? []}
-          publicUrlConfigured={targets?.publicUrlConfigured ?? false}
-        />
+        <InstagramPanel upload={upload} accounts={targets?.instagram ?? []} />
         <TikTokPanel reason={targets?.tiktok.reason ?? ''} />
       </CardContent>
     </Card>
@@ -387,11 +383,9 @@ const YouTubePanel = ({
 const InstagramPanel = ({
   upload,
   accounts,
-  publicUrlConfigured,
 }: {
   upload: PublishUploadView;
   accounts: PublishTarget[];
-  publicUrlConfigured: boolean;
 }) => {
   const prepare = usePrepareInstagram();
   const publish = usePublishInstagram();
@@ -424,11 +418,6 @@ const InstagramPanel = ({
         <p className="text-xs text-muted-foreground">
           Aucun compte à jeton : connecte-en un dans Paramètres → Instagram.
         </p>
-      ) : !publicUrlConfigured ? (
-        <p className="text-xs text-muted-foreground">
-          PUBLIC_URL n’est pas configurée : Meta doit pouvoir télécharger la vidéo depuis l’adresse
-          publique du studio.
-        </p>
       ) : (
         <>
           <TargetSelect
@@ -455,8 +444,8 @@ const InstagramPanel = ({
             Préparer (sans publier)
           </Button>
           <p className="text-xs text-muted-foreground">
-            Meta télécharge et traite la vidéo. Rien n’est visible tant que tu n’as pas cliqué «
-            Publier » : l’API ne connaît pas de mode privé. Permission
+            Le studio envoie la vidéo à Meta, qui la traite. Rien n’est visible tant que tu n’as pas
+            cliqué « Publier » : l’API ne connaît pas de mode privé. Permission
             instagram_business_content_publish requise.
           </p>
           {prepare.error && (
