@@ -15,6 +15,11 @@ import type {
 import type { PublishRepository } from '../../../domain/publish/repositories/PublishRepository.ts';
 import type { PublishStaging } from '../../../domain/publish/repositories/PublishStaging.ts';
 import type { TikTokPublishAccess } from '../../../domain/publish/repositories/TikTokPublishAccess.ts';
+import {
+  captionWithHashtags,
+  type ShortOptions,
+} from '../../../domain/postDraft/entities/PostDraft.ts';
+import { fitTags } from '../../../domain/production/services/scriptText.ts';
 import { TikTokApiClient } from '../../../infrastructure/tiktok/api/TikTokApiClient.ts';
 import { InstagramClient } from '../../../infrastructure/instagram/api/InstagramClient.ts';
 import { YouTubeUploadClient } from '../../../infrastructure/youtube/api/YouTubeUploadClient.ts';
@@ -65,13 +70,24 @@ const messageOf = (error: unknown): string =>
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Ce qui part avec la vidéo : le titre (YouTube) et la légende (YouTube, Instagram). */
+/** Ce qui part avec la vidéo. Chaque plateforme y prend ce qu'elle sait recevoir. */
 export interface ShortContent {
   title: string;
   description: string;
+  options: ShortOptions;
+  /** Miniature YouTube et couverture Instagram (JPEG). */
+  cover: { data: Buffer; mimeType: string } | null;
   /** La chaîne YouTube à préférer (celle de la vidéo d'origine), si elle est en OAuth. */
   preferredChannelId?: string | null;
 }
+
+/** Instagram : 3 collaborateurs au plus, sans « @ ». */
+const collaboratorsOf = (raw: string): string[] =>
+  raw
+    .split(/[\s,;]+/)
+    .map((name) => name.replace(/^@/, '').trim())
+    .filter(Boolean)
+    .slice(0, 3);
 
 /**
  * La mise en ligne directe d'une vidéo sur YouTube, Instagram et TikTok, menée **en
@@ -238,7 +254,14 @@ export class ManagePublishing {
       targetId: target?.id ?? '',
       targetName: target?.name ?? '—',
       status: target ? 'uploading' : 'failed',
-      privacy: platform === 'youtube' ? 'public' : platform === 'tiktok' ? 'draft' : null,
+      privacy:
+        platform === 'youtube'
+          ? content.options.youtube.visibility
+          : platform === 'tiktok'
+            ? 'draft'
+            : content.options.instagram.trial
+              ? 'trial'
+              : null,
       title: (platform === 'youtube' ? content.title : content.description || content.title)
         .split('\n')[0]!
         .slice(0, 100),
@@ -296,19 +319,37 @@ export class ManagePublishing {
     content: ShortContent,
   ): Promise<void> {
     const client = this.youtubeClient(channelId);
+    const youtube = content.options.youtube;
     const { videoId } = await client.upload({
       filePath: this.filePath(upload),
       mimeType: upload.mimeType,
       title: content.title.slice(0, 100),
-      description: content.description.slice(0, 5000),
-      tags: [],
-      privacy: 'public',
+      description: captionWithHashtags(content.description, content.options.hashtags).slice(
+        0,
+        5000,
+      ),
+      tags: fitTags(youtube.tags.split(',')),
+      privacy: youtube.visibility,
+      categoryId: youtube.categoryId,
+      madeForKids: youtube.madeForKids,
+      notifySubscribers: youtube.notifySubscribers,
     });
     this.repository.updateAttempt(attempt.id, {
       status: 'published',
       externalId: videoId,
       url: `https://youtube.com/shorts/${videoId}`,
     });
+    if (!content.cover) return;
+    // La vidéo est en ligne : une miniature refusée (chaîne non vérifiée, image trop lourde)
+    // ne la fait pas échouer, elle est seulement signalée.
+    try {
+      await client.setThumbnail(videoId, content.cover);
+      this.repository.updateAttempt(attempt.id, { thumbnailSetAt: new Date().toISOString() });
+    } catch (error) {
+      this.repository.updateAttempt(attempt.id, {
+        error: `Vidéo en ligne, miniature refusée : ${messageOf(error)}`,
+      });
+    }
   }
 
   // --- Instagram -----------------------------------------------------------------
@@ -334,17 +375,30 @@ export class ManagePublishing {
     const client = new InstagramClient(account.accessToken);
     const fileName = this.filePath(upload).split(/[\\/]/).pop() ?? upload.id;
     const videoKey = `publish/${attempt.id}/${fileName}`;
+    const coverKey = `publish/${attempt.id}/cover.jpg`;
     await this.staging.put(
       videoKey,
       createReadStream(this.filePath(upload)),
       upload.sizeBytes,
       upload.mimeType,
     );
+    const instagram = content.options.instagram;
+    // Couverture : l'image si elle est en JPEG (seul format admis), sinon l'instant choisi.
+    const cover = content.cover?.mimeType === 'image/jpeg' ? content.cover : null;
+    if (cover) await this.staging.put(coverKey, cover.data, cover.data.length, cover.mimeType);
 
     const containerId = await client.createReelContainer(account.igUserId, {
       videoUrl: await this.staging.signedUrl(videoKey, STAGING_LINK_SECONDS),
-      caption: (content.description || content.title).slice(0, 2200),
-      shareToFeed: true,
+      coverUrl: cover ? await this.staging.signedUrl(coverKey, STAGING_LINK_SECONDS) : undefined,
+      coverOffsetMs:
+        instagram.coverAtSeconds === null ? undefined : Math.round(instagram.coverAtSeconds * 1000),
+      caption: captionWithHashtags(
+        content.description || content.title,
+        content.options.hashtags,
+      ).slice(0, 2200),
+      shareToFeed: instagram.shareToFeed,
+      trial: instagram.trial,
+      collaborators: collaboratorsOf(instagram.collaborators),
     });
     this.repository.updateAttempt(attempt.id, { status: 'processing', externalId: containerId });
 

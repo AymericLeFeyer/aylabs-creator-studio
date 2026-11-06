@@ -39,7 +39,7 @@ export type YouTubePrivacy = 'private' | 'unlisted' | 'public';
 export type TikTokMode = 'draft' | 'private';
 
 /** Ce que porte la colonne `privacy` : la visibilité YouTube, ou le mode TikTok. */
-export type PublishPrivacy = YouTubePrivacy | TikTokMode;
+export type PublishPrivacy = YouTubePrivacy | TikTokMode | 'trial';
 
 export interface PublishAttempt {
   id: string;

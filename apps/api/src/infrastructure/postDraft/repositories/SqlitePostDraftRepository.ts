@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import {
   isPostDraftComplete,
+  parseShortOptions,
   POST_DRAFT_STEPS,
   SHORT_PLATFORMS,
   type CreatePostDraftInput,
@@ -27,6 +28,8 @@ interface PostDraftRow {
   scheduled_at: string | null;
   platforms: string;
   publish_started_at: string | null;
+  publish_options: string;
+  cover_updated_at: string | null;
   created_at: string;
   updated_at: string;
   // La vidéo, par `LEFT JOIN` sur `publish_uploads`.
@@ -41,9 +44,10 @@ interface PostDraftRow {
 const SELECT = `
   SELECT d.*, u.file_name AS video_file_name, u.mime_type AS video_mime_type,
          u.size_bytes AS video_size_bytes, u.public_token AS video_public_token,
-         u.created_at AS video_created_at
+         u.created_at AS video_created_at, c.updated_at AS cover_updated_at
     FROM post_drafts d
-    LEFT JOIN publish_uploads u ON u.id = d.upload_id`;
+    LEFT JOIN publish_uploads u ON u.id = d.upload_id
+    LEFT JOIN post_draft_covers c ON c.draft_id = d.id`;
 
 /**
  * Les cases, lues et écrites **dans l'ordre canonique** et filtrées sur la liste connue :
@@ -89,6 +93,13 @@ const toDomain = (row: PostDraftRow, attempts: PublishAttempt[]): PostDraft => (
   platforms: parsePlatforms(row.platforms),
   publishStartedAt: row.publish_started_at,
   attempts,
+  options: parseShortOptions(row.publish_options),
+  cover: row.cover_updated_at
+    ? {
+        url: `/api/publish/drafts/${row.id}/cover?v=${encodeURIComponent(row.cover_updated_at)}`,
+        updatedAt: row.cover_updated_at,
+      }
+    : null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -187,6 +198,28 @@ export class SqlitePostDraftRepository implements PostDraftRepository {
     return { previousUploadId: row.upload_id };
   }
 
+  cover(id: string): { data: Buffer; mimeType: string } | null {
+    const row = this.db
+      .prepare('SELECT data, mime_type FROM post_draft_covers WHERE draft_id = ?')
+      .get(id) as { data: Uint8Array; mime_type: string } | undefined;
+    return row ? { data: Buffer.from(row.data), mimeType: row.mime_type } : null;
+  }
+
+  setCover(id: string, image: { data: Buffer; mimeType: string } | null): void {
+    if (!this.findById(id)) throw notFound('Publication');
+    if (!image) {
+      this.db.prepare('DELETE FROM post_draft_covers WHERE draft_id = ?').run(id);
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO post_draft_covers (draft_id, data, mime_type, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (draft_id) DO UPDATE SET data = excluded.data,
+           mime_type = excluded.mime_type, updated_at = excluded.updated_at`,
+      )
+      .run(id, image.data, image.mimeType, new Date().toISOString());
+  }
+
   linkedUploadIds(): Set<string> {
     const rows = this.db
       .prepare('SELECT upload_id FROM post_drafts WHERE upload_id IS NOT NULL')
@@ -257,7 +290,8 @@ export class SqlitePostDraftRepository implements PostDraftRepository {
       .prepare(
         `UPDATE post_drafts
             SET title = ?, description = ?, planned_date = ?, production_id = ?, steps = ?,
-                archived_at = ?, scheduled_at = ?, platforms = ?, updated_at = ?
+                archived_at = ?, scheduled_at = ?, platforms = ?, publish_options = ?,
+                updated_at = ?
           WHERE id = ?`,
       )
       .run(
@@ -270,6 +304,7 @@ export class SqlitePostDraftRepository implements PostDraftRepository {
         archivedAt,
         input.scheduledAt === undefined ? existing.scheduledAt : input.scheduledAt,
         serializePlatforms(input.platforms ?? existing.platforms),
+        JSON.stringify(input.options ?? existing.options),
         now,
         id,
       );

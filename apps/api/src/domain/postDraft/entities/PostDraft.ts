@@ -4,6 +4,86 @@ import type { PublishAttempt, PublishPlatform } from '../../publish/entities/Pub
 /** Les plateformes où un short part, dans l'ordre d'affichage. Les trois par défaut. */
 export const SHORT_PLATFORMS: readonly PublishPlatform[] = ['youtube', 'instagram', 'tiktok'];
 
+export type YouTubeVisibility = 'public' | 'unlisted' | 'private';
+
+/** Reel d'essai : montré d'abord aux non-abonnés. `MANUAL` = on le promeut depuis l'app. */
+export type InstagramTrial = 'MANUAL' | 'SS_PERFORMANCE';
+
+/**
+ * Tout ce qui part avec la vidéo, plateforme par plateforme. Une option ne sert pas
+ * forcément partout : les hashtags vont dans la description YouTube et la légende
+ * Instagram, les tags seulement sur YouTube, l'essai seulement sur Instagram. TikTok, en
+ * brouillon dans l'app, ne reçoit que la vidéo.
+ */
+export interface ShortOptions {
+  /** « #domotique #homeassistant » : ajoutés à la fin de la description et de la légende. */
+  hashtags: string;
+  youtube: {
+    /** Séparés par des virgules ; 500 caractères au total (`fitTags`). */
+    tags: string;
+    visibility: YouTubeVisibility;
+    /** Catégorie YouTube (`28` Science et technologie…), `null` = celle par défaut. */
+    categoryId: string | null;
+    madeForKids: boolean;
+    notifySubscribers: boolean;
+  };
+  instagram: {
+    /** Aussi dans la grille du profil, pas seulement l'onglet Reels. */
+    shareToFeed: boolean;
+    /** `null` = un Reel normal. */
+    trial: InstagramTrial | null;
+    /** Comptes invités en collaboration, séparés par des virgules (3 au plus). */
+    collaborators: string;
+    /** Sans image de couverture : l'image de la vidéo à cet instant (secondes). */
+    coverAtSeconds: number | null;
+  };
+}
+
+export const DEFAULT_SHORT_OPTIONS: ShortOptions = {
+  hashtags: '',
+  youtube: {
+    tags: '',
+    visibility: 'public',
+    categoryId: null,
+    madeForKids: false,
+    notifySubscribers: true,
+  },
+  instagram: { shareToFeed: true, trial: null, collaborators: '', coverAtSeconds: null },
+};
+
+/** Relit le JSON stocké : une option absente (ou ajoutée depuis) prend son défaut. */
+export const parseShortOptions = (raw: string): ShortOptions => {
+  let stored: Partial<ShortOptions> = {};
+  try {
+    stored = JSON.parse(raw) as Partial<ShortOptions>;
+  } catch {
+    // Illisible : les défauts.
+  }
+  return {
+    hashtags: stored.hashtags ?? DEFAULT_SHORT_OPTIONS.hashtags,
+    youtube: { ...DEFAULT_SHORT_OPTIONS.youtube, ...stored.youtube },
+    instagram: { ...DEFAULT_SHORT_OPTIONS.instagram, ...stored.instagram },
+  };
+};
+
+/**
+ * La description qui part (YouTube, légende Instagram) : la description, puis les hashtags
+ * sur leur propre ligne s'ils n'y sont pas déjà.
+ */
+export const captionWithHashtags = (description: string, hashtags: string): string => {
+  const tags = hashtags.trim();
+  const text = description.trim();
+  if (!tags || text.includes(tags)) return text;
+  return text ? `${text}\n\n${tags}` : tags;
+};
+
+/** La couverture d'une publication : miniature YouTube et couverture Instagram. */
+export interface PostDraftCover {
+  /** Adresse de l'image, versionnée (`?v=`). */
+  url: string;
+  updatedAt: string;
+}
+
 /** La vidéo déposée sur une publication (fichier sur le disque, à côté de la base). */
 export interface PostDraftVideo {
   id: string;
@@ -67,6 +147,10 @@ export interface PostDraft {
   publishStartedAt: string | null;
   /** Les envois de sa vidéo, le plus récent d'abord. */
   attempts: PublishAttempt[];
+  /** Ce qui part avec la vidéo (hashtags, tags, visibilité, reel d'essai…). */
+  options: ShortOptions;
+  /** `null` = pas de couverture : YouTube choisit, Instagram prend `coverAtSeconds`. */
+  cover: PostDraftCover | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -112,6 +196,8 @@ export interface UpdatePostDraftInput extends Partial<CreatePostDraftInput> {
   scheduledAt?: string | null;
   /** Refusé (409) une fois la mise en ligne lancée. */
   platforms?: PublishPlatform[];
+  /** Remplace toutes les options. */
+  options?: ShortOptions;
 }
 
 /**

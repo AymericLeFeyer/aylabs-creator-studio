@@ -18,6 +18,7 @@ import {
 import { localToday, shiftDate } from '../../application/planning/usecases/usePlanning.ts';
 import {
   isPostDraftComplete,
+  captionWithHashtags,
   localDateOf,
   POST_DRAFT_STEP_LABELS,
   rescheduleOnDay,
@@ -178,7 +179,10 @@ export const ShortsPage = () => {
 
   const copy = async (draft: PostDraft) => {
     try {
-      await navigator.clipboard.writeText(draft.description);
+      // La légende complète, hashtags compris : c'est elle qu'on colle dans TikTok.
+      await navigator.clipboard.writeText(
+        captionWithHashtags(draft.description, draft.options.hashtags),
+      );
       setCopiedId(draft.id);
       window.setTimeout(
         () => setCopiedId((current) => (current === draft.id ? null : current)),
@@ -474,8 +478,8 @@ const DraftRow = ({
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            title="Copier la description"
-            disabled={!draft.description}
+            title="Copier la légende (description et hashtags)"
+            disabled={!draft.description && !draft.options.hashtags}
             onClick={onCopy}
           >
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

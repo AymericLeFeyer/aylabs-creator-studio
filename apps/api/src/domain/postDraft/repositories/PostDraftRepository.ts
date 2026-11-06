@@ -28,6 +28,9 @@ export interface PostDraftRepository {
    * mise en ligne l'a précédée. C'est la seule garde contre un double envoi.
    */
   markStarted(id: string, at: string): boolean;
+  /** La couverture (JPEG), `null` s'il n'y en a pas. */
+  cover(id: string): { data: Buffer; mimeType: string } | null;
+  setCover(id: string, image: { data: Buffer; mimeType: string } | null): void;
   /** Les dépôts rattachés à une publication (pour effacer les autres au démarrage). */
   linkedUploadIds(): Set<string>;
 }

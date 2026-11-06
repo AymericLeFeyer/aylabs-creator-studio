@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { postDraftApi } from '../../../infrastructure/postDraft/api/postDraftApi.ts';
 import {
   shortState,
+  type CoverSource,
   type PostDraft,
   type PostDraftInput,
   type PostDraftUpdate,
@@ -80,6 +81,12 @@ export const useUploadDraftVideo = () =>
 
 export const useRemoveDraftVideo = () =>
   usePostDraftMutation((id: string) => postDraftApi.removeVideo(id));
+
+/** Pose (`source`) ou retire (`null`) la couverture. */
+export const useSetDraftCover = () =>
+  usePostDraftMutation(({ id, source }: { id: string; source: CoverSource | null }) =>
+    source ? postDraftApi.setCover(id, source) : postDraftApi.removeCover(id),
+  );
 
 /** « Publier maintenant », ou « Réessayer » les plateformes en échec. */
 export const usePublishDraftNow = () =>

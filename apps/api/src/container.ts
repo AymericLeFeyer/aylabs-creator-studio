@@ -452,7 +452,9 @@ export const buildContainer = (config: Config): Container => {
     mailVideoNotes,
     manageTikTokConnection,
     managePublishing,
-    manageShorts: new ManageShorts(postDrafts, productions, managePublishing),
+    manageShorts: new ManageShorts(postDrafts, productions, managePublishing, (id) =>
+      manageThumbnails.image(id),
+    ),
     manageThumbnails,
     productionAssistant: new ProductionAssistant({
       productions,

@@ -1,5 +1,6 @@
 import { request, uploadFile } from '../../http/httpClient.ts';
 import type {
+  CoverSource,
   PostDraft,
   PostDraftInput,
   PostDraftSummary,
@@ -38,6 +39,12 @@ export const postDraftApi = {
 
   removeVideo: (id: string) =>
     request<PostDraft>(`/api/publish/drafts/${id}/video`, { method: 'DELETE' }),
+
+  setCover: (id: string, source: CoverSource) =>
+    request<PostDraft>(`/api/publish/drafts/${id}/cover`, { method: 'PUT', body: source }),
+
+  removeCover: (id: string) =>
+    request<PostDraft>(`/api/publish/drafts/${id}/cover`, { method: 'DELETE' }),
 
   targets: () => request<PublishTargets>('/api/publish/targets'),
 };

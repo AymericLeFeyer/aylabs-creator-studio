@@ -12,6 +12,10 @@ export interface YouTubeUploadInput {
   description: string;
   tags: string[];
   privacy: YouTubePrivacy;
+  /** `null` : la catégorie par défaut. */
+  categoryId?: string | null;
+  madeForKids?: boolean;
+  notifySubscribers?: boolean;
 }
 
 /**
@@ -43,14 +47,18 @@ export class YouTubeUploadClient {
     try {
       const response = await youtube.videos.insert({
         part: ['snippet', 'status'],
-        notifySubscribers: false,
+        notifySubscribers: input.notifySubscribers ?? false,
         requestBody: {
           snippet: {
             title: input.title,
             description: input.description,
             tags: input.tags.length > 0 ? input.tags : undefined,
+            categoryId: input.categoryId ?? undefined,
           },
-          status: { privacyStatus: input.privacy, selfDeclaredMadeForKids: false },
+          status: {
+            privacyStatus: input.privacy,
+            selfDeclaredMadeForKids: input.madeForKids ?? false,
+          },
         },
         media: { mimeType: input.mimeType, body: createReadStream(input.filePath) },
       });

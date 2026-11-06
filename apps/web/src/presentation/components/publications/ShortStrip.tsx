@@ -136,6 +136,16 @@ export const ShortStrip = ({ draft, today, onSchedule }: ShortStripProps) => {
         }}
       />
 
+      {/* 0. La couverture, si elle est posée */}
+      {draft.cover && (
+        <img
+          src={draft.cover.url}
+          alt=""
+          title="Couverture (miniature YouTube, couverture Instagram)"
+          className="h-8 w-auto rounded-sm border border-border"
+        />
+      )}
+
       {/* 1. La vidéo */}
       {progress !== null ? (
         <span className="flex items-center gap-2 text-muted-foreground">

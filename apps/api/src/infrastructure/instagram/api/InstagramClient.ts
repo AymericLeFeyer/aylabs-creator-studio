@@ -375,6 +375,13 @@ export class InstagramClient {
       shareToFeed: boolean;
       coverUrl?: string;
       coverOffsetMs?: number;
+      /**
+       * Reel d'essai : montré d'abord aux non-abonnés. `MANUAL` = on le promeut depuis l'app,
+       * `SS_PERFORMANCE` = Instagram le promeut s'il marche.
+       */
+      trial?: 'MANUAL' | 'SS_PERFORMANCE' | null;
+      /** Noms d'utilisateur invités en collaboration (3 au plus). */
+      collaborators?: string[];
     },
   ): Promise<string> {
     // Une image de couverture l'emporte ; sinon, une image prise dans la vidéo.
@@ -391,6 +398,12 @@ export class InstagramClient {
         caption: input.caption,
         share_to_feed: String(input.shareToFeed),
         ...cover,
+        ...(input.trial
+          ? { trial_params: JSON.stringify({ graduation_strategy: input.trial }) }
+          : {}),
+        ...(input.collaborators?.length
+          ? { collaborators: JSON.stringify(input.collaborators) }
+          : {}),
       },
       'POST',
     );

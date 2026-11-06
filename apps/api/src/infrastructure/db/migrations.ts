@@ -2207,6 +2207,25 @@ const migrations: Migration[] = [
         WHERE publish_started_at IS NULL;
     `,
   },
+  {
+    version: 67,
+    name: 'shorts : options de publication et couverture',
+    up: `
+      -- Tout ce qui part avec la video, plateforme par plateforme (hashtags, tags YouTube,
+      -- visibilite, reel d essai...), en JSON : une option de plus ne demande aucune
+      -- migration, et les valeurs absentes retombent sur leur defaut a la lecture.
+      ALTER TABLE post_drafts ADD COLUMN publish_options TEXT NOT NULL DEFAULT '{}';
+
+      -- La couverture (miniature YouTube, couverture Instagram), a part : les listes ne
+      -- lisent jamais l image.
+      CREATE TABLE post_draft_covers (
+        draft_id   TEXT PRIMARY KEY REFERENCES post_drafts(id) ON DELETE CASCADE,
+        data       BLOB NOT NULL,
+        mime_type  TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 /**

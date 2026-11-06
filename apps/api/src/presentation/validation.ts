@@ -559,6 +559,27 @@ export const updatePostDraftSchema = createPostDraftSchema.partial().extend({
     .nullable()
     .optional(),
   platforms: z.array(z.enum(['youtube', 'instagram', 'tiktok'])).optional(),
+  options: z
+    .object({
+      hashtags: z.string().max(1000),
+      youtube: z.object({
+        tags: z.string().max(1000),
+        visibility: z.enum(['public', 'unlisted', 'private']),
+        categoryId: z
+          .string()
+          .regex(/^\d{1,3}$/)
+          .nullable(),
+        madeForKids: z.boolean(),
+        notifySubscribers: z.boolean(),
+      }),
+      instagram: z.object({
+        shareToFeed: z.boolean(),
+        trial: z.enum(['MANUAL', 'SS_PERFORMANCE']).nullable(),
+        collaborators: z.string().max(200),
+        coverAtSeconds: z.number().min(0).max(3600).nullable(),
+      }),
+    })
+    .optional(),
 });
 
 export const postDraftQuerySchema = z.object({

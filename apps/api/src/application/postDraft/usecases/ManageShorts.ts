@@ -8,6 +8,14 @@ import type { ProductionRepository } from '../../../domain/production/repositori
 import type { PublishAttempt, PublishPlatform } from '../../../domain/publish/entities/Publish.ts';
 import { badRequest, conflict, notFound } from '../../../shared/errors.ts';
 import type { ManagePublishing } from '../../publish/usecases/ManagePublishing.ts';
+import type { ThumbnailImage } from '../../../domain/thumbnail/entities/Thumbnail.ts';
+import { imageMimeType } from '../../../domain/thumbnail/services/imageType.ts';
+
+/** Une miniature générée (Production → Miniatures), lue par son identifiant. */
+export type ThumbnailImageReader = (id: string) => ThumbnailImage;
+
+/** La limite de YouTube pour une miniature (Instagram en admet 8). */
+const MAX_COVER_BYTES = 2 * 1024 ** 2;
 
 /** La fréquence à laquelle on regarde si une publication est arrivée à son heure. */
 const TICK_MS = 30_000;
@@ -43,12 +51,15 @@ export class ManageShorts {
   private readonly postDrafts: PostDraftRepository;
   private readonly productions: ProductionRepository;
   private readonly publishing: ManagePublishing;
+  private readonly thumbnailImage: ThumbnailImageReader;
 
   constructor(
     postDrafts: PostDraftRepository,
     productions: ProductionRepository,
     publishing: ManagePublishing,
+    thumbnailImage: ThumbnailImageReader,
   ) {
+    this.thumbnailImage = thumbnailImage;
     this.postDrafts = postDrafts;
     this.productions = productions;
     this.publishing = publishing;
@@ -104,6 +115,36 @@ export class ManageShorts {
     return this.find(id);
   }
 
+  /**
+   * La couverture : une image envoyée par l'écran (le navigateur la ramène en JPEG de 2 Mo au
+   * plus — la limite de YouTube), ou une miniature de Production → Miniatures, **copiée** :
+   * la supprimer là-bas ne la retire pas d'ici.
+   */
+  setCover(id: string, source: { image: string } | { thumbnailId: string } | null): PostDraft {
+    this.find(id);
+    if (!source) {
+      this.postDrafts.setCover(id, null);
+      return this.find(id);
+    }
+    const data =
+      'thumbnailId' in source
+        ? this.thumbnailImage(source.thumbnailId).data
+        : Buffer.from(source.image.replace(/^data:[^,]*,/, ''), 'base64');
+    const mimeType = imageMimeType(data);
+    if (mimeType !== 'image/jpeg' && mimeType !== 'image/png') {
+      throw badRequest('Couverture : JPEG ou PNG attendu');
+    }
+    if (data.length > MAX_COVER_BYTES) throw badRequest('Couverture : 2 Mo maximum (YouTube)');
+    this.postDrafts.setCover(id, { data: Buffer.from(data), mimeType });
+    return this.find(id);
+  }
+
+  cover(id: string): { data: Buffer; mimeType: string } {
+    const cover = this.postDrafts.cover(id);
+    if (!cover) throw notFound('Couverture');
+    return cover;
+  }
+
   /** Supprimer une publication emporte sa vidéo (ce qui est en ligne y reste). */
   delete(id: string): void {
     const draft = this.find(id);
@@ -155,11 +196,14 @@ export class ManageShorts {
     const video = draft.video;
     if (!video) return;
     const production = draft.productionId ? this.productions.findById(draft.productionId) : null;
+    const cover = this.postDrafts.cover(draft.id);
     for (const platform of platforms) {
       try {
         const { done } = this.publishing.publish(platform, video.id, {
           title: draft.title,
           description: draft.description,
+          options: draft.options,
+          cover,
           preferredChannelId: production?.channelId ?? null,
         });
         void done.then((attempt) => this.onDone(draft.id, attempt));

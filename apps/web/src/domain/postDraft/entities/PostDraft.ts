@@ -5,6 +5,87 @@ import {
   type PublishPlatform,
 } from '../../publish/entities/Publish.ts';
 
+export type YouTubeVisibility = 'public' | 'unlisted' | 'private';
+export type InstagramTrial = 'MANUAL' | 'SS_PERFORMANCE';
+
+/**
+ * Tout ce qui part avec la vidéo (dupliqué de l'API). Chaque plateforme y prend ce qu'elle
+ * sait recevoir : les hashtags vont dans la description YouTube et la légende Instagram,
+ * les tags seulement sur YouTube, l'essai seulement sur Instagram. TikTok, en brouillon dans
+ * l'app, ne reçoit que la vidéo.
+ */
+export interface ShortOptions {
+  hashtags: string;
+  youtube: {
+    tags: string;
+    visibility: YouTubeVisibility;
+    categoryId: string | null;
+    madeForKids: boolean;
+    notifySubscribers: boolean;
+  };
+  instagram: {
+    shareToFeed: boolean;
+    trial: InstagramTrial | null;
+    collaborators: string;
+    coverAtSeconds: number | null;
+  };
+}
+
+export const DEFAULT_SHORT_OPTIONS: ShortOptions = {
+  hashtags: '',
+  youtube: {
+    tags: '',
+    visibility: 'public',
+    categoryId: null,
+    madeForKids: false,
+    notifySubscribers: true,
+  },
+  instagram: { shareToFeed: true, trial: null, collaborators: '', coverAtSeconds: null },
+};
+
+export const YOUTUBE_VISIBILITY_LABELS: Record<YouTubeVisibility, string> = {
+  public: 'Publique',
+  unlisted: 'Non répertoriée',
+  private: 'Privée',
+};
+
+/** Les catégories YouTube courantes (identifiants de l'API, région FR). */
+export const YOUTUBE_CATEGORIES: Array<{ id: string; label: string }> = [
+  { id: '28', label: 'Science et technologie' },
+  { id: '26', label: 'Vie pratique et style' },
+  { id: '27', label: 'Éducation' },
+  { id: '22', label: 'Personnes et blogs' },
+  { id: '24', label: 'Divertissement' },
+  { id: '19', label: 'Voyages et événements' },
+  { id: '20', label: 'Jeux vidéo' },
+  { id: '2', label: 'Auto et véhicules' },
+  { id: '15', label: 'Animaux' },
+  { id: '17', label: 'Sports' },
+  { id: '10', label: 'Musique' },
+  { id: '1', label: 'Films et animations' },
+  { id: '23', label: 'Humour' },
+  { id: '25', label: 'Actualités et politique' },
+];
+
+export const INSTAGRAM_TRIAL_LABELS: Record<InstagramTrial, string> = {
+  MANUAL: 'Reel d’essai — je le partage à mes abonnés depuis l’app',
+  SS_PERFORMANCE: 'Reel d’essai — Instagram le partage s’il marche',
+};
+
+/** Même règle que l'API : les hashtags à la fin, sur leur ligne, s'ils n'y sont pas déjà. */
+export const captionWithHashtags = (description: string, hashtags: string): string => {
+  const tags = hashtags.trim();
+  const text = description.trim();
+  if (!tags || text.includes(tags)) return text;
+  return text ? `${text}\n\n${tags}` : tags;
+};
+
+/** Miniature YouTube et couverture Instagram. */
+export interface PostDraftCover {
+  url: string;
+  updatedAt: string;
+}
+
 /** La vidéo déposée sur une publication (glissée sur l'écran ou envoyée par le montage). */
 export interface PostDraftVideo {
   id: string;
@@ -63,6 +144,10 @@ export interface PostDraft {
   publishStartedAt: string | null;
   /** Les envois de sa vidéo, le plus récent d'abord. */
   attempts: PublishAttempt[];
+  /** Ce qui part avec la vidéo (hashtags, tags, visibilité, reel d'essai…). */
+  options: ShortOptions;
+  /** `null` : YouTube choisit, Instagram prend `coverAtSeconds`. */
+  cover: PostDraftCover | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -81,7 +166,12 @@ export interface PostDraftUpdate extends Partial<PostDraftInput> {
   /** Instant UTC ; `null` retire la programmation. 409 une fois la mise en ligne lancée. */
   scheduledAt?: string | null;
   platforms?: PublishPlatform[];
+  /** Remplace toutes les options. */
+  options?: ShortOptions;
 }
+
+/** Une couverture : image (base64, JPEG ≤ 2 Mo) ou miniature de Production → Miniatures. */
+export type CoverSource = { image: string } | { thumbnailId: string };
 
 /** Le dernier envoi d'une plateforme, `null` s'il n'y en a pas encore. */
 export const lastAttempt = (
