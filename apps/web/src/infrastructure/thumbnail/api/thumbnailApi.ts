@@ -14,6 +14,11 @@ export const thumbnailApi = {
   assets: () => request<ThumbnailAsset[]>('/api/thumbnails/assets'),
   addAsset: (input: { label: string; image: string }) =>
     request<ThumbnailAsset>('/api/thumbnails/assets', { method: 'POST', body: input }),
+  fetchImage: (url: string) =>
+    request<{ image: string; name: string }>('/api/thumbnails/fetch-image', {
+      method: 'POST',
+      body: { url },
+    }),
   deleteAsset: (id: string) => request<void>(`/api/thumbnails/assets/${id}`, { method: 'DELETE' }),
   list: (productionId: string | null, saved?: boolean) =>
     request<Thumbnail[]>('/api/thumbnails', {

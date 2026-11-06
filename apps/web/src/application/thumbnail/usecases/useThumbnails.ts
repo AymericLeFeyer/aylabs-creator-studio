@@ -39,6 +39,10 @@ const useAssetMutation = <T>(mutationFn: (input: T) => Promise<unknown>) => {
 export const useAddThumbnailAsset = () =>
   useAssetMutation((input: { label: string; image: string }) => thumbnailApi.addAsset(input));
 
+/** Télécharge une image par son adresse (rien n'est stocké, aucune racine à invalider). */
+export const useFetchThumbnailImage = () =>
+  useMutation({ mutationFn: (url: string) => thumbnailApi.fetchImage(url) });
+
 export const useDeleteThumbnailAsset = () =>
   useAssetMutation((id: string) => thumbnailApi.deleteAsset(id));
 

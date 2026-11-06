@@ -110,7 +110,7 @@ export const ThumbnailCard = ({
             aria-label="Supprimer"
             title="Supprimer"
             onClick={() => {
-              if (window.confirm('Supprimer cette miniature ?')) remove.mutate(thumbnail.id);
+              remove.mutate(thumbnail.id);
             }}
           >
             <Trash2 className="h-4 w-4" />

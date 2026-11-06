@@ -1424,6 +1424,10 @@ export const addThumbnailAssetSchema = z.object({
   image: thumbnailImageSchema,
 });
 
+export const fetchThumbnailImageSchema = z.object({
+  url: z.string().trim().min(1).max(4000),
+});
+
 export const generateThumbnailSchema = z.object({
   productionId: z.string().min(1).nullable().default(null),
   format: z.enum(['16:9', '9:16']),

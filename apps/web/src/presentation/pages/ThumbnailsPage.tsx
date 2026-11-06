@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Check, ImagePlus, Loader2, Plus, X } from 'lucide-react';
+import { Check, ImagePlus, Link2, Loader2, Plus, X } from 'lucide-react';
 import { useProductions } from '../../application/production/usecases/useProductions.ts';
 import {
+  useFetchThumbnailImage,
   useGenerateThumbnail,
   useThumbnailAssets,
   useThumbnails,
@@ -16,12 +17,12 @@ import {
 } from '../../domain/thumbnail/entities/Thumbnail.ts';
 import { cn } from '../../shared/cn.ts';
 import { fromSelectValue, NONE, toSelectValue } from '../components/forms/selectNone.ts';
-import { prepareImage } from '../components/thumbnails/prepareImage.ts';
+import { prepareDataUrl, prepareImage } from '../components/thumbnails/prepareImage.ts';
 import { ThumbnailCard } from '../components/thumbnails/ThumbnailCard.tsx';
 import { THUMBNAIL_RATIO } from '../components/thumbnails/thumbnailRatio.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.tsx';
-import { Textarea } from '../components/ui/input.tsx';
+import { Input, Textarea } from '../components/ui/input.tsx';
 import { Label } from '../components/ui/label.tsx';
 import {
   Select,
@@ -43,6 +44,7 @@ export const ThumbnailsPage = () => {
   const { data: assets = [] } = useThumbnailAssets();
   const { data: productions = [] } = useProductions();
   const generate = useGenerateThumbnail();
+  const fetchImage = useFetchThumbnailImage();
   const [searchParams] = useSearchParams();
 
   const [productionId, setProductionId] = useState<string | null>(searchParams.get('video'));
@@ -52,6 +54,7 @@ export const ThumbnailsPage = () => {
   const [excluded, setExcluded] = useState<string[]>([]);
   const [images, setImages] = useState<string[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState('');
   const input = useRef<HTMLInputElement>(null);
 
   const { data: thumbnails = [] } = useThumbnails(productionId);
@@ -81,6 +84,23 @@ export const ThumbnailsPage = () => {
     try {
       const prepared = await Promise.all(files.map(prepareImage));
       setImages((current) => [...current, ...prepared]);
+    } catch (failure) {
+      setFileError(failure instanceof Error ? failure.message : 'Image illisible.');
+    }
+  };
+
+  // L'API télécharge l'image (le CORS l'interdirait au navigateur), puis on la prépare
+  // exactement comme un fichier importé.
+  const addFromUrl = async (event: FormEvent) => {
+    event.preventDefault();
+    const url = imageUrl.trim();
+    if (!url) return;
+    setFileError(null);
+    try {
+      const { image, name } = await fetchImage.mutateAsync(url);
+      const prepared = await prepareDataUrl(image, name);
+      setImages((current) => [...current, prepared]);
+      setImageUrl('');
     } catch (failure) {
       setFileError(failure instanceof Error ? failure.message : 'Image illisible.');
     }
@@ -216,6 +236,29 @@ export const ThumbnailsPage = () => {
                 hidden
                 onChange={(event) => void addImages(event)}
               />
+              <form className="flex gap-1.5" onSubmit={(event) => void addFromUrl(event)}>
+                <Input
+                  type="url"
+                  inputMode="url"
+                  value={imageUrl}
+                  onChange={(event) => setImageUrl(event.target.value)}
+                  placeholder="Coller l’adresse d’une image ou d’une page"
+                  aria-label="Adresse d’une image"
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  size="icon"
+                  aria-label="Ajouter l’image depuis son adresse"
+                  disabled={!imageUrl.trim() || fetchImage.isPending}
+                >
+                  {fetchImage.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Link2 className="h-4 w-4" />
+                  )}
+                </Button>
+              </form>
               {assets.length === 0 && (
                 <p className="text-xs text-muted-foreground">
                   Ta banque est vide :{' '}

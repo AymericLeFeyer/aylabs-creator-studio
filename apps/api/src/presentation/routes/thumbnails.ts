@@ -2,8 +2,10 @@ import express, { Router, type Response } from 'express';
 import { z } from 'zod';
 import type { Container } from '../../container.ts';
 import type { ThumbnailImage } from '../../domain/thumbnail/entities/Thumbnail.ts';
+import { fetchRemoteImage } from '../../infrastructure/thumbnail/api/remoteImage.ts';
 import {
   addThumbnailAssetSchema,
+  fetchThumbnailImageSchema,
   generateThumbnailSchema,
   saveThumbnailSchema,
   updateThumbnailSettingsSchema,
@@ -51,6 +53,13 @@ export const thumbnailsRouter = (container: Container): Router => {
   router.post('/assets', (req, res) => {
     const { label, image } = addThumbnailAssetSchema.parse(req.body);
     res.status(201).json(thumbnails.addAsset(label, image));
+  });
+
+  // Une image par son adresse : téléchargée ici (le CORS l'interdirait au navigateur), rien
+  // n'est stocké. Déclaré avant `/:id`.
+  router.post('/fetch-image', async (req, res) => {
+    const { url } = fetchThumbnailImageSchema.parse(req.body);
+    res.json(await fetchRemoteImage(url));
   });
 
   router.get('/assets/:id/image', (req, res) => {
