@@ -280,7 +280,14 @@ const ScheduleChip = ({
       {label}
       {draft.scheduledAt && !noPlatform && (
         <span className="text-muted-foreground">
-          · {draft.platforms.map((platform) => PLATFORM_LABELS[platform]).join(', ')}
+          ·{' '}
+          {draft.platforms
+            .map((platform) =>
+              platform === 'instagram' && draft.options.instagram.trial
+                ? 'Instagram (reel d’essai)'
+                : PLATFORM_LABELS[platform],
+            )
+            .join(', ')}
         </span>
       )}
       {draft.scheduledAt && noPlatform && (

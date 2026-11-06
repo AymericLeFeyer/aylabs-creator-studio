@@ -7,7 +7,9 @@ import {
 } from '../../../application/postDraft/usecases/usePostDrafts.ts';
 import { localToday } from '../../../application/planning/usecases/usePlanning.ts';
 import {
+  INSTAGRAM_TRIAL_LABELS,
   instantAt,
+  YOUTUBE_VISIBILITY_LABELS,
   localDateOf,
   localTimeOf,
   type PostDraft,
@@ -19,6 +21,7 @@ import {
   SHORT_PLATFORMS,
   type PublishPlatform,
 } from '../../../domain/publish/entities/Publish.ts';
+import { cn } from '../../../shared/cn.ts';
 import { Button } from '../ui/button.tsx';
 import { Checkbox } from '../ui/checkbox.tsx';
 import {
@@ -32,6 +35,19 @@ import {
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 
+/** Ce que la fiche du short a réglé, rappelé sous chaque plateforme. */
+const platformDetail = (draft: PostDraft, platform: PublishPlatform): string | null => {
+  if (platform === 'youtube') {
+    return `Vidéo ${YOUTUBE_VISIBILITY_LABELS[draft.options.youtube.visibility].toLowerCase()}`;
+  }
+  if (platform === 'instagram') {
+    return draft.options.instagram.trial
+      ? INSTAGRAM_TRIAL_LABELS[draft.options.instagram.trial]
+      : 'Reel normal, montré aux abonnés';
+  }
+  return 'Brouillon dans l’app TikTok, à finir sur le téléphone';
+};
+
 /** L'heure proposée quand rien n'est encore choisi. */
 const DEFAULT_TIME = '18:00';
 
@@ -41,8 +57,9 @@ interface ScheduleShortDialogProps {
 }
 
 /**
- * L'heure de mise en ligne d'un short et ses plateformes — **les trois cochées d'office**,
- * décochables. « Programmer » enregistre ; la vidéo partira toute seule à l'heure dite, dès
+ * L'heure de mise en ligne d'un short. Les plateformes se choisissent **dans la fiche du
+ * short** (`PostDraftDialog`) : ici elles sont rappelées en lecture seule, avec le compte
+ * visé et ce qui bloquerait, et le type de Reel Instagram. « Programmer » enregistre ; la vidéo partira toute seule à l'heure dite, dès
  * qu'elle est arrivée. « Publier maintenant » la fait partir tout de suite, après
  * confirmation : c'est public sur YouTube et Instagram.
  *
@@ -54,7 +71,7 @@ export const ScheduleShortDialog = ({ draft, onOpenChange }: ScheduleShortDialog
   const { data: targets } = usePublishTargets();
   const [day, setDay] = useState('');
   const [time, setTime] = useState(DEFAULT_TIME);
-  const [platforms, setPlatforms] = useState<PublishPlatform[]>([...SHORT_PLATFORMS]);
+  const platforms = draft?.platforms ?? [];
   const [error, setError] = useState<string | null>(null);
 
   // Réinitialisé pendant le rendu à chaque ouverture, comme les autres formulaires.
@@ -68,16 +85,8 @@ export const ScheduleShortDialog = ({ draft, onOpenChange }: ScheduleShortDialog
         draft.scheduledAt ? localDateOf(draft.scheduledAt) : (draft.plannedDate ?? localToday()),
       );
       setTime(draft.scheduledAt ? localTimeOf(draft.scheduledAt) : DEFAULT_TIME);
-      setPlatforms(draft.platforms.length ? draft.platforms : [...SHORT_PLATFORMS]);
     }
   }
-
-  const toggle = (platform: PublishPlatform) =>
-    setPlatforms((current) =>
-      SHORT_PLATFORMS.filter((entry) =>
-        entry === platform ? !current.includes(entry) : current.includes(entry),
-      ),
-    );
 
   const save = async (scheduledAt: string | null) => {
     if (!draft) return;
@@ -87,7 +96,6 @@ export const ScheduleShortDialog = ({ draft, onOpenChange }: ScheduleShortDialog
         id: draft.id,
         input: {
           scheduledAt,
-          platforms,
           ...(scheduledAt ? { plannedDate: localDateOf(scheduledAt) } : {}),
         },
       });
@@ -107,7 +115,7 @@ export const ScheduleShortDialog = ({ draft, onOpenChange }: ScheduleShortDialog
     try {
       await update.mutateAsync({
         id: draft.id,
-        input: { platforms, plannedDate: localToday() },
+        input: { plannedDate: localToday() },
       });
       await publishNow.mutateAsync(draft.id);
       onOpenChange(false);
@@ -125,9 +133,8 @@ export const ScheduleShortDialog = ({ draft, onOpenChange }: ScheduleShortDialog
         <DialogHeader>
           <DialogTitle>Mise en ligne</DialogTitle>
           <DialogDescription>
-            {draft?.title}. La vidéo part toute seule à l’heure choisie, dès qu’elle est arrivée.
-            YouTube et Instagram publient en public ; TikTok la dépose dans la boîte de réception de
-            l’app, à finir sur le téléphone.
+            {draft?.title}. La vidéo part toute seule à l’heure choisie, dès qu’elle est arrivée. Ce
+            qui part et où (visibilité, reel d’essai…) se règle dans la fiche du short.
           </DialogDescription>
         </DialogHeader>
 
@@ -154,35 +161,50 @@ export const ScheduleShortDialog = ({ draft, onOpenChange }: ScheduleShortDialog
           </div>
 
           <div className="space-y-2">
-            <Label>Plateformes</Label>
+            <div className="flex items-baseline justify-between gap-2">
+              <Label>Plateformes</Label>
+              <span className="text-xs text-muted-foreground">
+                Se changent dans la fiche du short
+              </span>
+            </div>
             {SHORT_PLATFORMS.map((platform) => {
               const blocker = platformBlocker(platform, targets);
               const target = platformTargetName(platform, targets);
               const id = `short-platform-${platform}`;
+              const checked = platforms.includes(platform);
+              const detail = draft ? platformDetail(draft, platform) : null;
               return (
-                <label
+                <div
                   key={platform}
-                  htmlFor={id}
-                  className="flex cursor-pointer items-start gap-2 text-sm"
+                  className={cn(
+                    'flex items-start gap-2 text-sm',
+                    !checked && 'text-muted-foreground',
+                  )}
                 >
-                  <Checkbox
-                    id={id}
-                    checked={platforms.includes(platform)}
-                    onCheckedChange={() => toggle(platform)}
-                    className="mt-0.5"
-                  />
+                  <Checkbox id={id} checked={checked} disabled className="mt-0.5" />
                   <span>
                     {PLATFORM_LABELS[platform]}
-                    {target && <span className="text-muted-foreground"> · {target}</span>}
-                    {blocker && (
+                    {checked && target && (
+                      <span className="text-muted-foreground"> · {target}</span>
+                    )}
+                    {!checked && <span> · n’y part pas</span>}
+                    {checked && detail && (
+                      <span className="block text-xs text-muted-foreground">{detail}</span>
+                    )}
+                    {checked && blocker && (
                       <span className="block text-xs text-[var(--expense)]">{blocker}</span>
                     )}
                   </span>
-                </label>
+                </div>
               );
             })}
           </div>
 
+          {platforms.length === 0 && (
+            <p className="text-xs text-[var(--expense)]">
+              Aucune plateforme cochée dans la fiche du short : il ne partira nulle part.
+            </p>
+          )}
           {!draft?.video && (
             <p className="text-xs text-muted-foreground">
               La vidéo n’est pas encore arrivée : la programmation l’attendra. Si l’heure est passée

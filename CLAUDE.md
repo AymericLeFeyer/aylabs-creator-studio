@@ -849,8 +849,13 @@ disque comme les autres dépôts (`publish_uploads`, voir `publish`), rattachée
 `post_drafts.upload_id` (`ON DELETE SET NULL`). Arrivée, elle **coche « Montage »**.
 
 - `scheduledAt` (instant UTC, le navigateur convertit l'heure locale : `instantAt`) et
-  `platforms` (CSV `youtube,instagram,tiktok`, **les trois par défaut**, décochables dans
-  `ScheduleShortDialog`) se posent par `PATCH`. Programmer pose aussi `plannedDate` (le short
+  `platforms` (CSV `youtube,instagram,tiktok`, **les trois par défaut**). Les plateformes se
+  décochent **dans la fiche du short** (`PostDraftDialog`, une case dans la légende de chaque
+  section YouTube / Instagram / TikTok ; décochée, ses réglages s'estompent sans se perdre ;
+  figées une fois lancée) ; `ScheduleShortDialog` ne fait que les **rappeler en lecture
+  seule**, avec le compte visé, ce qui bloquerait et le réglage clé (visibilité YouTube, reel
+  normal ou **reel d'essai**, brouillon TikTok — `platformDetail`). La ligne dit aussi
+  « Instagram (reel d'essai) » se posent par `PATCH`. Programmer pose aussi `plannedDate` (le short
   change de couloir). Programmer **sans vidéo** est permis : il partira dès qu'elle arrive — et
   aussitôt si l'heure est passée (l'écran le dit).
 - **`ManageShorts`** (`application/postDraft/usecases/`) possède tout ce qui touche à la vidéo

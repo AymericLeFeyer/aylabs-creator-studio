@@ -20,6 +20,11 @@ import {
   type ShortOptions,
   type YouTubeVisibility,
 } from '../../../domain/postDraft/entities/PostDraft.ts';
+import {
+  PLATFORM_LABELS,
+  SHORT_PLATFORMS,
+  type PublishPlatform,
+} from '../../../domain/publish/entities/Publish.ts';
 import { cn } from '../../../shared/cn.ts';
 import { fromSelectValue, NONE, toSelectValue } from '../forms/selectNone.ts';
 import { Button } from '../ui/button.tsx';
@@ -67,6 +72,41 @@ const Section = ({
     <legend className="px-1 text-sm font-medium">{title}</legend>
     {hint && <p className="-mt-1 text-xs text-muted-foreground">{hint}</p>}
     {children}
+  </fieldset>
+);
+
+/**
+ * Une plateforme : sa case dans la légende — décochée, le short n'y part pas, et ses
+ * réglages s'estompent sans disparaître (on les retrouve en la recochant). Figée une fois la
+ * mise en ligne lancée.
+ */
+const PlatformSection = ({
+  platform,
+  checked,
+  locked,
+  onToggle,
+  hint,
+  children,
+}: {
+  platform: PublishPlatform;
+  checked: boolean;
+  locked: boolean;
+  onToggle: () => void;
+  hint?: string;
+  children: ReactNode;
+}) => (
+  <fieldset className="space-y-3 rounded-lg border border-border p-3">
+    <legend className="px-1">
+      <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+        <Checkbox checked={checked} disabled={locked} onCheckedChange={onToggle} />
+        {PLATFORM_LABELS[platform]}
+        {!checked && (
+          <span className="text-xs font-normal text-muted-foreground">· n’y part pas</span>
+        )}
+      </label>
+    </legend>
+    {hint && <p className="-mt-1 text-xs text-muted-foreground">{hint}</p>}
+    <div className={cn('space-y-3', !checked && 'pointer-events-none opacity-40')}>{children}</div>
   </fieldset>
 );
 
@@ -119,6 +159,15 @@ export const PostDraftDialog = ({
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY);
   const [options, setOptions] = useState<ShortOptions>(DEFAULT_SHORT_OPTIONS);
+  const [platforms, setPlatforms] = useState<PublishPlatform[]>([...SHORT_PLATFORMS]);
+  /** Une fois la mise en ligne lancée, les plateformes sont figées (409 sinon). */
+  const platformsLocked = draft?.publishStartedAt != null;
+  const togglePlatform = (platform: PublishPlatform) =>
+    setPlatforms((current) =>
+      SHORT_PLATFORMS.filter((entry) =>
+        entry === platform ? !current.includes(entry) : current.includes(entry),
+      ),
+    );
   const [chosenCover, setChosenCover] = useState<PickedCover | null>(null);
   /** Tant qu'on n'a pas touché à la couverture, on propose la miniature enregistrée. */
   const [coverTouched, setCoverTouched] = useState(false);
@@ -154,6 +203,7 @@ export const PostDraftDialog = ({
         : { ...EMPTY, plannedDate: defaultDate ?? '' },
     );
     setOptions(draft?.options ?? DEFAULT_SHORT_OPTIONS);
+    setPlatforms(draft ? draft.platforms : [...SHORT_PLATFORMS]);
     setCoverTouched(false);
     setChosenCover(draft?.cover ? { source: null, previewUrl: draft.cover.url } : null);
   }
@@ -171,6 +221,7 @@ export const PostDraftDialog = ({
       description: form.description,
       plannedDate: form.plannedDate || null,
       options,
+      ...(platformsLocked ? {} : { platforms }),
     };
     // Changer le jour d'un short programmé le déplace à la même heure (sans jour, plus
     // d'heure) — tant que la mise en ligne n'est pas lancée.
@@ -192,7 +243,7 @@ export const PostDraftDialog = ({
             description: payload.description,
             plannedDate: payload.plannedDate,
           });
-      if (!draft) await update.mutateAsync({ id: saved.id, input: { options } });
+      if (!draft) await update.mutateAsync({ id: saved.id, input: { options, platforms } });
       // La couverture : seulement si elle a changé.
       if (cover?.source) await setCover.mutateAsync({ id: saved.id, source: cover.source });
       else if (!cover && draft?.cover) await setCover.mutateAsync({ id: saved.id, source: null });
@@ -290,7 +341,12 @@ export const PostDraftDialog = ({
             )}
           </Section>
 
-          <Section title="YouTube">
+          <PlatformSection
+            platform="youtube"
+            checked={platforms.includes('youtube')}
+            locked={platformsLocked}
+            onToggle={() => togglePlatform('youtube')}
+          >
             <div className="space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
                 <Label htmlFor="draft-tags">Tags</Label>
@@ -360,9 +416,14 @@ export const PostDraftDialog = ({
                 Conçue pour les enfants
               </Check>
             </div>
-          </Section>
+          </PlatformSection>
 
-          <Section title="Instagram">
+          <PlatformSection
+            platform="instagram"
+            checked={platforms.includes('instagram')}
+            locked={platformsLocked}
+            onToggle={() => togglePlatform('instagram')}
+          >
             <div className="space-y-1.5">
               <Label>Type de Reel</Label>
               <Select
@@ -430,12 +491,31 @@ export const PostDraftDialog = ({
             >
               Aussi dans la grille du profil
             </Check>
-          </Section>
+          </PlatformSection>
 
-          <p className="text-xs text-muted-foreground">
-            TikTok reçoit la vidéo en brouillon dans l’app : légende, hashtags et couverture se
-            règlent sur le téléphone (le bouton « copier » de la ligne copie la légende complète).
-          </p>
+          <PlatformSection
+            platform="tiktok"
+            checked={platforms.includes('tiktok')}
+            locked={platformsLocked}
+            onToggle={() => togglePlatform('tiktok')}
+          >
+            <p className="text-xs text-muted-foreground">
+              La vidéo arrive en <strong>brouillon</strong> dans la boîte de réception de l’app
+              TikTok : légende, hashtags, son et couverture se règlent sur le téléphone, avant de
+              publier. Le bouton « copier » de la ligne copie la légende complète.
+            </p>
+          </PlatformSection>
+
+          {platforms.length === 0 && (
+            <p className="text-xs text-[var(--expense)]">
+              Aucune plateforme cochée : le short ne partira nulle part.
+            </p>
+          )}
+          {platformsLocked && (
+            <p className="text-xs text-muted-foreground">
+              La mise en ligne est lancée : les plateformes ne se changent plus.
+            </p>
+          )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
