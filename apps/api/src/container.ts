@@ -22,7 +22,8 @@ import { SqliteProductRepository } from './infrastructure/product/repositories/S
 import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/repositories/SqliteSponsorshipRepository.ts';
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
 import { SqlitePublishRepository } from './infrastructure/publish/repositories/SqlitePublishRepository.ts';
-import { ManagePublishTests } from './application/publish/usecases/ManagePublishTests.ts';
+import { ManagePublishing } from './application/publish/usecases/ManagePublishing.ts';
+import { ManageShorts } from './application/postDraft/usecases/ManageShorts.ts';
 import { S3PublishStaging } from './infrastructure/publish/api/S3PublishStaging.ts';
 import { SqlitePostDraftRepository } from './infrastructure/postDraft/repositories/SqlitePostDraftRepository.ts';
 import { SqliteDashboardWidgetRepository } from './infrastructure/dashboard/repositories/SqliteDashboardWidgetRepository.ts';
@@ -268,8 +269,10 @@ export interface Container {
   mailVideoNotes: MailVideoNotes;
   /** Les miniatures et leur banque d'images : seul endroit où la clé d'OpenAI est déchiffrée. */
   manageThumbnails: ManageThumbnails;
-  /** Production → Publish : banc d'essai de la publication directe (temporaire). */
-  managePublishTests: ManagePublishTests;
+  /** La mise en ligne directe sur YouTube, Instagram et TikTok. */
+  managePublishing: ManagePublishing;
+  /** Production → Shorts : vidéo, heure et mise en ligne des publications. */
+  manageShorts: ManageShorts;
 }
 
 /** Assemble les implémentations concrètes derrière les interfaces du domaine. */
@@ -423,6 +426,22 @@ export const buildContainer = (config: Config): Container => {
     config.openaiApiKey,
   );
 
+  const managePublishing = new ManagePublishing(
+    new SqlitePublishRepository(db),
+    channels,
+    instagramAccounts,
+    manageTikTokConnection,
+    new S3PublishStaging(config.publishS3),
+    {
+      storageDir:
+        config.databasePath === ':memory:'
+          ? join(process.cwd(), 'data', 'publish-uploads')
+          : join(dirname(config.databasePath), 'publish-uploads'),
+      gcpClientId: config.gcpClientId,
+      gcpClientSecret: config.gcpClientSecret,
+    },
+  );
+
   return {
     db,
     config,
@@ -432,22 +451,8 @@ export const buildContainer = (config: Config): Container => {
     manageBrandContacts,
     mailVideoNotes,
     manageTikTokConnection,
-    managePublishTests: new ManagePublishTests(
-      new SqlitePublishRepository(db),
-      channels,
-      instagramAccounts,
-      manageTikTokConnection,
-      (id) => manageThumbnails.image(id),
-      new S3PublishStaging(config.publishS3),
-      {
-        storageDir:
-          config.databasePath === ':memory:'
-            ? join(process.cwd(), 'data', 'publish-uploads')
-            : join(dirname(config.databasePath), 'publish-uploads'),
-        gcpClientId: config.gcpClientId,
-        gcpClientSecret: config.gcpClientSecret,
-      },
-    ),
+    managePublishing,
+    manageShorts: new ManageShorts(postDrafts, productions, managePublishing),
     manageThumbnails,
     productionAssistant: new ProductionAssistant({
       productions,

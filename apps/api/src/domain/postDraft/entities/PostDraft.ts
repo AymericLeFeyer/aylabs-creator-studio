@@ -1,4 +1,19 @@
 import type { IsoDate } from '../../../shared/dates.ts';
+import type { PublishAttempt, PublishPlatform } from '../../publish/entities/Publish.ts';
+
+/** Les plateformes où un short part, dans l'ordre d'affichage. Les trois par défaut. */
+export const SHORT_PLATFORMS: readonly PublishPlatform[] = ['youtube', 'instagram', 'tiktok'];
+
+/** La vidéo déposée sur une publication (fichier sur le disque, à côté de la base). */
+export interface PostDraftVideo {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** Adresse d'aperçu (`/api/publish/files/<token>`). */
+  url: string;
+  createdAt: string;
+}
 
 /**
  * Les six cases d'une publication, dans l'ordre où on les coche : la fabrication, la
@@ -42,6 +57,16 @@ export interface PostDraft {
   steps: PostDraftStep[];
   /** Instant UTC de l'archivage, `null` tant qu'elle est dans la liste. */
   archivedAt: string | null;
+  /** La vidéo à mettre en ligne, `null` tant qu'elle n'est pas arrivée. */
+  video: PostDraftVideo | null;
+  /** Instant UTC de la mise en ligne, `null` = pas programmée. */
+  scheduledAt: string | null;
+  /** Les plateformes visées, dans l'ordre de `SHORT_PLATFORMS`. */
+  platforms: PublishPlatform[];
+  /** Posé au lancement de la mise en ligne : plus rien ne se reprogramme ensuite. */
+  publishStartedAt: string | null;
+  /** Les envois de sa vidéo, le plus récent d'abord. */
+  attempts: PublishAttempt[];
   createdAt: string;
   updatedAt: string;
 }
@@ -83,7 +108,22 @@ export interface UpdatePostDraftInput extends Partial<CreatePostDraftInput> {
   steps?: PostDraftStep[];
   /** `true` archive (horodaté maintenant), `false` remet dans la liste. */
   archived?: boolean;
+  /** `null` retire la programmation. Refusé (409) une fois la mise en ligne lancée. */
+  scheduledAt?: string | null;
+  /** Refusé (409) une fois la mise en ligne lancée. */
+  platforms?: PublishPlatform[];
 }
+
+/**
+ * Tout ce qu'il faut pour partir à l'heure : une vidéo, une heure, au moins une
+ * plateforme, et rien de lancé. Une publication archivée ne part jamais.
+ */
+export const isPostDraftReady = (draft: PostDraft): boolean =>
+  draft.video !== null &&
+  draft.scheduledAt !== null &&
+  draft.platforms.length > 0 &&
+  draft.publishStartedAt === null &&
+  draft.archivedAt === null;
 
 /** Ce que la pastille du menu a besoin de savoir, sans charger toute la liste. */
 export interface PostDraftSummary {

@@ -551,6 +551,14 @@ export const updatePostDraftSchema = createPostDraftSchema.partial().extend({
   /** La liste complète des cases cochées : elle remplace l'ancienne. */
   steps: z.array(z.enum(POST_DRAFT_STEPS)).optional(),
   archived: z.boolean().optional(),
+  /** L'heure de mise en ligne, instant UTC (le navigateur convertit l'heure locale). */
+  scheduledAt: z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)), 'Horodatage invalide')
+    .transform((value) => new Date(value).toISOString())
+    .nullable()
+    .optional(),
+  platforms: z.array(z.enum(['youtube', 'instagram', 'tiktok'])).optional(),
 });
 
 export const postDraftQuerySchema = z.object({

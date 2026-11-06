@@ -20,6 +20,7 @@ import {
   isPostDraftComplete,
   localDateOf,
   POST_DRAFT_STEP_LABELS,
+  rescheduleOnDay,
   POST_DRAFT_STEPS,
   toggleStep,
   type PostDraft,
@@ -32,6 +33,8 @@ import { Checkbox } from '../components/ui/checkbox.tsx';
 import { Fab } from '../components/Fab.tsx';
 import { PageAlerts } from '../components/PageAlerts.tsx';
 import { PostDraftDialog } from '../components/publications/PostDraftDialog.tsx';
+import { ScheduleShortDialog } from '../components/publications/ScheduleShortDialog.tsx';
+import { ShortStrip } from '../components/publications/ShortStrip.tsx';
 import { useDraftDrag } from '../components/publications/useDraftDrag.ts';
 
 /** Jours toujours affichés de part et d'autre d'aujourd'hui, même sans rien dedans. */
@@ -58,7 +61,12 @@ const daysBetween = (from: string, to: string): string[] => {
 };
 
 /**
- * Production → Publications : **un couloir par jour**, dans l'ordre du calendrier.
+ * Production → Shorts (ex-Publications) : **un couloir par jour**, dans l'ordre du calendrier.
+ *
+ * Un short se prépare en deux temps : le **titre**, noté en vitesse pour savoir à peu près
+ * ce qui sort quand, puis la **vidéo** — glissée sur la ligne, ou envoyée par l'outil de
+ * montage. Avec une heure et ses plateformes (`ScheduleShortDialog`), il part tout seul à
+ * l'heure dite sur YouTube, Instagram et TikTok (`ShortStrip` dit où il en est).
  *
  * La question de l'écran est « quels jours n'ont rien ? » — une liste triée ne la pose pas,
  * un trou de trois jours y est invisible. Chaque jour a donc sa ligne, **vide comprise** :
@@ -81,12 +89,13 @@ const daysBetween = (from: string, to: string): string[] => {
  * sa date prévue, sans ouvrir la modale. La lâcher sur « Sans date » la retire du
  * calendrier. Les archivées n'ont pas de poignée — elles sont figées, comme leurs cases.
  */
-export const PublicationsPage = () => {
+export const ShortsPage = () => {
   const { data: active = [], isSuccess: activeLoaded } = usePostDrafts(false);
   const { data: archived = [], isSuccess: archivedLoaded } = usePostDrafts(true);
   const update = useUpdatePostDraft();
   const [createFor, setCreateFor] = useState<string | null | undefined>(undefined);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [schedulingId, setSchedulingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const today = localToday();
   /** `?publication=<id>` : venu d'une fiche de vidéo, on s'ouvre sur cette publication. */
@@ -127,6 +136,7 @@ export const PublicationsPage = () => {
 
   // L'identifiant et non la fiche : après enregistrement la liste est rechargée.
   const editing = drafts.find((draft) => draft.id === editingId) ?? null;
+  const scheduling = drafts.find((draft) => draft.id === schedulingId) ?? null;
 
   /**
    * Le défilement s'ouvre **sur aujourd'hui**, une seule fois : une fois les données là,
@@ -156,7 +166,13 @@ export const PublicationsPage = () => {
   const { drag, start } = useDraftDrag(scrollRef, (id, day) => {
     const draft = drafts.find((item) => item.id === id);
     if (!draft || draft.archivedAt || draft.plannedDate === day) return;
-    update.mutate({ id, input: { plannedDate: day } });
+    // Une programmation suit son couloir, à la même heure ; « Sans date » la retire. Une
+    // mise en ligne déjà lancée ne bouge plus : seule la date affichée change.
+    const reschedule =
+      draft.scheduledAt && !draft.publishStartedAt
+        ? { scheduledAt: day ? rescheduleOnDay(draft.scheduledAt, day) : null }
+        : {};
+    update.mutate({ id, input: { plannedDate: day, ...reschedule } });
   });
   const dropHighlight = 'bg-primary/10 ring-2 ring-inset ring-primary';
 
@@ -184,6 +200,8 @@ export const PublicationsPage = () => {
         update.mutate({ id: draft.id, input: { steps: toggleStep(draft.steps, step) } })
       }
       onArchive={(value) => update.mutate({ id: draft.id, input: { archived: value } })}
+      today={today}
+      onSchedule={() => setSchedulingId(draft.id)}
       highlighted={draft.id === targetId}
       dragging={drag?.id === draft.id}
       onDragStart={draft.archivedAt ? undefined : (event) => start(event, draft)}
@@ -194,10 +212,10 @@ export const PublicationsPage = () => {
     <div className={cn('space-y-4', drag && 'cursor-grabbing select-none')}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="hidden lg:block">
-          <h1 className="text-lg font-semibold">Publications</h1>
+          <h1 className="text-lg font-semibold">Shorts</h1>
           <p className="text-sm text-muted-foreground">
-            Un couloir par jour : on remonte pour le passé, on descend pour la suite. Ce qui est
-            paru se lit dans{' '}
+            Un couloir par jour. Note le titre, glisse la vidéo sur sa ligne, choisis l’heure : elle
+            part toute seule sur YouTube, Instagram et TikTok. Ce qui est paru se lit dans{' '}
             <Link to="/instagram" className="underline underline-offset-2">
               Audience → Instagram
             </Link>
@@ -218,12 +236,12 @@ export const PublicationsPage = () => {
           </Button>
           <Button size="sm" className="hidden lg:inline-flex" onClick={() => setCreateFor(null)}>
             <Plus className="h-4 w-4" />
-            Nouvelle publication
+            Nouveau short
           </Button>
         </div>
       </div>
 
-      <PageAlerts path="/publications" />
+      <PageAlerts path="/shorts" />
 
       {undated.length > 0 && (
         <Card
@@ -325,7 +343,7 @@ export const PublicationsPage = () => {
           document.body,
         )}
 
-      <Fab label="Nouvelle publication" icon={Plus} onClick={() => setCreateFor(today)} />
+      <Fab label="Nouveau short" icon={Plus} onClick={() => setCreateFor(today)} />
 
       <PostDraftDialog
         open={createFor !== undefined}
@@ -336,6 +354,10 @@ export const PublicationsPage = () => {
         open={editing !== null}
         onOpenChange={(value) => !value && setEditingId(null)}
         draft={editing}
+      />
+      <ScheduleShortDialog
+        draft={scheduling}
+        onOpenChange={(value) => !value && setSchedulingId(null)}
       />
     </div>
   );
@@ -348,6 +370,9 @@ interface DraftRowProps {
   onEdit: () => void;
   onToggle: (step: PostDraftStep) => void;
   onArchive: (archived: boolean) => void;
+  /** Le jour local, pour dire « aujourd'hui 18:00 ». */
+  today: string;
+  onSchedule: () => void;
   dragging: boolean;
   /** Celle qu'on est venu voir depuis une fiche de vidéo. */
   highlighted: boolean;
@@ -356,8 +381,9 @@ interface DraftRowProps {
 }
 
 /**
- * Une publication dans son couloir : titre, six cases, actions. Archivée, elle reste là,
- * grisée et figée — seul « Restaurer » la remet en jeu.
+ * Une publication dans son couloir : titre, six cases, actions, et en dessous le short
+ * (vidéo, heure, plateformes). Archivée, elle reste là, grisée et figée — seul
+ * « Restaurer » la remet en jeu.
  */
 const DraftRow = ({
   draft,
@@ -366,6 +392,8 @@ const DraftRow = ({
   onEdit,
   onToggle,
   onArchive,
+  today,
+  onSchedule,
   highlighted,
   dragging,
   onDragStart,
@@ -376,109 +404,114 @@ const DraftRow = ({
     <div
       data-publication-id={draft.id}
       className={cn(
-        'flex flex-col gap-2 px-4 py-2 lg:flex-row lg:items-center lg:gap-4',
+        'space-y-1.5 px-4 py-2',
         highlighted && 'bg-primary/10 ring-2 ring-inset ring-primary',
         isArchived && 'opacity-55',
         dragging && 'opacity-40',
       )}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-1">
-        {/* `touch-none` sur la seule poignée : au doigt, le reste de la ligne fait défiler. */}
-        {onDragStart ? (
-          <span
-            role="button"
-            aria-label="Déplacer vers un autre jour"
-            title="Glisser vers un autre jour"
-            onPointerDown={onDragStart}
-            className="-ml-2 flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground/60 hover:text-foreground active:cursor-grabbing"
-          >
-            <GripVertical className="h-4 w-4" />
-          </span>
-        ) : (
-          <span className="-ml-2 w-6 shrink-0" />
-        )}
-        <button
-          type="button"
-          onClick={onEdit}
-          className="min-w-0 flex-1 text-left"
-          title="Modifier"
-        >
-          <p className={cn('truncate text-sm font-medium', isArchived && 'line-through')}>
-            {draft.title}
-          </p>
-          {draft.description && (
-            <p className="truncate text-xs text-muted-foreground">{draft.description}</p>
-          )}
-        </button>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        {POST_DRAFT_STEPS.map((step) => {
-          const id = `${draft.id}-${step}`;
-          return (
-            <label
-              key={step}
-              htmlFor={id}
-              className="flex cursor-pointer select-none items-center gap-1.5 text-xs"
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          {/* `touch-none` sur la seule poignée : au doigt, le reste de la ligne fait défiler. */}
+          {onDragStart ? (
+            <span
+              role="button"
+              aria-label="Déplacer vers un autre jour"
+              title="Glisser vers un autre jour"
+              onPointerDown={onDragStart}
+              className="-ml-2 flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground/60 hover:text-foreground active:cursor-grabbing"
             >
-              <Checkbox
-                id={id}
-                checked={draft.steps.includes(step)}
-                disabled={isArchived}
-                onCheckedChange={() => onToggle(step)}
-              />
-              {POST_DRAFT_STEP_LABELS[step]}
-            </label>
-          );
-        })}
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1 self-end lg:self-auto">
-        {draft.productionId && (
-          <Button variant="ghost" size="icon" className="h-8 w-8" title="Voir la vidéo" asChild>
-            <Link to={`/production/${draft.productionId}`}>
-              <Clapperboard className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          title="Copier la description"
-          disabled={!draft.description}
-          onClick={onCopy}
-        >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8" title="Modifier" onClick={onEdit}>
-          <Pencil className="h-3.5 w-3.5" />
-        </Button>
-        {isArchived ? (
-          <Button variant="outline" size="sm" onClick={() => onArchive(false)}>
-            <ArchiveRestore className="h-4 w-4" />
-            Restaurer
-          </Button>
-        ) : (
-          // Toujours cliquable — on archive aussi un abandon — mais vert seulement quand
-          // tout est coché : c'est le signal attendu.
-          <Button
-            variant={complete ? 'default' : 'outline'}
-            size="sm"
-            className={cn(
-              complete && 'bg-[var(--positive)] text-white hover:bg-[var(--positive)]/90',
-            )}
-            title={
-              complete
-                ? 'Tout est fait : archiver'
-                : 'Archiver sans tout cocher (ne compte pas comme publiée)'
-            }
-            onClick={() => onArchive(true)}
+              <GripVertical className="h-4 w-4" />
+            </span>
+          ) : (
+            <span className="-ml-2 w-6 shrink-0" />
+          )}
+          <button
+            type="button"
+            onClick={onEdit}
+            className="min-w-0 flex-1 text-left"
+            title="Modifier"
           >
-            <Archive className="h-4 w-4" />
-            Archiver
+            <p className={cn('truncate text-sm font-medium', isArchived && 'line-through')}>
+              {draft.title}
+            </p>
+            {draft.description && (
+              <p className="truncate text-xs text-muted-foreground">{draft.description}</p>
+            )}
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          {POST_DRAFT_STEPS.map((step) => {
+            const id = `${draft.id}-${step}`;
+            return (
+              <label
+                key={step}
+                htmlFor={id}
+                className="flex cursor-pointer select-none items-center gap-1.5 text-xs"
+              >
+                <Checkbox
+                  id={id}
+                  checked={draft.steps.includes(step)}
+                  disabled={isArchived}
+                  onCheckedChange={() => onToggle(step)}
+                />
+                {POST_DRAFT_STEP_LABELS[step]}
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1 self-end lg:self-auto">
+          {draft.productionId && (
+            <Button variant="ghost" size="icon" className="h-8 w-8" title="Voir la vidéo" asChild>
+              <Link to={`/production/${draft.productionId}`}>
+                <Clapperboard className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title="Copier la description"
+            disabled={!draft.description}
+            onClick={onCopy}
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           </Button>
-        )}
+          <Button variant="ghost" size="icon" className="h-8 w-8" title="Modifier" onClick={onEdit}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          {isArchived ? (
+            <Button variant="outline" size="sm" onClick={() => onArchive(false)}>
+              <ArchiveRestore className="h-4 w-4" />
+              Restaurer
+            </Button>
+          ) : (
+            // Toujours cliquable — on archive aussi un abandon — mais vert seulement quand
+            // tout est coché : c'est le signal attendu.
+            <Button
+              variant={complete ? 'default' : 'outline'}
+              size="sm"
+              className={cn(
+                complete && 'bg-[var(--positive)] text-white hover:bg-[var(--positive)]/90',
+              )}
+              title={
+                complete
+                  ? 'Tout est fait : archiver'
+                  : 'Archiver sans tout cocher (ne compte pas comme publiée)'
+              }
+              onClick={() => onArchive(true)}
+            >
+              <Archive className="h-4 w-4" />
+              Archiver
+            </Button>
+          )}
+        </div>
+      </div>
+      <div className="pl-5">
+        <ShortStrip draft={draft} today={today} onSchedule={onSchedule} />
       </div>
     </div>
   );

@@ -22,7 +22,7 @@ interface UploadRow {
   created_at: string;
 }
 
-interface AttemptRow {
+export interface AttemptRow {
   id: string;
   upload_id: string;
   platform: PublishPlatform;
@@ -48,7 +48,7 @@ const toUpload = (row: UploadRow): PublishUpload => ({
   createdAt: row.created_at,
 });
 
-const toAttempt = (row: AttemptRow): PublishAttempt => ({
+export const toAttempt = (row: AttemptRow): PublishAttempt => ({
   id: row.id,
   uploadId: row.upload_id,
   platform: row.platform,

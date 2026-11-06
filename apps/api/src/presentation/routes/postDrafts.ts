@@ -12,9 +12,10 @@ import { VIDEO_POST_KIND_LABELS } from '../../domain/postDraft/entities/PostDraf
 import { planVideoPosts } from '../../domain/postDraft/services/videoPosts.ts';
 
 /**
- * Les brouillons de publication de Production → Publications.
+ * Les publications de Production → Shorts.
  *
- * CRUD nu, sans use case, comme le carnet d'idées : un brouillon n'a aucun effet de bord.
+ * L'écriture des champs reste un CRUD nu ; tout ce qui touche à la vidéo et à la mise en
+ * ligne (dépôt, suppression, « Publier maintenant ») passe par `ManageShorts`.
  */
 export const postDraftsRouter = (container: Container): Router => {
   const router = Router();
@@ -63,8 +64,17 @@ export const postDraftsRouter = (container: Container): Router => {
     res.json(container.postDrafts.update(param(req, 'id'), updatePostDraftSchema.parse(req.body)));
   });
 
+  /**
+   * « Publier maintenant » : avant le lancement, tout part tout de suite ; après, seules les
+   * plateformes en échec sont relancées. 202 : les envois tournent en arrière-plan.
+   */
+  router.post('/:id/publish', (req, res) => {
+    res.status(202).json(container.manageShorts.publishNow(param(req, 'id')));
+  });
+
+  // La vidéo déposée part avec la publication : passe par `ManageShorts`.
   router.delete('/:id', (req, res) => {
-    container.postDrafts.delete(param(req, 'id'));
+    container.manageShorts.delete(param(req, 'id'));
     res.status(204).end();
   });
 

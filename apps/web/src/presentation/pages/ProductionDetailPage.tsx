@@ -260,7 +260,7 @@ export const ProductionDetailPage = () => {
             )}
             {postDrafts.length > 0 && (
               <Button variant="ghost" size="sm" asChild>
-                <Link to={`/publications?publication=${postDrafts[0]!.id}`}>
+                <Link to={`/shorts?publication=${postDrafts[0]!.id}`}>
                   <CalendarDays className="h-4 w-4" />
                   {postDrafts.length === 1 ? '1 publication' : `${postDrafts.length} publications`}
                 </Link>

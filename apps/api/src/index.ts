@@ -20,6 +20,8 @@ const server = app.listen(config.port, () => {
 });
 
 startCollectScheduler(container);
+// Les shorts programmés partent à leur heure.
+container.manageShorts.start();
 
 // Arrêt propre : sans fermeture explicite, SQLite laisse traîner ses fichiers -wal / -shm.
 const shutdown = (signal: string): void => {

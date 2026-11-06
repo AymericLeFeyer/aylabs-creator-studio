@@ -7,7 +7,9 @@ import {
 } from '../../../application/postDraft/usecases/usePostDrafts.ts';
 import {
   CAPTION_MAX_LENGTH,
+  rescheduleOnDay,
   type PostDraft,
+  type PostDraftUpdate,
 } from '../../../domain/postDraft/entities/PostDraft.ts';
 import { cn } from '../../../shared/cn.ts';
 import { Button } from '../ui/button.tsx';
@@ -71,11 +73,22 @@ export const PostDraftDialog = ({
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
-    const payload = {
+    const payload: PostDraftUpdate & { title: string } = {
       title: form.title.trim(),
       description: form.description,
       plannedDate: form.plannedDate || null,
     };
+    // Changer le jour d'un short programmé le déplace à la même heure (sans jour, plus
+    // d'heure) — tant que la mise en ligne n'est pas lancée.
+    if (
+      draft?.scheduledAt &&
+      !draft.publishStartedAt &&
+      payload.plannedDate !== draft.plannedDate
+    ) {
+      payload.scheduledAt = payload.plannedDate
+        ? rescheduleOnDay(draft.scheduledAt, payload.plannedDate)
+        : null;
+    }
     try {
       if (draft) await update.mutateAsync({ id: draft.id, input: payload });
       else await create.mutateAsync(payload);
@@ -94,10 +107,10 @@ export const PostDraftDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{draft ? 'Modifier le brouillon' : 'Nouveau brouillon'}</DialogTitle>
+          <DialogTitle>{draft ? 'Modifier le short' : 'Nouveau short'}</DialogTitle>
           <DialogDescription>
-            Une publication à venir : de quoi elle parle, sa légende, et le jour où elle doit
-            sortir.
+            Le titre suffit pour commencer. Le titre part sur YouTube, la description sert de
+            légende sur YouTube et Instagram ; la vidéo et l’heure se posent ensuite, sur la ligne.
           </DialogDescription>
         </DialogHeader>
 
@@ -107,7 +120,7 @@ export const PostDraftDialog = ({
               <Label htmlFor="draft-title">Titre</Label>
               <Input
                 id="draft-title"
-                placeholder="Le sujet de la publication"
+                placeholder="Le titre du short"
                 value={form.title}
                 onChange={(event) => setForm((f) => ({ ...f, title: event.target.value }))}
                 required

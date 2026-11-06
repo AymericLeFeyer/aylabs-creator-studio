@@ -1,4 +1,4 @@
-import { request } from '../../http/httpClient.ts';
+import { request, uploadFile } from '../../http/httpClient.ts';
 import type {
   PostDraft,
   PostDraftInput,
@@ -6,6 +6,7 @@ import type {
   PostDraftUpdate,
   PrepareVideoPostsInput,
 } from '../../../domain/postDraft/entities/PostDraft.ts';
+import type { PublishTargets } from '../../../domain/publish/entities/Publish.ts';
 
 export const postDraftApi = {
   list: (archived = false) =>
@@ -26,4 +27,17 @@ export const postDraftApi = {
     request<PostDraft>(`/api/post-drafts/${id}`, { method: 'PATCH', body: input }),
 
   remove: (id: string) => request<void>(`/api/post-drafts/${id}`, { method: 'DELETE' }),
+
+  /** Avant le lancement, tout part ; après, seules les plateformes en échec repartent. */
+  publishNow: (id: string) =>
+    request<PostDraft>(`/api/post-drafts/${id}/publish`, { method: 'POST' }),
+
+  /** Sous `/api/publish` : c'est là que nginx admet 2 Go. */
+  uploadVideo: (id: string, file: File, onProgress?: (fraction: number) => void) =>
+    uploadFile<PostDraft>(`/api/publish/drafts/${id}/video`, file, onProgress),
+
+  removeVideo: (id: string) =>
+    request<PostDraft>(`/api/publish/drafts/${id}/video`, { method: 'DELETE' }),
+
+  targets: () => request<PublishTargets>('/api/publish/targets'),
 };

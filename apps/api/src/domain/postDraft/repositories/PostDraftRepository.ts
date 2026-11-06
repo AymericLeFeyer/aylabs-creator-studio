@@ -19,4 +19,15 @@ export interface PostDraftRepository {
   create(input: CreatePostDraftInput): PostDraft;
   update(id: string, input: UpdatePostDraftInput): PostDraft;
   delete(id: string): void;
+  /** Rattache (ou détache, `null`) une vidéo déposée. Rend l'ancienne, à effacer. */
+  setVideo(id: string, uploadId: string | null): { previousUploadId: string | null };
+  /** Les publications prêtes dont l'heure est passée (`now`, instant UTC). */
+  findDue(now: string): PostDraft[];
+  /**
+   * Pose `publish_started_at` **si elle ne l'était pas** : rend `false` si une autre
+   * mise en ligne l'a précédée. C'est la seule garde contre un double envoi.
+   */
+  markStarted(id: string, at: string): boolean;
+  /** Les dépôts rattachés à une publication (pour effacer les autres au démarrage). */
+  linkedUploadIds(): Set<string>;
 }

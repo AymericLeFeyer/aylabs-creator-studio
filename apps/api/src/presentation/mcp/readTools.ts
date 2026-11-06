@@ -99,6 +99,20 @@ const compactDraft = (draft: PostDraft) => {
     missing,
     checked: draft.steps,
     archivedAt: draft.archivedAt,
+    hasVideo: draft.video !== null,
+    scheduledAt: draft.scheduledAt,
+    platforms: draft.platforms,
+    publishStartedAt: draft.publishStartedAt,
+    // Le dernier envoi de chaque plateforme : où en est la mise en ligne.
+    uploads: draft.platforms.map((platform) => {
+      const last = draft.attempts.find((attempt) => attempt.platform === platform);
+      return {
+        platform,
+        status: last?.status ?? null,
+        url: last?.url ?? null,
+        error: last?.error ?? null,
+      };
+    }),
     description: draft.description,
   };
 };

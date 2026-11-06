@@ -1,7 +1,5 @@
 /**
- * Banc d'essai de la publication directe (Production → Publish), **temporaire** : on y
- * glisse une vidéo, puis on l'envoie plateforme par plateforme pour valider chaque
- * branchement avant de les rattacher aux publications planifiées.
+ * La vidéo d'une publication de Production → Shorts, et ses envois vers chaque plateforme.
  *
  * Le fichier vit sur le disque (à côté de la base), jamais en BLOB : une vidéo pèse des
  * centaines de mégaoctets. `publicToken` est la clé de son adresse d'aperçu
@@ -62,12 +60,6 @@ export interface PublishAttempt {
   createdAt: string;
   updatedAt: string;
 }
-
-/**
- * La miniature d'un envoi YouTube : une miniature générée dans Production → Miniatures, ou
- * une image envoyée par l'écran (base64, JPEG ou PNG — YouTube refuse le WebP).
- */
-export type YouTubeThumbnailSource = { thumbnailId: string } | { image: string };
 
 export interface PublishUploadView extends PublishUpload {
   attempts: PublishAttempt[];

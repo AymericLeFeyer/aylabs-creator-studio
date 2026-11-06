@@ -20,8 +20,7 @@ import { SponsorsPage } from './presentation/pages/SponsorsPage.tsx';
 import { AffiliationsPage } from './presentation/pages/AffiliationsPage.tsx';
 import { CommentsPage } from './presentation/pages/CommentsPage.tsx';
 import { ExternalAppPage } from './presentation/pages/ExternalAppPage.tsx';
-import { PublicationsPage } from './presentation/pages/PublicationsPage.tsx';
-import { PublishPage } from './presentation/pages/PublishPage.tsx';
+import { ShortsPage } from './presentation/pages/ShortsPage.tsx';
 import { ThumbnailsPage } from './presentation/pages/ThumbnailsPage.tsx';
 import { MailsPage } from './presentation/pages/MailsPage.tsx';
 import { BrandsPage } from './presentation/pages/BrandsPage.tsx';
@@ -37,6 +36,13 @@ const LegacyPartnersRedirect = () => {
         ? '/affiliations?onglet=plateformes'
         : '/produits';
   return <Navigate to={target} replace />;
+};
+
+/** `/publications?…` → `/shorts?…` : les liens d'une fiche de vidéo y gardent leur cible. */
+const LegacyPublicationsRedirect = () => {
+  const [params] = useSearchParams();
+  const query = params.toString();
+  return <Navigate to={`/shorts${query ? `?${query}` : ''}`} replace />;
 };
 
 const queryClient = new QueryClient({
@@ -71,10 +77,11 @@ export const App = () => (
               <Route path="production" element={<ProductionPage format="video" />} />
               {/* « Shorts & Réels » a été retiré du menu : les formats courts se préparent
                   dans Publications. L'ancienne adresse ramène à la file des vidéos. */}
-              <Route path="shorts" element={<Navigate to="/production" replace />} />
-              <Route path="publications" element={<PublicationsPage />} />
+              {/* « Publications » est devenu « Shorts » : l'ancienne adresse garde ses paramètres. */}
+              <Route path="shorts" element={<ShortsPage />} />
+              <Route path="publications" element={<LegacyPublicationsRedirect />} />
               <Route path="miniatures" element={<ThumbnailsPage />} />
-              <Route path="publish" element={<PublishPage />} />
+              <Route path="publish" element={<Navigate to="/shorts" replace />} />
               <Route path="production/:id" element={<ProductionDetailPage />} />
               <Route path="produits" element={<ProductsPage />} />
               <Route path="sponsors" element={<SponsorsPage />} />

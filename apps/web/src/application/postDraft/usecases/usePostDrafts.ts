@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { postDraftApi } from '../../../infrastructure/postDraft/api/postDraftApi.ts';
-import type {
-  PostDraft,
-  PostDraftInput,
-  PostDraftUpdate,
-  PrepareVideoPostsInput,
+import {
+  shortState,
+  type PostDraft,
+  type PostDraftInput,
+  type PostDraftUpdate,
+  type PrepareVideoPostsInput,
 } from '../../../domain/postDraft/entities/PostDraft.ts';
 import { queryKeys } from '../../queryKeys.ts';
 
@@ -25,12 +26,64 @@ const usePostDraftMutation = <TVariables, TData>(
   });
 };
 
+/** Une programmation qui tombe dans les deux minutes : on surveille son départ. */
+const SOON_MS = 2 * 60_000;
+
+/**
+ * La liste se relit **toute seule** quand il se passe quelque chose côté serveur : toutes
+ * les 3 s pendant une mise en ligne (les envois tournent en arrière-plan), toutes les 20 s
+ * à l'approche d'une heure programmée, pour voir le départ sans recharger. Le reste du
+ * temps, rien.
+ */
+const refetchShorts = (drafts: PostDraft[] | undefined): number | false => {
+  if (!drafts) return false;
+  if (drafts.some((draft) => shortState(draft) === 'running')) return 3_000;
+  const now = Date.now();
+  const soon = drafts.some(
+    (draft) => shortState(draft) === 'scheduled' && Date.parse(draft.scheduledAt!) - now < SOON_MS,
+  );
+  return soon ? 20_000 : false;
+};
+
 export const usePostDrafts = (archived = false) =>
   useQuery({
     queryKey: queryKeys.postDrafts(archived),
     queryFn: () => postDraftApi.list(archived),
     staleTime: 30_000,
+    refetchInterval: (query) => refetchShorts(query.state.data),
   });
+
+/** Les comptes qui recevront les vidéos (`['publish', 'targets']`, invalidée par TikTok). */
+export const usePublishTargets = () =>
+  useQuery({
+    queryKey: ['publish', 'targets'],
+    queryFn: () => postDraftApi.targets(),
+    staleTime: 60_000,
+  });
+
+/**
+ * Dépose la vidéo d'une publication. `onProgress` suit l'envoi (XHR) : un short pèse
+ * plusieurs dizaines de mégaoctets.
+ */
+export const useUploadDraftVideo = () =>
+  usePostDraftMutation(
+    ({
+      id,
+      file,
+      onProgress,
+    }: {
+      id: string;
+      file: File;
+      onProgress?: (fraction: number) => void;
+    }) => postDraftApi.uploadVideo(id, file, onProgress),
+  );
+
+export const useRemoveDraftVideo = () =>
+  usePostDraftMutation((id: string) => postDraftApi.removeVideo(id));
+
+/** « Publier maintenant », ou « Réessayer » les plateformes en échec. */
+export const usePublishDraftNow = () =>
+  usePostDraftMutation((id: string) => postDraftApi.publishNow(id));
 
 /** Pour la pastille du menu : lu sur tous les écrans, d'où une requête à part et légère. */
 export const usePostDraftSummary = () =>

@@ -4,7 +4,6 @@ import {
   Gift,
   Handshake,
   ImagePlus,
-  Images,
   Instagram,
   Link2,
   Mail,
@@ -13,7 +12,7 @@ import {
   MessagesSquare,
   Music2,
   ScrollText,
-  Send,
+  Smartphone,
   Wallet,
   Youtube,
   type LucideIcon,
@@ -88,14 +87,12 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/planning', label: 'Planning', icon: CalendarClock, end: false },
       // Une seule file : « Shorts & Réels » a été retiré, les formats courts se préparent
-      // dans Publications.
+      // dans Shorts.
       { to: '/production', label: 'Vidéos', icon: FORMAT_ICONS.video, end: false },
-      // Les brouillons de publication Instagram : de la préparation, donc ici, et non
-      // sous Audience → Instagram qui ne montre que ce qui est réellement paru.
-      { to: '/publications', label: 'Publications', icon: Images, end: false },
+      // Les shorts à venir (ex-Publications) : titre, vidéo, heure, puis mise en ligne
+      // automatique. De la préparation, donc ici, et non sous Audience.
+      { to: '/shorts', label: 'Shorts', icon: Smartphone, end: false },
       { to: '/miniatures', label: 'Miniatures', icon: ImagePlus, end: false },
-      // Banc d'essai temporaire de la publication directe (YouTube, Instagram, TikTok).
-      { to: '/publish', label: 'Publish', icon: Send, end: false },
     ],
   },
   {
@@ -245,7 +242,8 @@ export const resolveMobileNav = (
 ): NavItem[] => {
   const items = flattenNav(sections);
   const pick = (list: readonly string[]) =>
-    [...new Set(list)]
+    // « Publications » est devenu « Shorts » : une barre réglée avant garde son entrée.
+    [...new Set(list.map((path) => (path === '/publications' ? '/shorts' : path)))]
       .map((path) => items.find((item) => item.to === path))
       .filter((item): item is NavItem => item !== undefined)
       .slice(0, MOBILE_NAV_MAX);
@@ -269,9 +267,8 @@ export const resolveMobileNav = (
 const TITLES: Array<[string, string]> = [
   ['/production/', 'Fiche'],
   ['/production', 'Vidéos'],
-  ['/publications', 'Publications'],
+  ['/shorts', 'Shorts'],
   ['/miniatures', 'Miniatures'],
-  ['/publish', 'Publish'],
   ['/planning', 'Planning'],
   ['/youtube', 'YouTube'],
   ['/instagram', 'Instagram'],

@@ -1,68 +1,43 @@
 /**
- * Contrat de `/api/publish`, dupliqué de l'API.
- *
- * Banc d'essai de la publication directe (Production → Publish), **temporaire** : on y
- * glisse une vidéo, puis on l'envoie plateforme par plateforme pour valider chaque
- * branchement avant de les rattacher aux publications planifiées.
- *
- * Le fichier vit sur le disque (à côté de la base), jamais en BLOB : une vidéo pèse des
- * centaines de mégaoctets. `publicToken` est la clé de son adresse d'aperçu
- * (`/api/publish/files/<token>`). Aucune plateforme ne vient la chercher : le studio n'a
- * pas d'adresse publique, c'est **le serveur qui pousse** la vidéo à YouTube comme à
- * Instagram (upload reprenable).
+ * Contrat de `/api/publish`, dupliqué de l'API : la mise en ligne de la vidéo d'une
+ * publication (Production → Shorts) sur YouTube, Instagram et TikTok.
  */
-export interface PublishUpload {
-  id: string;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  publicToken: string;
-  createdAt: string;
-}
 
 export type PublishPlatform = 'youtube' | 'instagram' | 'tiktok';
 
+/** Les plateformes d'un short, dans l'ordre d'affichage. Les trois par défaut. */
+export const SHORT_PLATFORMS: readonly PublishPlatform[] = ['youtube', 'instagram', 'tiktok'];
+
+export const PLATFORM_LABELS: Record<PublishPlatform, string> = {
+  youtube: 'YouTube',
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+};
+
 /**
- * - `uploading` : le fichier part (YouTube) ou le conteneur se crée (Instagram) ;
- * - `processing` : la plateforme traite la vidéo (Instagram) ;
- * - `ready` : le conteneur Instagram est prêt, **rien n'est encore publié** ;
+ * - `uploading` : le fichier part ; `processing` : la plateforme le traite ;
+ * - `ready` : TikTok — la vidéo est dans la boîte de réception de l'app, à finir là-bas ;
  * - `publishing` : la publication Instagram est demandée ;
- * - `published` : en ligne (en privé pour YouTube tant qu'on teste) ;
- * - `failed` : `error` dit pourquoi.
+ * - `published` : en ligne ; `failed` : `error` dit pourquoi.
  */
 export type PublishStatus =
   'uploading' | 'processing' | 'ready' | 'publishing' | 'published' | 'failed';
-
-export type YouTubePrivacy = 'private' | 'unlisted' | 'public';
-
-/** TikTok : brouillon dans la boîte de l'app, ou publication directe en « Moi uniquement ». */
-export type TikTokMode = 'draft' | 'private';
-
-/** La colonne `privacy` : visibilité YouTube, ou mode TikTok. */
-export type PublishPrivacy = YouTubePrivacy | TikTokMode;
 
 export interface PublishAttempt {
   id: string;
   uploadId: string;
   platform: PublishPlatform;
-  /** La chaîne YouTube ou le compte Instagram visé. */
+  /** La chaîne YouTube, le compte Instagram ou la connexion TikTok visés. */
   targetId: string;
   targetName: string;
   status: PublishStatus;
-  privacy: PublishPrivacy | null;
+  privacy: string | null;
   title: string;
-  /** Identifiant de la vidéo YouTube, du conteneur puis du média Instagram. */
   externalId: string | null;
   url: string | null;
   error: string | null;
-  /** YouTube : quand la miniature a été posée, `null` sinon. */
-  thumbnailSetAt: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface PublishUploadView extends PublishUpload {
-  attempts: PublishAttempt[];
 }
 
 export interface PublishTarget {
@@ -71,7 +46,7 @@ export interface PublishTarget {
   color: string;
 }
 
-/** Ce que l'écran peut viser, d'après la configuration déjà faite ailleurs. */
+/** Ce que la mise en ligne peut viser, d'après la configuration déjà faite ailleurs. */
 export interface PublishTargets {
   youtube: PublishTarget[];
   instagram: PublishTarget[];
@@ -84,65 +59,58 @@ export interface PublishTargets {
   tiktok: { configured: boolean; accounts: PublishTarget[] };
 }
 
-/** Adresse de la vidéo, pour l'aperçu à l'écran. */
-export const publishFileUrl = (upload: Pick<PublishUpload, 'publicToken'>): string =>
-  `/api/publish/files/${upload.publicToken}`;
-
 /** Un envoi encore en cours : l'écran relit la liste tant qu'il y en a un. */
 export const isAttemptRunning = (attempt: PublishAttempt): boolean =>
   attempt.status === 'uploading' ||
   attempt.status === 'processing' ||
   attempt.status === 'publishing';
 
-export const PUBLISH_STATUS_LABELS: Record<PublishStatus, string> = {
+const STATUS_LABELS: Record<PublishStatus, string> = {
   uploading: 'Envoi…',
   processing: 'Traitement…',
-  ready: 'Prêt, non publié',
+  ready: 'Prêt',
   publishing: 'Publication…',
-  published: 'Publié',
+  published: 'En ligne',
   failed: 'Échec',
 };
 
-export const PRIVACY_LABELS: Record<PublishPrivacy, string> = {
-  private: 'Privée',
-  unlisted: 'Non répertoriée',
-  public: 'Publique',
-  draft: 'Brouillon',
-};
-
-/** Un brouillon TikTok « prêt » est arrivé dans l'app : il n'y a rien à cliquer ici. */
+/** Un brouillon TikTok « prêt » est arrivé dans l'app : on le finit sur le téléphone. */
 export const attemptStatusLabel = (attempt: PublishAttempt): string =>
   attempt.platform === 'tiktok' && attempt.status === 'ready'
     ? 'Dans ta boîte TikTok'
-    : PUBLISH_STATUS_LABELS[attempt.status];
+    : STATUS_LABELS[attempt.status];
 
-export interface StartTikTokInput {
-  connectionId: string;
-  mode: TikTokMode;
-  /** Légende, en publication directe seulement. */
-  title: string;
-  /** Couverture : une image de la vidéo (ms). */
-  coverOffsetMs?: number;
-}
+/**
+ * Pourquoi une plateforme ne peut pas partir, `null` si elle peut. La première cible sert
+ * (YouTube préfère la chaîne de la vidéo d'origine, côté API).
+ */
+export const platformBlocker = (
+  platform: PublishPlatform,
+  targets: PublishTargets | undefined,
+): string | null => {
+  if (!targets) return null;
+  if (platform === 'youtube') {
+    return targets.youtube.length ? null : 'Aucune chaîne en OAuth (Paramètres → YouTube)';
+  }
+  if (platform === 'instagram') {
+    if (!targets.instagram.length) return 'Aucun compte à jeton (Paramètres → Instagram)';
+    return targets.stagingConfigured ? null : 'Stockage PUBLISH_S3_* absent de la configuration';
+  }
+  if (!targets.tiktok.configured) return 'App TikTok absente (TIKTOK_CLIENT_KEY)';
+  return targets.tiktok.accounts.length ? null : 'Aucun compte connecté (Paramètres → TikTok)';
+};
 
-/** Une miniature générée (Production → Miniatures), ou une image en base64 (JPEG). */
-export type YouTubeThumbnailSource = { thumbnailId: string } | { image: string };
-
-export interface StartYouTubeInput {
-  channelId: string;
-  title: string;
-  description: string;
-  tags: string[];
-  privacy: YouTubePrivacy;
-  thumbnail?: YouTubeThumbnailSource;
-}
-
-export interface PrepareInstagramInput {
-  accountId: string;
-  caption: string;
-  shareToFeed: boolean;
-  /** Une image de couverture ; l'emporte sur `coverOffsetMs`. */
-  coverImage?: YouTubeThumbnailSource;
-  /** Sinon, une image prise dans la vidéo (ms). */
-  coverOffsetMs?: number;
-}
+/** Le compte qui recevra la vidéo, pour le dire avant de programmer. */
+export const platformTargetName = (
+  platform: PublishPlatform,
+  targets: PublishTargets | undefined,
+): string | null => {
+  if (!targets) return null;
+  const list =
+    platform === 'youtube'
+      ? targets.youtube
+      : platform === 'instagram'
+        ? targets.instagram
+        : targets.tiktok.accounts;
+  return list[0]?.name ?? null;
+};

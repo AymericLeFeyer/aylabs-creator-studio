@@ -1,4 +1,20 @@
 /** Contrat de `/api/post-drafts`, dupliqué depuis l'API. */
+import {
+  isAttemptRunning,
+  type PublishAttempt,
+  type PublishPlatform,
+} from '../../publish/entities/Publish.ts';
+
+/** La vidéo déposée sur une publication (glissée sur l'écran ou envoyée par le montage). */
+export interface PostDraftVideo {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** Adresse d'aperçu. */
+  url: string;
+  createdAt: string;
+}
 
 /** Les six cases, dans l'ordre où on les coche. Liste fermée, identique côté API. */
 export const POST_DRAFT_STEPS = [
@@ -37,6 +53,16 @@ export interface PostDraft {
   /** Les cases cochées, dans l'ordre de `POST_DRAFT_STEPS`. */
   steps: PostDraftStep[];
   archivedAt: string | null;
+  /** `null` tant que la vidéo n'est pas arrivée. */
+  video: PostDraftVideo | null;
+  /** Instant UTC de la mise en ligne, `null` = pas programmée. */
+  scheduledAt: string | null;
+  /** Les plateformes visées (les trois par défaut). */
+  platforms: PublishPlatform[];
+  /** Posé au lancement : heure et plateformes sont alors figées. */
+  publishStartedAt: string | null;
+  /** Les envois de sa vidéo, le plus récent d'abord. */
+  attempts: PublishAttempt[];
   createdAt: string;
   updatedAt: string;
 }
@@ -52,7 +78,37 @@ export interface PostDraftUpdate extends Partial<PostDraftInput> {
   /** Remplace toute la liste des cases cochées. */
   steps?: PostDraftStep[];
   archived?: boolean;
+  /** Instant UTC ; `null` retire la programmation. 409 une fois la mise en ligne lancée. */
+  scheduledAt?: string | null;
+  platforms?: PublishPlatform[];
 }
+
+/** Le dernier envoi d'une plateforme, `null` s'il n'y en a pas encore. */
+export const lastAttempt = (
+  draft: Pick<PostDraft, 'attempts'>,
+  platform: PublishPlatform,
+): PublishAttempt | null => draft.attempts.find((attempt) => attempt.platform === platform) ?? null;
+
+/**
+ * Où en est la mise en ligne d'un short, en un mot :
+ * - `no_video` : la vidéo n'est pas arrivée ; `unscheduled` : elle est là, sans heure ;
+ * - `scheduled` : tout est prêt, elle partira à l'heure ;
+ * - `running` : un envoi est en route ; `failed` : au moins une plateforme a échoué ;
+ * - `done` : chaque plateforme a fini (en ligne, ou dans la boîte TikTok).
+ */
+export type ShortState = 'no_video' | 'unscheduled' | 'scheduled' | 'running' | 'failed' | 'done';
+
+export const shortState = (draft: PostDraft): ShortState => {
+  if (!draft.publishStartedAt) {
+    if (!draft.video) return 'no_video';
+    return draft.scheduledAt && draft.platforms.length ? 'scheduled' : 'unscheduled';
+  }
+  const lasts = draft.platforms.map((platform) => lastAttempt(draft, platform));
+  // Lancée à l'instant : les envois ne sont pas encore écrits.
+  if (lasts.some((attempt) => !attempt || isAttemptRunning(attempt))) return 'running';
+  if (lasts.some((attempt) => attempt?.status === 'failed')) return 'failed';
+  return 'done';
+};
 
 export interface PostDraftSummary {
   /** Dernier archivage d'une publication validée (toutes cases cochées), instant UTC. */
@@ -127,3 +183,22 @@ export const localDateOf = (instant: string): string => {
   const date = new Date(instant);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
+
+const pad = (value: number) => String(value).padStart(2, '0');
+
+/** L'heure **locale** (`HH:MM`) d'un instant UTC. */
+export const localTimeOf = (instant: string): string => {
+  const date = new Date(instant);
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+/** Un jour et une heure **locaux** du navigateur, en instant UTC pour l'API. */
+export const instantAt = (day: string, time: string): string =>
+  new Date(`${day}T${time}:00`).toISOString();
+
+/**
+ * Change le jour d'une programmation en gardant l'heure : glisser un short au lendemain le
+ * fait partir le lendemain, à la même heure.
+ */
+export const rescheduleOnDay = (scheduledAt: string, day: string): string =>
+  instantAt(day, localTimeOf(scheduledAt));

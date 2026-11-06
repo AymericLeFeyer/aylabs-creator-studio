@@ -50,7 +50,7 @@ export const useDeleteTikTokAccount = () => useTikTokMutation((id: string) => ti
 
 /**
  * Les connexions OAuth (publication). Une écriture relit aussi les cibles de Production →
- * Publish (`['publish', 'targets']`), qui listent les comptes connectés — rien d'autre.
+ * Shorts (`["publish", "targets"]`), qui listent les comptes connectés — rien d'autre.
  */
 const useConnectionMutation = <TVariables, TData>(
   mutationFn: (variables: TVariables) => Promise<TData>,

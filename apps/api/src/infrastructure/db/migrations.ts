@@ -2189,6 +2189,24 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 66,
+    name: 'shorts : video, heure et plateformes sur les publications',
+    up: `
+      -- Production -> Shorts (ex-Publications) : une publication porte sa video (un depot
+      -- de publish_uploads, fichier sur le disque), l heure de mise en ligne (instant UTC)
+      -- et les plateformes visees (les trois par defaut). publish_started_at est pose au
+      -- lancement : c est lui qui empeche une seconde mise en ligne.
+      ALTER TABLE post_drafts ADD COLUMN upload_id TEXT
+        REFERENCES publish_uploads(id) ON DELETE SET NULL;
+      ALTER TABLE post_drafts ADD COLUMN scheduled_at TEXT;
+      ALTER TABLE post_drafts ADD COLUMN platforms TEXT NOT NULL
+        DEFAULT 'youtube,instagram,tiktok';
+      ALTER TABLE post_drafts ADD COLUMN publish_started_at TEXT;
+      CREATE INDEX idx_post_drafts_scheduled ON post_drafts(scheduled_at)
+        WHERE publish_started_at IS NULL;
+    `,
+  },
 ];
 
 /**

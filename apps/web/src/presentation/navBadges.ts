@@ -204,7 +204,7 @@ export const publicationBadge = (summary: PostDraftSummary, today: string): NavB
           title: 'Aucune publication validée pour l’instant',
           detail: 'Coche les six cases d’une publication puis archive-la.',
           date: null,
-          to: '/publications',
+          to: '/shorts',
           icon: Images,
         },
       ],
@@ -229,7 +229,7 @@ export const publicationBadge = (summary: PostDraftSummary, today: string): NavB
             ? 'Dernière publication validée hier.'
             : `Dernière publication validée il y a ${days} jours.`,
         date: lastDay,
-        to: '/publications',
+        to: '/shorts',
         icon: Images,
       },
     ],

@@ -42,7 +42,7 @@ export const useNavBadges = (): Record<string, NavBadge> => {
   return useMemo(() => {
     const badges = buildNavBadges(overview, legal?.alerts);
     const publicationsBadge = publications ? publicationBadge(publications, localDay) : null;
-    if (publicationsBadge) badges['/publications'] = publicationsBadge;
+    if (publicationsBadge) badges['/shorts'] = publicationsBadge;
     if (todoApp && today?.connected && !today.error) {
       badges[externalAppPath(todoApp)] = {
         count: today.tasks.length,
