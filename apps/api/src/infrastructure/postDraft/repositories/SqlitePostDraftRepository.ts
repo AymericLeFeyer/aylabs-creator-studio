@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import {
   isPostDraftComplete,
+  isShortOnline,
   parseShortOptions,
   POST_DRAFT_STEPS,
   SHORT_PLATFORMS,
@@ -228,21 +229,34 @@ export class SqlitePostDraftRepository implements PostDraftRepository {
   }
 
   /**
-   * La dernière publication **validée** : archivée avec toutes ses cases. Un brouillon
-   * archivé à moitié est un abandon, pas une publication — il ne doit pas remettre le
-   * compteur du menu à zéro. Parcours en mémoire : on en archive quelques-uns par semaine.
+   * Ce que lit la pastille « -X jours » : **le dernier instant où un short est paru** — la
+   * première plateforme qui l'a mis en ligne (un short sur trois plateformes compte une fois,
+   * à son premier succès) —, et le nombre de shorts pas encore parus. Les publications
+   * archivées avec leurs six cases, d'avant l'écran Shorts, comptent à leur date d'archivage.
    */
   summary(): PostDraftSummary {
-    const archived = this.db
+    const online = this.db
+      .prepare(
+        `SELECT MAX(first_online) AS at FROM (
+           SELECT MIN(a.updated_at) AS first_online
+             FROM publish_attempts a
+             JOIN post_drafts d ON d.upload_id = a.upload_id
+            WHERE a.status IN ('published', 'ready') AND d.publish_started_at IS NOT NULL
+            GROUP BY d.id)`,
+      )
+      .get() as { at: string | null };
+    const legacy = this.db
       .prepare(
         'SELECT steps, archived_at FROM post_drafts WHERE archived_at IS NOT NULL ORDER BY archived_at DESC',
       )
       .all() as unknown as Array<{ steps: string; archived_at: string }>;
-    const last = archived.find((row) => isPostDraftComplete(parseSteps(row.steps)));
-    const pending = this.db
-      .prepare('SELECT COUNT(*) AS n FROM post_drafts WHERE archived_at IS NULL')
-      .get() as { n: number };
-    return { lastPublishedAt: last?.archived_at ?? null, pending: pending.n };
+    const archivedAt = legacy.find((row) =>
+      isPostDraftComplete(parseSteps(row.steps)),
+    )?.archived_at;
+    const candidates = [online.at, archivedAt].filter((value): value is string => Boolean(value));
+    const lastPublishedAt = candidates.sort().at(-1) ?? null;
+    const pending = this.findAll().filter((draft) => !isShortOnline(draft)).length;
+    return { lastPublishedAt, pending };
   }
 
   create(input: CreatePostDraftInput): PostDraft {

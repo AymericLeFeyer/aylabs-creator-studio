@@ -183,7 +183,7 @@ export const buildNavBadges = (
  * La pastille de Production → Publications : **depuis combien de jours rien n'a été
  * publié**. « -3 » = dernière publication validée il y a trois jours.
  *
- * Validée = archivée avec toutes ses cases (`PostDraftSummary.lastPublishedAt`). Rien ce
+ * Parue = en ligne sur au moins une plateforme (`PostDraftSummary.lastPublishedAt`). Rien ce
  * jour-là suffit à allumer la pastille : le rythme se tient au quotidien, et attendre deux
  * jours pour prévenir reviendrait à prévenir trop tard. Orange à partir de deux jours
  * sans rien, neutre la veille. Aucune publication jamais validée : un point, et la raison
@@ -201,8 +201,8 @@ export const publicationBadge = (summary: PostDraftSummary, today: string): NavB
         {
           key: 'publications-none',
           severity: 'warning',
-          title: 'Aucune publication validée pour l’instant',
-          detail: 'Coche les six cases d’une publication puis archive-la.',
+          title: 'Aucun short paru pour l’instant',
+          detail: 'Il compte dès qu’une plateforme l’a mis en ligne.',
           date: null,
           to: '/shorts',
           icon: Images,
@@ -223,11 +223,9 @@ export const publicationBadge = (summary: PostDraftSummary, today: string): NavB
       {
         key: 'publications-idle',
         severity: 'warning',
-        title: 'Aucune publication validée aujourd’hui',
+        title: 'Aucun short paru aujourd’hui',
         detail:
-          days === 1
-            ? 'Dernière publication validée hier.'
-            : `Dernière publication validée il y a ${days} jours.`,
+          days === 1 ? 'Dernier short paru hier.' : `Dernier short paru il y a ${days} jours.`,
         date: lastDay,
         to: '/shorts',
         icon: Images,

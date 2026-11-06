@@ -6,10 +6,7 @@ import { toChannelView } from '../../domain/channel/entities/Channel.ts';
 import type { CommentStatus, CommentView } from '../../domain/comment/entities/Comment.ts';
 import type { MailMessage } from '../../domain/mail/entities/Mail.ts';
 import { bodyText } from '../../domain/mail/services/threading.ts';
-import {
-  missingPostDraftSteps,
-  type PostDraft,
-} from '../../domain/postDraft/entities/PostDraft.ts';
+import { isPostDraftOnline, type PostDraft } from '../../domain/postDraft/entities/PostDraft.ts';
 import type {
   ProductionFormat,
   ProductionStatus,
@@ -89,16 +86,12 @@ const compactVideo = (video: VideoView) => ({
  * l'étape en cours. L'état vient d'abord, la légende, qui peut être longue, à la fin.
  */
 const compactDraft = (draft: PostDraft) => {
-  const missing = missingPostDraftSteps(draft);
   return {
     id: draft.id,
     title: draft.title,
     plannedDate: draft.plannedDate,
     productionId: draft.productionId,
-    readyToArchive: missing.length === 0,
-    missing,
-    checked: draft.steps,
-    archivedAt: draft.archivedAt,
+    online: isPostDraftOnline(draft),
     hasVideo: draft.video !== null,
     scheduledAt: draft.scheduledAt,
     platforms: draft.platforms,
@@ -341,7 +334,7 @@ export const registerReadTools = (server: McpServer, container: Container): void
   readTool(
     server,
     'publications_list',
-    'Les publications à venir (réseaux), distinctes des productions : `checked` = cases déjà cochées, `missing` = cases restantes, `readyToArchive` = tout est prêt, il ne reste qu’à l’archiver. Ces cases ne sont pas une étape en cours.',
+    'Les shorts à venir (Production → Shorts), distincts des productions : `hasVideo`, `scheduledAt` (heure de mise en ligne), `platforms`, `uploads` (état de chaque plateforme), `online` = paru sur au moins une plateforme.',
     { archived: z.boolean().default(false) },
     ({ archived }) => ({
       summary: container.postDrafts.summary(),

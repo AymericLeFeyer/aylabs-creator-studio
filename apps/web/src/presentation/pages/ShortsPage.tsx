@@ -1,41 +1,26 @@
 import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
-import {
-  Archive,
-  ArchiveRestore,
-  Check,
-  Clapperboard,
-  Copy,
-  GripVertical,
-  Pencil,
-  Plus,
-} from 'lucide-react';
+import { Check, Clapperboard, Copy, GripVertical, Pencil, Plus } from 'lucide-react';
 import {
   usePostDrafts,
   useUpdatePostDraft,
 } from '../../application/postDraft/usecases/usePostDrafts.ts';
 import { localToday, shiftDate } from '../../application/planning/usecases/usePlanning.ts';
 import {
-  isPostDraftComplete,
   captionWithHashtags,
   localDateOf,
-  POST_DRAFT_STEP_LABELS,
   rescheduleOnDay,
-  POST_DRAFT_STEPS,
-  toggleStep,
   type PostDraft,
-  type PostDraftStep,
 } from '../../domain/postDraft/entities/PostDraft.ts';
 import { cn } from '../../shared/cn.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
-import { Checkbox } from '../components/ui/checkbox.tsx';
 import { Fab } from '../components/Fab.tsx';
 import { PageAlerts } from '../components/PageAlerts.tsx';
 import { PostDraftDialog } from '../components/publications/PostDraftDialog.tsx';
 import { ScheduleShortDialog } from '../components/publications/ScheduleShortDialog.tsx';
-import { ShortStrip } from '../components/publications/ShortStrip.tsx';
+import { PlatformBadges, ShortStrip } from '../components/publications/ShortStrip.tsx';
 import { useDraftDrag } from '../components/publications/useDraftDrag.ts';
 
 /** Jours toujours affichés de part et d'autre d'aujourd'hui, même sans rien dedans. */
@@ -200,10 +185,6 @@ export const ShortsPage = () => {
       copied={copiedId === draft.id}
       onCopy={() => void copy(draft)}
       onEdit={() => setEditingId(draft.id)}
-      onToggle={(step) =>
-        update.mutate({ id: draft.id, input: { steps: toggleStep(draft.steps, step) } })
-      }
-      onArchive={(value) => update.mutate({ id: draft.id, input: { archived: value } })}
       today={today}
       onSchedule={() => setSchedulingId(draft.id)}
       highlighted={draft.id === targetId}
@@ -372,8 +353,6 @@ interface DraftRowProps {
   copied: boolean;
   onCopy: () => void;
   onEdit: () => void;
-  onToggle: (step: PostDraftStep) => void;
-  onArchive: (archived: boolean) => void;
   /** Le jour local, pour dire « aujourd'hui 18:00 ». */
   today: string;
   onSchedule: () => void;
@@ -394,8 +373,6 @@ const DraftRow = ({
   copied,
   onCopy,
   onEdit,
-  onToggle,
-  onArchive,
   today,
   onSchedule,
   highlighted,
@@ -403,7 +380,6 @@ const DraftRow = ({
   onDragStart,
 }: DraftRowProps) => {
   const isArchived = draft.archivedAt !== null;
-  const complete = isPostDraftComplete(draft.steps);
   return (
     <div
       data-publication-id={draft.id}
@@ -436,35 +412,14 @@ const DraftRow = ({
             className="min-w-0 flex-1 text-left"
             title="Modifier"
           >
-            <p className={cn('truncate text-sm font-medium', isArchived && 'line-through')}>
-              {draft.title}
-            </p>
+            <p className="truncate text-sm font-medium">{draft.title}</p>
             {draft.description && (
               <p className="truncate text-xs text-muted-foreground">{draft.description}</p>
             )}
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          {POST_DRAFT_STEPS.map((step) => {
-            const id = `${draft.id}-${step}`;
-            return (
-              <label
-                key={step}
-                htmlFor={id}
-                className="flex cursor-pointer select-none items-center gap-1.5 text-xs"
-              >
-                <Checkbox
-                  id={id}
-                  checked={draft.steps.includes(step)}
-                  disabled={isArchived}
-                  onCheckedChange={() => onToggle(step)}
-                />
-                {POST_DRAFT_STEP_LABELS[step]}
-              </label>
-            );
-          })}
-        </div>
+        <PlatformBadges draft={draft} />
 
         <div className="flex shrink-0 items-center gap-1 self-end lg:self-auto">
           {draft.productionId && (
@@ -487,31 +442,6 @@ const DraftRow = ({
           <Button variant="ghost" size="icon" className="h-8 w-8" title="Modifier" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
-          {isArchived ? (
-            <Button variant="outline" size="sm" onClick={() => onArchive(false)}>
-              <ArchiveRestore className="h-4 w-4" />
-              Restaurer
-            </Button>
-          ) : (
-            // Toujours cliquable — on archive aussi un abandon — mais vert seulement quand
-            // tout est coché : c'est le signal attendu.
-            <Button
-              variant={complete ? 'default' : 'outline'}
-              size="sm"
-              className={cn(
-                complete && 'bg-[var(--positive)] text-white hover:bg-[var(--positive)]/90',
-              )}
-              title={
-                complete
-                  ? 'Tout est fait : archiver'
-                  : 'Archiver sans tout cocher (ne compte pas comme publiée)'
-              }
-              onClick={() => onArchive(true)}
-            >
-              <Archive className="h-4 w-4" />
-              Archiver
-            </Button>
-          )}
         </div>
       </div>
       <div className="pl-5">

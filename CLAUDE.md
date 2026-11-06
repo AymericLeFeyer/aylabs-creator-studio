@@ -966,19 +966,24 @@ Instagram.
   seuls** près de leurs bords, un fantôme annonce le jour visé, `Échap` annule. Les
   archivées n'ont pas de poignée. L'écriture passe par `useUpdatePostDraft`, donc
   optimiste : la ligne change de couloir au lâcher.
-- **Archiver** (`PATCH { archived: true }`) pose `archived_at` ; `false` restaure. Les
-  archivées **restent visibles** à leur jour (date prévue, sinon jour local de
-  l'archivage), grisées, barrées, cases figées, avec « Restaurer » — c'est ce qui dit qu'un
-  jour passé a eu sa publication. Plus de vue « Archives » séparée. Le bouton est toujours
-  cliquable (on archive aussi un abandon), vert seulement quand tout est coché, **sans
-  confirmation**. Supprimer vit dans la modale d'édition, avec confirmation.
-- **Une publication validée = archivée avec ses six cases.** `summary()` rend
-  `lastPublishedAt` (le plus récent de ces archivages) et `pending`. Un archivage
-  incomplet est un abandon : il ne remet pas le compteur à zéro.
+- **Plus de cases ni d'archivage (2026-11-06).** Les six cases ont quitté l'écran, remplacées
+  par des **badges de plateforme** (`PlatformBadges`, `ShortStrip.tsx`) : avant le départ, les
+  plateformes visées (« Instagram · essai » pour un reel d'essai) ; après, l'état de chacune
+  (en ligne, dans la boîte TikTok, échec) avec son lien. Le bouton Archiver et « Restaurer »
+  ont disparu, de même que l'outil MCP `publication_archive`. `steps` et `archived_at` restent
+  en base et dans le contrat (historique, et `ManageShorts` coche encore les cases
+  `montage` / `youtube` / `instagram` sans que rien ne les affiche) ; les publications
+  archivées d'avant restent affichées, grisées, à leur jour.
+- **Un short est en ligne dès qu'UNE plateforme l'a mis en ligne** (`isShortOnline`, dupliqué
+  des deux côtés : dernier envoi `published`, ou `ready` pour la boîte TikTok). Une plateforme
+  en échec n'y change rien. `isPostDraftOnline` y ajoute l'historique : archivée avec ses six
+  cases. `summary()` rend `lastPublishedAt` = le plus récent des **premiers succès** de chaque
+  short (`MIN(updated_at)` des envois réussis, par publication) ou des archivages complets
+  d'avant, et `pending` = les shorts non archivés pas encore en ligne.
 - **Pastille `-X`** sur l'entrée de menu (`publicationBadge`, `navBadges.ts`) : X = jours
   **locaux** écoulés depuis `lastPublishedAt` (ramené au jour du navigateur par
-  `localDateOf`). Rien si une publication a été validée aujourd'hui ; neutre à -1, orange
-  dès -2 ; un point si rien n'a jamais été validé. `NavBadge.text` a été ajouté pour
+  `localDateOf`). Rien si un short est paru aujourd'hui ; neutre à -1, orange
+  dès -2 ; un point si rien n'est jamais paru. `NavBadge.text` a été ajouté pour
   afficher « -3 » à la place d'un compte. La raison se relit en tête de `/shorts`
   (`PageAlerts`).
 - Les cases se cochent en rafale : `useUpdatePostDraft` écrit **d'abord dans le cache**
@@ -2775,13 +2780,12 @@ Lectures : `briefing`, `planning_get`, `tasks_get`, `mails_list`, `mail_thread_g
 `products_list`, `sponsorships_list`, `brands_stats`, `money_entries_list`, `comments_list`,
 `legal_overview`, `instagram_overview`, `tiktok_overview`, `affiliation_overview`. Les réponses
 sont **allégées** (script et séries à la demande : ils coûtent à chaque tour). Actions :
-`timer_status`, `timer_start`, `timer_stop`, `comment_set_status`, `publication_archive`,
-`mail_prepare_reply`.
+`timer_status`, `timer_start`, `timer_stop`, `comment_set_status`, `mail_prepare_reply`
+(`publication_archive` a été retiré avec l'archivage, le 2026-11-06).
 
 `publications_list` et `comments_list` passent par `compactDraft` et `compactComment` : l'état
-(`readyToArchive`, `missing`, `checked`) et le texte viennent avant ce qui est long ou inutile au
-modèle, car un client peut couper les résultats anciens. `publication_archive` refuse une
-publication incomplète sans `abandon: true`, qui ne compte pas comme validée. `production_get`
+(`online`, `scheduledAt`, `uploads` par plateforme) et le texte viennent avant ce qui est long ou
+inutile au modèle, car un client peut couper les résultats anciens. `production_get`
 explique qu'un identifiant de publication n'est pas une production.
 
 `videos_list` trie par date, ou par vues avec `sort: "views"` (sur toutes les vidéos, avant `limit` :
@@ -3084,7 +3088,7 @@ Erreurs : `{ error, code, details? }`. `401` pour l'export sans clé valide, `42
 | `/planning`         | `PlanningPage`         | Grille horaire jour/semaine, pile de travail puis **« À faire aujourd'hui »** (tâches Todo du jour non faites) à droite, bouton « Ajouter une vidéo »                                                                                                                                                                                                                                                                                                                                                                                                |
 | `/production`       | `ProductionPage`       | `format="video"`, titré **« Vidéos »**. Raisons de la pastille, 6 cartes, **planning en permanence**, puis 2 onglets : file d'attente (créneaux et carnet d'idées à droite) / terminées                                                                                                                                                                                                                                                                                                                                                              |
 | `/shorts`           | —                      | **Retiré** : redirige vers `/production`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `/shorts`           | `ShortsPage`           | Ex-`/publications` (redirige, paramètres gardés). **Un couloir par jour** (vides compris, ouvert sur aujourd'hui), 6 cases, et sous chaque ligne le short (`ShortStrip`) : vidéo glissée, heure + plateformes (`ScheduleShortDialog`, « Publier maintenant »), état par plateforme, « Réessayer ». Archivage sans confirmation, archivées grisées, « + » par jour. Pastille « -X jours »                                                                                                                                                             |
+| `/shorts`           | `ShortsPage`           | Ex-`/publications` (redirige, paramètres gardés). **Un couloir par jour** (vides compris, ouvert sur aujourd'hui), badges de plateforme (état de la mise en ligne), et sous chaque ligne le short (`ShortStrip`) : vidéo glissée, heure + plateformes (`ScheduleShortDialog`, « Publier maintenant »), état par plateforme, « Réessayer ». Plus d'archivage (anciennes archivées grisées), « + » par jour. Pastille « -X jours »                                                                                                                     |
 | `/miniatures`       | `ThumbnailsPage`       | Vidéo, format 16:9 ou 9:16, images de la banque et images ajoutées, prompt personnalisé, puis l'historique à côté, restreint à la vidéo choisie, avec **Enregistrer** sous chaque miniature. `?video=<id>` présélectionne. Voir le domaine `thumbnail`                                                                                                                                                                                                                                                                                               |
 | `/production/:id`   | `ProductionDetailPage` | En-tête (statut, étapes, progression) + onglets Script / **Publication** / **Miniatures** (les enregistrées) / **Temps passé** (prévu + réel) / Produits & sponsos / **Notes** (plusieurs, en fichiers)                                                                                                                                                                                                                                                                                                                                              |
 | `/produits`         | `ProductsPage`         | Raisons de la pastille, 4 cartes (Attendus, Valeur attendue, Produits reçus sur la période, À tourner), table des produits                                                                                                                                                                                                                                                                                                                                                                                                                           |

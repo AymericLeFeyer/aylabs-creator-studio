@@ -211,11 +211,6 @@ export const ShortStrip = ({ draft, today, onSchedule }: ShortStripProps) => {
       {/* 2. L'heure, puis 3. les plateformes */}
       {!started && !archived && <ScheduleChip draft={draft} today={today} onClick={onSchedule} />}
 
-      {started &&
-        draft.platforms.map((platform) => (
-          <PlatformChip key={platform} platform={platform} attempt={lastAttempt(draft, platform)} />
-        ))}
-
       {state === 'failed' && !archived && (
         <Button
           size="sm"
@@ -278,18 +273,6 @@ const ScheduleChip = ({
     >
       <CalendarClock className="h-3.5 w-3.5" />
       {label}
-      {draft.scheduledAt && !noPlatform && (
-        <span className="text-muted-foreground">
-          ·{' '}
-          {draft.platforms
-            .map((platform) =>
-              platform === 'instagram' && draft.options.instagram.trial
-                ? 'Instagram (reel d’essai)'
-                : PLATFORM_LABELS[platform],
-            )
-            .join(', ')}
-        </span>
-      )}
       {draft.scheduledAt && noPlatform && (
         <span className="text-[var(--expense)]">· aucune plateforme</span>
       )}
@@ -297,6 +280,34 @@ const ScheduleChip = ({
         <span className="text-[var(--expense)]">· vidéo attendue</span>
       )}
     </button>
+  );
+};
+
+/**
+ * Les plateformes d'un short, en badges, à la place des anciennes cases : avant le départ,
+ * celles où il partira (« Instagram · essai » pour un reel d'essai) ; après, l'état de chacune
+ * — en ligne, dans la boîte TikTok, en échec —, avec le lien quand il existe.
+ */
+export const PlatformBadges = ({ draft }: { draft: PostDraft }) => {
+  if (draft.platforms.length === 0) {
+    return <span className="text-xs text-[var(--expense)]">Aucune plateforme</span>;
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+      {draft.platforms.map((platform) =>
+        draft.publishStartedAt ? (
+          <PlatformChip key={platform} platform={platform} attempt={lastAttempt(draft, platform)} />
+        ) : (
+          <span
+            key={platform}
+            className="rounded-full border border-border px-2 py-0.5 text-muted-foreground"
+          >
+            {PLATFORM_LABELS[platform]}
+            {platform === 'instagram' && draft.options.instagram.trial ? ' · essai' : ''}
+          </span>
+        ),
+      )}
+    </div>
   );
 };
 

@@ -292,3 +292,26 @@ export const instantAt = (day: string, time: string): string =>
  */
 export const rescheduleOnDay = (scheduledAt: string, day: string): string =>
   instantAt(day, localTimeOf(scheduledAt));
+
+/**
+ * Le short est **en ligne** dès qu'**une** plateforme l'a (en ligne, ou dans la boîte de
+ * réception TikTok) : quelques minutes d'écart ou une plateforme en échec n'empêchent pas
+ * qu'il soit paru.
+ */
+export const isShortOnline = (
+  draft: Pick<PostDraft, 'publishStartedAt' | 'platforms' | 'attempts'>,
+): boolean =>
+  draft.publishStartedAt !== null &&
+  draft.platforms.some((platform) => {
+    const last = draft.attempts.find((attempt) => attempt.platform === platform);
+    return last?.status === 'published' || last?.status === 'ready';
+  });
+
+/**
+ * Paru : en ligne quelque part, ou — avant l'écran Shorts — archivé avec ses six cases
+ * cochées. **Il n'y a plus d'archivage** : `archivedAt` ne vit plus que dans l'historique.
+ */
+export const isPostDraftOnline = (
+  draft: Pick<PostDraft, 'publishStartedAt' | 'platforms' | 'attempts' | 'steps' | 'archivedAt'>,
+): boolean =>
+  isShortOnline(draft) || (draft.archivedAt !== null && isPostDraftComplete(draft.steps));

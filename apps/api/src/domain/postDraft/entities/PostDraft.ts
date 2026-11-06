@@ -222,3 +222,26 @@ export interface PostDraftSummary {
 /** Une publication validée : toutes ses cases sont cochées. */
 export const isPostDraftComplete = (steps: readonly PostDraftStep[]): boolean =>
   POST_DRAFT_STEPS.every((step) => steps.includes(step));
+
+/**
+ * Le short est **en ligne** dès qu'**une** plateforme l'a (en ligne, ou dans la boîte de
+ * réception TikTok) : quelques minutes d'écart ou une plateforme en échec n'empêchent pas
+ * qu'il soit paru.
+ */
+export const isShortOnline = (
+  draft: Pick<PostDraft, 'publishStartedAt' | 'platforms' | 'attempts'>,
+): boolean =>
+  draft.publishStartedAt !== null &&
+  draft.platforms.some((platform) => {
+    const last = draft.attempts.find((attempt) => attempt.platform === platform);
+    return last?.status === 'published' || last?.status === 'ready';
+  });
+
+/**
+ * Paru : en ligne quelque part, ou — avant l'écran Shorts — archivé avec ses six cases
+ * cochées. **Il n'y a plus d'archivage** : `archivedAt` ne vit plus que dans l'historique.
+ */
+export const isPostDraftOnline = (
+  draft: Pick<PostDraft, 'publishStartedAt' | 'platforms' | 'attempts' | 'steps' | 'archivedAt'>,
+): boolean =>
+  isShortOnline(draft) || (draft.archivedAt !== null && isPostDraftComplete(draft.steps));

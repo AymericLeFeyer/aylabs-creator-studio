@@ -4,9 +4,8 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { MailReplyRequest } from '../../application/mail/usecases/ManageMailDrafts.ts';
 import type { Container } from '../../container.ts';
-import { missingPostDraftSteps } from '../../domain/postDraft/entities/PostDraft.ts';
 import { clockIn } from '../../shared/dates.ts';
-import { badRequest, notFound } from '../../shared/errors.ts';
+import { badRequest } from '../../shared/errors.ts';
 import { asJson, registerTool } from './tooling.ts';
 
 const CARD_URI = 'ui://aylabs-studio/mail-confirm.html';
@@ -127,39 +126,6 @@ export const registerActionTools = (server: McpServer, container: Container): vo
         { id: comment.id, status: comment.status, authorName: comment.authorName },
         `Commentaire de ${comment.authorName}`,
         COMMENT_STATUS_LABELS[status],
-      );
-    },
-  );
-
-  registerTool(
-    server,
-    'publication_archive',
-    {
-      description:
-        'Archive une publication de `publications_list` : avec ses six cases cochées, elle compte comme validée. `abandon` archive une publication incomplète, seulement si l’utilisateur demande de l’abandonner.',
-      inputSchema: {
-        publicationId: z.string(),
-        abandon: z.boolean().default(false),
-      },
-    },
-    ({ publicationId, abandon }) => {
-      const draft = container.postDrafts.findById(publicationId);
-      if (!draft) throw notFound('Publication');
-      const missing = missingPostDraftSteps(draft);
-      if (missing.length > 0 && !abandon) {
-        throw badRequest(`Publication incomplète, il manque : ${missing.join(', ')}.`);
-      }
-      const archived = container.postDrafts.update(publicationId, { archived: true });
-      const validated = missing.length === 0;
-      return withCard(
-        {
-          id: archived.id,
-          title: archived.title,
-          archivedAt: archived.archivedAt,
-          validated,
-        },
-        archived.title,
-        validated ? 'Archivée' : 'Abandonnée',
       );
     },
   );
