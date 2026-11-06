@@ -46,10 +46,14 @@ export const useDeleteThumbnailAsset = () =>
  * Sans vidéo, toutes les miniatures ; avec, celles de cette vidéo. `saved: true` ne garde
  * que les enregistrées (l'onglet de la fiche).
  */
-export const useThumbnails = (productionId: string | null, options: { saved?: boolean } = {}) =>
+export const useThumbnails = (
+  productionId: string | null,
+  options: { saved?: boolean; enabled?: boolean } = {},
+) =>
   useQuery({
     queryKey: queryKeys.thumbnails(productionId, options.saved),
     queryFn: () => thumbnailApi.list(productionId, options.saved),
+    enabled: options.enabled ?? true,
   });
 
 const useListMutation = <T>(mutationFn: (input: T) => Promise<unknown>) => {

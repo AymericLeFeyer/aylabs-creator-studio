@@ -1,16 +1,9 @@
 import { useRef, useState } from 'react';
-import { ImagePlus, X } from 'lucide-react';
+import { ImagePlus, Star, X } from 'lucide-react';
 import { useThumbnails } from '../../../application/thumbnail/usecases/useThumbnails.ts';
-import type { CoverSource } from '../../../domain/postDraft/entities/PostDraft.ts';
-import { thumbnailUrl } from '../../../domain/thumbnail/entities/Thumbnail.ts';
+import { thumbnailUrl, type Thumbnail } from '../../../domain/thumbnail/entities/Thumbnail.ts';
 import { cn } from '../../../shared/cn.ts';
-
-/** Ce que le formulaire retient : la source à envoyer, et de quoi l'afficher. */
-export interface PickedCover {
-  /** `null` : la couverture déjà posée, gardée telle quelle. */
-  source: CoverSource | null;
-  previewUrl: string;
-}
+import type { PickedCover } from './coverChoice.ts';
 
 /** Un short est vertical : 1080 × 1920 au plus. */
 const MAX_WIDTH = 1080;
@@ -40,9 +33,10 @@ const toJpegDataUrl = async (file: File): Promise<string> => {
 };
 
 /**
- * La couverture d'un short — miniature YouTube et couverture Instagram : une miniature de
- * Production → Miniatures (celles de la vidéo d'origine et les 9:16 d'abord), ou une image
- * importée. Un clic sur la sélection la retire.
+ * La couverture d'un short — miniature YouTube et couverture Instagram. Deux groupes :
+ * **les miniatures de la vidéo** (celles enregistrées sur sa fiche d'abord, marquées), puis
+ * les dernières générées ailleurs ; ou une image importée. Un clic sur la sélection la
+ * retire.
  */
 export const CoverPicker = ({
   value,
@@ -53,13 +47,32 @@ export const CoverPicker = ({
   onChange: (value: PickedCover | null) => void;
   productionId: string | null;
 }) => {
-  const { data: thumbnails = [] } = useThumbnails(null);
+  const { data: all = [] } = useThumbnails(null);
+  const { data: saved = [] } = useThumbnails(productionId, {
+    saved: true,
+    enabled: productionId !== null,
+  });
   const input = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const rank = (thumbnail: (typeof thumbnails)[number]) =>
-    (productionId && thumbnail.productionId === productionId ? 0 : 2) +
-    (thumbnail.format === '9:16' ? 0 : 1);
-  const choices = [...thumbnails].sort((a, b) => rank(a) - rank(b)).slice(0, 12);
+  const savedIds = new Set(saved.map((thumbnail) => thumbnail.id));
+  const portrait = (a: Thumbnail, b: Thumbnail) =>
+    Number(a.format !== '9:16') - Number(b.format !== '9:16');
+  // De la vidéo : les enregistrées, puis les autres générées pour elle.
+  const fromVideo = productionId
+    ? [
+        ...[...saved].sort(portrait),
+        ...all
+          .filter(
+            (thumbnail) => thumbnail.productionId === productionId && !savedIds.has(thumbnail.id),
+          )
+          .sort(portrait),
+      ]
+    : [];
+  const fromVideoIds = new Set(fromVideo.map((thumbnail) => thumbnail.id));
+  const others = all
+    .filter((thumbnail) => !fromVideoIds.has(thumbnail.id))
+    .sort(portrait)
+    .slice(0, fromVideo.length ? 8 : 12);
   const selectedId =
     value?.source && 'thumbnailId' in value.source ? value.source.thumbnailId : null;
   const own = value && !selectedId ? value : null;
@@ -75,8 +88,36 @@ export const CoverPicker = ({
     }
   };
 
+  const tile = (thumbnail: Thumbnail) => {
+    const selected = thumbnail.id === selectedId;
+    const isSaved = savedIds.has(thumbnail.id);
+    return (
+      <button
+        key={thumbnail.id}
+        type="button"
+        title={`${thumbnail.title ?? 'Miniature générée'}${isSaved ? ' — enregistrée sur la vidéo' : ''}`}
+        onClick={() =>
+          onChange(
+            selected
+              ? null
+              : { source: { thumbnailId: thumbnail.id }, previewUrl: thumbnailUrl(thumbnail.id) },
+          )
+        }
+        className={cn(
+          'relative h-24 overflow-hidden rounded-md border border-border',
+          selected && 'ring-2 ring-primary',
+        )}
+      >
+        <img src={thumbnailUrl(thumbnail.id)} alt="" loading="lazy" className="h-full w-auto" />
+        {isSaved && (
+          <Star className="absolute left-1 top-1 h-4 w-4 rounded-full bg-background/80 fill-amber-400 p-0.5 text-amber-400" />
+        )}
+      </button>
+    );
+  };
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
         {own && (
           <button
@@ -102,38 +143,21 @@ export const CoverPicker = ({
           <ImagePlus className="h-4 w-4" />
           Importer
         </button>
-        {choices.map((thumbnail) => {
-          const selected = thumbnail.id === selectedId;
-          return (
-            <button
-              key={thumbnail.id}
-              type="button"
-              title={thumbnail.title ?? 'Miniature générée'}
-              onClick={() =>
-                onChange(
-                  selected
-                    ? null
-                    : {
-                        source: { thumbnailId: thumbnail.id },
-                        previewUrl: thumbnailUrl(thumbnail.id),
-                      },
-                )
-              }
-              className={cn(
-                'h-24 overflow-hidden rounded-md border border-border',
-                selected && 'ring-2 ring-primary',
-              )}
-            >
-              <img
-                src={thumbnailUrl(thumbnail.id)}
-                alt=""
-                loading="lazy"
-                className="h-full w-auto"
-              />
-            </button>
-          );
-        })}
+        {fromVideo.map(tile)}
       </div>
+      {productionId && fromVideo.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          Aucune miniature générée pour cette vidéo (Production → Miniatures).
+        </p>
+      )}
+      {others.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs text-muted-foreground">
+            {fromVideo.length ? 'Autres miniatures' : 'Dernières miniatures'}
+          </p>
+          <div className="flex flex-wrap gap-2">{others.map(tile)}</div>
+        </div>
+      )}
       <input
         ref={input}
         type="file"

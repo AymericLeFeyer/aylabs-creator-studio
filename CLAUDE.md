@@ -892,9 +892,13 @@ disque comme les autres dépôts (`publish_uploads`, voir `publish`), rattachée
   reste en ligne et l'erreur s'affiche) et couverture Instagram (`cover_url`, déposée sur R2
   avec la vidéo, JPEG seulement). `PUT /api/publish/drafts/:id/cover` `{ image }` (base64) ou
   `{ thumbnailId }` (copiée depuis Miniatures : la supprimer là-bas ne la retire pas ici) ;
-  JPEG ou PNG, 2 Mo (limite YouTube). `CoverPicker` ramène toute image importée en JPEG
-  1080 × 1920 au plus, sous 2 Mo, et propose les miniatures de la vidéo d'origine et les 9:16
-  d'abord.
+  JPEG ou PNG, 2 Mo (limite YouTube). `CoverPicker` ramène toute image importée en JPEG 1080 × 1920 au plus, sous 2 Mo. Il montre
+  d'abord **les miniatures de la vidéo d'origine** (`productionId` du short) : les
+  enregistrées sur sa fiche (★, 9:16 en tête), puis les autres générées pour elle, puis les
+  dernières générées ailleurs. **Un short lié à une vidéo et sans couverture se voit proposer
+  d'office la miniature enregistrée** (`suggestedCover`, `coverChoice.ts` : la 9:16 de
+  préférence), visible et retirée d'un clic ; elle n'est posée qu'à l'enregistrement de la
+  fiche. Un short créé à la main n'a pas de vidéo : seulement les dernières miniatures.
 - Ce qui part : `title` → titre YouTube (100 car.), `description` (+ hashtags) → description
   YouTube et légende Instagram (le titre à défaut). **Le titre d'une publication préparée depuis une
   vidéo (« Teaser vidéo — … ») part tel quel** : le retoucher avant. YouTube en **public**,

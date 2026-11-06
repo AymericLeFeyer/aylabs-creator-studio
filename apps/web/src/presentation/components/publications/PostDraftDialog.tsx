@@ -35,7 +35,9 @@ import {
 import { Input, Textarea } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
-import { CoverPicker, type PickedCover } from './CoverPicker.tsx';
+import { useThumbnails } from '../../../application/thumbnail/usecases/useThumbnails.ts';
+import { CoverPicker } from './CoverPicker.tsx';
+import { suggestedCover, type PickedCover } from './coverChoice.ts';
 
 interface PostDraftDialogProps {
   open: boolean;
@@ -117,7 +119,23 @@ export const PostDraftDialog = ({
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY);
   const [options, setOptions] = useState<ShortOptions>(DEFAULT_SHORT_OPTIONS);
-  const [cover, setCoverValue] = useState<PickedCover | null>(null);
+  const [chosenCover, setChosenCover] = useState<PickedCover | null>(null);
+  /** Tant qu'on n'a pas touché à la couverture, on propose la miniature enregistrée. */
+  const [coverTouched, setCoverTouched] = useState(false);
+  const productionId = draft?.productionId ?? null;
+  const { data: savedThumbnails = [] } = useThumbnails(productionId, {
+    saved: true,
+    enabled: open && productionId !== null,
+  });
+  // Un short tiré d'une vidéo, sans couverture : la miniature enregistrée sur sa fiche est
+  // proposée d'office (visible, et retirée d'un clic). Dérivé pendant le rendu : elle peut
+  // arriver après l'ouverture.
+  const suggestion = !coverTouched && !draft?.cover ? suggestedCover(savedThumbnails) : null;
+  const cover = coverTouched || draft?.cover ? chosenCover : suggestion;
+  const setCoverValue = (value: PickedCover | null) => {
+    setCoverTouched(true);
+    setChosenCover(value);
+  };
 
   // Réinitialisé pendant le rendu à chaque ouverture, comme les autres formulaires du
   // projet : un effet ferait un rendu de plus et la règle `set-state-in-effect` le refuse.
@@ -136,7 +154,8 @@ export const PostDraftDialog = ({
         : { ...EMPTY, plannedDate: defaultDate ?? '' },
     );
     setOptions(draft?.options ?? DEFAULT_SHORT_OPTIONS);
-    setCoverValue(draft?.cover ? { source: null, previewUrl: draft.cover.url } : null);
+    setCoverTouched(false);
+    setChosenCover(draft?.cover ? { source: null, previewUrl: draft.cover.url } : null);
   }
 
   const youtube = (patch: Partial<ShortOptions['youtube']>) =>
@@ -263,11 +282,12 @@ export const PostDraftDialog = ({
             title="Couverture"
             hint="Miniature YouTube et couverture Instagram. Une miniature de Production → Miniatures, ou une image (ramenée en JPEG, 2 Mo au plus)."
           >
-            <CoverPicker
-              value={cover}
-              onChange={setCoverValue}
-              productionId={draft?.productionId ?? null}
-            />
+            <CoverPicker value={cover} onChange={setCoverValue} productionId={productionId} />
+            {suggestion && cover === suggestion && (
+              <p className="text-xs text-muted-foreground">
+                ★ Proposée : la miniature enregistrée sur la vidéo. Un clic dessus la retire.
+              </p>
+            )}
           </Section>
 
           <Section title="YouTube">
