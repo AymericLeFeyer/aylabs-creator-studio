@@ -11,6 +11,7 @@ import {
 } from '../validation.ts';
 import { param } from '../helpers.ts';
 import { todayIn } from '../../shared/dates.ts';
+import { previewContentType } from '../../domain/mail/services/attachmentPreview.ts';
 
 /**
  * La boîte mail. Les réglages ne laissent jamais sortir un secret (`passwordSource`,
@@ -40,10 +41,20 @@ export const mailsRouter = (container: Container): Router => {
 
   router.get('/attachments/:id', async (req, res) => {
     const attachment = await mail.attachment(param(req, 'id'));
-    res.setHeader('Content-Type', attachment.contentType || 'application/octet-stream');
+    // `?inline=1` : affichée dans la page (aperçu), et seulement pour un type qui ne peut
+    // rien exécuter sur notre origine (`previewContentType`). Tout le reste se télécharge.
+    const preview =
+      req.query.inline === '1'
+        ? previewContentType(attachment.contentType, attachment.filename)
+        : null;
+    res.setHeader(
+      'Content-Type',
+      preview ?? (attachment.contentType || 'application/octet-stream'),
+    );
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
+      `${preview ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
     );
     // Le contenu ne change jamais : une fois téléchargée, la pièce est servie du cache.
     res.setHeader('Cache-Control', 'private, max-age=86400');

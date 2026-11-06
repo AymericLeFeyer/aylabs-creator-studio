@@ -245,6 +245,9 @@ export interface MailFolderInfo {
  */
 export const attachmentUrl = (id: string): string => `/api/mails/attachments/${id}`;
 
+/** La même pièce, servie pour s'afficher dans la page (`previewKind` dit si elle le peut). */
+export const attachmentPreviewUrl = (id: string): string => `${attachmentUrl(id)}?inline=1`;
+
 /** Le dernier segment d'un chemin de dossier (« Folders/Partenariats » → « Partenariats »). */
 export const folderLabel = (path: string): string =>
   path.split(/[/.]/).filter(Boolean).at(-1) ?? path;

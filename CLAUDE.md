@@ -2515,6 +2515,14 @@ Tables (migration 50) :
   vidéo (`cacheAttachments`) — c'est ce qui garde les liens des notes valables une fois le
   mail rangé. La position est celle de `visibleAttachments` (même filtre à l'import et au
   téléchargement : tout sauf les images inline sans nom).
+- **Aperçu des pièces jointes** (`MailAttachments`) : vignette pour les images, et images,
+  PDF et texte s'ouvrent dans une modale (← → entre les pièces du message), le reste se
+  télécharge. `?inline=1` sert la pièce en `inline` **seulement** si
+  `previewContentType` (`domain/mail/services/attachmentPreview.ts`, dupliqué côté front)
+  la reconnaît : liste fermée de types sans script (PNG, JPEG, GIF, WebP, AVIF, BMP, PDF,
+  texte), l'extension tranchant quand le type déclaré est `application/octet-stream`.
+  **Jamais de SVG ni de HTML en `inline`** : servis depuis notre origine, ils exécuteraient
+  le script d'un expéditeur inconnu. `nosniff` sur toutes les réponses.
 - **Rangement** (`ManageMail.move`, `POST /threads/:id/move`) : les dossiers se chargent du
   serveur dans les réglages (`GET /folders`, au clic seulement) et on en coche quelques-uns
   (`mail_settings.move_folders`) ; seuls ceux-là sont admis (400 sinon). IMAP `MOVE` des
@@ -3016,7 +3024,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `PATCH` | `/api/mails/settings` | Modifier. `password` / `aiApiKey` : absent conserve, `null`/`""` efface. 409 si couvert par l'env ou sans `SECRETS_KEY` |
 | `POST` | `/api/mails/settings/test` | Ouvre une session IMAP et liste les dossiers suivis. 502 si refusé |
 | `GET` | `/api/mails/folders` | Dossiers du serveur, lus en direct (`[{ path, name, specialUse }]`) — à cocher comme dossiers de rangement |
-| `GET` | `/api/mails/attachments/:id` | Télécharge une pièce jointe (relue sur le serveur la 1ʳᵉ fois, puis gardée en base). 404 si le message n'est plus sur le serveur et la pièce jamais téléchargée |
+| `GET` | `/api/mails/attachments/:id` | `?inline=1` : affichée dans la page si son type le permet (images, PDF, texte), sinon téléchargée. Télécharge une pièce jointe (relue sur le serveur la 1ʳᵉ fois, puis gardée en base). 404 si le message n'est plus sur le serveur et la pièce jamais téléchargée |
 | `POST` | `/api/mails/threads/:id/move` | `{ folder }` → range le fil sur le serveur (IMAP `MOVE`). 400 si le dossier n'est pas dans `moveFolders` |
 | `POST` | `/api/mails/threads/:id/trash` | Met le fil à la corbeille **du serveur** (récupérable). 400 sans dossier corbeille |
 | `POST` | `/api/mails/threads/:id/check-dates` | `?today=` (jour local) → `MailDateCheck` : résumé, tâches posées dans Todo, incohérences avec la vidéo |

@@ -2,14 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
-  Download,
   FolderInput,
   CalendarSearch,
   FileText,
   Loader2,
   Mail,
   MailOpen,
-  Paperclip,
   Reply,
   RotateCcw,
   Sparkles,
@@ -30,7 +28,6 @@ import { useBrandContacts, useBrands } from '../../../application/brand/usecases
 import { useProductions } from '../../../application/production/usecases/useProductions.ts';
 import {
   addressLabel,
-  attachmentUrl,
   folderLabel,
   formatAddresses,
   replySubject,
@@ -52,6 +49,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { BrandCombobox } from '../forms/BrandCombobox.tsx';
 import { NONE, fromSelectValue, toSelectValue } from '../forms/selectNone.ts';
+import { MailAttachments } from './MailAttachments.tsx';
 import { MailBody } from './MailBody.tsx';
 import { MailComposer, type MailDraft } from './MailComposer.tsx';
 import { MailDateCheckPanel } from './MailDateCheckPanel.tsx';
@@ -123,28 +121,7 @@ const MessageCard = ({
         <div className="mt-3 space-y-3">
           {message.aiSummary && <AiText text={message.aiSummary} />}
           <MailBody message={message} />
-          {message.attachments.length > 0 && (
-            <ul className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-              {message.attachments.map((attachment, index) => (
-                <li key={index}>
-                  {attachment.id ? (
-                    <a
-                      href={attachmentUrl(attachment.id)}
-                      className="flex items-center gap-1 rounded border border-border px-2 py-1 hover:bg-accent hover:text-foreground"
-                    >
-                      <Download className="h-3 w-3" />
-                      {attachment.filename} ({Math.max(1, Math.round(attachment.size / 1024))} ko)
-                    </a>
-                  ) : (
-                    <span className="flex items-center gap-1 rounded border border-border px-2 py-1">
-                      <Paperclip className="h-3 w-3" />
-                      {attachment.filename}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
+          <MailAttachments attachments={message.attachments} />
           {aiConfigured && !message.outgoing && (
             <Button
               size="sm"
