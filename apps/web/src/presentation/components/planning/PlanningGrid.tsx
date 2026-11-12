@@ -684,7 +684,7 @@ export const PlanningGrid = ({
                   <div
                     key={day.date}
                     className={cn(
-                      'min-w-0 flex-1 border-l border-border px-2 py-1.5 transition-colors',
+                      'min-w-0 flex-1 basis-0 border-l border-border px-2 py-1.5 transition-colors',
                       isToday && 'bg-[var(--today)]/10',
                       isTarget && 'bg-[var(--today)]/20',
                     )}
@@ -823,21 +823,20 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
               </div>
               <div className="flex flex-1">
                 {days.map((day) => (
-                  <div
-                    key={day.date}
-                    className="min-w-0 flex-1 space-y-0.5 border-l border-border px-1 py-1"
-                  >
-                    {day.events
-                      .filter((event) => event.allDay)
-                      .map((event) => (
-                        <p
-                          key={event.uid}
-                          className="truncate rounded bg-muted px-1 text-[11px] text-muted-foreground"
-                          title={event.summary}
-                        >
-                          {event.summary}
-                        </p>
-                      ))}
+                  <div key={day.date} className="min-w-0 flex-1 basis-0 border-l border-border">
+                    <div className="space-y-0.5 px-1 py-1">
+                      {day.events
+                        .filter((event) => event.allDay)
+                        .map((event) => (
+                          <p
+                            key={event.uid}
+                            className="truncate rounded bg-muted px-1 text-[11px] text-muted-foreground"
+                            title={event.summary}
+                          >
+                            {event.summary}
+                          </p>
+                        ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -875,85 +874,87 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                   {todosCollapsed ? 'Déplier les tâches Todo' : 'Replier les tâches Todo'}
                 </span>
               </button>
-              <div className="flex flex-1">
-                {days.map((day) => {
-                  const loose = day.tasks.filter((task) => task.placement === null);
-                  const open = loose.filter((task) => !task.done);
-                  const late = open.filter((task) => task.overdue).length;
-                  return (
-                    <div
-                      key={day.date}
-                      className={cn(
-                        'min-w-0 flex-1 border-l border-border px-1 py-1',
-                        day.date === today && 'bg-[var(--today)]/10',
-                      )}
-                    >
-                      {todosCollapsed && (
-                        <p
-                          className={cn(
-                            'truncate text-[11px] leading-5',
-                            late > 0 ? 'text-[var(--negative)]' : 'text-muted-foreground',
-                          )}
-                        >
-                          {open.length === 0
-                            ? '—'
-                            : `${open.length} à faire${late > 0 ? ` · ${late} en retard` : ''}`}
-                        </p>
-                      )}
+              {/* Un seul défilement pour toute la rangée : les jours restent alignés et
+                  une longue liste se parcourt d'un geste. Barre masquée, sinon elle
+                  rétrécirait cette rangée par rapport aux autres et décalerait les jours. */}
+              <div className="max-h-44 min-w-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="flex">
+                  {days.map((day) => {
+                    const loose = day.tasks.filter((task) => task.placement === null);
+                    const open = loose.filter((task) => !task.done);
+                    const late = open.filter((task) => task.overdue).length;
+                    return (
                       <div
+                        key={day.date}
                         className={cn(
-                          'max-h-28 space-y-0.5 overflow-y-auto',
-                          todosCollapsed && 'hidden',
+                          'min-w-0 flex-1 basis-0 border-l border-border',
+                          day.date === today && 'bg-[var(--today)]/10',
                         )}
                       >
-                        {loose.map((task) => (
-                          <div
-                            key={task.id}
-                            // Toute la pastille est la poignée, comme une ligne de la pile.
-                            // Une tâche faite ne se place plus : il n'y a plus rien à caler.
-                            onPointerDown={() => {
-                              if (!task.done) onPickTask?.(task);
-                            }}
-                            className={cn(
-                              'flex min-w-0 items-center gap-1 rounded border-l-2 bg-muted/40 px-1 py-0.5 text-[11px]',
-                              task.done ? 'opacity-50' : 'cursor-grab active:cursor-grabbing',
-                              pendingTaskId === task.id && 'opacity-40',
-                            )}
-                            style={{ borderLeftColor: todoColor(task) }}
-                            title={`${task.title}${
-                              task.overdue
-                                ? ` — en retard, prévue le ${task.dueDate.slice(8, 10)}/${task.dueDate.slice(5, 7)}`
-                                : ''
-                            }${task.done ? '' : '\nGlisser dans la journée pour lui donner une heure'}`}
-                          >
-                            <Checkbox
-                              className="h-3.5 w-3.5"
-                              checked={task.done}
-                              // Sans ça, cocher démarrerait un glissement.
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onCheckedChange={(value) => onToggleTask?.(task, value === true)}
-                              aria-label={`Terminer « ${task.title} »`}
-                            />
-                            <span
+                        <div className="px-1 py-1">
+                          {todosCollapsed && (
+                            <p
                               className={cn(
-                                'min-w-0 flex-1 truncate',
-                                task.done && 'text-muted-foreground line-through',
-                                task.overdue && 'text-[var(--negative)]',
+                                'truncate text-[11px] leading-5',
+                                late > 0 ? 'text-[var(--negative)]' : 'text-muted-foreground',
                               )}
                             >
-                              {task.title}
-                            </span>
-                            {task.duration !== null && !task.done && (
-                              <span className="shrink-0 text-[10px] text-muted-foreground">
-                                {formatMinutes(task.duration)}
-                              </span>
-                            )}
+                              {open.length === 0
+                                ? '—'
+                                : `${open.length} à faire${late > 0 ? ` · ${late} en retard` : ''}`}
+                            </p>
+                          )}
+                          <div className={cn('space-y-0.5', todosCollapsed && 'hidden')}>
+                            {loose.map((task) => (
+                              <div
+                                key={task.id}
+                                // Toute la pastille est la poignée, comme une ligne de la pile.
+                                // Une tâche faite ne se place plus : il n'y a plus rien à caler.
+                                onPointerDown={() => {
+                                  if (!task.done) onPickTask?.(task);
+                                }}
+                                className={cn(
+                                  'flex min-w-0 items-center gap-1 rounded border-l-2 bg-muted/40 px-1 py-0.5 text-[11px]',
+                                  task.done ? 'opacity-50' : 'cursor-grab active:cursor-grabbing',
+                                  pendingTaskId === task.id && 'opacity-40',
+                                )}
+                                style={{ borderLeftColor: todoColor(task) }}
+                                title={`${task.title}${
+                                  task.overdue
+                                    ? ` — en retard, prévue le ${task.dueDate.slice(8, 10)}/${task.dueDate.slice(5, 7)}`
+                                    : ''
+                                }${task.done ? '' : '\nGlisser dans la journée pour lui donner une heure'}`}
+                              >
+                                <Checkbox
+                                  className="h-3.5 w-3.5"
+                                  checked={task.done}
+                                  // Sans ça, cocher démarrerait un glissement.
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onCheckedChange={(value) => onToggleTask?.(task, value === true)}
+                                  aria-label={`Terminer « ${task.title} »`}
+                                />
+                                <span
+                                  className={cn(
+                                    'min-w-0 flex-1 truncate',
+                                    task.done && 'text-muted-foreground line-through',
+                                    task.overdue && 'text-[var(--negative)]',
+                                  )}
+                                >
+                                  {task.title}
+                                </span>
+                                {task.duration !== null && !task.done && (
+                                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                                    {formatMinutes(task.duration)}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
