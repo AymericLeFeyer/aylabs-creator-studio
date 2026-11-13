@@ -32,6 +32,11 @@ export const applyBranding = (branding: Branding | undefined) => {
     link.dataset.defaultHref = original;
     const href = branding?.logoVersion ? brandingIconUrl(branding, 'favicon-32') : original;
     if (link.getAttribute('href') !== href) link.setAttribute('href', href);
+    // Le logo par défaut est un SVG ; un logo personnalisé est toujours un PNG.
+    const type = branding?.logoVersion ? 'image/png' : (link.dataset.defaultType ?? '');
+    link.dataset.defaultType ??= link.getAttribute('type') ?? '';
+    if (branding?.logoVersion) link.setAttribute('type', type);
+    else if (link.dataset.defaultType) link.setAttribute('type', link.dataset.defaultType);
   });
   setAttribute('link[rel="apple-touch-icon"]', 'href', brandingIconUrl(branding, 'apple-180'));
 
