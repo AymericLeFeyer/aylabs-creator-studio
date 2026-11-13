@@ -880,8 +880,11 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
               <div className="max-h-44 min-w-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <div className="flex">
                   {days.map((day) => {
-                    const loose = day.tasks.filter((task) => task.placement === null);
-                    const open = loose.filter((task) => !task.done);
+                    // À faire d'abord, terminées ensuite : la rangée défile, et ce qui reste à
+                    // faire ne doit pas se retrouver caché sous ce qui est déjà coché.
+                    const looseAll = day.tasks.filter((task) => task.placement === null);
+                    const open = looseAll.filter((task) => !task.done);
+                    const loose = [...open, ...looseAll.filter((task) => task.done)];
                     const late = open.filter((task) => task.overdue).length;
                     return (
                       <div
