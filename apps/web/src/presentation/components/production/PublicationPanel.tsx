@@ -19,6 +19,7 @@ import { Checkbox } from '../ui/checkbox.tsx';
 import { Input, Textarea } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { cn } from '../../../shared/cn.ts';
+import { AbTestCard } from './AbTestCard.tsx';
 
 /** Limite YouTube d'un titre de vidéo. La dépasser fait rejeter la mise en ligne. */
 const TITLE_MAX = 100;
@@ -231,256 +232,259 @@ export const PublicationPanel = ({ production }: PublicationPanelProps) => {
   );
 
   return (
-    <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Megaphone className="h-4 w-4" />
-          Formulaire de mise en ligne
-        </CardTitle>
-        <div className="flex items-center gap-2">
-          {dirty && <span className="text-xs text-[var(--expense)]">Non enregistré</span>}
-          <Button size="sm" disabled={!dirty || update.isPending} onClick={save}>
-            <Save className="h-4 w-4" />
-            {update.isPending ? 'Enregistrement…' : 'Enregistrer'}
-          </Button>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        <div className="space-y-1.5">
-          <div className="flex items-baseline justify-between gap-2">
-            <Label htmlFor="publish-title">Titre</Label>
-            <span
-              className={cn(
-                'tabular text-xs text-muted-foreground',
-                title.length > TITLE_MAX && 'font-medium text-[var(--negative)]',
-              )}
-            >
-              {title.length} / {TITLE_MAX}
-            </span>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Megaphone className="h-4 w-4" />
+            Formulaire de mise en ligne
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            {dirty && <span className="text-xs text-[var(--expense)]">Non enregistré</span>}
+            <Button size="sm" disabled={!dirty || update.isPending} onClick={save}>
+              <Save className="h-4 w-4" />
+              {update.isPending ? 'Enregistrement…' : 'Enregistrer'}
+            </Button>
           </div>
-          <Input
-            id="publish-title"
-            value={title}
-            onChange={(event) => edit(setTitle)(event.target.value)}
-            placeholder="Le titre public, celui qui fait cliquer"
-          />
-          {aiReady && (
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <AiButton
-                  pending={aiTitles.isPending}
-                  onClick={suggestTitles}
-                  label={
-                    titleIdeas.length > 0 ? 'Trois autres idées' : 'Trouver des idées de titre'
-                  }
-                />
-                {titleIdeas.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setTitleIdeas([])}
-                    aria-label="Fermer les idées de titre"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-                {aiTitles.error && (
-                  <span className="text-xs text-destructive">{aiTitles.error.message}</span>
-                )}
-              </div>
-              {titleIdeas.length > 0 && (
-                <ul className="space-y-1">
-                  {titleIdeas.map((idea) => (
-                    <li key={idea}>
-                      <button
-                        type="button"
-                        onClick={() => edit(setTitle)(idea)}
-                        className={cn(
-                          'w-full rounded-md border border-border px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50',
-                          idea === title && 'border-primary bg-accent/50',
-                        )}
-                      >
-                        {idea}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">
-            {trimmedTitle && trimmedTitle !== production.title ? (
-              <>
-                En enregistrant, la vidéo sera renommée « {trimmedTitle} » dans la file — elle
-                s’appelle « {production.title} » pour l’instant.
-              </>
-            ) : (
-              <>Enregistrer renomme aussi la vidéo dans la file d’attente.</>
-            )}
-          </p>
-        </div>
+        </CardHeader>
 
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <Label htmlFor="publish-description">Description</Label>
-            <div className="flex items-center gap-2">
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <Label htmlFor="publish-title">Titre</Label>
               <span
                 className={cn(
                   'tabular text-xs text-muted-foreground',
-                  description.length > DESCRIPTION_MAX && 'font-medium text-[var(--negative)]',
+                  title.length > TITLE_MAX && 'font-medium text-[var(--negative)]',
                 )}
               >
-                {description.length} / {DESCRIPTION_MAX}
+                {title.length} / {TITLE_MAX}
               </span>
-              {aiReady && (
-                <AiButton
-                  pending={aiDescription.isPending}
-                  onClick={suggestDescription}
-                  label="Générer une description courte"
-                />
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={previous.isPending}
-                onClick={loadPrevious}
-                title="Reprend la description de la sortie précédente de cette chaîne, telle qu'elle est sur YouTube"
-              >
-                <Download className="h-4 w-4" />
-                {previous.isPending ? 'Chargement…' : 'Charger depuis la précédente vidéo'}
-              </Button>
             </div>
+            <Input
+              id="publish-title"
+              value={title}
+              onChange={(event) => edit(setTitle)(event.target.value)}
+              placeholder="Le titre public, celui qui fait cliquer"
+            />
+            {aiReady && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <AiButton
+                    pending={aiTitles.isPending}
+                    onClick={suggestTitles}
+                    label={
+                      titleIdeas.length > 0 ? 'Trois autres idées' : 'Trouver des idées de titre'
+                    }
+                  />
+                  {titleIdeas.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setTitleIdeas([])}
+                      aria-label="Fermer les idées de titre"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {aiTitles.error && (
+                    <span className="text-xs text-destructive">{aiTitles.error.message}</span>
+                  )}
+                </div>
+                {titleIdeas.length > 0 && (
+                  <ul className="space-y-1">
+                    {titleIdeas.map((idea) => (
+                      <li key={idea}>
+                        <button
+                          type="button"
+                          onClick={() => edit(setTitle)(idea)}
+                          className={cn(
+                            'w-full rounded-md border border-border px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50',
+                            idea === title && 'border-primary bg-accent/50',
+                          )}
+                        >
+                          {idea}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {trimmedTitle && trimmedTitle !== production.title ? (
+                <>
+                  En enregistrant, la vidéo sera renommée « {trimmedTitle} » dans la file — elle
+                  s’appelle « {production.title} » pour l’instant.
+                </>
+              ) : (
+                <>Enregistrer renomme aussi la vidéo dans la file d’attente.</>
+              )}
+            </p>
           </div>
-          {aiDescription.error && (
-            <p className="text-xs text-destructive">{aiDescription.error.message}</p>
-          )}
-          {descriptionIdea !== null && (
-            <div className="space-y-2 rounded-md border border-border bg-muted/50 p-3">
-              <p className="whitespace-pre-wrap text-sm">{descriptionIdea}</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    takeDescription(
-                      description.trim() === ''
-                        ? descriptionIdea
-                        : `${descriptionIdea}\n\n${description}`,
-                    )
-                  }
+
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <Label htmlFor="publish-description">Description</Label>
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    'tabular text-xs text-muted-foreground',
+                    description.length > DESCRIPTION_MAX && 'font-medium text-[var(--negative)]',
+                  )}
                 >
-                  Ajouter en tête
-                </Button>
+                  {description.length} / {DESCRIPTION_MAX}
+                </span>
+                {aiReady && (
+                  <AiButton
+                    pending={aiDescription.isPending}
+                    onClick={suggestDescription}
+                    label="Générer une description courte"
+                  />
+                )}
                 <Button
-                  size="sm"
                   variant="outline"
-                  onClick={() => takeDescription(descriptionIdea)}
-                >
-                  Remplacer
-                </Button>
-                <Button
                   size="sm"
-                  variant="outline"
-                  disabled={aiDescription.isPending}
-                  onClick={suggestDescription}
+                  disabled={previous.isPending}
+                  onClick={loadPrevious}
+                  title="Reprend la description de la sortie précédente de cette chaîne, telle qu'elle est sur YouTube"
                 >
-                  <RefreshCw className="h-4 w-4" />
-                  Autre proposition
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setDescriptionIdea(null)}
-                  aria-label="Fermer la proposition"
-                >
-                  <X className="h-4 w-4" />
+                  <Download className="h-4 w-4" />
+                  {previous.isPending ? 'Chargement…' : 'Charger depuis la précédente vidéo'}
                 </Button>
               </div>
             </div>
-          )}
-          <Textarea
-            id="publish-description"
-            className="min-h-[16rem] font-mono text-xs"
-            value={description}
-            onChange={(event) => edit(setDescription)(event.target.value)}
-            placeholder="Liens, réseaux, chapitres, mentions…"
-          />
-          {previous.data && (
-            <p className="text-xs text-muted-foreground">
-              Repris de « {previous.data.title} », publiée le {formatDate(previous.data.date)}.
-            </p>
-          )}
-          {loadError && <p className="text-xs text-destructive">{loadError}</p>}
-        </div>
-
-        {aiReady && (
-          <div className="flex flex-wrap items-center gap-2">
-            <AiButton
-              pending={aiTags.isPending}
-              onClick={generateTags}
-              label="Générer les tags et hashtags"
-            />
-            {aiTags.error && (
-              <span className="text-xs text-destructive">{aiTags.error.message}</span>
+            {aiDescription.error && (
+              <p className="text-xs text-destructive">{aiDescription.error.message}</p>
             )}
-          </div>
-        )}
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="publish-hashtags">Hashtags</Label>
-            <Input
-              id="publish-hashtags"
-              value={hashtags}
-              onChange={(event) => edit(setHashtags)(event.target.value)}
-              placeholder="#tech #tuto #diy"
+            {descriptionIdea !== null && (
+              <div className="space-y-2 rounded-md border border-border bg-muted/50 p-3">
+                <p className="whitespace-pre-wrap text-sm">{descriptionIdea}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      takeDescription(
+                        description.trim() === ''
+                          ? descriptionIdea
+                          : `${descriptionIdea}\n\n${description}`,
+                      )
+                    }
+                  >
+                    Ajouter en tête
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => takeDescription(descriptionIdea)}
+                  >
+                    Remplacer
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={aiDescription.isPending}
+                    onClick={suggestDescription}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Autre proposition
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setDescriptionIdea(null)}
+                    aria-label="Fermer la proposition"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+            <Textarea
+              id="publish-description"
+              className="min-h-[16rem] font-mono text-xs"
+              value={description}
+              onChange={(event) => edit(setDescription)(event.target.value)}
+              placeholder="Liens, réseaux, chapitres, mentions…"
             />
-            <p className="text-xs text-muted-foreground">
-              Les trois premiers s’affichent au-dessus du titre sur YouTube.
-            </p>
+            {previous.data && (
+              <p className="text-xs text-muted-foreground">
+                Repris de « {previous.data.title} », publiée le {formatDate(previous.data.date)}.
+              </p>
+            )}
+            {loadError && <p className="text-xs text-destructive">{loadError}</p>}
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="publish-tags">Tags</Label>
-            <Input
-              id="publish-tags"
-              value={tags}
-              onChange={(event) => edit(setTags)(event.target.value)}
-              placeholder="séparés par des virgules"
-            />
-            <p className="text-xs text-muted-foreground">
-              Invisibles pour le spectateur : ils ne servent qu’au référencement.
-            </p>
-          </div>
-        </div>
+          {aiReady && (
+            <div className="flex flex-wrap items-center gap-2">
+              <AiButton
+                pending={aiTags.isPending}
+                onClick={generateTags}
+                label="Générer les tags et hashtags"
+              />
+              {aiTags.error && (
+                <span className="text-xs text-destructive">{aiTags.error.message}</span>
+              )}
+            </div>
+          )}
 
-        {/* La case se déduit des sponsos tant qu'on n'y a pas touché. Le dire évite de
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="publish-hashtags">Hashtags</Label>
+              <Input
+                id="publish-hashtags"
+                value={hashtags}
+                onChange={(event) => edit(setHashtags)(event.target.value)}
+                placeholder="#tech #tuto #diy"
+              />
+              <p className="text-xs text-muted-foreground">
+                Les trois premiers s’affichent au-dessus du titre sur YouTube.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="publish-tags">Tags</Label>
+              <Input
+                id="publish-tags"
+                value={tags}
+                onChange={(event) => edit(setTags)(event.target.value)}
+                placeholder="séparés par des virgules"
+              />
+              <p className="text-xs text-muted-foreground">
+                Invisibles pour le spectateur : ils ne servent qu’au référencement.
+              </p>
+            </div>
+          </div>
+
+          {/* La case se déduit des sponsos tant qu'on n'y a pas touché. Le dire évite de
             croire qu'elle a été cochée par erreur — et évite surtout de la décocher sans
             savoir qu'une sponso est rattachée. */}
-        <Label
-          htmlFor="publish-paid-promotion"
-          className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 font-normal transition-colors hover:bg-accent/50"
-        >
-          <Checkbox
-            id="publish-paid-promotion"
-            className="mt-0.5"
-            checked={paidPromotion}
-            onCheckedChange={(checked) => edit(setPaidPromotion)(checked === true)}
-          />
-          <span className="min-w-0">
-            <span className="block text-sm font-medium">
-              La vidéo contient une communication commerciale
+          <Label
+            htmlFor="publish-paid-promotion"
+            className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 font-normal transition-colors hover:bg-accent/50"
+          >
+            <Checkbox
+              id="publish-paid-promotion"
+              className="mt-0.5"
+              checked={paidPromotion}
+              onCheckedChange={(checked) => edit(setPaidPromotion)(checked === true)}
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">
+                La vidéo contient une communication commerciale
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                {production.paidPromotion === null
+                  ? deducedFromSponsorships
+                    ? 'Cochée d’office : une sponso est rattachée à cette vidéo.'
+                    : 'Décochée d’office : aucune sponso n’est rattachée à cette vidéo.'
+                  : 'Choix enregistré : cette case ne suit plus les sponsos rattachées.'}
+              </span>
             </span>
-            <span className="block text-xs text-muted-foreground">
-              {production.paidPromotion === null
-                ? deducedFromSponsorships
-                  ? 'Cochée d’office : une sponso est rattachée à cette vidéo.'
-                  : 'Décochée d’office : aucune sponso n’est rattachée à cette vidéo.'
-                : 'Choix enregistré : cette case ne suit plus les sponsos rattachées.'}
-            </span>
-          </span>
-        </Label>
-      </CardContent>
-    </Card>
+          </Label>
+        </CardContent>
+      </Card>
+      <AbTestCard production={production} />
+    </div>
   );
 };

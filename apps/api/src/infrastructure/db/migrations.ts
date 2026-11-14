@@ -2226,6 +2226,16 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 68,
+    name: 'productions : test A/B des titres et miniatures',
+    up: `
+      -- Le test A/B d'une video, en JSON : deux titres en plus du titre public (A), et
+      -- une miniature par variante (A, B, C). Une colonne et non une table : trois
+      -- variantes fixes, lues et ecrites toujours ensemble.
+      ALTER TABLE productions ADD COLUMN ab_test TEXT NOT NULL DEFAULT '{}';
+    `,
+  },
 ];
 
 /**

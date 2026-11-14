@@ -306,6 +306,13 @@ export const createProductionSchema = z.object({
    * autorisant l'effacement explicite.
    */
   paidPromotion: z.boolean().nullable().optional(),
+  /** Test A/B : titres B et C, et une miniature par variante (A, B, C). */
+  abTest: z
+    .object({
+      titles: z.tuple([z.string().max(200), z.string().max(200)]),
+      thumbnailIds: z.tuple([z.string().nullable(), z.string().nullable(), z.string().nullable()]),
+    })
+    .optional(),
 });
 
 export const updateProductionSchema = createProductionSchema.partial();

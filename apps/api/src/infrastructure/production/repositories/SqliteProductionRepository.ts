@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { today } from '../../../shared/dates.ts';
+import { parseAbTest } from '../../../domain/production/entities/Production.ts';
 import type {
   CreateProductionInput,
   Production,
@@ -39,6 +40,7 @@ interface ProductionRow {
   publish_hashtags: string;
   publish_tags: string;
   paid_promotion: number | null;
+  ab_test: string;
   discord_announced_at: string | null;
   sort_order: number;
   created_at: string;
@@ -76,6 +78,7 @@ const toDomain = (row: ProductionRow): Production => ({
   // pour se déduire de la présence d'une sponso. `fromSqlBool` écraserait ce troisième
   // état en `false`.
   paidPromotion: row.paid_promotion === null ? null : row.paid_promotion === 1,
+  abTest: parseAbTest(row.ab_test),
   discordAnnouncedAt: row.discord_announced_at,
   sortOrder: row.sort_order,
   createdAt: row.created_at,
@@ -472,6 +475,7 @@ export class SqliteProductionRepository implements ProductionRepository {
     if (input.paidPromotion !== undefined) {
       set('paid_promotion', input.paidPromotion === null ? null : toSqlBool(input.paidPromotion));
     }
+    if (input.abTest !== undefined) set('ab_test', JSON.stringify(input.abTest));
     if (input.sortOrder !== undefined) set('sort_order', input.sortOrder);
 
     // `pausedAt` est posé par le passage EN pause, pas par la mise à jour de la raison :

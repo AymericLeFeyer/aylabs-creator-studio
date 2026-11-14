@@ -113,6 +113,8 @@ export interface Production {
    * (`resolvePaidPromotion`). C'est un troisième état, pas un `false` déguisé.
    */
   paidPromotion: boolean | null;
+  /** Test A/B : titres B et C, et une miniature par variante (A = titre public, B, C). */
+  abTest: AbTest;
   /** Quand la sortie a été annoncée sur Discord. Changer de sortie le remet à `null`. */
   discordAnnouncedAt: string | null;
   // Les notes ne sont plus un champ : elles vivent à part, plusieurs par vidéo
@@ -162,6 +164,7 @@ export interface ProductionInput {
   publishHashtags?: string;
   publishTags?: string;
   paidPromotion?: boolean | null;
+  abTest?: AbTest;
 }
 
 /**
@@ -254,3 +257,9 @@ export const partnerCounts = (production: Production) => ({
     .filter((sponsorship) => PENDING_SPONSORSHIP_STATUSES.includes(sponsorship.status))
     .reduce((total, sponsorship) => total + sponsorship.amountCents, 0),
 });
+
+/** Trois variantes, une miniature par titre. A est `publishTitle`, `titles` porte B et C. */
+export interface AbTest {
+  titles: [string, string];
+  thumbnailIds: [string | null, string | null, string | null];
+}

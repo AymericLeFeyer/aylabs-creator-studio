@@ -75,6 +75,8 @@ export interface Production {
    * ouverture de l'onglet, et une vidéo sponsorisée serait partie sans sa mention.
    */
   paidPromotion: boolean | null;
+  /** Le test A/B des titres et miniatures. */
+  abTest: AbTest;
   /** Quand la sortie a été annoncée sur Discord. Changer de sortie le remet à `null`. */
   discordAnnouncedAt: string | null;
   // Plus de `notes` : elles vivent dans `production_notes` (plusieurs par vidéo). La
@@ -166,6 +168,35 @@ export interface CreateProductionInput {
   publishHashtags?: string;
   publishTags?: string;
   paidPromotion?: boolean | null;
+  abTest?: AbTest;
 }
 
 export type UpdateProductionInput = Partial<CreateProductionInput> & { sortOrder?: number };
+
+/**
+ * Le test A/B d'une vidéo : trois variantes (A, B, C), **une miniature par titre**.
+ *
+ * Le titre A est `publishTitle` (celui qui renomme la vidéo) ; `titles` ne porte que B et
+ * C. `thumbnailIds` désigne, pour A, B et C, une miniature de la table `thumbnails` — pas
+ * de clé étrangère (JSON) : une miniature supprimée laisse un identifiant orphelin que
+ * l'écran ignore.
+ */
+export interface AbTest {
+  titles: [string, string];
+  thumbnailIds: [string | null, string | null, string | null];
+}
+
+export const EMPTY_AB_TEST: AbTest = { titles: ['', ''], thumbnailIds: [null, null, null] };
+
+/** Relit la colonne JSON ; tout ce qui n'est pas conforme retombe sur du vide. */
+export const parseAbTest = (raw: string): AbTest => {
+  try {
+    const value = JSON.parse(raw) as Partial<AbTest>;
+    const text = (i: number) => (typeof value.titles?.[i] === 'string' ? value.titles[i] : '');
+    const id = (i: number) =>
+      typeof value.thumbnailIds?.[i] === 'string' ? value.thumbnailIds[i] : null;
+    return { titles: [text(0), text(1)], thumbnailIds: [id(0), id(1), id(2)] };
+  } catch {
+    return EMPTY_AB_TEST;
+  }
+};
