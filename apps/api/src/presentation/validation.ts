@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AI_PROVIDERS } from '../domain/ai/entities/Ai.ts';
 import { addDays, today } from '../shared/dates.ts';
 import {
   EXTERNAL_APP_ICONS,
@@ -1407,6 +1408,8 @@ export const sendMailSchema = z.object({
 // --- Assistant IA ----------------------------------------------------------------
 
 export const updateAiSettingsSchema = z.object({
+  provider: z.enum(AI_PROVIDERS).optional(),
+  activeProvider: z.enum(AI_PROVIDERS).optional(),
   apiKey: z.string().trim().max(500).nullable().optional(),
   model: z.string().trim().max(100).nullable().optional(),
   creditBalance: z.number().min(0).max(1_000_000).nullable().optional(),

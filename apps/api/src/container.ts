@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Config } from './config.ts';
+import type { AiClient } from './domain/ai/repositories/AiRepository.ts';
 import { getDatabase } from './infrastructure/db/database.ts';
 import { SqliteChannelRepository } from './infrastructure/channel/repositories/SqliteChannelRepository.ts';
 import { SqliteMetricsRepository } from './infrastructure/metrics/repositories/SqliteMetricsRepository.ts';
@@ -112,6 +113,7 @@ import { SmtpMailSender } from './infrastructure/mail/api/SmtpMailSender.ts';
 import { ManageAi } from './application/ai/usecases/ManageAi.ts';
 import { SqliteAiSettingsRepository } from './infrastructure/ai/repositories/SqliteAiSettingsRepository.ts';
 import { ClaudeAiClient } from './infrastructure/ai/api/ClaudeAiClient.ts';
+import { OpenAiTextClient } from './infrastructure/ai/api/OpenAiTextClient.ts';
 import { ProductionAssistant } from './application/production/usecases/ProductionAssistant.ts';
 import { ManageThumbnails } from './application/thumbnail/usecases/ManageThumbnails.ts';
 import { SqliteThumbnailRepository } from './infrastructure/thumbnail/repositories/SqliteThumbnailRepository.ts';
@@ -381,12 +383,18 @@ export const buildContainer = (config: Config): Container => {
     timeZone: config.timeZone,
   });
 
-  const manageAi = new ManageAi(
-    new SqliteAiSettingsRepository(db),
-    secrets,
-    config.anthropicApiKey,
-  );
-  const aiClient = new ClaudeAiClient(manageAi);
+  const manageAi = new ManageAi(new SqliteAiSettingsRepository(db), secrets, {
+    anthropic: config.anthropicApiKey,
+    openai: config.openaiAssistantApiKey,
+  });
+  const aiClients = {
+    anthropic: new ClaudeAiClient(manageAi.observer('anthropic')),
+    openai: new OpenAiTextClient(manageAi.observer('openai')),
+  };
+  const aiClient: AiClient = {
+    complete: (credentials, request) =>
+      aiClients[credentials.provider].complete(credentials, request),
+  };
   const mailStore = new SqliteMailStore(db);
   const manageMail = new ManageMail(
     new SqliteMailSettingsRepository(db),

@@ -29,6 +29,9 @@ jobs:
       - name: Lint
         run: npm run lint --workspaces --if-present
 
+      - name: Tester l'API
+        run: npm test --workspace=@acs/api
+
       - name: Vérifier le format
         run: npx prettier --check "apps/*/{src,public}/**/*.{ts,tsx,css,js,webmanifest}" "apps/web/index.html"
 

@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAiSettings, useUpdateAiSettings } from '../../application/ai/usecases/useAi.ts';
-import { AI_MODELS, formatDollars, type AiSettingsView } from '../../domain/ai/entities/Ai.ts';
+import {
+  AI_PROVIDERS,
+  formatDollars,
+  type AiProvider,
+  type AiSettingsView,
+} from '../../domain/ai/entities/Ai.ts';
 import { formatDate } from '../../shared/format.ts';
 import { cn } from '../../shared/cn.ts';
 import { Button } from '../components/ui/button.tsx';
@@ -14,36 +19,44 @@ import {
 } from '../components/ui/card.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Label } from '../components/ui/label.tsx';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select.tsx';
 
 const keyPlaceholder = (view: AiSettingsView): string => {
-  if (view.keySource === 'env') return 'Définie par ANTHROPIC_API_KEY';
+  const { envKey, keyExample } = AI_PROVIDERS[view.provider];
+  if (view.keySource === 'env') return `Définie par ${envKey}`;
   if (view.keySource === 'unreadable') return 'Illisible (SECRETS_KEY a changé) : à ressaisir';
   if (view.keySource === 'app') return '•••••••• (enregistrée)';
-  return view.secretsKeyConfigured ? 'sk-ant-…' : 'SECRETS_KEY requise';
+  return view.secretsKeyConfigured ? keyExample : 'SECRETS_KEY requise';
 };
 
 const Form = ({ view }: { view: AiSettingsView }) => {
   const update = useUpdateAiSettings();
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState(view.model);
+  const provider = AI_PROVIDERS[view.provider];
   const locked = view.keySource === 'env' || !view.secretsKeyConfigured;
 
   const save = () =>
     update.mutate(
       // Une clé laissée vide veut dire « je n'y touche pas », pas « efface-la ».
-      { model, ...(apiKey ? { apiKey } : {}) },
+      { provider: view.provider, model, ...(apiKey ? { apiKey } : {}) },
       { onSuccess: () => setApiKey('') },
     );
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Claude (Anthropic)</CardTitle>
+        <CardTitle>{provider.label}</CardTitle>
         <CardDescription>
           Utilisé par la boîte mail (résumés, traductions, brouillons, vérification des dates) et
-          par les fiches de vidéo (script, titres, tags, description). L’IA ne fait que proposer :{' '}
-          <strong>elle n’envoie aucun mail</strong> et ne modifie rien sans ton clic. Le contenu
-          concerné part à l’API d’Anthropic au moment où tu cliques, et seulement là.
+          par les fiches de vidéo (script, titres, tags, description). Le contenu concerné est
+          transmis au fournisseur lors de la demande. L’envoi d’un mail demande ta confirmation.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -63,7 +76,8 @@ const Form = ({ view }: { view: AiSettingsView }) => {
               <button
                 type="button"
                 className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                onClick={() => update.mutate({ apiKey: null })}
+                disabled={update.isPending}
+                onClick={() => update.mutate({ provider: view.provider, apiKey: null })}
               >
                 Effacer la clé
               </button>
@@ -78,7 +92,7 @@ const Form = ({ view }: { view: AiSettingsView }) => {
               onChange={(event) => setModel(event.target.value)}
             />
             <datalist id="ai-models">
-              {AI_MODELS.map((entry) => (
+              {provider.models.map((entry) => (
                 <option key={entry.id} value={entry.id}>
                   {entry.label}
                 </option>
@@ -90,7 +104,7 @@ const Form = ({ view }: { view: AiSettingsView }) => {
           <p className="text-xs text-muted-foreground">
             <code>SECRETS_KEY</code> n’est pas définie côté serveur : la clé ne peut pas être
             enregistrée depuis l’écran. Ajoute-la à la stack, ou passe par{' '}
-            <code>ANTHROPIC_API_KEY</code>.
+            <code>{provider.envKey}</code>.
           </p>
         )}
         <div className="flex flex-wrap items-center gap-2">
@@ -108,10 +122,7 @@ const Form = ({ view }: { view: AiSettingsView }) => {
   );
 };
 
-/**
- * Le solde de crédits. **Une estimation** : Anthropic n'expose aucun solde par API. On part
- * de ce qu'affiche la Console, et le studio retire ce qu'il consomme.
- */
+/** Le studio estime le reste à partir du dernier solde relevé chez le fournisseur. */
 const CreditCard = ({ view }: { view: AiSettingsView }) => {
   const update = useUpdateAiSettings();
   const [balance, setBalance] = useState('');
@@ -119,21 +130,25 @@ const CreditCard = ({ view }: { view: AiSettingsView }) => {
   const amount = Number(balance.replace(',', '.'));
   const valid = balance.trim() !== '' && Number.isFinite(amount) && amount >= 0;
 
-  const save = () => update.mutate({ creditBalance: amount }, { onSuccess: () => setBalance('') });
+  const save = () =>
+    update.mutate(
+      { provider: view.provider, creditBalance: amount },
+      { onSuccess: () => setBalance('') },
+    );
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Crédits</CardTitle>
         <CardDescription>
-          Anthropic ne donne pas accès au solde par API : relève-le dans la{' '}
+          Relève le solde dans la{' '}
           <a
-            href="https://platform.claude.com/settings/billing"
+            href={AI_PROVIDERS[view.provider].billingUrl}
             target="_blank"
             rel="noreferrer noopener"
             className="underline"
           >
-            Console
+            page de facturation
           </a>{' '}
           et note-le ici, le studio en retire ce qu’il consomme. Une clé utilisée ailleurs n’est pas
           comptée : c’est une estimation, à recaler de temps en temps.
@@ -145,7 +160,12 @@ const CreditCard = ({ view }: { view: AiSettingsView }) => {
             L’API a répondu que le solde était épuisé. Recharge-le, puis note le nouveau montant.
           </p>
         )}
-        {credit.remainingCents !== null ? (
+        {credit.unpriced ? (
+          <p className="text-sm text-muted-foreground">
+            Le tarif d’au moins un appel est inconnu. Relève à nouveau le solde pour reprendre
+            l’estimation.
+          </p>
+        ) : credit.remainingCents !== null ? (
           <div className="space-y-1">
             <p
               className={cn(
@@ -191,16 +211,36 @@ const CreditCard = ({ view }: { view: AiSettingsView }) => {
 /** Paramètres → API → Assistant IA. */
 export const AiSettingsPage = () => {
   const { data } = useAiSettings();
+  const update = useUpdateAiSettings();
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold">Assistant IA</h2>
-        <p className="text-sm text-muted-foreground">Une clé, un modèle, pour tout le studio.</p>
       </div>
       {data ? (
         <>
-          <Form view={data} />
-          {data.configured && <CreditCard view={data} />}
+          <div className="space-y-1.5">
+            <Label htmlFor="ai-provider">Fournisseur actif</Label>
+            <Select
+              value={data.provider}
+              onValueChange={(activeProvider: AiProvider) => update.mutate({ activeProvider })}
+              disabled={update.isPending}
+            >
+              <SelectTrigger id="ai-provider" className="max-w-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(AI_PROVIDERS).map(([id, provider]) => (
+                  <SelectItem key={id} value={id}>
+                    {provider.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {update.error && <p className="text-sm text-destructive">{update.error.message}</p>}
+          </div>
+          <Form key={data.provider} view={data} />
+          {data.configured && <CreditCard key={data.provider} view={data} />}
         </>
       ) : (
         <p className="text-sm text-muted-foreground">Chargement…</p>

@@ -1,8 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { StoredAiSettings } from '../../../domain/ai/entities/Ai.ts';
+import type { AiProvider, StoredAiSettings } from '../../../domain/ai/entities/Ai.ts';
 import type { AiSettingsRepository } from '../../../domain/ai/repositories/AiRepository.ts';
 
-const ROW_ID = 'default';
+const ROW_IDS = { anthropic: 'default', openai: 'openai' } satisfies Record<AiProvider, string>;
 
 const COLUMNS: Record<keyof StoredAiSettings, string> = {
   encryptedApiKey: 'api_key',
@@ -11,6 +11,7 @@ const COLUMNS: Record<keyof StoredAiSettings, string> = {
   creditSetAt: 'credit_set_at',
   creditSpentMicros: 'credit_spent_micros',
   creditExhaustedAt: 'credit_exhausted_at',
+  creditUnpriced: 'credit_unpriced',
 };
 
 interface Row {
@@ -20,9 +21,10 @@ interface Row {
   credit_set_at: string | null;
   credit_spent_micros: number;
   credit_exhausted_at: string | null;
+  credit_unpriced: number;
 }
 
-/** La ligne unique des réglages de l'IA. La clé n'y est rangée que **chiffrée**. */
+/** Une ligne par fournisseur, avec les clés chiffrées. */
 export class SqliteAiSettingsRepository implements AiSettingsRepository {
   private readonly db: DatabaseSync;
 
@@ -30,19 +32,21 @@ export class SqliteAiSettingsRepository implements AiSettingsRepository {
     this.db = db;
   }
 
-  get(): StoredAiSettings {
-    const now = new Date().toISOString();
-    // La migration insère la ligne ; ce filet ne sert qu'à une base recopiée.
-    this.db
-      .prepare('INSERT OR IGNORE INTO ai_settings (id, created_at, updated_at) VALUES (?, ?, ?)')
-      .run(ROW_ID, now, now);
+  activeProvider(): AiProvider {
+    const row = this.db
+      .prepare('SELECT active_provider FROM ai_settings WHERE id = ?')
+      .get(ROW_IDS.anthropic);
+    return row?.active_provider === 'openai' ? 'openai' : 'anthropic';
+  }
+
+  get(provider: AiProvider): StoredAiSettings {
     const row = this.db
       .prepare(
         `SELECT api_key, model, credit_balance_cents, credit_set_at, credit_spent_micros,
-                credit_exhausted_at
+                credit_exhausted_at, credit_unpriced
            FROM ai_settings WHERE id = ?`,
       )
-      .get(ROW_ID) as unknown as Row;
+      .get(ROW_IDS[provider]) as unknown as Row;
     return {
       encryptedApiKey: row.api_key,
       model: row.model,
@@ -50,27 +54,49 @@ export class SqliteAiSettingsRepository implements AiSettingsRepository {
       creditSetAt: row.credit_set_at,
       creditSpentMicros: row.credit_spent_micros,
       creditExhaustedAt: row.credit_exhausted_at,
+      creditUnpriced: row.credit_unpriced !== 0,
     };
   }
 
-  update(patch: Partial<StoredAiSettings>): void {
-    this.get();
+  update(provider: AiProvider, patch: Partial<StoredAiSettings>, activate?: AiProvider): void {
     const now = new Date().toISOString();
+    const assignments: string[] = [];
+    const values: Array<string | number | null> = [];
     for (const key of Object.keys(COLUMNS) as (keyof StoredAiSettings)[]) {
       const value = patch[key];
       if (value === undefined) continue;
-      this.db
-        .prepare(`UPDATE ai_settings SET ${COLUMNS[key]} = ?, updated_at = ? WHERE id = ?`)
-        .run(value, now, ROW_ID);
+      assignments.push(`${COLUMNS[key]} = ?`);
+      values.push(typeof value === 'boolean' ? Number(value) : value);
+    }
+    this.db.exec('BEGIN');
+    try {
+      if (assignments.length) {
+        this.db
+          .prepare(`UPDATE ai_settings SET ${assignments.join(', ')}, updated_at = ? WHERE id = ?`)
+          .run(...values, now, ROW_IDS[provider]);
+      }
+      if (activate) {
+        this.db
+          .prepare('UPDATE ai_settings SET active_provider = ? WHERE id = ?')
+          .run(activate, ROW_IDS.anthropic);
+      }
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
     }
   }
 
-  addCreditSpend(micros: number): void {
-    this.get();
+  recordUsage(provider: AiProvider, micros: number | null): void {
     this.db
       .prepare(
-        'UPDATE ai_settings SET credit_spent_micros = credit_spent_micros + ?, updated_at = ? WHERE id = ?',
+        `UPDATE ai_settings
+            SET credit_spent_micros = credit_spent_micros + ?,
+                credit_unpriced = MAX(credit_unpriced, ?),
+                credit_exhausted_at = NULL,
+                updated_at = ?
+          WHERE id = ?`,
       )
-      .run(micros, new Date().toISOString(), ROW_ID);
+      .run(micros ?? 0, Number(micros === null), new Date().toISOString(), ROW_IDS[provider]);
   }
 }

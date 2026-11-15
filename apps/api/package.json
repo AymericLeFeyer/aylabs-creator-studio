@@ -12,7 +12,8 @@
     "start": "node --env-file-if-exists=../../.env --disable-warning=ExperimentalWarning src/index.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "node --disable-warning=ExperimentalWarning --test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

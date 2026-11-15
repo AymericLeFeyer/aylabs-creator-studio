@@ -26,6 +26,19 @@ npm run dev
 
 L'application démarre sans aucune clé API : ajoute une chaîne en mode **Manuelle** et saisis tes chiffres. Les clés ne servent qu'à automatiser la collecte.
 
+## Assistant IA
+
+Dans **Paramètres → API → Assistant IA**, sélectionne **Claude (Anthropic)** ou **GPT (OpenAI)**.
+Le choix s'applique aux outils de rédaction et d'analyse des mails ainsi qu'aux scripts, titres,
+tags et descriptions des fiches vidéo. Les installations existantes démarrent avec Anthropic
+et retrouvent leurs réglages. Chaque fournisseur garde son modèle, sa clé et son suivi de crédits.
+
+Saisis la clé à l'écran si `SECRETS_KEY` est configurée côté serveur (16 caractères
+minimum). Tu peux aussi déclarer `ANTHROPIC_API_KEY` ou `OPENAI_ASSISTANT_API_KEY` dans
+`.env` ou dans la stack Portainer. Les miniatures utilisent leur propre réglage et leur
+variable `OPENAI_API_KEY`. Les générations GPT sont facturées par le compte API OpenAI.
+Le modèle proposé pour le texte est `gpt-6.1-sol`.
+
 ## Modes de collecte
 
 Chaque chaîne choisit son mode, indépendamment des autres.
@@ -111,6 +124,18 @@ Pour construire les images localement :
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
+
+Pour déployer une branche de test depuis son code sur un serveur Docker, place-toi dans
+son checkout, renseigne les variables de déploiement dans `.env`, puis lance :
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+Pour une mise à jour, fais un `git pull --ff-only` sur la branche et relance la même
+commande. Si tu reprends une installation existante, sauvegarde SQLite et réutilise le
+même projet Compose, le même volume et la même valeur de `SECRETS_KEY`. La variante
+`docker-compose.dev.yml` reconstruit les images de l'API et du front depuis le checkout.
 
 ## Structure
 

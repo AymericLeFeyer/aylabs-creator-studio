@@ -1,5 +1,5 @@
 /**
- * L'assistant IA du studio (Claude, par l'API d'Anthropic).
+ * L'assistant IA du studio.
  *
  * Un domaine **à part** et non un réglage des mails : la boîte mail en est le premier
  * utilisateur, pas le seul. La clé et le modèle se règlent une fois, dans Paramètres →
@@ -12,6 +12,14 @@
 
 export type AiKeySource = 'env' | 'app' | 'unreadable' | null;
 
+export const AI_PROVIDERS = ['anthropic', 'openai'] as const;
+export type AiProvider = (typeof AI_PROVIDERS)[number];
+
+export const AI_PROVIDER_SETTINGS = {
+  anthropic: { label: 'Anthropic', envKey: 'ANTHROPIC_API_KEY', model: 'claude-opus-5' },
+  openai: { label: 'OpenAI', envKey: 'OPENAI_ASSISTANT_API_KEY', model: 'gpt-6.1-sol' },
+} satisfies Record<AiProvider, { label: string; envKey: string; model: string }>;
+
 export interface StoredAiSettings {
   /** Chiffrée par `SecretBox`. Seul `ManageAi` la lit en clair. */
   encryptedApiKey: string | null;
@@ -23,6 +31,7 @@ export interface StoredAiSettings {
   creditSpentMicros: number;
   /** Quand l'API a répondu que le solde était épuisé ; effacé au prochain appel réussi. */
   creditExhaustedAt: string | null;
+  creditUnpriced: boolean;
 }
 
 /** Sous ce reste, l'écran et le menu préviennent (2 $). */
@@ -42,10 +51,12 @@ export interface AiCreditView {
   spentCents: number;
   remainingCents: number | null;
   exhausted: boolean;
+  unpriced: boolean;
   low: boolean;
 }
 
 export interface AiSettingsView {
+  provider: AiProvider;
   keySource: AiKeySource;
   model: string;
   secretsKeyConfigured: boolean;
@@ -54,6 +65,9 @@ export interface AiSettingsView {
 }
 
 export interface AiSettingsInput {
+  /** Fournisseur dont les réglages sont modifiés. Par défaut, celui qui sera actif. */
+  provider?: AiProvider;
+  activeProvider?: AiProvider;
   /** Absent = conservée, `null` ou `""` = effacée. */
   apiKey?: string | null;
   model?: string | null;
@@ -71,8 +85,7 @@ export interface AiUsage {
 }
 
 export interface AiCredentials {
+  provider: AiProvider;
   apiKey: string;
   model: string;
 }
-
-export const DEFAULT_AI_MODEL = 'claude-opus-5';

@@ -2,11 +2,12 @@ import type {
   AiCredentials,
   AiCreditView,
   AiKeySource,
+  AiProvider,
   AiSettingsInput,
   AiSettingsView,
-  AiUsage,
+  StoredAiSettings,
 } from '../../../domain/ai/entities/Ai.ts';
-import { AI_CREDIT_ALERT_CENTS, DEFAULT_AI_MODEL } from '../../../domain/ai/entities/Ai.ts';
+import { AI_CREDIT_ALERT_CENTS, AI_PROVIDER_SETTINGS } from '../../../domain/ai/entities/Ai.ts';
 import type {
   AiObserver,
   AiSettingsRepository,
@@ -15,7 +16,7 @@ import { usageCostMicros } from '../../../domain/ai/services/pricing.ts';
 import type { SecretCipher } from '../../../domain/integration/repositories/IntegrationRepository.ts';
 import { badRequest, conflict } from '../../../shared/errors.ts';
 
-const KEY_CONTEXT = 'ai:apiKey';
+const KEY_CONTEXT = { anthropic: 'ai:apiKey', openai: 'ai:openaiKey' };
 /**
  * La clé vivait dans les réglages mail, chiffrée sous ce contexte. La migration 53 l'a
  * recopiée telle quelle (un chiffré ne se réécrit pas en SQL) : elle se relit sous l'ancien
@@ -27,54 +28,69 @@ const MICROS_PER_CENT = 10_000;
 
 /**
  * Les réglages de l'assistant IA, et le **seul** endroit où sa clé est déchiffrée.
- * `ANTHROPIC_API_KEY` l'emporte toujours sur l'écran.
+ * La clé d'environnement du fournisseur actif l'emporte sur l'écran.
  */
-export class ManageAi implements AiObserver {
+export class ManageAi {
   private readonly settings: AiSettingsRepository;
   private readonly cipher: SecretCipher;
-  private readonly envKey: string | null;
+  private readonly envKeys: Record<AiProvider, string | null>;
 
-  constructor(settings: AiSettingsRepository, cipher: SecretCipher, envKey: string | null) {
+  constructor(
+    settings: AiSettingsRepository,
+    cipher: SecretCipher,
+    envKeys: Record<AiProvider, string | null>,
+  ) {
     this.settings = settings;
     this.cipher = cipher;
-    this.envKey = envKey;
+    this.envKeys = envKeys;
   }
 
-  private storedKey(): string | null {
-    const { encryptedApiKey } = this.settings.get();
+  private storedKey(provider: AiProvider, encryptedApiKey: string | null): string | null {
     if (!encryptedApiKey) return null;
-    const current = this.cipher.decrypt(encryptedApiKey, KEY_CONTEXT);
-    if (current !== null) return current;
+    const current = this.cipher.decrypt(encryptedApiKey, KEY_CONTEXT[provider]);
+    if (current !== null || provider !== 'anthropic') return current;
     const legacy = this.cipher.decrypt(encryptedApiKey, LEGACY_KEY_CONTEXT);
     if (legacy !== null && this.cipher.available) {
-      this.settings.update({ encryptedApiKey: this.cipher.encrypt(legacy, KEY_CONTEXT) });
+      this.settings.update(provider, {
+        encryptedApiKey: this.cipher.encrypt(legacy, KEY_CONTEXT[provider]),
+      });
     }
     return legacy;
   }
 
-  private keySource(): AiKeySource {
-    if (this.envKey) return 'env';
-    if (!this.settings.get().encryptedApiKey) return null;
-    return this.storedKey() === null ? 'unreadable' : 'app';
+  private keySource(provider: AiProvider, encryptedApiKey: string | null): AiKeySource {
+    if (this.envKeys[provider]) return 'env';
+    if (!encryptedApiKey) return null;
+    return this.storedKey(provider, encryptedApiKey) === null ? 'unreadable' : 'app';
   }
 
   view(): AiSettingsView {
-    const keySource = this.keySource();
+    const provider = this.settings.activeProvider();
+    const settings = this.settings.get(provider);
+    const keySource = this.keySource(provider, settings.encryptedApiKey);
     return {
+      provider,
       keySource,
-      model: this.settings.get().model ?? DEFAULT_AI_MODEL,
+      model: settings.model ?? AI_PROVIDER_SETTINGS[provider].model,
       secretsKeyConfigured: this.cipher.available,
       configured: keySource === 'env' || keySource === 'app',
-      credit: this.credit(),
+      credit: this.credit(settings),
     };
   }
 
-  private credit(): AiCreditView {
-    const { creditBalanceCents, creditSetAt, creditSpentMicros, creditExhaustedAt } =
-      this.settings.get();
+  private credit(settings: StoredAiSettings): AiCreditView {
+    const {
+      creditBalanceCents,
+      creditSetAt,
+      creditSpentMicros,
+      creditExhaustedAt,
+      creditUnpriced,
+    } = settings;
     const spentCents = Math.ceil(creditSpentMicros / MICROS_PER_CENT);
     const remainingCents =
-      creditBalanceCents === null ? null : Math.max(0, creditBalanceCents - spentCents);
+      creditBalanceCents === null || creditUnpriced
+        ? null
+        : Math.max(0, creditBalanceCents - spentCents);
     const exhausted = creditExhaustedAt !== null;
     return {
       balanceCents: creditBalanceCents,
@@ -82,20 +98,18 @@ export class ManageAi implements AiObserver {
       spentCents,
       remainingCents,
       exhausted,
+      unpriced: creditUnpriced,
       low: exhausted || (remainingCents !== null && remainingCents < AI_CREDIT_ALERT_CENTS),
     };
   }
 
-  /** Compte un appel. Il a abouti : un solde signalé épuisé ne l'est donc plus. */
-  usage(usage: AiUsage): void {
-    this.settings.addCreditSpend(usageCostMicros(usage));
-    if (this.settings.get().creditExhaustedAt !== null) {
-      this.settings.update({ creditExhaustedAt: null });
-    }
-  }
-
-  creditExhausted(): void {
-    this.settings.update({ creditExhaustedAt: new Date().toISOString() });
+  /** Un appel en cours reste imputé à son fournisseur, même si le réglage change. */
+  observer(provider: AiProvider): AiObserver {
+    return {
+      usage: (usage) => this.settings.recordUsage(provider, usageCostMicros(provider, usage)),
+      creditExhausted: () =>
+        this.settings.update(provider, { creditExhaustedAt: new Date().toISOString() }),
+    };
   }
 
   configured(): boolean {
@@ -103,41 +117,45 @@ export class ManageAi implements AiObserver {
   }
 
   update(input: AiSettingsInput): AiSettingsView {
+    const provider = input.provider ?? input.activeProvider ?? this.settings.activeProvider();
+    const patch: Partial<StoredAiSettings> = {};
     if (input.apiKey !== undefined) {
-      if (this.envKey) {
+      if (this.envKeys[provider]) {
         throw conflict(
-          'La clé de l’IA vient de ANTHROPIC_API_KEY : elle se change dans l’environnement.',
+          `La clé de l’IA vient de ${AI_PROVIDER_SETTINGS[provider].envKey} : elle se change dans l’environnement.`,
         );
       }
       // Jamais de clair : sans SECRETS_KEY, `encrypt` refuse en 409.
-      this.settings.update({
-        encryptedApiKey: input.apiKey ? this.cipher.encrypt(input.apiKey, KEY_CONTEXT) : null,
-      });
+      patch.encryptedApiKey = input.apiKey
+        ? this.cipher.encrypt(input.apiKey, KEY_CONTEXT[provider])
+        : null;
     }
     if (input.model !== undefined) {
-      this.settings.update({ model: input.model?.trim() ? input.model.trim() : null });
+      patch.model = input.model?.trim() || null;
     }
     if (input.creditBalance !== undefined) {
       // Un nouveau relevé remplace tout : ce qui a été consommé avant y est déjà déduit.
-      this.settings.update({
-        creditBalanceCents:
-          input.creditBalance === null ? null : Math.round(input.creditBalance * 100),
-        creditSetAt: input.creditBalance === null ? null : new Date().toISOString(),
-        creditSpentMicros: 0,
-        creditExhaustedAt: null,
-      });
+      patch.creditBalanceCents =
+        input.creditBalance === null ? null : Math.round(input.creditBalance * 100);
+      patch.creditSetAt = input.creditBalance === null ? null : new Date().toISOString();
+      patch.creditSpentMicros = 0;
+      patch.creditExhaustedAt = null;
+      patch.creditUnpriced = false;
     }
+    this.settings.update(provider, patch, input.activeProvider);
     return this.view();
   }
 
   /** La clé en clair et le modèle, pour un appel. 400 tant que rien n'est configuré. */
   credentials(): AiCredentials {
-    const apiKey = this.envKey ?? this.storedKey();
+    const provider = this.settings.activeProvider();
+    const { encryptedApiKey, model } = this.settings.get(provider);
+    const apiKey = this.envKeys[provider] ?? this.storedKey(provider, encryptedApiKey);
     if (!apiKey) {
       throw badRequest(
-        'Aucune clé API Anthropic : renseigne-la dans Paramètres → API → Assistant IA.',
+        `Aucune clé API ${AI_PROVIDER_SETTINGS[provider].label} : renseigne-la dans Paramètres → API → Assistant IA.`,
       );
     }
-    return { apiKey, model: this.settings.get().model ?? DEFAULT_AI_MODEL };
+    return { provider, apiKey, model: model ?? AI_PROVIDER_SETTINGS[provider].model };
   }
 }

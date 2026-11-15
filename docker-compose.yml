@@ -46,6 +46,7 @@ services:
       MAIL_CRON: ${MAIL_CRON:-*/5 * * * *}
       # Assistant IA (Paramètres -> API). Facultatif, saisissable à l'écran.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_ASSISTANT_API_KEY: ${OPENAI_ASSISTANT_API_KEY:-}
       # Miniatures (Paramètres -> API -> OpenAI). Facultatif, saisissable à l'écran.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Production -> Publish : stockage S3 ephemere (Cloudflare R2) ou Meta telecharge les Reels.

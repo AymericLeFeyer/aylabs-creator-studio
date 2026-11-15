@@ -16,7 +16,7 @@ Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagn�
 | Graphiques | Recharts 3                                                                           |
 | Éditeur    | **TipTap 3** (ProseMirror) — scripts en WYSIWYG. Chunk isolé **et** chargé en `lazy` |
 | Mails      | `imapflow` (IMAP), `nodemailer` (SMTP), `mailparser` — JS pur, rien à compiler       |
-| IA         | `@anthropic-ai/sdk`, modèle `claude-opus-5` par défaut (réglable)                    |
+| IA         | Claude via `@anthropic-ai/sdk` ou GPT via l'API Responses d'OpenAI                  |
 | MCP        | `@modelcontextprotocol/sdk`, Streamable HTTP sans session, dans l'API                |
 | Stockage   | `@aws-sdk/client-s3` + presigner : dépôt éphémère des Reels (R2), liens signés       |
 | Données    | TanStack Query 5                                                                     |
@@ -2590,21 +2590,29 @@ reçus non lus (neutre). `ProductionDetailPage` accepte `?onglet=notes`.
 
 ### `ai` — l'assistant IA du studio
 
-`StoredAiSettings { encryptedApiKey, model }` — table `ai_settings`, **ligne unique**
-(migration 53, reprise de `mail_settings.ai_api_key` / `ai_model`). Réglé dans
+`StoredAiSettings { encryptedApiKey, model, … }` — table `ai_settings`, une ligne par
+fournisseur depuis la migration 69. La ligne historique `default` porte les réglages
+Anthropic et le fournisseur actif. Réglé dans
 **Paramètres → API → Assistant IA** (`AiSettingsPage`) : un domaine à part et non un
 réglage des mails, pour servir à d'autres modules plus tard.
 
-- `ManageAi` — `view()` (`{ keySource, model, secretsKeyConfigured, configured }`),
-  `update({ apiKey?, model? })`, `configured()`, `credentials()` (400 sans clé). **Seul
-  endroit où la clé est déchiffrée** (contexte `ai:apiKey`). La clé héritée des mails,
+- `ManageAi` — `view()` (`{ provider, keySource, model, secretsKeyConfigured, configured, credit }`),
+  `update({ activeProvider?, provider?, apiKey?, model?, creditBalance? })`, `configured()`, `credentials()`
+  (400 sans clé). **Seul endroit où la clé est déchiffrée** (contexte `ai:apiKey` pour
+  Anthropic, `ai:openaiKey` pour OpenAI). La clé Anthropic héritée des mails,
   chiffrée sous `mail:aiKey`, est relue sous l'ancien contexte puis **rechiffrée** à la
-  première lecture. `ANTHROPIC_API_KEY` l'emporte (409 à l'écran).
+  première lecture. `ANTHROPIC_API_KEY` et `OPENAI_ASSISTANT_API_KEY` l'emportent pour leurs
+  fournisseurs respectifs (409 à l'écran). Les miniatures ont leur propre clé `OPENAI_API_KEY`.
 - `AiClient.complete(credentials, { system, prompt, schema? })` — `ClaudeAiClient` (SDK
   officiel, `claude-opus-5` par défaut, `fallbacks: 'default'` sur Opus 5 / Fable
   seulement). Avec `schema`, réponse contrainte par `output_config.format` (structured
   outputs) ; l'appelant la revalide quand même. **Aucun outil** : l'IA rend du texte ou des
   données, c'est le code appelant qui applique, dans ses limites.
+- `OpenAiTextClient` utilise `fetch` et `/v1/responses` (`gpt-6.1-sol` par défaut,
+  `store: false`). Les schémas passent par `text.format` en mode strict. Les réponses
+  incomplètes et les refus produisent une erreur avant l'application du résultat.
+- OpenAI a son propre relevé et sa propre estimation des crédits. Une consommation dont le
+  tarif est inconnu suspend l'estimation du reste jusqu'au prochain relevé.
 - `GET` / `PATCH /api/ai/settings`. Front : `useAiSettings`, `useUpdateAiSettings`
   (invalide aussi `['mails']` : `aiConfigured` y est lu ; `useAiSettings` se relit chaque
   minute, tout appel à l'IA entamant le solde).
@@ -3044,7 +3052,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST` | `/api/mails/threads/:id/trash` | Met le fil à la corbeille **du serveur** (récupérable). 400 sans dossier corbeille |
 | `POST` | `/api/mails/threads/:id/check-dates` | `?today=` (jour local) → `MailDateCheck` : résumé, tâches posées dans Todo, incohérences avec la vidéo |
 | `GET` | `/api/ai/settings` | `{ keySource, model, secretsKeyConfigured, configured, credit }` — la clé n'en sort jamais |
-| `PATCH` | `/api/ai/settings` | `{ apiKey?, model?, creditBalance? }` — `apiKey: null` efface (409 si `ANTHROPIC_API_KEY` est définie). `creditBalance` : solde relevé **en dollars**, remet la consommation à zéro |
+| `PATCH` | `/api/ai/settings` | `{ activeProvider?, provider?, apiKey?, model?, creditBalance? }` — `activeProvider` change le fournisseur actif. `provider` cible les réglages, par défaut ceux du fournisseur actif. `apiKey: null` efface (409 si la clé vient de l'environnement). `creditBalance` : solde relevé **en dollars**, remet la consommation à zéro |
 | `GET` | `/api/mails/addresses` | Adresses vues dans la boîte : `[{ address, received, sent }]`, les 60 plus fréquentes — à cocher comme adresses suivies |
 | `GET` | `/api/mails/stats` | `{ configured, aiConfigured, unread, lastSyncAt, lastSyncError }` — la pastille, relue chaque minute |
 | `POST` | `/api/mails/sync` | Relevé immédiat. `{ created, error, stats }` |

@@ -56,9 +56,12 @@ export interface Config {
   publicUrl: string | null;
   /** Le mot de passe de la boîte mail. Facultatif : il l'emporte sur l'écran. */
   mailPassword: string | null;
-  /** La clé de l'assistant mail. Facultative : elle l'emporte sur l'écran. */
+  /** Clé de l'assistant quand Anthropic est sélectionné. Elle l'emporte sur l'écran. */
   anthropicApiKey: string | null;
+  /** Clé des miniatures. */
   openaiApiKey: string | null;
+  /** Clé facultative de l'assistant quand OpenAI est sélectionné. */
+  openaiAssistantApiKey: string | null;
   /** Le rythme du relevé de la boîte mail, plus serré que la collecte horaire. */
   mailCron: string;
   /**
@@ -106,6 +109,7 @@ export const loadConfig = (): Config => ({
   mailPassword: optional('MAIL_PASSWORD'),
   anthropicApiKey: optional('ANTHROPIC_API_KEY'),
   openaiApiKey: optional('OPENAI_API_KEY'),
+  openaiAssistantApiKey: optional('OPENAI_ASSISTANT_API_KEY'),
   mailCron: optional('MAIL_CRON') ?? '*/5 * * * *',
   tiktokClientKey: optional('TIKTOK_CLIENT_KEY'),
   tiktokClientSecret: optional('TIKTOK_CLIENT_SECRET'),

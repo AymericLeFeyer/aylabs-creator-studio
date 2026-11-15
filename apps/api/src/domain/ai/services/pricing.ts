@@ -1,4 +1,4 @@
-import type { AiUsage } from '../entities/Ai.ts';
+import type { AiProvider, AiUsage } from '../entities/Ai.ts';
 
 interface ModelPrice {
   /** En dollars par million de jetons, soit en millionièmes de dollar par jeton. */
@@ -7,7 +7,7 @@ interface ModelPrice {
 }
 
 /** Tarifs publics d'Anthropic. Un modèle absent est compté au tarif d'Opus 5. */
-const PRICES: Record<string, ModelPrice> = {
+const ANTHROPIC_PRICES: Record<string, ModelPrice> = {
   'claude-fable-5-1': { input: 10, output: 50 },
   'claude-fable-5': { input: 10, output: 50 },
   'claude-opus-5-5': { input: 4, output: 20 },
@@ -28,9 +28,28 @@ const FALLBACK_PRICE: ModelPrice = { input: 5, output: 25 };
 const CACHE_READ_FACTOR = 0.1;
 const CACHE_WRITE_FACTOR = 1.25;
 
-/** Le coût d'un appel, en millionièmes de dollar : un appel coûte moins d'un centime. */
-export const usageCostMicros = (usage: AiUsage): number => {
-  const price = PRICES[usage.model] ?? FALLBACK_PRICE;
+/** Tarifs standard, contexte court, https://developers.openai.com/api/docs/pricing */
+const OPENAI_PRICES: Record<string, ModelPrice & { cached: number }> = {
+  'gpt-6.1-sol': { input: 2, output: 10, cached: 0.1 },
+  'gpt-6-luna': { input: 0.1, output: 0.5, cached: 0.01 },
+  'gpt-6-astra': { input: 10, output: 50, cached: 1 },
+};
+
+/** Le coût estimé d'un appel en millionièmes de dollar. */
+export const usageCostMicros = (provider: AiProvider, usage: AiUsage): number | null => {
+  if (provider === 'openai') {
+    const model = usage.model.replace(/-\d{4}-\d{2}-\d{2}$/, '');
+    const price = OPENAI_PRICES[model];
+    if (!Object.hasOwn(OPENAI_PRICES, model) || !price) return null;
+    return Math.ceil(
+      usage.inputTokens * price.input +
+        usage.outputTokens * price.output +
+        usage.cacheReadTokens * price.cached +
+        usage.cacheWriteTokens * price.input * CACHE_WRITE_FACTOR,
+    );
+  }
+
+  const price = ANTHROPIC_PRICES[usage.model] ?? FALLBACK_PRICE;
   return Math.ceil(
     usage.inputTokens * price.input +
       usage.outputTokens * price.output +

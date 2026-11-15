@@ -2236,6 +2236,17 @@ const migrations: Migration[] = [
       ALTER TABLE productions ADD COLUMN ab_test TEXT NOT NULL DEFAULT '{}';
     `,
   },
+  {
+    version: 69,
+    name: 'assistant IA : réglages par fournisseur',
+    up: `
+      ALTER TABLE ai_settings ADD COLUMN active_provider TEXT NOT NULL DEFAULT 'anthropic'
+        CHECK (active_provider IN ('anthropic', 'openai'));
+      ALTER TABLE ai_settings ADD COLUMN credit_unpriced INTEGER NOT NULL DEFAULT 0;
+      INSERT INTO ai_settings (id, created_at, updated_at)
+        VALUES ('openai', datetime('now'), datetime('now'));
+    `,
+  },
 ];
 
 /**
