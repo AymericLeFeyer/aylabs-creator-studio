@@ -25,6 +25,7 @@ test('la migration préserve les identifiants, le modèle et les crédits Anthro
         credit_balance_cents INTEGER, credit_set_at TEXT,
         credit_spent_micros INTEGER NOT NULL DEFAULT 0, credit_exhausted_at TEXT
       );
+      CREATE TABLE mail_settings (id TEXT PRIMARY KEY);
       PRAGMA user_version = 68;
     `);
     const cipher = new SecretBox(secretsKey);

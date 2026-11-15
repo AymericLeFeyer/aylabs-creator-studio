@@ -2247,6 +2247,15 @@ const migrations: Migration[] = [
         VALUES ('openai', datetime('now'), datetime('now'));
     `,
   },
+  {
+    version: 70,
+    name: 'mails : connexion Gmail via OAuth',
+    up: `
+      ALTER TABLE mail_settings ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'password'
+        CHECK (auth_mode IN ('password', 'gmail_oauth'));
+      ALTER TABLE mail_settings ADD COLUMN gmail_oauth TEXT;
+    `,
+  },
 ];
 
 /**

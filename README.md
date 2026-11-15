@@ -39,6 +39,30 @@ minimum). Tu peux aussi déclarer `ANTHROPIC_API_KEY` ou `OPENAI_ASSISTANT_API_K
 variable `OPENAI_API_KEY`. Les générations GPT sont facturées par le compte API OpenAI.
 Le modèle proposé pour le texte est `gpt-6.1-sol`.
 
+## Connecter Gmail avec OAuth
+
+Cette option relie Gmail à une instance personnelle sur un NAS. Le retour OAuth se fait
+dans l'outil officiel de Google, ce qui permet de garder le Studio sur le réseau local.
+
+1. Dans [Google Cloud](https://console.cloud.google.com/auth/overview), crée ou sélectionne
+   ton projet. Configure Google Auth Platform. Pour un projet externe en mode **Test**,
+   ajoute l'adresse Gmail concernée parmi les utilisateurs de test.
+2. Dans **Clients**, crée un client OAuth de type **Application Web** avec
+   `https://developers.google.com/oauthplayground` dans **URI de redirection autorisés**.
+3. Dans [OAuth Playground](https://developers.google.com/oauthplayground/), ouvre
+   l'engrenage, coche **Use your own OAuth credentials** et renseigne l'identifiant et le
+   secret de ce client. Entre `https://mail.google.com/` comme scope, puis clique sur
+   **Authorize APIs**. Autorise la boîte que tu veux relier au Studio.
+4. Clique sur **Exchange authorization code for tokens** et copie le **Refresh token**.
+   Dans **Paramètres → Mails → Gmail (OAuth)**, renseigne l'adresse Gmail, le client OAuth,
+   son secret et le jeton de renouvellement. Clique sur **Enregistrer**, puis sur
+   **Tester la connexion**. La `SECRETS_KEY` du serveur chiffre le tout en base.
+
+En mode **Test**, Google fait expirer cette autorisation au bout de sept jours. Un
+déploiement durable dépend du statut de ton projet et des règles Google applicables au
+compte. [Règles de publication](https://support.google.com/cloud/answer/15549945) ·
+[Usage personnel](https://support.google.com/cloud/answer/13464323).
+
 ## Modes de collecte
 
 Chaque chaîne choisit son mode, indépendamment des autres.

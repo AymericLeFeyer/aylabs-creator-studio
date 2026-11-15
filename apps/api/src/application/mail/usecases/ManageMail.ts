@@ -1,4 +1,5 @@
 import type {
+  GmailOAuthCredentials,
   MailAddress,
   MailAddressCandidate,
   MailConnection,
@@ -27,6 +28,16 @@ import { badRequest, conflict, notFound } from '../../../shared/errors.ts';
 
 /** Données authentifiées des chiffrés : recopier l'un dans l'autre le rend illisible. */
 const PASSWORD_CONTEXT = 'mail:password';
+const GMAIL_OAUTH_CONTEXT = 'mail:gmailOAuth';
+const GMAIL_SERVERS = {
+  imapHost: 'imap.gmail.com',
+  imapPort: 993,
+  imapSecure: true,
+  smtpHost: 'smtp.gmail.com',
+  smtpPort: 465,
+  smtpSecure: true,
+  allowSelfSigned: false,
+};
 
 /** Ce que l'environnement fournit. Il l'emporte toujours sur l'écran. */
 export interface MailEnv {
@@ -125,6 +136,8 @@ export class ManageMail {
       allowSelfSigned: stored.allowSelfSigned,
       username: stored.username,
       passwordSource,
+      authMode: stored.authMode,
+      gmailOAuthSource: this.secretSource(null, stored.encryptedGmailOAuth, GMAIL_OAUTH_CONTEXT),
       fromName: stored.fromName,
       fromAddress: stored.fromAddress,
       signature: stored.signature,
@@ -179,26 +192,50 @@ export class ManageMail {
         ? this.cipher.encrypt(input.password, PASSWORD_CONTEXT)
         : null;
     }
+    if (input.authMode !== undefined) patch.authMode = input.authMode;
+    if (input.gmailOAuth !== undefined) {
+      patch.encryptedGmailOAuth = input.gmailOAuth
+        ? this.cipher.encrypt(JSON.stringify(input.gmailOAuth), GMAIL_OAUTH_CONTEXT)
+        : null;
+    }
     this.settings.update(patch);
     return this.view();
   }
 
   /** La connexion en clair, ou `null` s'il manque quoi que ce soit. */
   private connectionOf(stored: StoredMailSettings): MailConnection | null {
+    if (!stored.username) return null;
+    const identity = {
+      username: stored.username,
+      fromName: stored.fromName,
+      fromAddress: stored.fromAddress ?? stored.username,
+    };
+    if (stored.authMode === 'gmail_oauth') {
+      const encrypted = stored.encryptedGmailOAuth;
+      const decrypted = encrypted ? this.cipher.decrypt(encrypted, GMAIL_OAUTH_CONTEXT) : null;
+      if (!decrypted) return null;
+      const credentials = JSON.parse(decrypted) as GmailOAuthCredentials;
+      // Les jetons Google sont présentés uniquement aux serveurs Gmail avec TLS vérifié.
+      return {
+        ...identity,
+        imap: { host: GMAIL_SERVERS.imapHost, port: GMAIL_SERVERS.imapPort, secure: true },
+        smtp: { host: GMAIL_SERVERS.smtpHost, port: GMAIL_SERVERS.smtpPort, secure: true },
+        allowSelfSigned: false,
+        auth: { type: 'gmail_oauth', credentials },
+      };
+    }
     const password =
       this.env.password ??
       (stored.encryptedPassword
         ? this.cipher.decrypt(stored.encryptedPassword, PASSWORD_CONTEXT)
         : null);
-    if (!stored.imapHost || !stored.smtpHost || !stored.username || !password) return null;
+    if (!stored.imapHost || !stored.smtpHost || !password) return null;
     return {
+      ...identity,
       imap: { host: stored.imapHost, port: stored.imapPort, secure: stored.imapSecure },
       smtp: { host: stored.smtpHost, port: stored.smtpPort, secure: stored.smtpSecure },
       allowSelfSigned: stored.allowSelfSigned,
-      username: stored.username,
-      password,
-      fromName: stored.fromName,
-      fromAddress: stored.fromAddress ?? stored.username,
+      auth: { type: 'password', password },
     };
   }
 

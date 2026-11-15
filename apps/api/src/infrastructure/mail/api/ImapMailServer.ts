@@ -12,6 +12,7 @@ import type {
 } from '../../../domain/mail/repositories/MailRepository.ts';
 import { bodyText, snippetOf } from '../../../domain/mail/services/threading.ts';
 import { upstream } from '../../../shared/errors.ts';
+import { gmailAccessToken } from './GmailOAuth.ts';
 
 /** Au-delà, on ne télécharge que l'enveloppe : une pièce jointe de 40 Mo n'a rien à faire en base. */
 const MAX_SOURCE_BYTES = 15 * 1024 * 1024;
@@ -254,11 +255,18 @@ class ImapMailServer implements MailServer {
 
 export class ImapMailServerFactory implements MailServerFactory {
   async open(connection: MailConnection): Promise<MailServer> {
+    const auth =
+      connection.auth.type === 'gmail_oauth'
+        ? {
+            user: connection.username,
+            accessToken: await gmailAccessToken(connection.auth.credentials),
+          }
+        : { user: connection.username, pass: connection.auth.password };
     const client = new ImapFlow({
       host: connection.imap.host,
       port: connection.imap.port,
       secure: connection.imap.secure,
-      auth: { user: connection.username, pass: connection.password },
+      auth,
       // Proton Mail Bridge : certificat auto-signé, STARTTLS sur le port 143.
       ...(connection.allowSelfSigned ? { tls: { rejectUnauthorized: false } } : {}),
       logger: false,
@@ -269,6 +277,19 @@ export class ImapMailServerFactory implements MailServerFactory {
     try {
       await client.connect();
     } catch (error) {
+      client.close();
+      if (
+        error &&
+        typeof error === 'object' &&
+        'authenticationFailed' in error &&
+        error.authenticationFailed
+      ) {
+        throw upstream(
+          connection.auth.type === 'gmail_oauth'
+            ? 'Gmail refuse l’authentification OAuth. Vérifie l’adresse Gmail et l’autorisation accordée au client.'
+            : 'Le serveur IMAP refuse les identifiants. Vérifie l’adresse et le mot de passe enregistrés.',
+        );
+      }
       throw upstream(
         `Connexion IMAP impossible (${connection.imap.host}:${connection.imap.port}) : ${
           error instanceof Error ? error.message : String(error)

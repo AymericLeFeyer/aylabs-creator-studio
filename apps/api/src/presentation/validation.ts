@@ -1330,6 +1330,15 @@ export const updateMailSettingsSchema = z.object({
   allowSelfSigned: z.boolean().optional(),
   username: mailText,
   password: z.string().max(500).nullable().optional(),
+  authMode: z.enum(['password', 'gmail_oauth']).optional(),
+  gmailOAuth: z
+    .object({
+      clientId: z.string().trim().min(1).max(500),
+      clientSecret: z.string().trim().min(1).max(500),
+      refreshToken: z.string().trim().min(1).max(4096),
+    })
+    .nullable()
+    .optional(),
   fromName: z.string().trim().max(120).optional(),
   fromAddress: z
     .union([z.literal(''), z.string().trim().email('Adresse d’expédition invalide')])

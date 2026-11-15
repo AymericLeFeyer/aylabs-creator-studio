@@ -6,6 +6,8 @@ import {
   useUpdateMailSettings,
 } from '../../application/mail/usecases/useMails.ts';
 import {
+  type GmailOAuthCredentials,
+  type MailAuthMode,
   type MailSettingsInput,
   type MailSettingsView,
   type SecretSource,
@@ -30,6 +32,7 @@ interface Preset {
   imap: string;
   smtp: string;
   hint?: string;
+  authMode?: MailAuthMode;
   /** Défauts : IMAPS 993 et SMTPS 465, certificat vérifié. */
   imapPort?: number;
   smtpPort?: number;
@@ -49,6 +52,12 @@ const PRESETS: Preset[] = [
     secure: false,
     selfSigned: true,
     hint: 'Identifiant et mot de passe : ceux affichés par la commande « info » de Bridge, pas ceux de ton compte Proton. Voir la procédure en tête du service dans docker-compose.yml.',
+  },
+  {
+    label: 'Gmail (OAuth)',
+    imap: 'imap.gmail.com',
+    smtp: 'smtp.gmail.com',
+    authMode: 'gmail_oauth',
   },
   {
     label: 'Gmail',
@@ -74,11 +83,12 @@ const secretPlaceholder = (source: SecretSource, envVar: string, secretsKey: boo
   return secretsKey ? '' : 'SECRETS_KEY requise';
 };
 
-type Draft = Omit<MailSettingsInput, 'password'> & {
+type Draft = Omit<MailSettingsInput, 'password' | 'gmailOAuth'> & {
   password: string;
 };
 
 const draftOf = (view: MailSettingsView): Draft => ({
+  authMode: view.authMode,
   imapHost: view.imapHost ?? '',
   imapPort: view.imapPort,
   imapSecure: view.imapSecure,
@@ -100,14 +110,49 @@ const Form = ({ view }: { view: MailSettingsView }) => {
   const test = useTestMail();
   const [draft, setDraft] = useState<Draft>(() => draftOf(view));
   const [hint, setHint] = useState<string | null>(null);
+  const [gmailOAuth, setGmailOAuth] = useState<GmailOAuthCredentials>({
+    clientId: '',
+    clientSecret: '',
+    refreshToken: '',
+  });
+  const gmailMode = draft.authMode === 'gmail_oauth';
   const set = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
 
   const save = () => {
-    const { password, ...rest } = draft;
-    const input: MailSettingsInput = { ...rest };
+    const {
+      password,
+      imapHost,
+      imapPort,
+      imapSecure,
+      smtpHost,
+      smtpPort,
+      smtpSecure,
+      allowSelfSigned,
+      ...settings
+    } = draft;
+    const input: MailSettingsInput = gmailMode
+      ? settings
+      : {
+          ...settings,
+          imapHost,
+          imapPort,
+          imapSecure,
+          smtpHost,
+          smtpPort,
+          smtpSecure,
+          allowSelfSigned,
+        };
     // Un secret laissé vide veut dire « je n'y touche pas », pas « efface-le ».
-    if (password) input.password = password;
-    update.mutate(input, { onSuccess: () => set({ password: '' }) });
+    if (password && !gmailMode) input.password = password;
+    if (gmailMode && Object.values(gmailOAuth).some((value) => value.trim())) {
+      input.gmailOAuth = gmailOAuth;
+    }
+    update.mutate(input, {
+      onSuccess: () => {
+        set({ password: '' });
+        setGmailOAuth({ clientId: '', clientSecret: '', refreshToken: '' });
+      },
+    });
   };
 
   const secretsLocked = !view.secretsKeyConfigured;
@@ -118,8 +163,8 @@ const Form = ({ view }: { view: MailSettingsView }) => {
         <CardHeader>
           <CardTitle>Connexion à la boîte mail</CardTitle>
           <CardDescription>
-            IMAP pour relever (réception et envoyés, toutes les 5 minutes), SMTP pour envoyer. Le
-            mot de passe est chiffré en base et ne ressort jamais de l’API.
+            Le Studio relève les mails par IMAP et les envoie par SMTP. Les identifiants secrets
+            sont chiffrés en base de données.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -131,6 +176,7 @@ const Form = ({ view }: { view: MailSettingsView }) => {
                 variant="outline"
                 onClick={() => {
                   set({
+                    authMode: preset.authMode ?? 'password',
                     imapHost: preset.imap,
                     imapPort: preset.imapPort ?? 993,
                     imapSecure: preset.secure ?? true,
@@ -148,76 +194,112 @@ const Form = ({ view }: { view: MailSettingsView }) => {
           </div>
           {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
 
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_6rem_auto] sm:items-end">
-            <div className="space-y-1.5">
-              <Label htmlFor="imap-host">Serveur IMAP</Label>
-              <Input
-                id="imap-host"
-                value={draft.imapHost ?? ''}
-                onChange={(e) => set({ imapHost: e.target.value })}
-                placeholder="imap.exemple.com"
-              />
+          {gmailMode ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Gmail utilise ses serveurs IMAP et SMTP avec TLS. Saisis le client OAuth de ton
+                projet Google Cloud et le jeton obtenu en autorisant ton compte dans OAuth
+                Playground.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {(
+                  [
+                    ['clientId', 'Identifiant du client OAuth'],
+                    ['clientSecret', 'Secret du client OAuth'],
+                    ['refreshToken', 'Jeton de renouvellement'],
+                  ] as const
+                ).map(([field, label]) => (
+                  <div key={field} className="space-y-1.5">
+                    <Label htmlFor={`mail-gmail-${field}`}>{label}</Label>
+                    <Input
+                      id={`mail-gmail-${field}`}
+                      type={field === 'clientId' ? 'text' : 'password'}
+                      autoComplete="off"
+                      disabled={secretsLocked}
+                      value={gmailOAuth[field]}
+                      placeholder={secretPlaceholder(view.gmailOAuthSource, '', !secretsLocked)}
+                      onChange={(e) =>
+                        setGmailOAuth((current) => ({ ...current, [field]: e.target.value }))
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="imap-port">Port</Label>
-              <Input
-                id="imap-port"
-                type="number"
-                value={draft.imapPort}
-                onChange={(e) => set({ imapPort: Number(e.target.value) })}
-              />
-            </div>
-            <label className="flex h-9 items-center gap-2 text-sm">
-              <Switch
-                checked={draft.imapSecure}
-                onCheckedChange={(imapSecure) => set({ imapSecure })}
-              />
-              SSL/TLS
-            </label>
-            <div className="space-y-1.5">
-              <Label htmlFor="smtp-host">Serveur SMTP</Label>
-              <Input
-                id="smtp-host"
-                value={draft.smtpHost ?? ''}
-                onChange={(e) => set({ smtpHost: e.target.value })}
-                placeholder="smtp.exemple.com"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="smtp-port">Port</Label>
-              <Input
-                id="smtp-port"
-                type="number"
-                value={draft.smtpPort}
-                onChange={(e) => set({ smtpPort: Number(e.target.value) })}
-              />
-            </div>
-            <label
-              className="flex h-9 items-center gap-2 text-sm"
-              title="Port 465 : SSL activé. Port 587 : désactivé (STARTTLS)."
-            >
-              <Switch
-                checked={draft.smtpSecure}
-                onCheckedChange={(smtpSecure) => set({ smtpSecure })}
-              />
-              SSL/TLS
-            </label>
-          </div>
+          ) : (
+            <>
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_6rem_auto] sm:items-end">
+                <div className="space-y-1.5">
+                  <Label htmlFor="imap-host">Serveur IMAP</Label>
+                  <Input
+                    id="imap-host"
+                    value={draft.imapHost ?? ''}
+                    onChange={(e) => set({ imapHost: e.target.value })}
+                    placeholder="imap.exemple.com"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="imap-port">Port</Label>
+                  <Input
+                    id="imap-port"
+                    type="number"
+                    value={draft.imapPort}
+                    onChange={(e) => set({ imapPort: Number(e.target.value) })}
+                  />
+                </div>
+                <label className="flex h-9 items-center gap-2 text-sm">
+                  <Switch
+                    checked={draft.imapSecure}
+                    onCheckedChange={(imapSecure) => set({ imapSecure })}
+                  />
+                  SSL/TLS
+                </label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtp-host">Serveur SMTP</Label>
+                  <Input
+                    id="smtp-host"
+                    value={draft.smtpHost ?? ''}
+                    onChange={(e) => set({ smtpHost: e.target.value })}
+                    placeholder="smtp.exemple.com"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtp-port">Port</Label>
+                  <Input
+                    id="smtp-port"
+                    type="number"
+                    value={draft.smtpPort}
+                    onChange={(e) => set({ smtpPort: Number(e.target.value) })}
+                  />
+                </div>
+                <label
+                  className="flex h-9 items-center gap-2 text-sm"
+                  title="Port 465 : SSL activé. Port 587 : désactivé (STARTTLS)."
+                >
+                  <Switch
+                    checked={draft.smtpSecure}
+                    onCheckedChange={(smtpSecure) => set({ smtpSecure })}
+                  />
+                  SSL/TLS
+                </label>
+              </div>
 
-          <label className="flex items-start gap-2 text-sm">
-            <Switch
-              checked={draft.allowSelfSigned}
-              onCheckedChange={(allowSelfSigned) => set({ allowSelfSigned })}
-            />
-            <span>
-              Accepter un certificat auto-signé
-              <span className="block text-xs text-muted-foreground">
-                Pour Proton Mail Bridge, joint par le réseau interne de la stack. La connexion reste
-                chiffrée, seule la vérification du certificat saute : à ne jamais cocher pour un
-                serveur sur Internet.
-              </span>
-            </span>
-          </label>
+              <label className="flex items-start gap-2 text-sm">
+                <Switch
+                  checked={draft.allowSelfSigned}
+                  onCheckedChange={(allowSelfSigned) => set({ allowSelfSigned })}
+                />
+                <span>
+                  Accepter un certificat auto-signé
+                  <span className="block text-xs text-muted-foreground">
+                    Pour Proton Mail Bridge, joint par le réseau interne de la stack. La connexion
+                    reste chiffrée, seule la vérification du certificat saute : à ne jamais cocher
+                    pour un serveur sur Internet.
+                  </span>
+                </span>
+              </label>
+            </>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -230,22 +312,24 @@ const Form = ({ view }: { view: MailSettingsView }) => {
                 placeholder="toi@exemple.com"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="mail-password">Mot de passe</Label>
-              <Input
-                id="mail-password"
-                type="password"
-                autoComplete="new-password"
-                disabled={view.passwordSource === 'env' || secretsLocked}
-                value={draft.password}
-                onChange={(e) => set({ password: e.target.value })}
-                placeholder={secretPlaceholder(
-                  view.passwordSource,
-                  'MAIL_PASSWORD',
-                  view.secretsKeyConfigured,
-                )}
-              />
-            </div>
+            {!gmailMode && (
+              <div className="space-y-1.5">
+                <Label htmlFor="mail-password">Mot de passe</Label>
+                <Input
+                  id="mail-password"
+                  type="password"
+                  autoComplete="new-password"
+                  disabled={view.passwordSource === 'env' || secretsLocked}
+                  value={draft.password}
+                  onChange={(e) => set({ password: e.target.value })}
+                  placeholder={secretPlaceholder(
+                    view.passwordSource,
+                    'MAIL_PASSWORD',
+                    view.secretsKeyConfigured,
+                  )}
+                />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="mail-from-name">Nom affiché</Label>
               <Input
@@ -277,9 +361,8 @@ const Form = ({ view }: { view: MailSettingsView }) => {
           </div>
           {secretsLocked && (
             <p className="text-xs text-muted-foreground">
-              <code>SECRETS_KEY</code> n’est pas définie côté serveur : le mot de passe ne peut pas
-              être enregistré depuis l’écran (rien n’est stocké en clair). Ajoute-la à la stack, ou
-              passe par <code>MAIL_PASSWORD</code>.
+              Configure <code>SECRETS_KEY</code> côté serveur pour enregistrer des secrets depuis
+              cet écran.
             </p>
           )}
         </CardContent>

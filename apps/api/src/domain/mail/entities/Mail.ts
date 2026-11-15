@@ -169,6 +169,14 @@ export interface MailThreadLinks {
   productionId?: string | null;
 }
 
+export type MailAuthMode = 'password' | 'gmail_oauth';
+
+export interface GmailOAuthCredentials {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+}
+
 /** Ce qui est stocké. Les secrets sont **chiffrés** : seul `ManageMail` les lit en clair. */
 export interface StoredMailSettings {
   imapHost: string | null;
@@ -180,6 +188,8 @@ export interface StoredMailSettings {
   allowSelfSigned: boolean;
   username: string | null;
   encryptedPassword: string | null;
+  authMode: MailAuthMode;
+  encryptedGmailOAuth: string | null;
   fromName: string;
   fromAddress: string | null;
   signature: string;
@@ -206,6 +216,8 @@ export interface MailSettingsView {
   allowSelfSigned: boolean;
   username: string | null;
   passwordSource: SecretSource;
+  authMode: MailAuthMode;
+  gmailOAuthSource: SecretSource;
   fromName: string;
   fromAddress: string | null;
   signature: string;
@@ -231,6 +243,9 @@ export interface MailSettingsInput {
   username?: string | null;
   /** Absent = conservé, `null` ou `""` = effacé. */
   password?: string | null;
+  authMode?: MailAuthMode;
+  /** Absent = conservé, `null` = effacé. */
+  gmailOAuth?: GmailOAuthCredentials | null;
   fromName?: string;
   fromAddress?: string | null;
   signature?: string;
@@ -258,7 +273,9 @@ export interface MailConnection {
    */
   allowSelfSigned: boolean;
   username: string;
-  password: string;
+  auth:
+    | { type: 'password'; password: string }
+    | { type: 'gmail_oauth'; credentials: GmailOAuthCredentials };
   fromName: string;
   fromAddress: string;
 }

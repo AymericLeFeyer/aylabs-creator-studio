@@ -12,6 +12,8 @@ interface Row {
   allow_self_signed: number;
   username: string | null;
   password: string | null;
+  auth_mode: StoredMailSettings['authMode'];
+  gmail_oauth: string | null;
   from_name: string;
   from_address: string | null;
   signature: string;
@@ -35,6 +37,8 @@ const COLUMNS: Record<keyof StoredMailSettings, string> = {
   allowSelfSigned: 'allow_self_signed',
   username: 'username',
   encryptedPassword: 'password',
+  authMode: 'auth_mode',
+  encryptedGmailOAuth: 'gmail_oauth',
   fromName: 'from_name',
   fromAddress: 'from_address',
   signature: 'signature',
@@ -76,6 +80,8 @@ export class SqliteMailSettingsRepository implements MailSettingsRepository {
       allowSelfSigned: row.allow_self_signed === 1,
       username: row.username,
       encryptedPassword: row.password,
+      authMode: row.auth_mode,
+      encryptedGmailOAuth: row.gmail_oauth,
       fromName: row.from_name,
       fromAddress: row.from_address,
       signature: row.signature,

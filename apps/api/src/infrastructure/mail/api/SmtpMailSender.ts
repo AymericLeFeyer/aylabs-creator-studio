@@ -4,6 +4,7 @@ import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import type { MailConnection, OutgoingMail } from '../../../domain/mail/entities/Mail.ts';
 import type { MailSender } from '../../../domain/mail/repositories/MailRepository.ts';
 import { upstream } from '../../../shared/errors.ts';
+import { gmailAccessToken } from './GmailOAuth.ts';
 
 const escapeHtml = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -34,11 +35,19 @@ export class SmtpMailSender implements MailSender {
     };
     const raw = await new MailComposer(options).compile().build();
 
+    const auth =
+      connection.auth.type === 'gmail_oauth'
+        ? {
+            type: 'OAuth2' as const,
+            user: connection.username,
+            accessToken: await gmailAccessToken(connection.auth.credentials),
+          }
+        : { user: connection.username, pass: connection.auth.password };
     const transport = nodemailer.createTransport({
       host: connection.smtp.host,
       port: connection.smtp.port,
       secure: connection.smtp.secure,
-      auth: { user: connection.username, pass: connection.password },
+      auth,
       ...(connection.allowSelfSigned ? { tls: { rejectUnauthorized: false } } : {}),
     });
     try {

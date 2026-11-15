@@ -86,6 +86,13 @@ export interface MailThreadFilter {
 }
 
 export type SecretSource = 'env' | 'app' | 'unreadable' | null;
+export type MailAuthMode = 'password' | 'gmail_oauth';
+
+export interface GmailOAuthCredentials {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+}
 
 export interface MailSettingsView {
   imapHost: string | null;
@@ -97,6 +104,8 @@ export interface MailSettingsView {
   allowSelfSigned: boolean;
   username: string | null;
   passwordSource: SecretSource;
+  authMode: MailAuthMode;
+  gmailOAuthSource: SecretSource;
   fromName: string;
   fromAddress: string | null;
   signature: string;
@@ -116,10 +125,16 @@ export interface MailSettingsView {
 export type MailSettingsInput = Partial<
   Omit<
     MailSettingsView,
-    'passwordSource' | 'secretsKeyConfigured' | 'configured' | 'aiConfigured' | 'senders'
+    | 'passwordSource'
+    | 'gmailOAuthSource'
+    | 'secretsKeyConfigured'
+    | 'configured'
+    | 'aiConfigured'
+    | 'senders'
   >
 > & {
   password?: string | null;
+  gmailOAuth?: GmailOAuthCredentials | null;
 };
 
 export interface MailStats {
