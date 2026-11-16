@@ -5,7 +5,6 @@ import {
   CalendarDays,
   ExternalLink,
   Gift,
-  Megaphone,
   Handshake,
   Pencil,
   Plus,
@@ -62,7 +61,6 @@ import {
 } from '../components/forms/AttachExistingSelect.tsx';
 import { PublishDialog } from '../components/forms/PublishDialog.tsx';
 import { DiscordAnnounceDialog } from '../components/forms/DiscordAnnounceDialog.tsx';
-import { PreparePostsDialog } from '../components/forms/PreparePostsDialog.tsx';
 import { usePostDraftsForProduction } from '../../application/postDraft/usecases/usePostDrafts.ts';
 import { DiscordIcon } from '../components/icons/DiscordIcon.tsx';
 import { cn } from '../../shared/cn.ts';
@@ -94,7 +92,6 @@ export const ProductionDetailPage = () => {
   const [editOpen, setEditOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [announceOpen, setAnnounceOpen] = useState(false);
-  const [prepareOpen, setPrepareOpen] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
   const [sponsorshipOpen, setSponsorshipOpen] = useState(false);
   /** L'étape dont on regarde les tâches. Cliquer une pastille ne coche plus rien. */
@@ -252,15 +249,9 @@ export const ProductionDetailPage = () => {
                 {production.discordAnnouncedAt ? 'Annoncée sur Discord' : 'Annonce Discord'}
               </Button>
             )}
-            {production.status === 'done' && (
-              <Button variant="outline" size="sm" onClick={() => setPrepareOpen(true)}>
-                <Megaphone className="h-4 w-4" />
-                Préparer les publications
-              </Button>
-            )}
             {postDrafts.length > 0 && (
               <Button variant="ghost" size="sm" asChild>
-                <Link to={`/shorts?publication=${postDrafts[0]!.id}`}>
+                <Link to={`/shorts?publication=${postDrafts.map((draft) => draft.id).join(',')}`}>
                   <CalendarDays className="h-4 w-4" />
                   {postDrafts.length === 1 ? '1 publication' : `${postDrafts.length} publications`}
                 </Link>
@@ -493,12 +484,6 @@ export const ProductionDetailPage = () => {
         open={announceOpen}
         onOpenChange={setAnnounceOpen}
         production={production}
-      />
-      <PreparePostsDialog
-        open={prepareOpen}
-        onOpenChange={setPrepareOpen}
-        production={production}
-        existingCount={postDrafts.length}
       />
       <Confetti active={celebrating} onDone={() => setCelebrating(false)} />
       <StepTodosDialog
