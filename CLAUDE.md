@@ -462,17 +462,18 @@ le remet à `null`** (`SqliteProductionRepository.update`). Réglages dans la so
 membres n'en a pas besoin. La miniature est `i.ytimg.com/vi/<code>/maxresdefault.jpg`, sans
 appel à YouTube : elle n'existe pas sur une vidéo sous 720p.
 
-**Les fiches du site aylabs.fr** (`PublishAylabsCards`, `GET|POST /api/productions/:id/aylabs-cards`,
+**Les fiches du site aylabs.fr** (`ProposeAylabsCards`, `GET /api/productions/:id/aylabs-cards`,
 bouton « Créer les fiches sur aylabs.fr » sur une fiche rattachée à une sortie,
-`AylabsCardsDialog`). Le dépôt du site (`AymericLeFeyer/aylabs`) range un Markdown par vidéo
-et par produit ; le studio en **propose** (titre, description, durée lus sur YouTube, date et
-heure de Paris, produits rattachés avec leurs liens d'achat — un `🛒 nom : lien` par produit
-dans le corps de la fiche vidéo) et les **commite en un seul commit** (Git Data API, un seul
-déploiement du site). Le format (sous-ensemble YAML du parseur du site, ordre des clés) est
-une copie de celui de l'Aylabs Content Studio (`domain/aylabs/services/cards.ts`) : à
-corriger des deux côtés. Slug déjà pris = 409. Env : `AYLABS_GITHUB_TOKEN` (fine-grained,
-`Contents` en écriture sur ce seul dépôt), `AYLABS_GITHUB_REPO`, `AYLABS_GITHUB_BRANCH`.
-Rien n'est mémorisé côté studio : le bouton reste disponible.
+`AylabsCardsDialog`). Le studio **n'écrit rien** dans le dépôt du site : il prépare ce qu'il
+sait (titre, accroche et durée lus sur YouTube avec `YOUTUBE_API_KEY`, date et heure de
+Paris, produits rattachés avec leurs liens d'achat — un `🛒 nom : lien` par produit dans le
+corps de la fiche vidéo) et la modale ouvre l'**Aylabs Content Studio**
+(`https://aylabs-content.aycorp.dev`, `AYLABS_CONTENT_STUDIO_URL` côté code front) avec ces
+valeurs **dans l'URL** : `?creer=video|produit` + les champs du brouillon (`title`, `pubDate`,
+`pubTime`, `code`, `duration`, `body`, `price`, `videoCode`…), listes répétées (`tag`,
+`buyLink`). Une fiche par ouverture (vidéo, puis chaque produit). Le contrat est lu par
+`shared/prefill.ts` côté Content Studio : à garder aligné des deux côtés
+(`web/src/domain/aylabs/services/contentStudioUrl.ts`).
 
 ### `productionNote` — les notes d'une vidéo, en fichiers
 

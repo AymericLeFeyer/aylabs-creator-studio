@@ -1,11 +1,9 @@
 /**
- * Les fiches du site aylabs.fr : un fichier Markdown par vidéo et par produit, dans le
- * dépôt du site (`src/content/videos`, `src/content/products`). Le studio ne les lit pas,
- * il en **propose** et les commite — le contrat de forme est celui de l'Aylabs Content
- * Studio, dont le parseur du site n'accepte qu'un sous-ensemble de YAML.
+ * Ce que le studio sait des fiches du site aylabs.fr (une par vidéo, une par produit). Il
+ * ne les écrit pas : l'écran les passe par l'URL à l'Aylabs Content Studio, où on les
+ * termine. Les noms des champs sont ceux des brouillons de cet outil.
  */
 export interface VideoCard {
-  slug: string;
   title: string;
   description: string;
   /** AAAA-MM-JJ, heure de Paris. */
@@ -13,45 +11,25 @@ export interface VideoCard {
   /** HH:MM, vide = la fiche sort à minuit. */
   pubTime: string;
   code: string;
-  /** `10:18` ou `1:02:05`. */
+  /** `10:18` ou `1:02:05`, vide si YouTube ne l'a pas donnée. */
   duration: string;
   tags: string[];
   body: string;
 }
 
 export interface ProductCard {
-  /** Le produit du studio dont la fiche est tirée, pour que l'écran le retrouve. */
+  /** Le produit du studio dont la fiche est tirée. */
   sourceId: string;
-  slug: string;
   title: string;
-  image: string;
   description: string;
-  tags: string[];
-  protocols: string[];
-  compatible: string[];
-  videoCode: string;
-  buyLinks: string[];
-  pubDate: string;
   category: string;
   price: number | null;
-  rating: number | null;
-  pros: string[];
-  cons: string[];
-  verdict: string;
-  body: string;
+  videoCode: string;
+  pubDate: string;
+  buyLinks: string[];
 }
 
 export interface AylabsCardsProposal {
-  /** `false` tant que le jeton GitHub n'est pas renseigné : l'écran dit quoi faire. */
-  configured: boolean;
-  repo: string;
   video: VideoCard;
   products: ProductCard[];
-  /** Slugs déjà pris dans le dépôt, pour prévenir avant d'écraser quoi que ce soit. */
-  takenSlugs: { videos: string[]; products: string[] };
-}
-
-export interface AylabsCardsResult {
-  commitUrl: string;
-  files: string[];
 }

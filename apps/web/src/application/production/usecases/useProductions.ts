@@ -10,7 +10,6 @@ import {
   type SlotListParams,
   type TimeListParams,
 } from '../../../infrastructure/production/api/productionApi.ts';
-import type { AylabsCardsInput } from '../../../domain/aylabs/entities/AylabsCard.ts';
 import type { StepTodoInput } from '../../../domain/production/entities/StepTodo.ts';
 import type { TimeEntryInput } from '../../../domain/production/entities/TimeEntry.ts';
 import type {
@@ -92,7 +91,7 @@ export const useDeleteProduction = () =>
 
 /**
  * Ce que le studio sait des fiches du site, **à l'ouverture de la modale seulement** : la
- * proposition appelle YouTube et GitHub. Jamais relue d'elle-même, sans quoi elle
+ * proposition appelle YouTube. Jamais relue d'elle-même, sans quoi elle
  * écraserait ce qu'on est en train de corriger.
  */
 export const useAylabsCardsProposal = (id: string, enabled: boolean) =>
@@ -103,13 +102,6 @@ export const useAylabsCardsProposal = (id: string, enabled: boolean) =>
     staleTime: 0,
     gcTime: 0,
     refetchOnWindowFocus: false,
-  });
-
-/** Commite les fiches dans le dépôt du site : rien ne change dans le studio. */
-export const useCreateAylabsCards = () =>
-  useMutation({
-    mutationFn: ({ id, input }: { id: string; input: AylabsCardsInput }) =>
-      productionApi.createAylabsCards(id, input),
   });
 
 export const useAnnounceOnDiscord = () =>

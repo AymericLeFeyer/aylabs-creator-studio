@@ -1,9 +1,5 @@
 import { request } from '../../http/httpClient.ts';
-import type {
-  AylabsCardsInput,
-  AylabsCardsProposal,
-  AylabsCardsResult,
-} from '../../../domain/aylabs/entities/AylabsCard.ts';
+import type { AylabsCardsProposal } from '../../../domain/aylabs/entities/AylabsCard.ts';
 import type {
   PreviousPublication,
   Production,
@@ -78,12 +74,6 @@ export const productionApi = {
   remove: (id: string) => request<void>(`/api/productions/${id}`, { method: 'DELETE' }),
 
   aylabsCards: (id: string) => request<AylabsCardsProposal>(`/api/productions/${id}/aylabs-cards`),
-
-  createAylabsCards: (id: string, input: AylabsCardsInput) =>
-    request<AylabsCardsResult>(`/api/productions/${id}/aylabs-cards`, {
-      method: 'POST',
-      body: input,
-    }),
 
   announceOnDiscord: (id: string, date: string) =>
     request<Production>(`/api/productions/${id}/discord-announcement`, {

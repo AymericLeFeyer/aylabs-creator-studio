@@ -6,7 +6,6 @@ import type {
 } from '../../domain/production/entities/Production.ts';
 import {
   announceOnDiscordSchema,
-  publishAylabsCardsSchema,
   createProductionSchema,
   createProductionStepSchema,
   createSlotBodySchema,
@@ -113,15 +112,9 @@ export const productionsRouter = (container: Container): Router => {
   });
 
   /** `date` : le jour où la vidéo est visible par tous, relu dans la modale. */
-  /** Ce que le studio sait des fiches du site, à relire avant de créer. N'écrit rien. */
+  /** Ce que le studio sait des fiches du site, pour les ouvrir dans l'Aylabs Content Studio. N'écrit rien. */
   router.get('/:id/aylabs-cards', async (req, res) => {
-    res.json(await container.publishAylabsCards.propose(param(req, 'id')));
-  });
-
-  /** Commite les fiches cochées dans le dépôt du site, en un seul commit. */
-  router.post('/:id/aylabs-cards', async (req, res) => {
-    const input = publishAylabsCardsSchema.parse(req.body);
-    res.json(await container.publishAylabsCards.publish(param(req, 'id'), input));
+    res.json(await container.proposeAylabsCards.execute(param(req, 'id')));
   });
 
   router.post('/:id/discord-announcement', async (req, res) => {
