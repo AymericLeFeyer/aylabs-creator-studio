@@ -350,6 +350,60 @@ export const publishProductionSchema = z.object({
   videoId: z.string().min(1, 'Choisis la sortie correspondante'),
 });
 
+const cardText = (max: number) => z.string().trim().max(max);
+const cardList = z.array(z.string().trim().min(1).max(500)).max(30);
+const cardSlug = z
+  .string()
+  .trim()
+  .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Slug attendu : minuscules, chiffres et tirets');
+
+export const aylabsVideoCardSchema = z.object({
+  slug: cardSlug,
+  title: cardText(200).min(1),
+  description: cardText(500),
+  pubDate: isoDate,
+  pubTime: z
+    .string()
+    .trim()
+    .regex(/^(\d{2}:\d{2})?$/, 'Heure attendue au format HH:MM'),
+  code: z
+    .string()
+    .trim()
+    .regex(/^[\w-]{11}$/, 'Code YouTube de 11 caractères'),
+  duration: z
+    .string()
+    .trim()
+    .regex(/^((\d{1,2}:)?\d{1,2}:\d{2})?$/, 'Durée attendue : 10:18'),
+  tags: cardList,
+  body: cardText(20000),
+});
+
+export const aylabsProductCardSchema = z.object({
+  sourceId: z.string(),
+  slug: cardSlug,
+  title: cardText(200).min(1),
+  image: cardText(1000),
+  description: cardText(500),
+  tags: cardList,
+  protocols: cardList,
+  compatible: cardList,
+  videoCode: cardText(20),
+  buyLinks: z.array(z.string().trim().url()).max(10),
+  pubDate: isoDate,
+  category: cardText(60).min(1),
+  price: z.number().finite().min(0).nullable(),
+  rating: z.number().finite().min(0).max(5).nullable(),
+  pros: cardList,
+  cons: cardList,
+  verdict: cardText(500),
+  body: cardText(20000),
+});
+
+export const publishAylabsCardsSchema = z.object({
+  video: aylabsVideoCardSchema.nullable(),
+  products: z.array(aylabsProductCardSchema).max(20),
+});
+
 export const announceOnDiscordSchema = z.object({ date: isoDate });
 
 export const createProductionSlotSchema = z.object({

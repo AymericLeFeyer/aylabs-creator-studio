@@ -59,6 +59,11 @@ export interface Config {
   /** La clé de l'assistant mail. Facultative : elle l'emporte sur l'écran. */
   anthropicApiKey: string | null;
   openaiApiKey: string | null;
+  /**
+   * Le dépôt du site aylabs.fr, où le studio commite les fiches vidéo et produit. Le jeton
+   * est un jeton fine-grained avec `Contents` en écriture sur ce seul dépôt.
+   */
+  aylabsGithub: { token: string | null; repo: string; branch: string };
   /** Le rythme du relevé de la boîte mail, plus serré que la collecte horaire. */
   mailCron: string;
   /**
@@ -106,6 +111,11 @@ export const loadConfig = (): Config => ({
   mailPassword: optional('MAIL_PASSWORD'),
   anthropicApiKey: optional('ANTHROPIC_API_KEY'),
   openaiApiKey: optional('OPENAI_API_KEY'),
+  aylabsGithub: {
+    token: optional('AYLABS_GITHUB_TOKEN'),
+    repo: optional('AYLABS_GITHUB_REPO') ?? 'AymericLeFeyer/aylabs',
+    branch: optional('AYLABS_GITHUB_BRANCH') ?? 'main',
+  },
   mailCron: optional('MAIL_CRON') ?? '*/5 * * * *',
   tiktokClientKey: optional('TIKTOK_CLIENT_KEY'),
   tiktokClientSecret: optional('TIKTOK_CLIENT_SECRET'),

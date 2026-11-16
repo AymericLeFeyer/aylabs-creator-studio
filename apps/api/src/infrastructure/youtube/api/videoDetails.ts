@@ -12,6 +12,8 @@ export interface VideoSnippet {
   title: string;
   description: string;
   tags: string[];
+  /** Durée ISO 8601 (`PT19M29S`). */
+  duration: string | null;
 }
 
 /**
@@ -28,7 +30,10 @@ export const fetchVideoSnippet = async (
   client: youtube_v3.Youtube,
   externalId: string,
 ): Promise<VideoSnippet | null> => {
-  const response = await client.videos.list({ part: ['snippet'], id: [externalId] });
+  const response = await client.videos.list({
+    part: ['snippet', 'contentDetails'],
+    id: [externalId],
+  });
   const item = response.data.items?.[0];
   if (!item?.id) return null;
 
@@ -37,5 +42,6 @@ export const fetchVideoSnippet = async (
     title: item.snippet?.title ?? '',
     description: item.snippet?.description ?? '',
     tags: item.snippet?.tags ?? [],
+    duration: item.contentDetails?.duration ?? null,
   };
 };

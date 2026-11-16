@@ -62,6 +62,8 @@ import { CollectMetrics } from './application/metrics/usecases/CollectMetrics.ts
 import { CollectComments } from './application/comment/usecases/CollectComments.ts';
 import { GetPreviousPublication } from './application/production/usecases/GetPreviousPublication.ts';
 import { RefreshLiveVideoStats } from './application/video/usecases/RefreshLiveVideoStats.ts';
+import { PublishAylabsCards } from './application/aylabs/usecases/PublishAylabsCards.ts';
+import { GitHubAylabsRepository } from './infrastructure/aylabs/GitHubAylabsRepository.ts';
 import { AnnounceOnDiscord } from './application/production/usecases/AnnounceOnDiscord.ts';
 import { GetAnalytics } from './application/analytics/usecases/GetAnalytics.ts';
 import { YouTubeDataClient } from './infrastructure/youtube/api/YouTubeDataClient.ts';
@@ -185,6 +187,7 @@ export interface Container {
   getPreviousPublication: GetPreviousPublication;
   refreshLiveVideoStats: RefreshLiveVideoStats;
   announceOnDiscord: AnnounceOnDiscord;
+  publishAylabsCards: PublishAylabsCards;
   getAnalytics: GetAnalytics;
   /**
    * Écritures du module de production. Les routes passent par elles et jamais par les
@@ -563,6 +566,13 @@ export const buildContainer = (config: Config): Container => {
       gcpClientSecret: config.gcpClientSecret,
     }),
     announceOnDiscord: new AnnounceOnDiscord(productions, manageIntegrations, discordClient),
+    publishAylabsCards: new PublishAylabsCards(
+      productions,
+      videos,
+      products,
+      new GitHubAylabsRepository(config.aylabsGithub),
+      config.youtubeApiKey,
+    ),
     getAnalytics: new GetAnalytics(channels, metrics, revenues, categories, expenses, videos),
     youtubeData: config.youtubeApiKey ? new YouTubeDataClient(config.youtubeApiKey) : null,
     manageIntegrations,

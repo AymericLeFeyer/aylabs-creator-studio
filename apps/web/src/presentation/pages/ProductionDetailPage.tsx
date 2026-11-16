@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   CalendarDays,
+  Globe,
   ExternalLink,
   Gift,
   Handshake,
@@ -61,6 +62,7 @@ import {
 } from '../components/forms/AttachExistingSelect.tsx';
 import { PublishDialog } from '../components/forms/PublishDialog.tsx';
 import { DiscordAnnounceDialog } from '../components/forms/DiscordAnnounceDialog.tsx';
+import { AylabsCardsDialog } from '../components/forms/AylabsCardsDialog.tsx';
 import { usePostDraftsForProduction } from '../../application/postDraft/usecases/usePostDrafts.ts';
 import { DiscordIcon } from '../components/icons/DiscordIcon.tsx';
 import { cn } from '../../shared/cn.ts';
@@ -92,6 +94,7 @@ export const ProductionDetailPage = () => {
   const [editOpen, setEditOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [announceOpen, setAnnounceOpen] = useState(false);
+  const [aylabsOpen, setAylabsOpen] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
   const [sponsorshipOpen, setSponsorshipOpen] = useState(false);
   /** L'étape dont on regarde les tâches. Cliquer une pastille ne coche plus rien. */
@@ -247,6 +250,12 @@ export const ProductionDetailPage = () => {
               >
                 <DiscordIcon className="h-4 w-4" />
                 {production.discordAnnouncedAt ? 'Annoncée sur Discord' : 'Annonce Discord'}
+              </Button>
+            )}
+            {production.videoId && (
+              <Button variant="outline" size="sm" onClick={() => setAylabsOpen(true)}>
+                <Globe className="h-4 w-4" />
+                Créer les fiches sur aylabs.fr
               </Button>
             )}
             {postDrafts.length > 0 && (
@@ -485,6 +494,7 @@ export const ProductionDetailPage = () => {
         onOpenChange={setAnnounceOpen}
         production={production}
       />
+      <AylabsCardsDialog open={aylabsOpen} onOpenChange={setAylabsOpen} production={production} />
       <Confetti active={celebrating} onDone={() => setCelebrating(false)} />
       <StepTodosDialog
         open={openStep !== null}

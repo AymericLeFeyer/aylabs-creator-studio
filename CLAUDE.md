@@ -462,6 +462,18 @@ le remet à `null`** (`SqliteProductionRepository.update`). Réglages dans la so
 membres n'en a pas besoin. La miniature est `i.ytimg.com/vi/<code>/maxresdefault.jpg`, sans
 appel à YouTube : elle n'existe pas sur une vidéo sous 720p.
 
+**Les fiches du site aylabs.fr** (`PublishAylabsCards`, `GET|POST /api/productions/:id/aylabs-cards`,
+bouton « Créer les fiches sur aylabs.fr » sur une fiche rattachée à une sortie,
+`AylabsCardsDialog`). Le dépôt du site (`AymericLeFeyer/aylabs`) range un Markdown par vidéo
+et par produit ; le studio en **propose** (titre, description, durée lus sur YouTube, date et
+heure de Paris, produits rattachés avec leurs liens d'achat — un `🛒 nom : lien` par produit
+dans le corps de la fiche vidéo) et les **commite en un seul commit** (Git Data API, un seul
+déploiement du site). Le format (sous-ensemble YAML du parseur du site, ordre des clés) est
+une copie de celui de l'Aylabs Content Studio (`domain/aylabs/services/cards.ts`) : à
+corriger des deux côtés. Slug déjà pris = 409. Env : `AYLABS_GITHUB_TOKEN` (fine-grained,
+`Contents` en écriture sur ce seul dépôt), `AYLABS_GITHUB_REPO`, `AYLABS_GITHUB_BRANCH`.
+Rien n'est mémorisé côté studio : le bouton reste disponible.
+
 ### `productionNote` — les notes d'une vidéo, en fichiers
 
 `ProductionNote { id, productionId, title, content, createdAt, updatedAt }` — table
