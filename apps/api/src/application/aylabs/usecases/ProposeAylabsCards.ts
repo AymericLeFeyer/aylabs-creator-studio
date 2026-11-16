@@ -13,6 +13,9 @@ import type { ProductionRepository } from '../../../domain/production/repositori
 import type { VideoRepository } from '../../../domain/video/repositories/VideoRepository.ts';
 import { YouTubeDataClient } from '../../../infrastructure/youtube/api/YouTubeDataClient.ts';
 
+/** L'heure de sortie des vidéos de la chaîne, en heure de Paris. */
+const RELEASE_TIME = '17:00';
+
 /**
  * Prépare les fiches du site aylabs.fr d'une vidéo publiée : titre, accroche et durée lus
  * sur YouTube, date et heure de Paris, produits rattachés et leurs liens d'achat. Rien
@@ -46,8 +49,11 @@ export class ProposeAylabsCards {
     }
 
     const snippet = await this.readSnippet(code);
+    // La sortie **visée** et non le jour d'upload : une vidéo programmée est téléversée bien
+    // avant, et c'est le jour où elle sort pour tous que la fiche du site doit porter. À
+    // défaut de date visée, le jour de mise en ligne sur YouTube.
     const published = parisDateTime(this.videos.findById(production.videoId)?.publishedAt ?? '');
-    const pubDate = published.date || production.videoDate || production.plannedDate || '';
+    const pubDate = production.plannedDate ?? (published.date || production.videoDate || '');
     const title =
       snippet?.title || production.videoTitle || production.publishTitle || production.title;
 
@@ -81,7 +87,7 @@ export class ProposeAylabsCards {
         title,
         description: summarizeDescription(snippet?.description || production.publishDescription),
         pubDate,
-        pubTime: published.time,
+        pubTime: RELEASE_TIME,
         code,
         duration: formatIsoDuration(snippet?.duration),
         tags: [],

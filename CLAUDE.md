@@ -465,8 +465,8 @@ appel à YouTube : elle n'existe pas sur une vidéo sous 720p.
 **Les fiches du site aylabs.fr** (`ProposeAylabsCards`, `GET /api/productions/:id/aylabs-cards`,
 bouton « Créer les fiches sur aylabs.fr » sur une fiche rattachée à une sortie,
 `AylabsCardsDialog`). Le studio **n'écrit rien** dans le dépôt du site : il prépare ce qu'il
-sait (titre, accroche et durée lus sur YouTube avec `YOUTUBE_API_KEY`, date et heure de
-Paris, produits rattachés avec leurs liens d'achat — un `🛒 nom : lien` par produit dans le
+sait (titre, accroche et durée lus sur YouTube avec `YOUTUBE_API_KEY`, sortie visée (à défaut le jour de mise en ligne YouTube)
+à 17 h (Paris), produits rattachés avec leurs liens d'achat — un `🛒 nom : lien` par produit dans le
 corps de la fiche vidéo) et la modale ouvre l'**Aylabs Content Studio**
 (`https://aylabs-content.aycorp.dev`, `AYLABS_CONTENT_STUDIO_URL` côté code front) avec ces
 valeurs **dans l'URL** : `?creer=video|produit` + les champs du brouillon (`title`, `pubDate`,
