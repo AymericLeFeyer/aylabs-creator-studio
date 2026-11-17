@@ -164,9 +164,9 @@ export const ShortsPage = () => {
   });
   const dropHighlight = 'bg-primary/10 ring-2 ring-inset ring-primary';
 
-  /** Les tuiles d'un couloir : elles passent à la ligne, même à cinq verticaux le même jour. */
+  /** Une grille de grandes tuiles : de 2 colonnes au téléphone à 6 sur grand écran. */
   const tiles = (items: PostDraft[], laneDay: string | null) => (
-    <div className="flex flex-wrap gap-2 p-2">
+    <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
       {items.map((draft) => (
         <ShortTile
           key={draft.id}
@@ -180,6 +180,56 @@ export const ShortsPage = () => {
       ))}
     </div>
   );
+
+  /**
+   * Plus de couloirs : une galerie qui défile, les jours **avec** verticaux en sections (titre
+   * du jour puis tuiles), les jours vides à venir regroupés en puces cliquables — c'est là
+   * qu'on lit « quels jours n'ont rien ? » sans qu'un jour vide prenne une ligne entière.
+   * Les jours passés vides sont omis.
+   */
+  type Segment = { kind: 'day'; day: string; items: PostDraft[] } | { kind: 'gap'; day: string };
+  const segments = days.flatMap((day): Segment[] => {
+    const items = byDay.get(day) ?? [];
+    if (items.length > 0) return [{ kind: 'day', day, items }];
+    if (day < today) return [];
+    return [{ kind: 'gap', day }];
+  });
+  const anchorDay = segments.find((segment) => segment.day >= today)?.day ?? null;
+  const gaps = (list: string[]) => (
+    <div className="flex flex-wrap gap-2 px-3 py-2">
+      {list.map((day) => (
+        <button
+          key={day}
+          type="button"
+          data-drop-day={day}
+          onClick={() => setCreateFor(day)}
+          title={`Ajouter un vertical le ${DAY_MONTH.format(at(day))}`}
+          className={cn(
+            'flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1 text-xs',
+            day === today
+              ? 'border-[var(--today)] text-[var(--today)]'
+              : 'border-[var(--expense)]/60 text-[var(--expense)]',
+            drag?.day === day && dropHighlight,
+          )}
+        >
+          <Plus className="h-3 w-3" />
+          <span className="capitalize">{WEEKDAY.format(at(day)).replace('.', '')}</span>
+          <span className="tabular">{DAY_MONTH.format(at(day))}</span>
+        </button>
+      ))}
+    </div>
+  );
+  // Les jours vides consécutifs forment une seule rangée de puces.
+  const blocks: Array<
+    { kind: 'day'; day: string; items: PostDraft[] } | { kind: 'gaps'; days: string[] }
+  > = [];
+  for (const segment of segments) {
+    const last = blocks.at(-1);
+    if (segment.kind === 'gap') {
+      if (last?.kind === 'gaps') last.days.push(segment.day);
+      else blocks.push({ kind: 'gaps', days: [segment.day] });
+    } else blocks.push(segment);
+  }
 
   return (
     <div className={cn('space-y-4', drag && 'cursor-grabbing select-none')}>
@@ -225,74 +275,55 @@ export const ShortsPage = () => {
           <p className="border-b border-border px-4 py-2 text-xs font-medium text-muted-foreground">
             Sans date ({undated.length})
           </p>
-          tiles(undated, null)
+          {tiles(undated, null)}
         </Card>
       )}
 
-      {/* Le défilement est propre aux couloirs : l'en-tête et les alertes restent en place,
+      {/* Le défilement est propre à la galerie : l'en-tête et les alertes restent en place,
           et « s'ouvrir sur aujourd'hui » ne dépend pas de la hauteur de ce qui précède. */}
-      <Card
-        ref={scrollRef}
-        className="relative max-h-[calc(100dvh-14rem)] divide-y divide-border overflow-y-auto"
-      >
-        {days.map((day) => {
-          const items = byDay.get(day) ?? [];
+      <Card ref={scrollRef} className="relative max-h-[calc(100dvh-14rem)] overflow-y-auto">
+        {blocks.map((block) => {
+          if (block.kind === 'gaps') {
+            const first = block.days[0]!;
+            return (
+              <div key={`gap-${first}`} ref={first === anchorDay ? todayRef : undefined}>
+                {gaps(block.days)}
+              </div>
+            );
+          }
+          const { day, items } = block;
           const isToday = day === today;
-          const future = day >= today;
           return (
-            <div
+            <section
               key={day}
-              ref={isToday ? todayRef : undefined}
+              ref={day === anchorDay ? todayRef : undefined}
               data-drop-day={day}
-              className={cn(
-                'flex min-h-11',
-                isToday && 'bg-[var(--today)]/10',
-                drag?.day === day && dropHighlight,
-              )}
+              className={cn('border-b border-border', drag?.day === day && dropHighlight)}
             >
-              {/* Le jour, en colonne collante à gauche : il reste lisible quand un couloir
-                  porte plusieurs publications. */}
-              <div
-                className={cn(
-                  'flex w-24 shrink-0 flex-col justify-center border-r border-border px-3 py-2 text-xs sm:w-28',
-                  isToday && 'font-semibold text-[var(--today)]',
-                  !isToday && day < today && 'text-muted-foreground',
-                )}
-              >
-                <span className="capitalize">{WEEKDAY.format(at(day)).replace('.', '')}</span>
-                <span className="tabular">{DAY_MONTH.format(at(day))}</span>
-                {isToday && <span className="text-[10px] uppercase">Aujourd’hui</span>}
-              </div>
-
-              <div className="group min-w-0 flex-1">
-                {items.length > 0 ? (
-                  tiles(items, day)
-                ) : (
-                  // Un jour vide est l'information que l'écran doit donner : orange s'il
-                  // est encore temps d'y mettre quelque chose, en creux sinon.
-                  <p
-                    className={cn(
-                      'flex h-full items-center px-4 py-2 text-xs',
-                      future ? 'text-[var(--expense)]' : 'text-muted-foreground/60',
-                    )}
-                  >
-                    {drag?.day === day ? 'Déposer ici' : future ? 'Rien de prévu' : 'Rien'}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex shrink-0 items-center px-2">
+              <div className="flex items-center gap-2 px-4 pt-3">
+                <h2
+                  className={cn(
+                    'text-sm font-semibold capitalize',
+                    isToday && 'text-[var(--today)]',
+                    day < today && 'text-muted-foreground',
+                  )}
+                >
+                  {WEEKDAY.format(at(day)).replace('.', '')} {DAY_MONTH.format(at(day))}
+                  {isToday && ' · aujourd’hui'}
+                </h2>
+                <span className="text-xs text-muted-foreground">{items.length}</span>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-muted-foreground"
+                  className="ml-auto h-7 w-7 text-muted-foreground"
                   title={`Ajouter un vertical le ${DAY_MONTH.format(at(day))}`}
                   onClick={() => setCreateFor(day)}
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </Button>
               </div>
-            </div>
+              {tiles(items, day)}
+            </section>
           );
         })}
       </Card>

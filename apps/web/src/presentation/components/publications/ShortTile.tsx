@@ -119,7 +119,7 @@ export const ShortTile = ({
         }
       }}
       className={cn(
-        'group relative aspect-[9/16] w-20 shrink-0 cursor-pointer overflow-hidden rounded-md border bg-muted sm:w-24',
+        'group/tile relative aspect-[9/16] w-full cursor-pointer overflow-hidden rounded-lg border bg-muted',
         failed ? 'border-destructive' : online ? 'border-[var(--positive)]' : 'border-border',
         highlighted && 'ring-2 ring-primary',
         over && 'ring-2 ring-primary',
@@ -140,14 +140,14 @@ export const ShortTile = ({
         />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/50">
-          <Video className="h-6 w-6" />
+          <Video className="h-8 w-8" />
         </div>
       )}
 
       {/* Bas de tuile : plateformes puis heure, sur un dégradé pour rester lisibles. */}
-      <div className="absolute inset-x-0 bottom-0 space-y-0.5 bg-gradient-to-t from-black/80 to-transparent px-1.5 pb-1 pt-5 text-white">
+      <div className="absolute inset-x-0 bottom-0 space-y-1.5 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-2.5 pb-2 pt-10 text-white">
         {attempts.length > 0 && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             {attempts.map(({ platform, attempt }) => (
               <PlatformIcon
                 key={platform}
@@ -158,7 +158,7 @@ export const ShortTile = ({
             ))}
           </div>
         )}
-        <p className="tabular text-[11px] font-medium leading-tight">
+        <p className="tabular text-sm font-semibold leading-tight">
           {when ?? <span className="opacity-70">Sans heure</span>}
         </p>
       </div>
@@ -175,8 +175,8 @@ export const ShortTile = ({
       )}
 
       {/* Le titre au survol (et au focus clavier). Sur tactile, il se lit dans la fiche. */}
-      <div className="pointer-events-none absolute inset-0 flex items-start bg-black/75 p-2 text-[11px] font-medium leading-snug text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-        <span className="line-clamp-6 pl-4">{draft.title}</span>
+      <div className="pointer-events-none absolute inset-0 flex items-start bg-black/75 p-3 text-sm font-medium leading-snug text-white opacity-0 transition-opacity group-hover/tile:opacity-100 group-focus-visible/tile:opacity-100">
+        <span className="line-clamp-8 pt-5">{draft.title}</span>
       </div>
 
       {/* `touch-none` sur la seule poignée : au doigt, le reste de la tuile fait défiler. */}
@@ -190,7 +190,7 @@ export const ShortTile = ({
             event.stopPropagation();
             onDragStart(event);
           }}
-          className="absolute left-0 top-0 flex h-6 w-6 cursor-grab touch-none items-center justify-center rounded-br-md bg-black/50 text-white active:cursor-grabbing lg:opacity-0 lg:group-hover:opacity-100"
+          className="absolute left-0 top-0 flex h-6 w-6 cursor-grab touch-none items-center justify-center rounded-br-md bg-black/50 text-white active:cursor-grabbing lg:opacity-0 lg:group-hover/tile:opacity-100"
         >
           <GripVertical className="h-3.5 w-3.5" />
         </span>
@@ -219,7 +219,7 @@ const PlatformIcon = ({
           : 'text-white';
   return (
     <span title={PLATFORM_LABELS[platform]} className={tone}>
-      <Icon className="h-3.5 w-3.5" />
+      <Icon className="h-5 w-5" />
     </span>
   );
 };
