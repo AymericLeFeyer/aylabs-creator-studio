@@ -11,6 +11,7 @@ import {
 import {
   CAPTION_MAX_LENGTH,
   captionWithHashtags,
+  instagramCaptionText,
   DEFAULT_SHORT_OPTIONS,
   INSTAGRAM_TRIAL_LABELS,
   rescheduleOnDay,
@@ -274,8 +275,13 @@ export const PostDraftDialog = ({
   const { data: autoDmStats } = useAutoDmStats(draft?.id, open && Boolean(draft));
   const pending = create.isPending || update.isPending || setCover.isPending;
   const caption = captionWithHashtags(form.description, options.hashtags);
+  const igCaption = captionWithHashtags(
+    instagramCaptionText({ title: form.title, description: form.description }, options),
+    options.hashtags,
+  );
   const tooLong =
     caption.length > CAPTION_MAX_LENGTH ||
+    igCaption.length > CAPTION_MAX_LENGTH ||
     form.title.trim().length > TITLE_MAX ||
     options.youtube.tags.length > TAGS_MAX ||
     (options.instagram.autoDm.enabled && !options.instagram.autoDm.message.trim());
@@ -536,6 +542,23 @@ export const PostDraftDialog = ({
               </Check>
               {options.instagram.autoDm.enabled && (
                 <>
+                  <div className="space-y-1.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <Label htmlFor="draft-autodm-caption">Légende Instagram</Label>
+                      <Counter value={igCaption.length} max={CAPTION_MAX_LENGTH} />
+                    </div>
+                    <Textarea
+                      id="draft-autodm-caption"
+                      rows={3}
+                      placeholder={'Écris "LIEN" en commentaire pour recevoir le lien en DM !'}
+                      value={options.instagram.autoDm.captionOverride}
+                      onChange={(event) => autoDm({ captionOverride: event.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Remplace la description, sur Instagram seulement (YouTube et TikTok gardent la
+                      leur). Vide : la description est utilisée.
+                    </p>
+                  </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="draft-autodm-keywords">Mots déclencheurs</Label>
                     <Input

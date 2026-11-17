@@ -17,6 +17,7 @@ import type { PublishStaging } from '../../../domain/publish/repositories/Publis
 import type { TikTokPublishAccess } from '../../../domain/publish/repositories/TikTokPublishAccess.ts';
 import {
   captionWithHashtags,
+  instagramCaptionText,
   type ShortOptions,
 } from '../../../domain/postDraft/entities/PostDraft.ts';
 import { fitTags } from '../../../domain/production/services/scriptText.ts';
@@ -262,7 +263,12 @@ export class ManagePublishing {
             : content.options.instagram.trial
               ? 'trial'
               : null,
-      title: (platform === 'youtube' ? content.title : content.description || content.title)
+      title: (platform === 'youtube'
+        ? content.title
+        : platform === 'instagram'
+          ? instagramCaptionText(content, content.options)
+          : content.description || content.title
+      )
         .split('\n')[0]!
         .slice(0, 100),
     });
@@ -393,7 +399,7 @@ export class ManagePublishing {
       coverOffsetMs:
         instagram.coverAtSeconds === null ? undefined : Math.round(instagram.coverAtSeconds * 1000),
       caption: captionWithHashtags(
-        content.description || content.title,
+        instagramCaptionText(content, content.options),
         content.options.hashtags,
       ).slice(0, 2200),
       shareToFeed: instagram.shareToFeed,

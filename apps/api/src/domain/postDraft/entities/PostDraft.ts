@@ -51,6 +51,8 @@ export interface AutoDmOptions {
   keywords: string;
   /** Le message envoyé. `{prenom}` y est remplacé par le nom d'utilisateur du commentateur. */
   message: string;
+  /** Légende Instagram **à la place** de la description (« Écris LIEN… ») ; vide = la description. */
+  captionOverride: string;
   /** Instant UTC de l'activation : les commentaires d'avant ne déclenchent rien. */
   enabledAt: string | null;
 }
@@ -59,6 +61,7 @@ export const DEFAULT_AUTO_DM: AutoDmOptions = {
   enabled: false,
   keywords: '',
   message: '',
+  captionOverride: '',
   enabledAt: null,
 };
 
@@ -103,6 +106,18 @@ export const parseShortOptions = (raw: string): ShortOptions => {
  * La description qui part (YouTube, légende Instagram) : la description, puis les hashtags
  * sur leur propre ligne s'ils n'y sont pas déjà.
  */
+/**
+ * Le texte de la légende Instagram, hashtags exclus : le remplacement de la règle de DM
+ * automatique quand elle est active et renseignée, sinon la description (le titre à défaut).
+ */
+export const instagramCaptionText = (
+  draft: { title: string; description: string },
+  options: ShortOptions,
+): string => {
+  const rule = options.instagram.autoDm;
+  return (rule.enabled && rule.captionOverride.trim()) || draft.description || draft.title;
+};
+
 export const captionWithHashtags = (description: string, hashtags: string): string => {
   const tags = hashtags.trim();
   const text = description.trim();
