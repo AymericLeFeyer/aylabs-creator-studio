@@ -5,6 +5,8 @@ import type {
   ThumbnailAsset,
   ThumbnailSettingsInput,
   ThumbnailSettingsView,
+  ThumbnailWorkspace,
+  WorkspaceSlot,
 } from '../../../domain/thumbnail/entities/Thumbnail.ts';
 
 export const thumbnailApi = {
@@ -18,6 +20,17 @@ export const thumbnailApi = {
     request<{ image: string; name: string }>('/api/thumbnails/fetch-image', {
       method: 'POST',
       body: { url },
+    }),
+  workspace: (productionId: string) =>
+    request<ThumbnailWorkspace>(`/api/thumbnails/workspace/${productionId}`),
+  setWorkspaceImage: (productionId: string, slot: WorkspaceSlot, image: string) =>
+    request<ThumbnailWorkspace>(`/api/thumbnails/workspace/${productionId}/${slot}`, {
+      method: 'PUT',
+      body: { image },
+    }),
+  removeWorkspaceImage: (productionId: string, slot: WorkspaceSlot) =>
+    request<ThumbnailWorkspace>(`/api/thumbnails/workspace/${productionId}/${slot}`, {
+      method: 'DELETE',
     }),
   deleteAsset: (id: string) => request<void>(`/api/thumbnails/assets/${id}`, { method: 'DELETE' }),
   list: (productionId: string | null, saved?: boolean) =>

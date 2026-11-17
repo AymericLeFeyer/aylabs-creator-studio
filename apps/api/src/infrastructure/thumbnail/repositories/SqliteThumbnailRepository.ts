@@ -5,6 +5,8 @@ import type {
   ThumbnailAsset,
   ThumbnailImage,
   ThumbnailQuality,
+  ThumbnailWorkspace,
+  WorkspaceSlot,
 } from '../../../domain/thumbnail/entities/Thumbnail.ts';
 import type { ThumbnailRepository } from '../../../domain/thumbnail/repositories/ThumbnailRepository.ts';
 import { newId } from '../../../shared/id.ts';
@@ -129,6 +131,46 @@ export class SqliteThumbnailRepository implements ThumbnailRepository {
     return toImage(
       this.db.prepare('SELECT data, mime_type FROM thumbnail_assets WHERE id = ?').get(id) as
         ImageRow | undefined,
+    );
+  }
+
+  workspace(productionId: string): ThumbnailWorkspace {
+    const rows = this.db
+      .prepare('SELECT slot, updated_at FROM production_workspace_images WHERE production_id = ?')
+      .all(productionId) as Array<{ slot: WorkspaceSlot; updated_at: string }>;
+    const workspace: ThumbnailWorkspace = { head: null, product: null };
+    for (const row of rows) workspace[row.slot] = { version: row.updated_at };
+    return workspace;
+  }
+
+  workspaceImage(productionId: string, slot: WorkspaceSlot): ThumbnailImage | null {
+    return toImage(
+      this.db
+        .prepare(
+          'SELECT data, mime_type FROM production_workspace_images WHERE production_id = ? AND slot = ?',
+        )
+        .get(productionId, slot) as ImageRow | undefined,
+    );
+  }
+
+  setWorkspaceImage(productionId: string, slot: WorkspaceSlot, image: ThumbnailImage): void {
+    this.db
+      .prepare(
+        `INSERT INTO production_workspace_images (production_id, slot, mime_type, data, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (production_id, slot)
+         DO UPDATE SET mime_type = excluded.mime_type, data = excluded.data, updated_at = excluded.updated_at`,
+      )
+      .run(productionId, slot, image.mimeType, image.data, new Date().toISOString());
+  }
+
+  deleteWorkspaceImage(productionId: string, slot: WorkspaceSlot): boolean {
+    return (
+      Number(
+        this.db
+          .prepare('DELETE FROM production_workspace_images WHERE production_id = ? AND slot = ?')
+          .run(productionId, slot).changes,
+      ) > 0
     );
   }
 

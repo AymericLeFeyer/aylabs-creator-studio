@@ -3,6 +3,7 @@ import { ImagePlus } from 'lucide-react';
 import { useThumbnails } from '../../../application/thumbnail/usecases/useThumbnails.ts';
 import { Button } from '../ui/button.tsx';
 import { Card, CardContent } from '../ui/card.tsx';
+import { WorkspaceCard } from '../thumbnails/WorkspaceCard.tsx';
 import { ThumbnailCard } from '../thumbnails/ThumbnailCard.tsx';
 
 /**
@@ -27,6 +28,8 @@ export const ProductionThumbnailsPanel = ({ productionId }: { productionId: stri
           </Link>
         </Button>
       </div>
+
+      <WorkspaceCard productionId={productionId} />
 
       {!isLoading && thumbnails.length === 0 ? (
         <Card>

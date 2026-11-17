@@ -66,7 +66,25 @@ export interface GenerateThumbnailInput {
   assetIds: string[];
   /** En base64 : envoyées à OpenAI, jamais conservées. */
   images: string[];
+  /** Envoie la tête et le produit de l'espace de travail de la vidéo (défaut : oui). */
+  useWorkspace?: boolean;
 }
+
+export type WorkspaceSlot = 'head' | 'product';
+export const WORKSPACE_SLOTS: Array<{ id: WorkspaceSlot; label: string; hint: string }> = [
+  { id: 'head', label: 'Ma tête', hint: 'Une photo de toi, de face, bien éclairée.' },
+  { id: 'product', label: 'Le produit', hint: 'La photo du produit à mettre en avant.' },
+];
+
+/** `null` = emplacement vide, sinon la version de l'image (change à chaque remplacement). */
+export type ThumbnailWorkspace = Record<WorkspaceSlot, { version: string } | null>;
+
+export const workspaceImageUrl = (
+  productionId: string,
+  slot: WorkspaceSlot,
+  version: string,
+): string =>
+  `/api/thumbnails/workspace/${productionId}/${slot}/image?v=${encodeURIComponent(version)}`;
 
 export const thumbnailUrl = (id: string): string => `/api/thumbnails/${id}/image`;
 export const thumbnailAssetUrl = (id: string): string => `/api/thumbnails/assets/${id}/image`;

@@ -2236,6 +2236,22 @@ const migrations: Migration[] = [
       ALTER TABLE productions ADD COLUMN ab_test TEXT NOT NULL DEFAULT '{}';
     `,
   },
+  {
+    version: 69,
+    name: 'miniatures : espace de travail par video (tete et produit)',
+    up: `
+      -- Les deux images qu'une video envoie par defaut a la generation de miniature : la
+      -- tete et la photo du produit. Une ligne par emplacement, a part des listes.
+      CREATE TABLE production_workspace_images (
+        production_id TEXT NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+        slot          TEXT NOT NULL CHECK (slot IN ('head', 'product')),
+        mime_type     TEXT NOT NULL,
+        data          BLOB NOT NULL,
+        updated_at    TEXT NOT NULL,
+        PRIMARY KEY (production_id, slot)
+      );
+    `,
+  },
 ];
 
 /**

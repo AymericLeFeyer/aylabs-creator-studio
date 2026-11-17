@@ -4,6 +4,8 @@ import type {
   ThumbnailAsset,
   ThumbnailCredentials,
   ThumbnailImage,
+  ThumbnailWorkspace,
+  WorkspaceSlot,
 } from '../entities/Thumbnail.ts';
 
 export interface ThumbnailRepository {
@@ -14,6 +16,11 @@ export interface ThumbnailRepository {
   addAsset(label: string, image: ThumbnailImage): ThumbnailAsset;
   assetImage(id: string): ThumbnailImage | null;
   deleteAsset(id: string): boolean;
+
+  workspace(productionId: string): ThumbnailWorkspace;
+  workspaceImage(productionId: string, slot: WorkspaceSlot): ThumbnailImage | null;
+  setWorkspaceImage(productionId: string, slot: WorkspaceSlot, image: ThumbnailImage): void;
+  deleteWorkspaceImage(productionId: string, slot: WorkspaceSlot): boolean;
 
   /** `saved` : `true` les enregistrées seules, absent ne filtre pas. */
   list(filter?: { productionId?: string; saved?: boolean }): Thumbnail[];

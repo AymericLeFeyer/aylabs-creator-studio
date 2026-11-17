@@ -2681,9 +2681,15 @@ les listes ne lisent jamais.
   titre public (`publishTitle || title`), 6 000 caractères du script sans balises, puis le
   prompt personnalisé, en dernier pour pouvoir nuancer le général. Une vidéo **ou** un prompt
   est obligatoire (400).
-- **Images envoyées** : la banque d'abord, les images ajoutées ensuite, 16 au maximum (limite
-  d'OpenAI). À l'écran, on retient les images **écartées** : une image ajoutée à la banque
-  arrive cochée. Les images ajoutées ne sont **jamais conservées**. `prepareImage` les réduit
+- **Espace de travail d'une vidéo** (`production_workspace_images`, migration 69, cascade ;
+  `WorkspaceCard`, dans l'onglet Miniatures de la fiche et sur `/miniatures` une fois la vidéo
+  choisie) : deux emplacements, `head` (ma tête) et `product` (photo du produit). Ils sont
+  **envoyés par défaut** à chaque génération pour cette vidéo (`useWorkspace`, défaut `true`),
+  **avant** la banque, avec leur rôle écrit dans le prompt (`workspace` de
+  `composeThumbnailPrompt`). Routes `/api/thumbnails/workspace/:productionId[/:slot[/image]]`.
+- **Images envoyées** : l'espace de travail, puis la banque, puis les images ajoutées, 16 au
+  maximum (limite d'OpenAI), espace de travail compris. À l'écran, les images de la banque
+  sont **décochées par défaut** : on coche celles qu'on veut. Les images ajoutées ne sont **jamais conservées**. `prepareImage` les réduit
   à 1 536 px en WebP avant l'envoi ; l'API lit le vrai type dans les octets (`imageMimeType`,
   Safari écrit du PNG).
 - **Une image par son adresse** (champ sous la grille d'images de `/miniatures`) :
