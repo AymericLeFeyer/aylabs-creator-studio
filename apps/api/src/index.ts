@@ -22,6 +22,8 @@ const server = app.listen(config.port, () => {
 startCollectScheduler(container);
 // Les shorts programmés partent à leur heure.
 container.manageShorts.start();
+// Les commentaires des reels dotés d'un DM automatique sont relevés toutes les 2 minutes.
+container.manageAutoDm.start();
 
 // Arrêt propre : sans fermeture explicite, SQLite laisse traîner ses fichiers -wal / -shm.
 const shutdown = (signal: string): void => {

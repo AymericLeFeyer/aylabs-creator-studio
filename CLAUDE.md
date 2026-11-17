@@ -16,7 +16,7 @@ Suivi des statistiques de créateur dans le temps : vues, abonnés, argent gagn�
 | Graphiques | Recharts 3                                                                           |
 | Éditeur    | **TipTap 3** (ProseMirror) — scripts en WYSIWYG. Chunk isolé **et** chargé en `lazy` |
 | Mails      | `imapflow` (IMAP), `nodemailer` (SMTP), `mailparser` — JS pur, rien à compiler       |
-| IA         | Claude via `@anthropic-ai/sdk` ou GPT via l'API Responses d'OpenAI                  |
+| IA         | Claude via `@anthropic-ai/sdk` ou GPT via l'API Responses d'OpenAI                   |
 | MCP        | `@modelcontextprotocol/sdk`, Streamable HTTP sans session, dans l'API                |
 | Stockage   | `@aws-sdk/client-s3` + presigner : dépôt éphémère des Reels (R2), liens signés       |
 | Données    | TanStack Query 5                                                                     |
@@ -2624,8 +2624,8 @@ sinon n'importe quel fournisseur prêt, sinon `null`** (400 explicite) — une c
 (l'écran le signale sur la ligne). Choisir un fournisseur sans clé est refusé en 400.
 
 - `ManageAi` — `view()` (`{ defaultProvider, providers[], tasks[], secretsKeyConfigured,
-  configured, credit }`), `update({ provider?, defaultProvider?, routes?, apiKey?, adminKey?,
-  model?, creditBalance? })`, `configured()` (au moins un fournisseur prêt), `credentials(task?)`
+configured, credit }`), `update({ provider?, defaultProvider?, routes?, apiKey?, adminKey?,
+model?, creditBalance? })`, `configured()` (au moins un fournisseur prêt), `credentials(task?)`
   (400 sans clé), `spend()`. **Seul endroit où les clés sont déchiffrées** (contextes
   `ai:apiKey` pour Anthropic, `ai:openaiKey`, `ai:openaiAdminKey`). `view().credit` est le solde
   le plus bas parmi les fournisseurs prêts : c'est lui qui allume la pastille du menu. La clé
@@ -3942,6 +3942,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 74** ajoute `ig_auto_dm_log` (DM automatiques envoyés ou refusés).
 - **Migration 73** ajoute `ai_settings.enabled` (désactiver un fournisseur IA sans perdre ses réglages).
 - **Migration 72** ajoute `ai_task_routes` (le fournisseur IA choisi par tâche) et `ai_settings.admin_key` (clé admin OpenAI, chiffrée).
 - **Migration 71** ajoute `mail_settings.auth_mode` et `gmail_oauth` (connexion Gmail par OAuth).

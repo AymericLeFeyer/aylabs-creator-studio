@@ -585,6 +585,15 @@ export const updatePostDraftSchema = createPostDraftSchema.partial().extend({
         trial: z.enum(['MANUAL', 'SS_PERFORMANCE']).nullable(),
         collaborators: z.string().max(200),
         coverAtSeconds: z.number().min(0).max(3600).nullable(),
+        autoDm: z.object({
+          enabled: z.boolean(),
+          keywords: z.string().max(500),
+          message: z.string().max(1000),
+          enabledAt: z
+            .string()
+            .refine((value) => !Number.isNaN(Date.parse(value)), 'Horodatage invalide')
+            .nullable(),
+        }),
       }),
     })
     .optional(),

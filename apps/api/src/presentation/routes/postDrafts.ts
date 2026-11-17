@@ -72,6 +72,11 @@ export const postDraftsRouter = (container: Container): Router => {
     res.status(202).json(container.manageShorts.publishNow(param(req, 'id')));
   });
 
+  /** Ce que la règle de DM automatique a fait pour ce reel : envoyés, refusés, dernière erreur. */
+  router.get('/:id/auto-dm', (req, res) => {
+    res.json(container.manageAutoDm.stats(param(req, 'id')));
+  });
+
   // La vidéo déposée part avec la publication : passe par `ManageShorts`.
   router.delete('/:id', (req, res) => {
     container.manageShorts.delete(param(req, 'id'));

@@ -36,8 +36,31 @@ export interface ShortOptions {
     collaborators: string;
     /** Sans image de couverture : l'image de la vidéo à cet instant (secondes). */
     coverAtSeconds: number | null;
+    /** Commentaire → DM automatique, une fois le reel en ligne. */
+    autoDm: AutoDmOptions;
   };
 }
+
+/**
+ * La règle « un commentaire déclenche un DM » d'un reel. Stockée dans les options (JSON) :
+ * ajouter un champ ne demande aucune migration.
+ */
+export interface AutoDmOptions {
+  enabled: boolean;
+  /** Mots déclencheurs séparés par des virgules ; vide = tout commentaire déclenche. */
+  keywords: string;
+  /** Le message envoyé. `{prenom}` y est remplacé par le nom d'utilisateur du commentateur. */
+  message: string;
+  /** Instant UTC de l'activation : les commentaires d'avant ne déclenchent rien. */
+  enabledAt: string | null;
+}
+
+export const DEFAULT_AUTO_DM: AutoDmOptions = {
+  enabled: false,
+  keywords: '',
+  message: '',
+  enabledAt: null,
+};
 
 export const DEFAULT_SHORT_OPTIONS: ShortOptions = {
   hashtags: '',
@@ -48,7 +71,13 @@ export const DEFAULT_SHORT_OPTIONS: ShortOptions = {
     madeForKids: false,
     notifySubscribers: true,
   },
-  instagram: { shareToFeed: true, trial: null, collaborators: '', coverAtSeconds: null },
+  instagram: {
+    shareToFeed: true,
+    trial: null,
+    collaborators: '',
+    coverAtSeconds: null,
+    autoDm: DEFAULT_AUTO_DM,
+  },
 };
 
 /** Relit le JSON stocké : une option absente (ou ajoutée depuis) prend son défaut. */
@@ -62,7 +91,11 @@ export const parseShortOptions = (raw: string): ShortOptions => {
   return {
     hashtags: stored.hashtags ?? DEFAULT_SHORT_OPTIONS.hashtags,
     youtube: { ...DEFAULT_SHORT_OPTIONS.youtube, ...stored.youtube },
-    instagram: { ...DEFAULT_SHORT_OPTIONS.instagram, ...stored.instagram },
+    instagram: {
+      ...DEFAULT_SHORT_OPTIONS.instagram,
+      ...stored.instagram,
+      autoDm: { ...DEFAULT_AUTO_DM, ...stored.instagram?.autoDm },
+    },
   };
 };
 

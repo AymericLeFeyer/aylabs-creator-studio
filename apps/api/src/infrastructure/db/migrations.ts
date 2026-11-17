@@ -2295,6 +2295,26 @@ const migrations: Migration[] = [
       ALTER TABLE ai_settings ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
     `,
   },
+  {
+    version: 74,
+    name: 'instagram : journal des DM automatiques',
+    up: `
+      -- Un DM envoye (ou refuse) par commentaire. comment_id unique : un commentaire ne
+      -- declenche jamais deux fois ; commenter_key (identifiant ou pseudo) evite de
+      -- re-ecrire a quelqu'un qui commente plusieurs fois le meme reel.
+      CREATE TABLE ig_auto_dm_log (
+        id TEXT PRIMARY KEY,
+        draft_id TEXT NOT NULL,
+        comment_id TEXT NOT NULL UNIQUE,
+        commenter_key TEXT NOT NULL,
+        commenter_username TEXT,
+        status TEXT NOT NULL CHECK (status IN ('sent', 'failed')),
+        error TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_ig_auto_dm_log_draft ON ig_auto_dm_log (draft_id, commenter_key);
+    `,
+  },
 ];
 
 /**

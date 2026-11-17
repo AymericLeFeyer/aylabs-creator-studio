@@ -66,6 +66,15 @@ export interface StoryRow {
   timestamp: string;
 }
 
+export interface CommentRow {
+  id: string;
+  text: string;
+  timestamp: string;
+  username: string | null;
+  /** Identifiant du commentateur côté Meta, `null` si l'API ne le rend pas. */
+  userId: string | null;
+}
+
 export interface MediaRow extends StoryRow {
   caption: string | null;
 }
@@ -430,6 +439,45 @@ export class InstagramClient {
       'POST',
     );
     return row.id;
+  }
+
+  /**
+   * Les commentaires de premier niveau d'une publication, les plus récents d'abord. Demande
+   * la permission `instagram_business_manage_comments` : un jeton émis sans elle échoue ici.
+   */
+  async fetchComments(mediaId: string, limit = 50): Promise<CommentRow[]> {
+    const payload = await this.call<{
+      data?: Array<{
+        id: string;
+        text?: string;
+        timestamp?: string;
+        username?: string;
+        from?: { id?: string; username?: string };
+      }>;
+    }>(`/${PUBLISH_API_VERSION}/${mediaId}/comments`, {
+      fields: 'id,text,timestamp,username,from',
+      limit: String(limit),
+    });
+    return (payload.data ?? []).map((row) => ({
+      id: row.id,
+      text: row.text ?? '',
+      timestamp: row.timestamp ?? '',
+      username: row.from?.username ?? row.username ?? null,
+      userId: row.from?.id ?? null,
+    }));
+  }
+
+  /**
+   * La **réponse privée** à un commentaire : un DM envoyé à son auteur. Meta n'en admet
+   * qu'**une par commentaire**, dans les 7 jours, et demande
+   * `instagram_business_manage_messages`.
+   */
+  async sendPrivateReply(igUserId: string, commentId: string, text: string): Promise<void> {
+    await this.call(
+      `/${PUBLISH_API_VERSION}/${igUserId}/messages`,
+      { recipient: JSON.stringify({ comment_id: commentId }), message: JSON.stringify({ text }) },
+      'POST',
+    );
   }
 
   async mediaPermalink(mediaId: string): Promise<string | null> {

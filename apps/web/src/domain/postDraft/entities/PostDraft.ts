@@ -28,7 +28,31 @@ export interface ShortOptions {
     trial: InstagramTrial | null;
     collaborators: string;
     coverAtSeconds: number | null;
+    autoDm: AutoDmOptions;
   };
+}
+
+/** Commentaire → DM automatique d'un reel. `{prenom}` du message = le pseudo du commentateur. */
+export interface AutoDmOptions {
+  enabled: boolean;
+  /** Mots déclencheurs séparés par des virgules ; vide = tout commentaire. */
+  keywords: string;
+  message: string;
+  /** Instant UTC de l'activation : les commentaires d'avant ne déclenchent rien. */
+  enabledAt: string | null;
+}
+
+export const DEFAULT_AUTO_DM: AutoDmOptions = {
+  enabled: false,
+  keywords: '',
+  message: '',
+  enabledAt: null,
+};
+
+export interface AutoDmStats {
+  sent: number;
+  failed: number;
+  lastError: string | null;
 }
 
 export const DEFAULT_SHORT_OPTIONS: ShortOptions = {
@@ -40,7 +64,13 @@ export const DEFAULT_SHORT_OPTIONS: ShortOptions = {
     madeForKids: false,
     notifySubscribers: true,
   },
-  instagram: { shareToFeed: true, trial: null, collaborators: '', coverAtSeconds: null },
+  instagram: {
+    shareToFeed: true,
+    trial: null,
+    collaborators: '',
+    coverAtSeconds: null,
+    autoDm: DEFAULT_AUTO_DM,
+  },
 };
 
 export const YOUTUBE_VISIBILITY_LABELS: Record<YouTubeVisibility, string> = {

@@ -4,6 +4,7 @@ import { Clapperboard, Copy, Trash2 } from 'lucide-react';
 import {
   useCreatePostDraft,
   useDeletePostDraft,
+  useAutoDmStats,
   useSetDraftCover,
   useUpdatePostDraft,
 } from '../../../application/postDraft/usecases/usePostDrafts.ts';
@@ -217,6 +218,14 @@ export const PostDraftDialog = ({
 
   const youtube = (patch: Partial<ShortOptions['youtube']>) =>
     setOptions((current) => ({ ...current, youtube: { ...current.youtube, ...patch } }));
+  const autoDm = (patch: Partial<ShortOptions['instagram']['autoDm']>) =>
+    setOptions((current) => ({
+      ...current,
+      instagram: {
+        ...current.instagram,
+        autoDm: { ...current.instagram.autoDm, ...patch },
+      },
+    }));
   const instagram = (patch: Partial<ShortOptions['instagram']>) =>
     setOptions((current) => ({ ...current, instagram: { ...current.instagram, ...patch } }));
 
@@ -262,12 +271,14 @@ export const PostDraftDialog = ({
     }
   };
 
+  const { data: autoDmStats } = useAutoDmStats(draft?.id, open && Boolean(draft));
   const pending = create.isPending || update.isPending || setCover.isPending;
   const caption = captionWithHashtags(form.description, options.hashtags);
   const tooLong =
     caption.length > CAPTION_MAX_LENGTH ||
     form.title.trim().length > TITLE_MAX ||
-    options.youtube.tags.length > TAGS_MAX;
+    options.youtube.tags.length > TAGS_MAX ||
+    (options.instagram.autoDm.enabled && !options.instagram.autoDm.message.trim());
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -506,6 +517,62 @@ export const PostDraftDialog = ({
             >
               Aussi dans la grille du profil
             </Check>
+
+            <div className="space-y-3 rounded-md border border-dashed border-border p-3">
+              <Check
+                id="draft-autodm"
+                checked={options.instagram.autoDm.enabled}
+                onChange={(enabled) =>
+                  autoDm({
+                    enabled,
+                    // L'activation date la règle : ce qui a été commenté avant ne déclenche rien.
+                    enabledAt: enabled
+                      ? new Date().toISOString()
+                      : options.instagram.autoDm.enabledAt,
+                  })
+                }
+              >
+                DM automatique à ceux qui commentent
+              </Check>
+              {options.instagram.autoDm.enabled && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="draft-autodm-keywords">Mots déclencheurs</Label>
+                    <Input
+                      id="draft-autodm-keywords"
+                      placeholder="lien, guide  (vide = tout commentaire)"
+                      value={options.instagram.autoDm.keywords}
+                      onChange={(event) => autoDm({ keywords: event.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="draft-autodm-message">Message</Label>
+                    <Textarea
+                      id="draft-autodm-message"
+                      rows={4}
+                      placeholder="Salut {prenom} ! Voici le lien : …"
+                      value={options.instagram.autoDm.message}
+                      onChange={(event) => autoDm({ message: event.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {'{prenom}'} devient le pseudo du commentateur. Envoyé une fois par personne,
+                      dans les 7 jours qui suivent son commentaire, une fois le reel en ligne.
+                    </p>
+                  </div>
+                  {autoDmStats && (autoDmStats.sent > 0 || autoDmStats.failed > 0) && (
+                    <p className="text-xs text-muted-foreground">
+                      {autoDmStats.sent} envoyé(s)
+                      {autoDmStats.failed > 0 && (
+                        <span className="text-destructive">
+                          {' '}
+                          · {autoDmStats.failed} refusé(s) — {autoDmStats.lastError}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
           </PlatformSection>
 
           <PlatformSection

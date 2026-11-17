@@ -4,6 +4,7 @@ import {
   GripVertical,
   Instagram,
   Loader2,
+  MessageCircle,
   Music2,
   Video,
   Youtube,
@@ -156,6 +157,11 @@ export const ShortTile = ({
                 started={started}
               />
             ))}
+            {draft.platforms.includes('instagram') && draft.options.instagram.autoDm.enabled && (
+              <span title="DM automatique aux commentaires" className="text-sky-300">
+                <MessageCircle className="h-5 w-5" />
+              </span>
+            )}
           </div>
         )}
         <p className="tabular text-sm font-semibold leading-tight">

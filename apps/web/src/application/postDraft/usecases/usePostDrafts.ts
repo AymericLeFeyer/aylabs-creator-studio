@@ -166,3 +166,12 @@ const applyUpdate = (draft: PostDraft, input: PostDraftUpdate): PostDraft => {
 
 export const useDeletePostDraft = () =>
   usePostDraftMutation((id: string) => postDraftApi.remove(id));
+
+/** Ce que le DM automatique d'un reel a fait (envoyés, refusés). Relu toutes les 30 s ouvert. */
+export const useAutoDmStats = (id: string | undefined, enabled: boolean) =>
+  useQuery({
+    queryKey: ['postDrafts', 'autoDm', id ?? ''],
+    queryFn: () => postDraftApi.autoDmStats(id!),
+    enabled: enabled && Boolean(id),
+    refetchInterval: 30_000,
+  });

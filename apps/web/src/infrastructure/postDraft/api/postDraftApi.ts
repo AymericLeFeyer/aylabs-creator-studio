@@ -1,5 +1,6 @@
 import { request, uploadFile } from '../../http/httpClient.ts';
 import type {
+  AutoDmStats,
   CoverSource,
   PostDraft,
   PostDraftInput,
@@ -18,6 +19,8 @@ export const postDraftApi = {
 
   prepare: (input: PrepareVideoPostsInput) =>
     request<PostDraft[]>('/api/post-drafts/prepare', { method: 'POST', body: input }),
+
+  autoDmStats: (id: string) => request<AutoDmStats>(`/api/post-drafts/${id}/auto-dm`),
 
   summary: () => request<PostDraftSummary>('/api/post-drafts/summary'),
 

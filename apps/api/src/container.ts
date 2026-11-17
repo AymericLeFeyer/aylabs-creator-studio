@@ -39,6 +39,8 @@ import { SqliteLegalBookmarkRepository } from './infrastructure/legal/repositori
 import { SqliteAffiliatePlatformRepository } from './infrastructure/affiliate/repositories/SqliteAffiliatePlatformRepository.ts';
 import { SqliteInstagramAccountRepository } from './infrastructure/instagram/repositories/SqliteInstagramAccountRepository.ts';
 import { SqliteInstagramDataRepository } from './infrastructure/instagram/repositories/SqliteInstagramDataRepository.ts';
+import { SqliteAutoDmRepository } from './infrastructure/postDraft/repositories/SqliteAutoDmRepository.ts';
+import { ManageAutoDm } from './application/postDraft/usecases/ManageAutoDm.ts';
 import { CollectInstagram } from './application/instagram/usecases/CollectInstagram.ts';
 import { GetInstagramOverview } from './application/instagram/usecases/GetInstagramOverview.ts';
 import { SqliteWorkHoursRepository } from './infrastructure/planning/repositories/SqliteWorkHoursRepository.ts';
@@ -278,6 +280,7 @@ export interface Container {
   managePublishing: ManagePublishing;
   /** Production → Shorts : vidéo, heure et mise en ligne des publications. */
   manageShorts: ManageShorts;
+  manageAutoDm: ManageAutoDm;
 }
 
 /** Assemble les implémentations concrètes derrière les interfaces du domaine. */
@@ -479,6 +482,7 @@ export const buildContainer = (config: Config): Container => {
     manageShorts: new ManageShorts(postDrafts, productions, managePublishing, (id) =>
       manageThumbnails.image(id),
     ),
+    manageAutoDm: new ManageAutoDm(postDrafts, new SqliteAutoDmRepository(db), instagramAccounts),
     manageThumbnails,
     productionAssistant: new ProductionAssistant({
       productions,
