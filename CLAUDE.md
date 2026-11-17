@@ -2678,7 +2678,7 @@ les listes ne lisent jamais.
   déchiffrée.** Port `ThumbnailRepository` (mêmes opérations, plus `settings`,
   `updateSettings`), `ThumbnailImageClient.generate(credentials, { prompt, size, images })`.
 - **Le prompt** (`composeThumbnailPrompt`, pur) : format, prompt général, rôle des images,
-  titre public (`publishTitle || title`), 6 000 caractères du script sans balises, puis le
+  titre (`publishTitle || title`, ou la variante A, B ou C du test A/B choisie à l'écran, `title` dans le corps), 6 000 caractères du script sans balises, puis le
   prompt personnalisé, en dernier pour pouvoir nuancer le général. Une vidéo **ou** un prompt
   est obligatoire (400).
 - **Espace de travail d'une vidéo** (`production_workspace_images`, migration 69, cascade ;
