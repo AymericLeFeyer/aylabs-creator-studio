@@ -2,7 +2,8 @@
 
 export type ThumbnailFormat = '16:9' | '9:16';
 export type ThumbnailQuality = 'low' | 'medium' | 'high';
-export type ThumbnailKeySource = 'env' | 'app' | 'unreadable' | null;
+/** `shared` : la clé OpenAI de l'assistant IA, réutilisée pour les images. */
+export type ThumbnailKeySource = 'env' | 'app' | 'shared' | 'unreadable' | null;
 
 /** La limite de l'API d'OpenAI, images de la banque et images ajoutées confondues. */
 export const MAX_THUMBNAIL_IMAGES = 16;

@@ -10,6 +10,11 @@ export const aiRouter = (container: Container): Router => {
     res.json(container.manageAi.view());
   });
 
+  /** La dépense réelle d'OpenAI (clé admin). Rend toujours 200 : l'erreur est dans le corps. */
+  router.get('/spend', async (_req, res) => {
+    res.json(await container.manageAi.spend());
+  });
+
   router.patch('/settings', (req, res) => {
     res.json(container.manageAi.update(updateAiSettingsSchema.parse(req.body)));
   });

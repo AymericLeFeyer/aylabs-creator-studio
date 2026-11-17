@@ -114,6 +114,7 @@ import { SmtpMailSender } from './infrastructure/mail/api/SmtpMailSender.ts';
 import { ManageAi } from './application/ai/usecases/ManageAi.ts';
 import { SqliteAiSettingsRepository } from './infrastructure/ai/repositories/SqliteAiSettingsRepository.ts';
 import { ClaudeAiClient } from './infrastructure/ai/api/ClaudeAiClient.ts';
+import { OpenAiCostClient } from './infrastructure/ai/api/OpenAiCostClient.ts';
 import { OpenAiTextClient } from './infrastructure/ai/api/OpenAiTextClient.ts';
 import { ProductionAssistant } from './application/production/usecases/ProductionAssistant.ts';
 import { ManageThumbnails } from './application/thumbnail/usecases/ManageThumbnails.ts';
@@ -385,10 +386,21 @@ export const buildContainer = (config: Config): Container => {
     timeZone: config.timeZone,
   });
 
-  const manageAi = new ManageAi(new SqliteAiSettingsRepository(db), secrets, {
-    anthropic: config.anthropicApiKey,
-    openai: config.openaiAssistantApiKey,
-  });
+  // Une seule clé OpenAI pour le texte et les images : chacun emprunte celle de l'autre à
+  // défaut de la sienne. `ownKey()` ne se replie jamais, donc rien ne boucle.
+  const manageAi = new ManageAi(
+    new SqliteAiSettingsRepository(db),
+    secrets,
+    {
+      anthropic: config.anthropicApiKey,
+      openai: config.openaiAssistantApiKey,
+    },
+    {
+      sharedOpenAiKey: (): string | null => manageThumbnails.ownKey(),
+      adminKeyEnv: config.openaiAdminKey,
+      costs: new OpenAiCostClient(),
+    },
+  );
   const aiClients = {
     anthropic: new ClaudeAiClient(manageAi.observer('anthropic')),
     openai: new OpenAiTextClient(manageAi.observer('openai')),
@@ -434,6 +446,7 @@ export const buildContainer = (config: Config): Container => {
     new OpenAiImageClient(),
     secrets,
     config.openaiApiKey,
+    (): string | null => manageAi.ownOpenAiKey(),
   );
 
   const managePublishing = new ManagePublishing(

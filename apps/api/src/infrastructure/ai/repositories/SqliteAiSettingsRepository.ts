@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { AiProvider, StoredAiSettings } from '../../../domain/ai/entities/Ai.ts';
+import type { AiProvider, AiTask, StoredAiSettings } from '../../../domain/ai/entities/Ai.ts';
 import type { AiSettingsRepository } from '../../../domain/ai/repositories/AiRepository.ts';
 
 const ROW_IDS = { anthropic: 'default', openai: 'openai' } satisfies Record<AiProvider, string>;
@@ -12,6 +12,7 @@ const COLUMNS: Record<keyof StoredAiSettings, string> = {
   creditSpentMicros: 'credit_spent_micros',
   creditExhaustedAt: 'credit_exhausted_at',
   creditUnpriced: 'credit_unpriced',
+  encryptedAdminKey: 'admin_key',
 };
 
 interface Row {
@@ -22,6 +23,7 @@ interface Row {
   credit_spent_micros: number;
   credit_exhausted_at: string | null;
   credit_unpriced: number;
+  admin_key: string | null;
 }
 
 /** Une ligne par fournisseur, avec les clés chiffrées. */
@@ -39,11 +41,32 @@ export class SqliteAiSettingsRepository implements AiSettingsRepository {
     return row?.active_provider === 'openai' ? 'openai' : 'anthropic';
   }
 
+  routes(): Partial<Record<AiTask, AiProvider>> {
+    const rows = this.db.prepare('SELECT task, provider FROM ai_task_routes').all() as Array<{
+      task: AiTask;
+      provider: AiProvider;
+    }>;
+    return Object.fromEntries(rows.map((row) => [row.task, row.provider]));
+  }
+
+  setRoute(task: AiTask, provider: AiProvider | null): void {
+    if (provider === null) {
+      this.db.prepare('DELETE FROM ai_task_routes WHERE task = ?').run(task);
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO ai_task_routes (task, provider) VALUES (?, ?)
+         ON CONFLICT (task) DO UPDATE SET provider = excluded.provider`,
+      )
+      .run(task, provider);
+  }
+
   get(provider: AiProvider): StoredAiSettings {
     const row = this.db
       .prepare(
         `SELECT api_key, model, credit_balance_cents, credit_set_at, credit_spent_micros,
-                credit_exhausted_at, credit_unpriced
+                credit_exhausted_at, credit_unpriced, admin_key
            FROM ai_settings WHERE id = ?`,
       )
       .get(ROW_IDS[provider]) as unknown as Row;
@@ -55,6 +78,7 @@ export class SqliteAiSettingsRepository implements AiSettingsRepository {
       creditSpentMicros: row.credit_spent_micros,
       creditExhaustedAt: row.credit_exhausted_at,
       creditUnpriced: row.credit_unpriced !== 0,
+      encryptedAdminKey: row.admin_key,
     };
   }
 

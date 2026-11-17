@@ -19,7 +19,11 @@ export const useUpdateThumbnailSettings = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: ThumbnailSettingsInput) => thumbnailApi.updateSettings(input),
-    onSuccess: (view) => queryClient.setQueryData(queryKeys.thumbnailSettings(), view),
+    onSuccess: (view) => {
+      queryClient.setQueryData(queryKeys.thumbnailSettings(), view);
+      // La clé OpenAI est aussi celle de l'assistant IA.
+      void queryClient.invalidateQueries({ queryKey: ['aiSettings'] });
+    },
   });
 };
 

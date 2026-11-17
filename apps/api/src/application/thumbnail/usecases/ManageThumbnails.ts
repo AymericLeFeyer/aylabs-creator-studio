@@ -49,6 +49,7 @@ export class ManageThumbnails {
   private readonly client: ThumbnailImageClient;
   private readonly cipher: SecretCipher;
   private readonly envKey: string | null;
+  private readonly assistantKey: () => string | null;
 
   constructor(
     thumbnails: ThumbnailRepository,
@@ -58,6 +59,7 @@ export class ManageThumbnails {
     client: ThumbnailImageClient,
     cipher: SecretCipher,
     envKey: string | null,
+    assistantKey: () => string | null = () => null,
   ) {
     this.thumbnails = thumbnails;
     this.productions = productions;
@@ -66,6 +68,15 @@ export class ManageThumbnails {
     this.client = client;
     this.cipher = cipher;
     this.envKey = envKey;
+    this.assistantKey = assistantKey;
+  }
+
+  /**
+   * La clé OpenAI **propre** aux miniatures (environnement ou écran), sans repli : c'est ce que
+   * l'assistant IA lui emprunte à son tour.
+   */
+  ownKey(): string | null {
+    return this.envKey ?? this.storedKey();
   }
 
   private storedKey(): string | null {
@@ -75,7 +86,9 @@ export class ManageThumbnails {
 
   private keySource(): ThumbnailKeySource {
     if (this.envKey) return 'env';
-    if (!this.thumbnails.settings().encryptedApiKey) return null;
+    if (!this.thumbnails.settings().encryptedApiKey) {
+      return this.assistantKey() ? 'shared' : null;
+    }
     return this.storedKey() === null ? 'unreadable' : 'app';
   }
 
@@ -88,7 +101,7 @@ export class ManageThumbnails {
       quality: settings.quality,
       generalPrompt: settings.generalPrompt,
       secretsKeyConfigured: this.cipher.available,
-      configured: keySource === 'env' || keySource === 'app',
+      configured: keySource === 'env' || keySource === 'app' || keySource === 'shared',
     };
   }
 
@@ -112,9 +125,9 @@ export class ManageThumbnails {
   }
 
   private credentials(): ThumbnailCredentials {
-    const apiKey = this.envKey ?? this.storedKey();
+    const apiKey = this.ownKey() ?? this.assistantKey();
     if (!apiKey) {
-      throw badRequest('Aucune clé OpenAI : renseigne-la dans Paramètres → API → OpenAI.');
+      throw badRequest('Aucune clé OpenAI : renseigne-la dans Paramètres → API → Assistant IA.');
     }
     const { model, quality } = this.thumbnails.settings();
     return { apiKey, model: model ?? DEFAULT_THUMBNAIL_MODEL, quality };

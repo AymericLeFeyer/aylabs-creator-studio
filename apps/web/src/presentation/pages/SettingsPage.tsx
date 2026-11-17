@@ -44,7 +44,6 @@ import { StepsPage } from './StepsPage.tsx';
 import { ScriptSettingsPage } from './ScriptSettingsPage.tsx';
 import { MailSettingsPage } from './MailSettingsPage.tsx';
 import { AiSettingsPage } from './AiSettingsPage.tsx';
-import { OpenAiSettingsPage } from './OpenAiSettingsPage.tsx';
 import { ThumbnailSettingsPage } from './ThumbnailSettingsPage.tsx';
 import { PlanningSettingsPage } from './PlanningSettingsPage.tsx';
 import { InstagramSettingsPage } from './InstagramSettingsPage.tsx';
@@ -169,7 +168,6 @@ const GROUPS: SettingsGroup[] = [
     entries: [
       { id: 'api', label: 'Export & sources', icon: KeyRound, render: () => <ApiSettingsPage /> },
       { id: 'ia', label: 'Assistant IA', icon: Sparkles, render: () => <AiSettingsPage /> },
-      { id: 'openai', label: 'OpenAI', icon: KeyRound, render: () => <OpenAiSettingsPage /> },
     ],
   },
   {
@@ -195,6 +193,8 @@ const ALIASES: Record<string, string> = {
   app: 'general',
   chaines: 'youtube',
   categories: 'chiffre-affaires',
+  // La clé OpenAI se règle désormais avec le reste de l'assistant IA.
+  openai: 'ia',
 };
 
 /**

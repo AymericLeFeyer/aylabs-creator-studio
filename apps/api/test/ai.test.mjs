@@ -44,17 +44,23 @@ test('la migration préserve les identifiants, le modèle et les crédits Anthro
       model: 'claude-sonnet-5',
     });
     assert.equal(ai.view().credit.remainingCents, 998);
-    const gpt = ai.update({ activeProvider: 'openai', apiKey: openAiKey, creditBalance: 20 });
-    assert.equal(gpt.credit.remainingCents, 2000);
+    const gpt = ai.update({
+      defaultProvider: 'openai',
+      provider: 'openai',
+      apiKey: openAiKey,
+      creditBalance: 20,
+    });
+    assert.equal(gpt.providers[1].credit.remainingCents, 2000);
     assert.equal(cipher.decrypt(settings.get('openai').encryptedApiKey, 'ai:openaiKey'), openAiKey);
-    assert.equal(ai.update({ activeProvider: 'anthropic' }).credit.remainingCents, 998);
+    assert.equal(ai.update({ defaultProvider: 'anthropic' }).credit.remainingCents, 998);
     ai.update({ provider: 'openai', model: 'gpt-6-luna' });
-    assert.equal(ai.view().provider, 'anthropic');
-    assert.equal(ai.update({ activeProvider: 'openai' }).model, 'gpt-6-luna');
+    assert.equal(ai.view().defaultProvider, 'anthropic');
+    const luna = ai.update({ defaultProvider: 'openai' });
+    assert.equal(luna.providers[1].model, 'gpt-6-luna');
 
     const managed = new ManageAi(settings, cipher, { anthropic: null, openai: 'key-from-env' });
-    assert.equal(managed.view().keySource, 'env');
-    assert.throws(() => managed.update({ apiKey: null }), { status: 409 });
+    assert.equal(managed.view().providers[1].keySource, 'env');
+    assert.throws(() => managed.update({ provider: 'openai', apiKey: null }), { status: 409 });
     assert.equal(managed.credentials().apiKey, 'key-from-env');
   } finally {
     db.close();
@@ -162,13 +168,14 @@ test('les routes de production et de mails utilisent le fournisseur actif', asyn
   });
 
   const settings = '/api/ai/settings';
-  assert.equal((await request('GET', settings)).provider, 'anthropic');
+  assert.equal((await request('GET', settings)).defaultProvider, 'anthropic');
   const enabled = await request('PATCH', settings, {
-    activeProvider: 'openai',
+    defaultProvider: 'openai',
+    provider: 'openai',
     apiKey: openAiKey,
     creditBalance: 10,
   });
-  assert.equal(enabled.keySource, 'app');
+  assert.equal(enabled.providers[1].keySource, 'app');
   assert.ok(!JSON.stringify(enabled).includes(openAiKey));
   const production = await request(
     'POST',
@@ -229,7 +236,91 @@ test('les routes de production et de mails utilisent le fournisseur actif', asyn
   });
   assert.match((await request('POST', ai + '/titles', {}, 502)).error, /refusé/);
 
-  await request('PATCH', settings, { activeProvider: 'anthropic', apiKey: claudeKey });
+  await request('PATCH', settings, {
+    defaultProvider: 'anthropic',
+    provider: 'anthropic',
+    apiKey: claudeKey,
+  });
   assert.equal((await request('POST', ai + '/description', {})).description, 'Réponse Claude');
   assert.equal((await request('GET', settings)).credit.spentCents, 1);
+
+  // Un fournisseur par tâche : les titres partent chez OpenAI, la description reste chez Claude.
+  const routed = await request('PATCH', settings, { routes: { titles: 'openai' } });
+  assert.equal(routed.tasks.find((task) => task.task === 'titles').effectiveProvider, 'openai');
+  assert.equal(routed.tasks.find((task) => task.task === 'tags').provider, null);
+  assert.equal((await request('POST', ai + '/titles', {})).titles.length, 3);
+  assert.equal((await request('POST', ai + '/description', {})).description, 'Réponse Claude');
+  const cleared = await request('PATCH', settings, { routes: { titles: null } });
+  assert.equal(cleared.tasks.find((task) => task.task === 'titles').provider, null);
+});
+
+test('un choix par tâche exige une clé, et retombe sur le défaut si elle disparaît', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    runMigrations(db);
+    const cipher = new SecretBox(secretsKey);
+    const ai = new ManageAi(new SqliteAiSettingsRepository(db), cipher, {
+      anthropic: null,
+      openai: null,
+    });
+    ai.update({ provider: 'anthropic', apiKey: claudeKey });
+    assert.throws(() => ai.update({ routes: { titles: 'openai' } }), { status: 400 });
+    ai.update({ provider: 'openai', apiKey: openAiKey });
+    ai.update({ routes: { titles: 'openai' } });
+    assert.equal(ai.credentials('titles').provider, 'openai');
+    assert.equal(ai.credentials('tags').provider, 'anthropic');
+    // La clé d'OpenAI part : la tâche retombe sur Claude au lieu de se couper.
+    ai.update({ provider: 'openai', apiKey: null });
+    assert.equal(ai.credentials('titles').provider, 'anthropic');
+    assert.equal(ai.view().tasks.find((task) => task.task === 'titles').provider, 'openai');
+  } finally {
+    db.close();
+  }
+});
+
+test('la clé OpenAI des miniatures sert aussi à l’assistant, et la dépense réelle se lit avec la clé admin', async () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    runMigrations(db);
+    const cipher = new SecretBox(secretsKey);
+    const today = new Date().toISOString().slice(0, 10);
+    const requested = [];
+    const costs = {
+      dailyCostsMicros: async (adminKey, since) => {
+        requested.push([adminKey, since.toISOString().slice(0, 10)]);
+        return [{ day: today, micros: 3_500_000 }];
+      },
+    };
+    const ai = new ManageAi(
+      new SqliteAiSettingsRepository(db),
+      cipher,
+      { anthropic: null, openai: null },
+      { sharedOpenAiKey: () => 'thumbnail-key', costs },
+    );
+    const openai = () => ai.view().providers.find((entry) => entry.provider === 'openai');
+    assert.equal(openai().keySource, 'shared');
+    assert.equal(
+      ai.update({ provider: 'openai', model: 'gpt-6-luna' }) && ai.credentials('script').apiKey,
+      'thumbnail-key',
+    );
+    // La propre clé de l'assistant l'emporte sur celle des miniatures.
+    ai.update({ provider: 'openai', apiKey: openAiKey });
+    assert.equal(openai().keySource, 'app');
+    assert.equal(ai.credentials('script').apiKey, openAiKey);
+
+    assert.equal((await ai.spend()).available, false);
+    ai.update({ provider: 'openai', adminKey: 'admin-key', creditBalance: 20 });
+    assert.equal(openai().adminKeySource, 'app');
+    assert.ok(!JSON.stringify(ai.view()).includes('admin-key'));
+    const spend = await ai.spend();
+    assert.equal(spend.monthCents, 350);
+    assert.equal(spend.sinceNoteCents, 350);
+    assert.equal(spend.remainingCents, 1650);
+    assert.deepEqual(requested[0][0], 'admin-key');
+    // Gardée en mémoire : pas de second appel à OpenAI.
+    await ai.spend();
+    assert.equal(requested.length, 1);
+  } finally {
+    db.close();
+  }
 });

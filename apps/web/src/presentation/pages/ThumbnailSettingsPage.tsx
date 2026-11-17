@@ -142,8 +142,8 @@ export const ThumbnailSettingsPage = () => {
             <>
               {' '}
               La clé se renseigne dans{' '}
-              <Link to="/parametres?onglet=openai" className="underline underline-offset-2">
-                API → OpenAI
+              <Link to="/parametres?onglet=ia" className="underline underline-offset-2">
+                API → Assistant IA
               </Link>
               .
             </>

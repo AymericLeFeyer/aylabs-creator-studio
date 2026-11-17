@@ -28,16 +28,27 @@ L'application démarre sans aucune clé API : ajoute une chaîne en mode **Manue
 
 ## Assistant IA
 
-Dans **Paramètres → API → Assistant IA**, sélectionne **Claude (Anthropic)** ou **GPT (OpenAI)**.
-Le choix s'applique aux outils de rédaction et d'analyse des mails ainsi qu'aux scripts, titres,
-tags et descriptions des fiches vidéo. Les installations existantes démarrent avec Anthropic
-et retrouvent leurs réglages. Chaque fournisseur garde son modèle, sa clé et son suivi de crédits.
+Tout se règle dans **Paramètres → API → Assistant IA** : deux fournisseurs, **Claude
+(Anthropic)** et **GPT (OpenAI)**, chacun avec sa clé, son modèle et son suivi de crédits.
 
-Saisis la clé à l'écran si `SECRETS_KEY` est configurée côté serveur (16 caractères
+Un **fournisseur par défaut** répond à toutes les tâches, et chaque tâche peut être confiée à
+l'autre : script, titres, tags et description des fiches vidéo, rédaction de mails, analyse
+(résumés, vérification des dates). Un fournisseur sans clé ne peut pas être choisi ; si la clé
+d'un fournisseur choisi disparaît, c'est le défaut qui répond. Les installations existantes
+démarrent avec Anthropic et retrouvent leurs réglages.
+
+Saisis les clés à l'écran si `SECRETS_KEY` est configurée côté serveur (16 caractères
 minimum). Tu peux aussi déclarer `ANTHROPIC_API_KEY` ou `OPENAI_ASSISTANT_API_KEY` dans
-`.env` ou dans la stack Portainer. Les miniatures utilisent leur propre réglage et leur
-variable `OPENAI_API_KEY`. Les générations GPT sont facturées par le compte API OpenAI.
-Le modèle proposé pour le texte est `gpt-6.1-sol`.
+`.env` ou dans la stack Portainer.
+
+**OpenAI : une seule clé pour le texte et les miniatures.** Sans clé propre à l'assistant, la
+clé des miniatures (`OPENAI_API_KEY`) est réutilisée, et inversement. Le modèle d'image et la
+qualité se règlent dans la même carte. Les appels sont facturés par le compte API OpenAI.
+
+**Voir la dépense réelle d'OpenAI.** OpenAI ne fournit aucun solde par l'API. Avec une clé
+**admin** (`OPENAI_ADMIN_KEY`, ou saisie dans la carte OpenAI), le studio lit la dépense de
+l'organisation et en déduit ce qu'il reste du solde que tu as noté. Sans elle, il estime à
+partir de ce qu'il consomme lui-même.
 
 ## Connecter Gmail avec OAuth
 

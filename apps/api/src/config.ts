@@ -62,6 +62,8 @@ export interface Config {
   openaiApiKey: string | null;
   /** Clé facultative de l'assistant quand OpenAI est sélectionné. */
   openaiAssistantApiKey: string | null;
+  /** Clé admin OpenAI (facultative) : lit la dépense réelle de l'organisation. */
+  openaiAdminKey: string | null;
   /** Le rythme du relevé de la boîte mail, plus serré que la collecte horaire. */
   mailCron: string;
   /**
@@ -110,6 +112,7 @@ export const loadConfig = (): Config => ({
   anthropicApiKey: optional('ANTHROPIC_API_KEY'),
   openaiApiKey: optional('OPENAI_API_KEY'),
   openaiAssistantApiKey: optional('OPENAI_ASSISTANT_API_KEY'),
+  openaiAdminKey: optional('OPENAI_ADMIN_KEY'),
   mailCron: optional('MAIL_CRON') ?? '*/5 * * * *',
   tiktokClientKey: optional('TIKTOK_CLIENT_KEY'),
   tiktokClientSecret: optional('TIKTOK_CLIENT_SECRET'),

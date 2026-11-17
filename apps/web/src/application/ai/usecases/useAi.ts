@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../queryKeys.ts';
 import { aiApi } from '../../../infrastructure/ai/api/aiApi.ts';
 import type { AiSettingsInput } from '../../../domain/ai/entities/Ai.ts';
 
@@ -8,6 +9,16 @@ export const useAiSettings = () =>
     queryKey: ['aiSettings'],
     queryFn: () => aiApi.settings(),
     refetchInterval: 60_000,
+  });
+
+/** La dépense réelle d'OpenAI : l'API la garde 5 minutes, inutile de la relire plus souvent. */
+export const useAiSpend = (enabled: boolean) =>
+  useQuery({
+    queryKey: ['aiSpend'],
+    queryFn: () => aiApi.spend(),
+    enabled,
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
   });
 
 /**
@@ -20,6 +31,9 @@ export const useUpdateAiSettings = () => {
     mutationFn: (input: AiSettingsInput) => aiApi.update(input),
     onSuccess: (view) => {
       queryClient.setQueryData(['aiSettings'], view);
+      void queryClient.invalidateQueries({ queryKey: ['aiSpend'] });
+      // La clé OpenAI est aussi celle des miniatures.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.thumbnailSettings() });
       void queryClient.invalidateQueries({ queryKey: ['mails'] });
     },
   });

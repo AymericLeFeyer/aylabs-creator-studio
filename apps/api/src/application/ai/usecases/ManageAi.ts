@@ -3,18 +3,30 @@ import type {
   AiCreditView,
   AiKeySource,
   AiProvider,
+  AiProviderView,
+  AiSpendView,
   AiSettingsInput,
   AiSettingsView,
+  AiTask,
   StoredAiSettings,
 } from '../../../domain/ai/entities/Ai.ts';
-import { AI_CREDIT_ALERT_CENTS, AI_PROVIDER_SETTINGS } from '../../../domain/ai/entities/Ai.ts';
+import {
+  AI_CREDIT_ALERT_CENTS,
+  AI_PROVIDER_SETTINGS,
+  AI_PROVIDERS,
+  AI_TASKS,
+} from '../../../domain/ai/entities/Ai.ts';
 import type {
+  AiCostClient,
   AiObserver,
   AiSettingsRepository,
 } from '../../../domain/ai/repositories/AiRepository.ts';
 import { usageCostMicros } from '../../../domain/ai/services/pricing.ts';
 import type { SecretCipher } from '../../../domain/integration/repositories/IntegrationRepository.ts';
 import { badRequest, conflict } from '../../../shared/errors.ts';
+
+const ADMIN_KEY_CONTEXT = 'ai:openaiAdminKey';
+const SPEND_CACHE_MS = 5 * 60_000;
 
 const KEY_CONTEXT = { anthropic: 'ai:apiKey', openai: 'ai:openaiKey' };
 /**
@@ -27,22 +39,65 @@ const LEGACY_KEY_CONTEXT = 'mail:aiKey';
 const MICROS_PER_CENT = 10_000;
 
 /**
- * Les réglages de l'assistant IA, et le **seul** endroit où sa clé est déchiffrée.
- * La clé d'environnement du fournisseur actif l'emporte sur l'écran.
+ * Les réglages de l'assistant IA, et le **seul** endroit où ses clés sont déchiffrées.
+ *
+ * Deux fournisseurs, chacun avec sa clé, son modèle et son solde. Un fournisseur par défaut,
+ * et pour chaque tâche (`AI_TASKS`) un choix facultatif. La clé d'environnement d'un
+ * fournisseur l'emporte sur l'écran.
+ *
+ * **Une seule clé OpenAI pour le texte et les images.** À défaut de sa propre clé, l'assistant
+ * réutilise celle des miniatures (`sharedOpenAiKey`) : on ne la saisit qu'une fois.
  */
 export class ManageAi {
   private readonly settings: AiSettingsRepository;
   private readonly cipher: SecretCipher;
   private readonly envKeys: Record<AiProvider, string | null>;
 
+  private readonly sharedOpenAiKey: () => string | null;
+  private readonly adminKeyEnv: string | null;
+  private readonly costs: AiCostClient | null;
+  private spendCache: { at: number; since: string; view: AiSpendView } | null = null;
+
   constructor(
     settings: AiSettingsRepository,
     cipher: SecretCipher,
     envKeys: Record<AiProvider, string | null>,
+    options: {
+      /** La clé OpenAI des miniatures, réutilisée à défaut de celle de l'assistant. */
+      sharedOpenAiKey?: () => string | null;
+      /** `OPENAI_ADMIN_KEY` : lit la dépense réelle d'OpenAI. */
+      adminKeyEnv?: string | null;
+      costs?: AiCostClient;
+    } = {},
   ) {
     this.settings = settings;
     this.cipher = cipher;
     this.envKeys = envKeys;
+    this.sharedOpenAiKey = options.sharedOpenAiKey ?? (() => null);
+    this.adminKeyEnv = options.adminKeyEnv ?? null;
+    this.costs = options.costs ?? null;
+  }
+
+  private storedAdminKey(): string | null {
+    const { encryptedAdminKey } = this.settings.get('openai');
+    return encryptedAdminKey ? this.cipher.decrypt(encryptedAdminKey, ADMIN_KEY_CONTEXT) : null;
+  }
+
+  private adminKeySource(provider: AiProvider): AiKeySource {
+    if (provider !== 'openai') return null;
+    if (this.adminKeyEnv) return 'env';
+    if (!this.settings.get('openai').encryptedAdminKey) return null;
+    return this.storedAdminKey() === null ? 'unreadable' : 'app';
+  }
+
+  /**
+   * La clé OpenAI **propre** à l'assistant (environnement ou écran), sans repli : c'est ce
+   * que les miniatures lui empruntent, et un repli dans les deux sens bouclerait.
+   */
+  ownOpenAiKey(): string | null {
+    return (
+      this.envKeys.openai ?? this.storedKey('openai', this.settings.get('openai').encryptedApiKey)
+    );
   }
 
   private storedKey(provider: AiProvider, encryptedApiKey: string | null): string | null {
@@ -60,21 +115,72 @@ export class ManageAi {
 
   private keySource(provider: AiProvider, encryptedApiKey: string | null): AiKeySource {
     if (this.envKeys[provider]) return 'env';
-    if (!encryptedApiKey) return null;
-    return this.storedKey(provider, encryptedApiKey) === null ? 'unreadable' : 'app';
+    if (encryptedApiKey)
+      return this.storedKey(provider, encryptedApiKey) === null ? 'unreadable' : 'app';
+    return provider === 'openai' && this.sharedOpenAiKey() ? 'shared' : null;
   }
 
-  view(): AiSettingsView {
-    const provider = this.settings.activeProvider();
+  private apiKeyOf(provider: AiProvider): string | null {
+    const own =
+      this.envKeys[provider] ??
+      this.storedKey(provider, this.settings.get(provider).encryptedApiKey);
+    return own ?? (provider === 'openai' ? this.sharedOpenAiKey() : null);
+  }
+
+  private providerView(provider: AiProvider): AiProviderView {
     const settings = this.settings.get(provider);
     const keySource = this.keySource(provider, settings.encryptedApiKey);
     return {
       provider,
+      label: AI_PROVIDER_SETTINGS[provider].label,
+      envKey: AI_PROVIDER_SETTINGS[provider].envKey,
       keySource,
       model: settings.model ?? AI_PROVIDER_SETTINGS[provider].model,
-      secretsKeyConfigured: this.cipher.available,
-      configured: keySource === 'env' || keySource === 'app',
+      configured: this.ready(provider),
       credit: this.credit(settings),
+      adminKeySource: this.adminKeySource(provider),
+    };
+  }
+
+  private ready(provider: AiProvider): boolean {
+    const source = this.keySource(provider, this.settings.get(provider).encryptedApiKey);
+    return source === 'env' || source === 'app' || source === 'shared';
+  }
+
+  /**
+   * Le fournisseur qui répond à une tâche : son choix s'il est prêt, sinon le défaut, sinon
+   * n'importe lequel qui l'est. Un choix dont la clé a disparu ne doit pas couper la tâche.
+   */
+  private resolve(task: AiTask | undefined): AiProvider {
+    const fallback = this.settings.activeProvider();
+    const chosen = task ? this.settings.routes()[task] : undefined;
+    return (
+      [chosen, fallback, ...AI_PROVIDERS].find(
+        (provider): provider is AiProvider => !!provider && this.ready(provider),
+      ) ?? fallback
+    );
+  }
+
+  view(): AiSettingsView {
+    const defaultProvider = this.settings.activeProvider();
+    const routes = this.settings.routes();
+    const providers = AI_PROVIDERS.map((provider) => this.providerView(provider));
+    const ready = providers.filter((entry) => entry.configured);
+    const byId = (provider: AiProvider) => providers.find((entry) => entry.provider === provider)!;
+    return {
+      defaultProvider,
+      providers,
+      tasks: AI_TASKS.map((task) => ({
+        task: task.id,
+        group: task.group,
+        label: task.label,
+        description: task.description,
+        provider: routes[task.id] ?? null,
+        effectiveProvider: this.resolve(task.id),
+      })),
+      secretsKeyConfigured: this.cipher.available,
+      configured: ready.length > 0,
+      credit: (ready.find((entry) => entry.credit.low) ?? byId(defaultProvider)).credit,
     };
   }
 
@@ -117,7 +223,7 @@ export class ManageAi {
   }
 
   update(input: AiSettingsInput): AiSettingsView {
-    const provider = input.provider ?? input.activeProvider ?? this.settings.activeProvider();
+    const provider = input.provider ?? this.settings.activeProvider();
     const patch: Partial<StoredAiSettings> = {};
     if (input.apiKey !== undefined) {
       if (this.envKeys[provider]) {
@@ -141,21 +247,112 @@ export class ManageAi {
       patch.creditSpentMicros = 0;
       patch.creditExhaustedAt = null;
       patch.creditUnpriced = false;
+      this.spendCache = null;
     }
-    this.settings.update(provider, patch, input.activeProvider);
+    if (input.adminKey !== undefined) {
+      if (provider !== 'openai') throw badRequest('Seul OpenAI a une clé admin.');
+      if (this.adminKeyEnv) {
+        throw conflict(
+          'La clé admin vient de OPENAI_ADMIN_KEY : elle se change dans l’environnement.',
+        );
+      }
+      patch.encryptedAdminKey = input.adminKey
+        ? this.cipher.encrypt(input.adminKey, ADMIN_KEY_CONTEXT)
+        : null;
+      this.spendCache = null;
+    }
+    for (const [task, chosen] of Object.entries(input.routes ?? {})) {
+      if (chosen && !this.ready(chosen)) {
+        throw badRequest(
+          `${AI_PROVIDER_SETTINGS[chosen].label} n’a pas de clé : renseigne-la avant de lui confier une tâche.`,
+        );
+      }
+      this.settings.setRoute(task as AiTask, chosen ?? null);
+    }
+    this.settings.update(provider, patch, input.defaultProvider);
     return this.view();
   }
 
-  /** La clé en clair et le modèle, pour un appel. 400 tant que rien n'est configuré. */
-  credentials(): AiCredentials {
-    const provider = this.settings.activeProvider();
-    const { encryptedApiKey, model } = this.settings.get(provider);
-    const apiKey = this.envKeys[provider] ?? this.storedKey(provider, encryptedApiKey);
+  /**
+   * La dépense réelle d'OpenAI, lue avec la clé admin, gardée cinq minutes (la vue se relit
+   * chaque minute, l'API d'OpenAI n'a pas à l'être). Un échec est **rendu**, pas levé : une
+   * clé admin refusée ne doit pas casser l'écran, il doit dire pourquoi.
+   */
+  async spend(): Promise<AiSpendView> {
+    const none: AiSpendView = {
+      available: false,
+      monthCents: null,
+      sinceNoteCents: null,
+      remainingCents: null,
+      error: null,
+      fetchedAt: null,
+    };
+    const adminKey = this.adminKeyEnv ?? this.storedAdminKey();
+    if (!adminKey || !this.costs) return none;
+
+    const { creditBalanceCents, creditSetAt } = this.settings.get('openai');
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const noteDay = creditSetAt ? creditSetAt.slice(0, 10) : null;
+    const since =
+      noteDay && new Date(`${noteDay}T00:00:00Z`) < monthStart
+        ? new Date(`${noteDay}T00:00:00Z`)
+        : monthStart;
+    const cacheKey = `${since.toISOString()}|${noteDay}|${creditBalanceCents}`;
+    if (
+      this.spendCache &&
+      this.spendCache.since === cacheKey &&
+      Date.now() - this.spendCache.at < SPEND_CACHE_MS
+    ) {
+      return this.spendCache.view;
+    }
+
+    let view: AiSpendView;
+    try {
+      const days = await this.costs.dailyCostsMicros(adminKey, since);
+      const sum = (from: Date | null) =>
+        days
+          .filter((day) => !from || day.day >= from.toISOString().slice(0, 10))
+          .reduce((total, day) => total + day.micros, 0);
+      const toCents = (micros: number) => Math.ceil(micros / MICROS_PER_CENT);
+      // Le jour de la note est compté en entier : le coût n'est connu qu'à la journée, et
+      // mieux vaut annoncer un reste un peu bas que trop haut.
+      const sinceNote = noteDay ? toCents(sum(new Date(`${noteDay}T00:00:00Z`))) : null;
+      view = {
+        available: true,
+        monthCents: toCents(sum(monthStart)),
+        sinceNoteCents: sinceNote,
+        remainingCents:
+          creditBalanceCents !== null && sinceNote !== null
+            ? Math.max(0, creditBalanceCents - sinceNote)
+            : null,
+        error: null,
+        fetchedAt: now.toISOString(),
+      };
+    } catch (error) {
+      return {
+        ...none,
+        available: true,
+        error: error instanceof Error ? error.message : 'Lecture des coûts impossible.',
+      };
+    }
+    this.spendCache = { at: Date.now(), since: cacheKey, view };
+    return view;
+  }
+
+  /**
+   * La clé en clair et le modèle, pour un appel. `task` désigne ce que l'appelant fait : le
+   * fournisseur choisi pour elle répond. 400 tant qu'aucun fournisseur n'est configuré.
+   */
+  credentials(task?: AiTask): AiCredentials {
+    const provider = this.resolve(task);
+    const apiKey = this.apiKeyOf(provider);
     if (!apiKey) {
       throw badRequest(
         `Aucune clé API ${AI_PROVIDER_SETTINGS[provider].label} : renseigne-la dans Paramètres → API → Assistant IA.`,
       );
     }
+    const { model } = this.settings.get(provider);
     return { provider, apiKey, model: model ?? AI_PROVIDER_SETTINGS[provider].model };
   }
 }

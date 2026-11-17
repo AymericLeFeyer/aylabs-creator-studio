@@ -25,7 +25,8 @@ const EXTENSIONS: Record<string, string> = {
 };
 
 const errorMessage = (status: number, body: ImagesResponse): string => {
-  if (status === 401) return 'OpenAI refuse la clé : vérifie-la dans Paramètres → API → OpenAI.';
+  if (status === 401)
+    return 'OpenAI refuse la clé : vérifie-la dans Paramètres → API → Assistant IA.';
   if (body.error?.code === 'moderation_blocked') {
     return 'OpenAI a refusé cette demande (modération). Reformule le prompt ou change d’image.';
   }

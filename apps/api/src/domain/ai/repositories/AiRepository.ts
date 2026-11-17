@@ -1,7 +1,18 @@
-import type { AiCredentials, AiProvider, AiUsage, StoredAiSettings } from '../entities/Ai.ts';
+import type {
+  AiCredentials,
+  AiProvider,
+  AiTask,
+  AiUsage,
+  StoredAiSettings,
+} from '../entities/Ai.ts';
 
 export interface AiSettingsRepository {
+  /** Le fournisseur par défaut. */
   activeProvider(): AiProvider;
+  /** Le fournisseur choisi pour chaque tâche qui en a un. */
+  routes(): Partial<Record<AiTask, AiProvider>>;
+  /** `null` rend la tâche au fournisseur par défaut. */
+  setRoute(task: AiTask, provider: AiProvider | null): void;
   get(provider: AiProvider): StoredAiSettings;
   update(provider: AiProvider, patch: Partial<StoredAiSettings>, activate?: AiProvider): void;
   /** Ajoute au compteur, sans lire ni réécrire : deux appels simultanés ne s'écrasent pas. */
@@ -28,4 +39,9 @@ export interface AiRequest {
 /** Le modèle : une requête, une réponse. Aucun outil, aucun effet de bord. */
 export interface AiClient {
   complete(credentials: AiCredentials, request: AiRequest): Promise<string>;
+}
+
+/** La dépense d'OpenAI par jour (UTC), lue avec la clé admin. */
+export interface AiCostClient {
+  dailyCostsMicros(adminKey: string, since: Date): Promise<Array<{ day: string; micros: number }>>;
 }

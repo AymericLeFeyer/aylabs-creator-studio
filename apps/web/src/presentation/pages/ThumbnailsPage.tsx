@@ -148,8 +148,8 @@ export const ThumbnailsPage = () => {
             {settings && !settings.configured && (
               <p className="text-sm text-muted-foreground">
                 Pour générer, ajoute ta clé dans{' '}
-                <Link to="/parametres?onglet=openai" className="underline underline-offset-2">
-                  Paramètres → API → OpenAI
+                <Link to="/parametres?onglet=ia" className="underline underline-offset-2">
+                  Paramètres → API → Assistant IA
                 </Link>
                 .
               </p>

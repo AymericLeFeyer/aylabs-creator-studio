@@ -1,6 +1,7 @@
 export type ThumbnailFormat = '16:9' | '9:16';
 export type ThumbnailQuality = 'low' | 'medium' | 'high';
-export type ThumbnailKeySource = 'env' | 'app' | 'unreadable' | null;
+/** `shared` : la clé OpenAI de l'assistant IA, réutilisée pour les images. */
+export type ThumbnailKeySource = 'env' | 'app' | 'shared' | 'unreadable' | null;
 
 export const DEFAULT_THUMBNAIL_MODEL = 'gpt-image-2.5-sunburst';
 export const DEFAULT_THUMBNAIL_QUALITY: ThumbnailQuality = 'high';

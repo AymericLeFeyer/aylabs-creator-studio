@@ -1,3 +1,4 @@
+import type { AiTask } from '../../../domain/ai/entities/Ai.ts';
 import type { AiClient } from '../../../domain/ai/repositories/AiRepository.ts';
 import { sanitizeNoteHtml } from '../../../domain/mail/services/threading.ts';
 import type { ProductionView } from '../../../domain/production/entities/Production.ts';
@@ -81,8 +82,8 @@ export class ProductionAssistant {
     return text;
   }
 
-  private ask(system: string, prompt: string, schema?: Record<string, unknown>) {
-    return this.ai.complete(this.settings.credentials(), { system, prompt, schema });
+  private ask(task: AiTask, system: string, prompt: string, schema?: Record<string, unknown>) {
+    return this.ai.complete(this.settings.credentials(task), { system, prompt, schema });
   }
 
   /**
@@ -95,13 +96,14 @@ export class ProductionAssistant {
   ): Promise<string> {
     const production = this.production(id);
     const context = input.script.trim() ? `\n\nScript actuel :\n${input.script}` : '';
-    const task = input.selection
+    const instruction = input.selection
       ? `Passage à réécrire :\n${input.selection}\n\nRends uniquement ce passage réécrit, pas le reste du script.`
       : 'Rends uniquement le texte à ajouter au script.';
     const html = sanitizeNoteHtml(
       await this.ask(
+        'script',
         SCRIPT_SYSTEM,
-        `Vidéo : ${production.title}${context}\n\n${task}\n\nDemande : ${input.prompt}`,
+        `Vidéo : ${production.title}${context}\n\n${instruction}\n\nDemande : ${input.prompt}`,
       ),
     );
     if (!html) throw upstream('L’IA n’a rien répondu.');
@@ -111,6 +113,7 @@ export class ProductionAssistant {
   async titles(id: string, avoid: string[]): Promise<string[]> {
     const production = this.production(id);
     const raw = await this.ask(
+      'titles',
       `${BASE_SYSTEM}\n\nTu proposes trois titres YouTube très différents les uns des autres dans leur angle. Chacun donne envie de cliquer sans mentir sur le contenu, et tient en 70 caractères environ, 100 au grand maximum.`,
       `Titre de travail : ${production.title}\n\nScript :\n${this.scriptOf(production)}${avoidBlock(avoid)}`,
       TITLES_SCHEMA,
@@ -126,6 +129,7 @@ export class ProductionAssistant {
   async tags(id: string): Promise<{ tags: string[]; hashtags: string[] }> {
     const production = this.production(id);
     const raw = await this.ask(
+      'tags',
       `${BASE_SYSTEM}\n\nTu prépares le référencement d’une vidéo YouTube : une quinzaine de tags (les recherches qu’un spectateur taperait, du plus précis au plus général) et trois à cinq hashtags, du plus important au moins important.`,
       `Titre : ${production.publishTitle || production.title}\n\nScript :\n${this.scriptOf(production)}`,
       TAGS_SCHEMA,
@@ -140,6 +144,7 @@ export class ProductionAssistant {
   async description(id: string, avoid: string[]): Promise<string> {
     const production = this.production(id);
     return this.ask(
+      'description',
       `${BASE_SYSTEM}\n\nTu écris le début de la description YouTube : deux à trois phrases qui disent ce que le spectateur va voir, la première étant celle qui s’affiche avant « Plus ». Texte brut, sans lien, sans hashtag, sans emoji, sans guillemets autour.`,
       `Titre : ${production.publishTitle || production.title}\n\nScript :\n${this.scriptOf(production)}${avoidBlock(avoid)}`,
     );

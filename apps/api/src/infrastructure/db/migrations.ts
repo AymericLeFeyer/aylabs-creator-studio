@@ -2272,6 +2272,21 @@ const migrations: Migration[] = [
       ALTER TABLE mail_settings ADD COLUMN gmail_oauth TEXT;
     `,
   },
+  {
+    version: 72,
+    name: 'assistant IA : un fournisseur par tache',
+    up: `
+      -- Le fournisseur choisi pour une tache (script, titres, redaction de mails...).
+      -- Pas de ligne = le fournisseur par defaut (ai_settings.active_provider). Une ligne
+      -- par tache et non une colonne : ajouter une tache ne demande aucune migration.
+      -- Cle admin OpenAI (chiffree), facultative : seule a pouvoir lire la depense reelle.
+      ALTER TABLE ai_settings ADD COLUMN admin_key TEXT;
+      CREATE TABLE ai_task_routes (
+        task     TEXT PRIMARY KEY,
+        provider TEXT NOT NULL CHECK (provider IN ('anthropic', 'openai'))
+      );
+    `,
+  },
 ];
 
 /**

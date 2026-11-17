@@ -7,6 +7,7 @@ import type {
   MailThreadView,
 } from '../../../domain/mail/entities/Mail.ts';
 import type { MailStore } from '../../../domain/mail/repositories/MailRepository.ts';
+import type { AiTask } from '../../../domain/ai/entities/Ai.ts';
 import type { AiClient } from '../../../domain/ai/repositories/AiRepository.ts';
 import type { ProductionRepository } from '../../../domain/production/repositories/ProductionRepository.ts';
 import type { TodoLinkRepository } from '../../../domain/todoApp/repositories/TodoRepository.ts';
@@ -100,8 +101,13 @@ export class MailAssistant {
     this.todoLinks = deps.todoLinks;
   }
 
-  private async ask(system: string, prompt: string, schema?: Record<string, unknown>) {
-    return this.ai.complete(this.settings.credentials(), {
+  private async ask(
+    task: AiTask,
+    system: string,
+    prompt: string,
+    schema?: Record<string, unknown>,
+  ) {
+    return this.ai.complete(this.settings.credentials(task), {
       system: `${BASE_SYSTEM(this.mail.writingContext().fromName)}\n\n${system}`,
       prompt,
       schema,
@@ -112,6 +118,7 @@ export class MailAssistant {
     const message = this.store.findMessage(id);
     if (!message) throw notFound('Message');
     const text = await this.ask(
+      'mail_analysis',
       'Résume le message en français, en trois à cinq puces courtes commençant par « - » : qui écrit, ce qui est proposé ou demandé, les chiffres et dates cités, ce qui est attendu de moi. Texte brut, pas de titre.',
       `De : ${message.from.name} <${message.from.address}>\nObjet : ${message.subject}\nDate : ${message.date}\n\n${stripQuoted(bodyText(message))}`,
     );
@@ -126,6 +133,7 @@ export class MailAssistant {
     switch (request.action) {
       case 'summarize': {
         const text = await this.ask(
+          'mail_analysis',
           'Résume l’ensemble du fil en français. Texte brut, puces commençant par « - ». Donne : l’objet de l’échange et l’interlocuteur, où en est la discussion, ce qui a été convenu (montants, dates, livrables), et ce qui reste en suspens — en précisant qui doit répondre à qui.',
           transcript,
         );
@@ -134,6 +142,7 @@ export class MailAssistant {
       }
       case 'follow_up':
         return this.ask(
+          'mail_reply',
           `Propose un message de relance pour ce fil, à envoyer en réponse au dernier message. Tiens compte de qui attend quoi : si j’attends une réponse, relance poliment en rappelant l’objet ; si c’est moi qui suis en retard, excuse-toi brièvement et avance.\n- ${DRAFT_RULES}`,
           transcript,
         );
@@ -142,6 +151,7 @@ export class MailAssistant {
           throw badRequest('Écris d’abord ce que la réponse doit dire.');
         }
         return this.ask(
+          'mail_reply',
           `${INTENTS[request.intent](this.mail.writingContext().rates)}\n- ${DRAFT_RULES}`,
           request.notes?.trim()
             ? `${transcript}\n\n### Mes indications pour la réponse\n${request.notes.trim()}`
@@ -153,6 +163,7 @@ export class MailAssistant {
           ? `en ${request.language.trim()}`
           : 'dans la langue du dernier message reçu de l’interlocuteur dans le fil ci-dessous';
         return this.ask(
+          'mail_reply',
           `Traduis le brouillon ${target}. Garde le sens, le ton et la mise en forme (paragraphes, listes), ainsi que les champs entre crochets tels quels. Rends uniquement la traduction, en texte brut, sans commentaire.`,
           `## Fil (pour le contexte et la langue)\n${transcript}\n\n## Brouillon à traduire\n${request.text}`,
         );
@@ -160,6 +171,7 @@ export class MailAssistant {
       case 'refine':
         // Un ajustement, pas une réécriture : ce qui n'est pas visé doit rester mot pour mot.
         return this.ask(
+          'mail_reply',
           [
             'Applique au brouillon uniquement la modification demandée. Tout le reste reste mot pour mot : mêmes phrases, même ordre, mêmes paragraphes, même langue, mêmes champs entre crochets.',
             'Ne reformule rien d’autre, ne corrige pas le style, n’ajoute ni formule ni signature. N’invente aucun montant, date ou engagement : ce qui manque devient un champ entre crochets.',
@@ -200,6 +212,7 @@ export class MailAssistant {
     ].join('\n');
 
     const raw = await this.ask(
+      'mail_analysis',
       [
         'Lis ce fil et relève toutes les échéances qui m’engagent, MOI : livrer un brouillon ou un script, tourner, publier, répondre avant une date, envoyer une facture, renvoyer un produit, valider quelque chose. Pas les échéances de l’interlocuteur, sauf s’il faut le relancer à une date précise.',
         'Résous chaque date relative (« mercredi », « fin du mois », « sous 10 jours ») par rapport à la date du message où elle apparaît, et rends-la au format AAAA-MM-JJ.',
@@ -323,6 +336,7 @@ export class MailAssistant {
 
     const html = sanitizeNoteHtml(
       await this.ask(
+        'mail_analysis',
         [
           'Rédige, en français, une note de travail pour la fiche de la vidéo concernée par ces échanges.',
           'Format : du HTML simple, uniquement les balises h2, h3, p, ul, li, strong, em. Pas de bloc de code, pas de texte hors HTML.',

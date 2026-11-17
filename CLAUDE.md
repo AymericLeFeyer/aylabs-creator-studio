@@ -2603,19 +2603,40 @@ reçus non lus (neutre). `ProductionDetailPage` accepte `?onglet=notes`.
 
 ### `ai` — l'assistant IA du studio
 
-`StoredAiSettings { encryptedApiKey, model, … }` — table `ai_settings`, une ligne par
-fournisseur depuis la migration 69. La ligne historique `default` porte les réglages
-Anthropic et le fournisseur actif. Réglé dans
-**Paramètres → API → Assistant IA** (`AiSettingsPage`) : un domaine à part et non un
-réglage des mails, pour servir à d'autres modules plus tard.
+Deux fournisseurs, **Claude (Anthropic)** et **GPT (OpenAI)**, réglés au même endroit :
+**Paramètres → API → Assistant IA** (`AiSettingsPage`, composants dans
+`presentation/components/ai/`). Un domaine à part et non un réglage des mails : tout module
+qui a besoin d'une IA passe par `ManageAi`.
 
-- `ManageAi` — `view()` (`{ provider, keySource, model, secretsKeyConfigured, configured, credit }`),
-  `update({ activeProvider?, provider?, apiKey?, model?, creditBalance? })`, `configured()`, `credentials()`
-  (400 sans clé). **Seul endroit où la clé est déchiffrée** (contexte `ai:apiKey` pour
-  Anthropic, `ai:openaiKey` pour OpenAI). La clé Anthropic héritée des mails,
-  chiffrée sous `mail:aiKey`, est relue sous l'ancien contexte puis **rechiffrée** à la
-  première lecture. `ANTHROPIC_API_KEY` et `OPENAI_ASSISTANT_API_KEY` l'emportent pour leurs
-  fournisseurs respectifs (409 à l'écran). Les miniatures ont leur propre clé `OPENAI_API_KEY`.
+`StoredAiSettings { encryptedApiKey, model, crédits…, encryptedAdminKey }` — table
+`ai_settings`, une ligne par fournisseur (migration 70 ; la ligne historique `default` porte
+Anthropic **et** le fournisseur par défaut, `active_provider`). `ai_task_routes (task,
+provider)` (migration 72) : le fournisseur choisi pour une tâche ; **pas de ligne = le
+fournisseur par défaut**.
+
+**Un fournisseur par tâche.** `AI_TASKS` (`domain/ai/entities/Ai.ts`) liste ce que l'assistant
+sait faire — `script`, `titles`, `tags`, `description` (fiche de vidéo), `mail_reply`
+(brouillons, relances, traductions, ajustements), `mail_analysis` (résumés, vérification des
+dates, note « Échanges ») — avec libellé, groupe et description, **servis par l'API** : l'écran
+ne duplique rien, ajouter une tâche = une ligne ici + un `task` à l'appel. Tout appel passe
+`credentials(task)` ; `resolve` choisit **le choix de la tâche s'il est prêt, sinon le défaut,
+sinon n'importe quel fournisseur prêt** — une clé qui disparaît ne coupe donc pas une tâche
+(l'écran le signale sur la ligne). Choisir un fournisseur sans clé est refusé en 400.
+
+- `ManageAi` — `view()` (`{ defaultProvider, providers[], tasks[], secretsKeyConfigured,
+  configured, credit }`), `update({ provider?, defaultProvider?, routes?, apiKey?, adminKey?,
+  model?, creditBalance? })`, `configured()` (au moins un fournisseur prêt), `credentials(task?)`
+  (400 sans clé), `spend()`. **Seul endroit où les clés sont déchiffrées** (contextes
+  `ai:apiKey` pour Anthropic, `ai:openaiKey`, `ai:openaiAdminKey`). `view().credit` est le solde
+  le plus bas parmi les fournisseurs prêts : c'est lui qui allume la pastille du menu. La clé
+  Anthropic héritée des mails, chiffrée sous `mail:aiKey`, est relue sous l'ancien contexte puis
+  **rechiffrée** à la première lecture. `ANTHROPIC_API_KEY` et `OPENAI_ASSISTANT_API_KEY`
+  l'emportent pour leurs fournisseurs (409 à l'écran).
+- **Une seule clé OpenAI pour le texte et les images.** À défaut de sa propre clé,
+  l'assistant réutilise celle des miniatures (`keySource: 'shared'`, `ManageThumbnails.ownKey()`),
+  et les miniatures réutilisent celle de l'assistant. `ownKey()` / `ownOpenAiKey()` ne se
+  replient **jamais** : un repli dans les deux sens bouclerait. Le modèle d'image et la qualité
+  se règlent dans la carte OpenAI (`ThumbnailSettingsBlock`) ; `?onglet=openai` renvoie ici.
 - `AiClient.complete(credentials, { system, prompt, schema? })` — `ClaudeAiClient` (SDK
   officiel, `claude-opus-5` par défaut, `fallbacks: 'default'` sur Opus 5 / Fable
   seulement). Avec `schema`, réponse contrainte par `output_config.format` (structured
@@ -2624,11 +2645,18 @@ réglage des mails, pour servir à d'autres modules plus tard.
 - `OpenAiTextClient` utilise `fetch` et `/v1/responses` (`gpt-6.1-sol` par défaut,
   `store: false`). Les schémas passent par `text.format` en mode strict. Les réponses
   incomplètes et les refus produisent une erreur avant l'application du résultat.
+- **La dépense réelle d'OpenAI** (`spend()`, `GET /api/ai/spend`, `OpenAiCostClient`) : OpenAI
+  n'a **aucune API de solde**, seule la **clé admin** (`OPENAI_ADMIN_KEY`, ou saisie à l'écran,
+  chiffrée) lit `GET /v1/organization/costs` — la dépense de l'organisation entière, par jour
+  (UTC). Le reste affiché = solde noté − dépense depuis le jour de la note (le jour est compté
+  en entier : mieux vaut un reste un peu bas que trop haut). Gardée 5 minutes en mémoire ; un
+  échec est **rendu** (`error`), pas levé, pour ne pas casser l'écran. Sans clé admin, l'estimation
+  du studio (ci-dessous) reste seule.
+- `GET` / `PATCH /api/ai/settings`. Front : `useAiSettings`, `useUpdateAiSettings`
+  (invalide aussi `['mails']` : `aiConfigured` y est lu, `['aiSpend']` et les réglages des
+  miniatures ; `useAiSettings` se relit chaque minute, tout appel à l'IA entamant le solde).
 - OpenAI a son propre relevé et sa propre estimation des crédits. Une consommation dont le
   tarif est inconnu suspend l'estimation du reste jusqu'au prochain relevé.
-- `GET` / `PATCH /api/ai/settings`. Front : `useAiSettings`, `useUpdateAiSettings`
-  (invalide aussi `['mails']` : `aiConfigured` y est lu ; `useAiSettings` se relit chaque
-  minute, tout appel à l'IA entamant le solde).
 - **Les crédits sont une ESTIMATION** (`AiCreditView`, migration 56) : l'API d'Anthropic
   n'expose aucun solde, seule la Console l'affiche (l'Admin API donne des coûts, pas un
   solde, et n'existe pas sur un compte individuel). On note le solde relevé
@@ -2676,7 +2704,7 @@ de `PublicationPanel`, qui reste à enregistrer. Boutons absents sans clé.
 `thumbnail:openaiKey`), modèle, qualité, prompt général. Migration 59. Images en BLOB, que
 les listes ne lisent jamais.
 
-- **Réglages** : clé, modèle, qualité dans Paramètres → API → OpenAI (`OpenAiSettingsPage`) ;
+- **Réglages** : clé (la même que l'assistant IA), modèle d'image, qualité dans Paramètres → API → Assistant IA, carte OpenAI ;
   banque et prompt général dans Paramètres → Production → Miniatures
   (`ThumbnailSettingsPage`). `OPENAI_API_KEY` l'emporte sur l'écran (409).
 - `ManageThumbnails` — `view()`, `update(input)`, `listAssets()`, `addAsset(label, data)`,
@@ -3070,8 +3098,9 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST` | `/api/mails/threads/:id/move` | `{ folder }` → range le fil sur le serveur (IMAP `MOVE`). 400 si le dossier n'est pas dans `moveFolders` |
 | `POST` | `/api/mails/threads/:id/trash` | Met le fil à la corbeille **du serveur** (récupérable). 400 sans dossier corbeille |
 | `POST` | `/api/mails/threads/:id/check-dates` | `?today=` (jour local) → `MailDateCheck` : résumé, tâches posées dans Todo, incohérences avec la vidéo |
-| `GET` | `/api/ai/settings` | `{ keySource, model, secretsKeyConfigured, configured, credit }` — la clé n'en sort jamais |
-| `PATCH` | `/api/ai/settings` | `{ activeProvider?, provider?, apiKey?, model?, creditBalance? }` — `activeProvider` change le fournisseur actif. `provider` cible les réglages, par défaut ceux du fournisseur actif. `apiKey: null` efface (409 si la clé vient de l'environnement). `creditBalance` : solde relevé **en dollars**, remet la consommation à zéro |
+| `GET` | `/api/ai/settings` | `{ defaultProvider, providers[], tasks[], secretsKeyConfigured, configured, credit }` — aucune clé n'en sort, seulement sa provenance (`env` \| `app` \| `shared` \| `unreadable`) |
+| `GET` | `/api/ai/spend` | La dépense réelle d'OpenAI (clé admin) : `{ available, monthCents, sinceNoteCents, remainingCents, error, fetchedAt }`. Toujours 200, l'erreur est dans le corps |
+| `PATCH` | `/api/ai/settings` | `{ provider?, defaultProvider?, routes?, apiKey?, adminKey?, model?, creditBalance? }` — `provider` cible la clé, le modèle ou le solde (défaut : le fournisseur par défaut). `defaultProvider` change le défaut. `routes` : `{ <tâche>: 'anthropic' \| 'openai' \| null }`, 400 si le fournisseur n'a pas de clé. `apiKey: null` efface (409 si la clé vient de l'environnement). `adminKey` : OpenAI seulement. `creditBalance` : solde relevé **en dollars**, remet la consommation à zéro |
 | `GET` | `/api/mails/addresses` | Adresses vues dans la boîte : `[{ address, received, sent }]`, les 60 plus fréquentes — à cocher comme adresses suivies |
 | `GET` | `/api/mails/stats` | `{ configured, aiConfigured, unread, lastSyncAt, lastSyncError }` — la pastille, relue chaque minute |
 | `POST` | `/api/mails/sync` | Relevé immédiat. `{ created, error, stats }` |
@@ -3905,6 +3934,10 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 72** ajoute `ai_task_routes` (le fournisseur IA choisi par tâche) et `ai_settings.admin_key` (clé admin OpenAI, chiffrée).
+- **Migration 71** ajoute `mail_settings.auth_mode` et `gmail_oauth` (connexion Gmail par OAuth).
+- **Migration 70** ajoute `ai_settings.active_provider`, `credit_unpriced` et la ligne `openai` (un fournisseur IA de plus).
+- **Migration 69** ajoute `production_workspace_images` (tête et produit d'une vidéo, pour les miniatures).
 - **Migration 67** ajoute `post_drafts.publish_options` (JSON, `'{}'`) et la table `post_draft_covers`.
 - **Migration 66** ajoute à `post_drafts` `upload_id` (→ `publish_uploads`, `ON DELETE SET NULL`), `scheduled_at`, `platforms` (`'youtube,instagram,tiktok'` par défaut) et `publish_started_at`, plus un index partiel sur `scheduled_at`.
 - **Migration 65** ajoute `tiktok_connections` (connexions OAuth TikTok, jetons chiffrés).
@@ -4886,7 +4919,7 @@ Images publiées sur GHCR par `.github/workflows/release.yml` :
 
 `release.yml` appelle `ci.yml` (`workflow_call`) en job `check` avant de builder : **aucune image n'est publiée si le typage, le lint, le format ou le build échouent**. C'est pour ça que `ci.yml` ne se déclenche plus sur `push: main` — sinon les vérifications tourneraient deux fois pour un même commit. Un `concurrency` annule la build précédente encore en cours sur la même ref, pour que deux pushes rapprochés ne se disputent pas le tag `latest`.
 
-Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, `PUBLIC_URL` (adresse publique, pour les liens rendus par le MCP), `OPENAI_API_KEY` (facultative, les miniatures), `PUBLISH_S3_ENDPOINT` / `PUBLISH_S3_BUCKET` / `PUBLISH_S3_ACCESS_KEY_ID` / `PUBLISH_S3_SECRET_ACCESS_KEY` / `PUBLISH_S3_REGION` (défaut `auto`) (facultatives : le stockage éphémère des Reels, bucket R2 **privé** avec une règle d'expiration d'un jour sur `publish/`), `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` / `TIKTOK_REDIRECT_URI` (facultatives : l'app TikTok sandbox, publication depuis Production → Shorts), **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Facultatifs pour la boîte mail : `MAIL_PASSWORD`, `MAIL_CRON` (défaut `*/5 * * * *`) et `ANTHROPIC_API_KEY` (l'assistant), qui l'emportent sur Paramètres → Admin → Mails. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
+Sur le VPS, stack Portainer à partir de `docker-compose.yml`. Variables : `YOUTUBE_API_KEY`, `GCP_CLIENT_ID`, `GCP_CLIENT_SECRET`, `WEB_PORT`, `TAG`, `PUBLIC_URL` (adresse publique, pour les liens rendus par le MCP), `OPENAI_API_KEY` (facultative, les miniatures), `OPENAI_ASSISTANT_API_KEY` (facultative, l'assistant IA ; sinon la clé des miniatures sert aux deux), `OPENAI_ADMIN_KEY` (facultative, lit la dépense réelle d'OpenAI), `PUBLISH_S3_ENDPOINT` / `PUBLISH_S3_BUCKET` / `PUBLISH_S3_ACCESS_KEY_ID` / `PUBLISH_S3_SECRET_ACCESS_KEY` / `PUBLISH_S3_REGION` (défaut `auto`) (facultatives : le stockage éphémère des Reels, bucket R2 **privé** avec une règle d'expiration d'un jour sur `publish/`), `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` / `TIKTOK_REDIRECT_URI` (facultatives : l'app TikTok sandbox, publication depuis Production → Shorts), **`SECRETS_KEY`** (chiffre les secrets saisis dans Paramètres → API, 16 caractères minimum — la perdre ou la changer oblige à les ressaisir), et facultativement les identifiants de l'export (`AMAZON_*`, `DOMADOO_*`, `DISCORD_SERVER_CODE`, `TIKTOK_USERNAME`), qui l'emportent sur l'écran, ainsi que `TODO_BASE_URL` / `TODO_API_KEY` (l'app Todo affichée dans le planning, et où le studio pose ses tâches de sortie et de légal ; `APP_TIMEZONE`, défaut `Europe/Paris`, décide du jour de ces tâches — **le conteneur de l'API doit pouvoir joindre Todo**, qui vit sur le homelab derrière VPN). Facultatifs pour la boîte mail : `MAIL_PASSWORD`, `MAIL_CRON` (défaut `*/5 * * * *`) et `ANTHROPIC_API_KEY` (l'assistant), qui l'emportent sur Paramètres → Admin → Mails. Le volume `creator-studio-data` porte la base — **ne pas le supprimer entre deux déploiements**.
 
 Home Assistant lit l'export par nginx, sur le même port que le front : `http://<vps>:${WEB_PORT}/api/export`, avec `Authorization: Bearer acs_…`. Rien de plus à exposer. Le MCP passe par le même chemin : `claude mcp add --transport http aylabs-studio https://<studio>/api/mcp --header "Authorization: Bearer acs_…"`.
 

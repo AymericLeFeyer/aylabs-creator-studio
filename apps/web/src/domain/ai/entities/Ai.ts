@@ -5,13 +5,15 @@
  * ont besoin (la boîte mail, pour l'instant). La clé ne sort jamais de l'API.
  */
 
-export type AiKeySource = 'env' | 'app' | 'unreadable' | null;
+/** `shared` : la clé OpenAI des miniatures, réutilisée par l'assistant. */
+export type AiKeySource = 'env' | 'app' | 'shared' | 'unreadable' | null;
 export type AiProvider = 'anthropic' | 'openai';
+export type AiTask = 'script' | 'titles' | 'tags' | 'description' | 'mail_reply' | 'mail_analysis';
 
 /**
- * Le solde de crédits, **estimé** : c'est le montant
- * relevé dans la Console, moins ce que le studio a consommé depuis. Montants en centimes de
- * dollar. `exhausted` est certain : c'est l'API qui l'a dit.
+ * Le solde de crédits, **estimé** : le montant relevé dans la Console, moins ce que le
+ * studio a consommé depuis. Montants en centimes de dollar. `exhausted` est certain : c'est
+ * l'API qui l'a dit.
  */
 export interface AiCreditView {
   balanceCents: number | null;
@@ -23,20 +25,58 @@ export interface AiCreditView {
   low: boolean;
 }
 
-export interface AiSettingsView {
+export interface AiProviderView {
   provider: AiProvider;
+  label: string;
+  envKey: string;
   keySource: AiKeySource;
   model: string;
-  secretsKeyConfigured: boolean;
   configured: boolean;
+  credit: AiCreditView;
+  /** Clé admin (OpenAI seulement) : seule à lire la dépense réelle. */
+  adminKeySource: AiKeySource;
+}
+
+/** La dépense réelle d'OpenAI, lue avec la clé admin. OpenAI n'a pas d'API de solde. */
+export interface AiSpendView {
+  available: boolean;
+  monthCents: number | null;
+  sinceNoteCents: number | null;
+  remainingCents: number | null;
+  error: string | null;
+  fetchedAt: string | null;
+}
+
+export interface AiTaskView {
+  task: AiTask;
+  group: string;
+  label: string;
+  description: string;
+  /** Le choix enregistré ; `null` = le fournisseur par défaut. */
+  provider: AiProvider | null;
+  /** Celui qui répondra vraiment. */
+  effectiveProvider: AiProvider;
+}
+
+export interface AiSettingsView {
+  defaultProvider: AiProvider;
+  providers: AiProviderView[];
+  tasks: AiTaskView[];
+  secretsKeyConfigured: boolean;
+  /** Au moins un fournisseur est prêt. */
+  configured: boolean;
+  /** Le solde le plus bas parmi les fournisseurs configurés : la pastille du menu. */
   credit: AiCreditView;
 }
 
 export interface AiSettingsInput {
+  /** Fournisseur dont la clé, le modèle ou le solde est modifié. */
   provider?: AiProvider;
-  activeProvider?: AiProvider;
+  defaultProvider?: AiProvider;
+  routes?: Partial<Record<AiTask, AiProvider | null>>;
   /** Absent = conservée, `null` = effacée. */
   apiKey?: string | null;
+  adminKey?: string | null;
   model?: string | null;
   /** Solde relevé, **en dollars**. Le poser remet la consommation à zéro. */
   creditBalance?: number | null;
