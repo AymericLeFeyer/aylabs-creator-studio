@@ -324,3 +324,43 @@ test('la clé OpenAI des miniatures sert aussi à l’assistant, et la dépense 
     db.close();
   }
 });
+
+test('un fournisseur désactivé ne répond plus nulle part, mais garde ses réglages', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    runMigrations(db);
+    const cipher = new SecretBox(secretsKey);
+    const settings = new SqliteAiSettingsRepository(db);
+    const ai = new ManageAi(settings, cipher, { anthropic: null, openai: null });
+    ai.update({ provider: 'anthropic', apiKey: claudeKey });
+    ai.update({ provider: 'openai', apiKey: openAiKey });
+    ai.update({ routes: { titles: 'openai' } });
+    assert.equal(ai.credentials('titles').provider, 'openai');
+
+    // OpenAI désactivé : sa tâche retombe sur Claude, la clé reste en base, les miniatures s'arrêtent.
+    const off = ai.update({ provider: 'openai', enabled: false });
+    assert.equal(off.providers[1].enabled, false);
+    assert.equal(off.providers[1].configured, true);
+    assert.equal(ai.credentials('titles').provider, 'anthropic');
+    assert.equal(ai.openAiEnabled(), false);
+    assert.equal(off.tasks.find((task) => task.task === 'thumbnails').effectiveProvider, null);
+    assert.throws(() => ai.update({ routes: { tags: 'openai' } }), { status: 400 });
+    assert.throws(() => ai.update({ defaultProvider: 'openai' }), { status: 400 });
+    assert.throws(() => ai.update({ routes: { thumbnails: 'anthropic' } }), { status: 400 });
+
+    // Désactiver le fournisseur par défaut passe le défaut à l'autre.
+    ai.update({ provider: 'openai', enabled: true });
+    ai.update({ defaultProvider: 'openai' });
+    assert.equal(ai.update({ provider: 'openai', enabled: false }).defaultProvider, 'anthropic');
+
+    // Tout désactivé : plus aucune IA, et l'écran le sait.
+    const none = ai.update({ provider: 'anthropic', enabled: false });
+    assert.equal(none.configured, false);
+    assert.throws(() => ai.credentials('script'), { status: 400 });
+    // Réactiver rend tout tel quel : la clé n'a jamais bougé.
+    assert.equal(ai.update({ provider: 'anthropic', enabled: true }).configured, true);
+    assert.equal(ai.credentials('script').apiKey, claudeKey);
+  } finally {
+    db.close();
+  }
+});

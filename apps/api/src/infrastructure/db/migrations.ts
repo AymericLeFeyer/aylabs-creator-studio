@@ -2287,6 +2287,14 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 73,
+    name: 'assistant IA : desactiver un fournisseur',
+    up: `
+      -- Un fournisseur qu'on n'utilise pas se desactive sans perdre sa cle ni ses reglages.
+      ALTER TABLE ai_settings ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+    `,
+  },
 ];
 
 /**

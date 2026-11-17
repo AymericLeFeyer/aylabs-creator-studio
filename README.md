@@ -34,8 +34,9 @@ Tout se règle dans **Paramètres → API → Assistant IA** : deux fournisseurs
 Un **fournisseur par défaut** répond à toutes les tâches, et chaque tâche peut être confiée à
 l'autre : script, titres, tags et description des fiches vidéo, rédaction de mails, analyse
 (résumés, vérification des dates). Un fournisseur sans clé ne peut pas être choisi ; si la clé
-d'un fournisseur choisi disparaît, c'est le défaut qui répond. Les installations existantes
-démarrent avec Anthropic et retrouvent leurs réglages.
+d'un fournisseur choisi disparaît, c'est le défaut qui répond. Un fournisseur que tu n'utilises pas se **désactive** d'un interrupteur : il disparaît des
+choix, ses clés sont conservées (et pour OpenAI, les miniatures s'arrêtent avec lui). Les
+installations existantes démarrent avec Anthropic et retrouvent leurs réglages.
 
 Saisis les clés à l'écran si `SECRETS_KEY` est configurée côté serveur (16 caractères
 minimum). Tu peux aussi déclarer `ANTHROPIC_API_KEY` ou `OPENAI_ASSISTANT_API_KEY` dans

@@ -447,6 +447,7 @@ export const buildContainer = (config: Config): Container => {
     secrets,
     config.openaiApiKey,
     (): string | null => manageAi.ownOpenAiKey(),
+    (): boolean => manageAi.openAiEnabled(),
   );
 
   const managePublishing = new ManagePublishing(

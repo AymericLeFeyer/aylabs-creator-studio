@@ -2615,12 +2615,12 @@ provider)` (migration 72) : le fournisseur choisi pour une tâche ; **pas de lig
 fournisseur par défaut**.
 
 **Un fournisseur par tâche.** `AI_TASKS` (`domain/ai/entities/Ai.ts`) liste ce que l'assistant
-sait faire — `script`, `titles`, `tags`, `description` (fiche de vidéo), `mail_reply`
+sait faire — `script`, `titles`, `tags`, `description` (fiche de vidéo), `thumbnails` (**verrouillée sur OpenAI** : `fixedProvider`, seul OpenAI génère des images, le choix est refusé en 400), `mail_reply`
 (brouillons, relances, traductions, ajustements), `mail_analysis` (résumés, vérification des
 dates, note « Échanges ») — avec libellé, groupe et description, **servis par l'API** : l'écran
 ne duplique rien, ajouter une tâche = une ligne ici + un `task` à l'appel. Tout appel passe
 `credentials(task)` ; `resolve` choisit **le choix de la tâche s'il est prêt, sinon le défaut,
-sinon n'importe quel fournisseur prêt** — une clé qui disparaît ne coupe donc pas une tâche
+sinon n'importe quel fournisseur prêt, sinon `null`** (400 explicite) — une clé qui disparaît ne coupe donc pas une tâche
 (l'écran le signale sur la ligne). Choisir un fournisseur sans clé est refusé en 400.
 
 - `ManageAi` — `view()` (`{ defaultProvider, providers[], tasks[], secretsKeyConfigured,
@@ -2632,6 +2632,14 @@ sinon n'importe quel fournisseur prêt** — une clé qui disparaît ne coupe do
   Anthropic héritée des mails, chiffrée sous `mail:aiKey`, est relue sous l'ancien contexte puis
   **rechiffrée** à la première lecture. `ANTHROPIC_API_KEY` et `OPENAI_ASSISTANT_API_KEY`
   l'emportent pour leurs fournisseurs (409 à l'écran).
+- **Un fournisseur se désactive** (`ai_settings.enabled`, migration 73, interrupteur de sa
+  carte) : « prêt » = **activé ET muni d'une clé** (`ready`), alors que `configured` ne dit
+  que la clé. Désactivé, il n'est proposé nulle part (choix par tâche, défaut), ne répond à rien,
+  et **garde clé, modèle et solde**. Désactiver le fournisseur par défaut passe le défaut à
+  l'autre s'il est activé ; en faire le défaut ou lui confier une tâche est refusé (400). OpenAI
+  désactivé **arrête aussi les miniatures** (`ManageThumbnails` reçoit `openAiEnabled`) : même
+  clé, même interrupteur. Tout désactivé : `configured` passe à `false`, les boutons d'IA
+  disparaissent et l'écran le dit.
 - **Une seule clé OpenAI pour le texte et les images.** À défaut de sa propre clé,
   l'assistant réutilise celle des miniatures (`keySource: 'shared'`, `ManageThumbnails.ownKey()`),
   et les miniatures réutilisent celle de l'assistant. `ownKey()` / `ownOpenAiKey()` ne se
@@ -3100,7 +3108,7 @@ Base : `http://localhost:3001`. En prod, nginx proxifie `/api/` vers le conteneu
 | `POST` | `/api/mails/threads/:id/check-dates` | `?today=` (jour local) → `MailDateCheck` : résumé, tâches posées dans Todo, incohérences avec la vidéo |
 | `GET` | `/api/ai/settings` | `{ defaultProvider, providers[], tasks[], secretsKeyConfigured, configured, credit }` — aucune clé n'en sort, seulement sa provenance (`env` \| `app` \| `shared` \| `unreadable`) |
 | `GET` | `/api/ai/spend` | La dépense réelle d'OpenAI (clé admin) : `{ available, monthCents, sinceNoteCents, remainingCents, error, fetchedAt }`. Toujours 200, l'erreur est dans le corps |
-| `PATCH` | `/api/ai/settings` | `{ provider?, defaultProvider?, routes?, apiKey?, adminKey?, model?, creditBalance? }` — `provider` cible la clé, le modèle ou le solde (défaut : le fournisseur par défaut). `defaultProvider` change le défaut. `routes` : `{ <tâche>: 'anthropic' \| 'openai' \| null }`, 400 si le fournisseur n'a pas de clé. `apiKey: null` efface (409 si la clé vient de l'environnement). `adminKey` : OpenAI seulement. `creditBalance` : solde relevé **en dollars**, remet la consommation à zéro |
+| `PATCH` | `/api/ai/settings` | `{ provider?, enabled?, defaultProvider?, routes?, apiKey?, adminKey?, model?, creditBalance? }` — `provider` cible la clé, le modèle, le solde ou l'activation (`enabled`) — défaut : le fournisseur par défaut. `defaultProvider` change le défaut. `routes` : `{ <tâche>: 'anthropic' \| 'openai' \| null }`, 400 si le fournisseur n'a pas de clé. `apiKey: null` efface (409 si la clé vient de l'environnement). `adminKey` : OpenAI seulement. `creditBalance` : solde relevé **en dollars**, remet la consommation à zéro |
 | `GET` | `/api/mails/addresses` | Adresses vues dans la boîte : `[{ address, received, sent }]`, les 60 plus fréquentes — à cocher comme adresses suivies |
 | `GET` | `/api/mails/stats` | `{ configured, aiConfigured, unread, lastSyncAt, lastSyncError }` — la pastille, relue chaque minute |
 | `POST` | `/api/mails/sync` | Relevé immédiat. `{ created, error, stats }` |
@@ -3934,6 +3942,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 73** ajoute `ai_settings.enabled` (désactiver un fournisseur IA sans perdre ses réglages).
 - **Migration 72** ajoute `ai_task_routes` (le fournisseur IA choisi par tâche) et `ai_settings.admin_key` (clé admin OpenAI, chiffrée).
 - **Migration 71** ajoute `mail_settings.auth_mode` et `gmail_oauth` (connexion Gmail par OAuth).
 - **Migration 70** ajoute `ai_settings.active_provider`, `credit_unpriced` et la ligne `openai` (un fournisseur IA de plus).

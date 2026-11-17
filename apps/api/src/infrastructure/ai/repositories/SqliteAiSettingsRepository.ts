@@ -13,6 +13,7 @@ const COLUMNS: Record<keyof StoredAiSettings, string> = {
   creditExhaustedAt: 'credit_exhausted_at',
   creditUnpriced: 'credit_unpriced',
   encryptedAdminKey: 'admin_key',
+  enabled: 'enabled',
 };
 
 interface Row {
@@ -24,6 +25,7 @@ interface Row {
   credit_exhausted_at: string | null;
   credit_unpriced: number;
   admin_key: string | null;
+  enabled: number;
 }
 
 /** Une ligne par fournisseur, avec les clés chiffrées. */
@@ -66,7 +68,7 @@ export class SqliteAiSettingsRepository implements AiSettingsRepository {
     const row = this.db
       .prepare(
         `SELECT api_key, model, credit_balance_cents, credit_set_at, credit_spent_micros,
-                credit_exhausted_at, credit_unpriced, admin_key
+                credit_exhausted_at, credit_unpriced, admin_key, enabled
            FROM ai_settings WHERE id = ?`,
       )
       .get(ROW_IDS[provider]) as unknown as Row;
@@ -79,6 +81,7 @@ export class SqliteAiSettingsRepository implements AiSettingsRepository {
       creditExhaustedAt: row.credit_exhausted_at,
       creditUnpriced: row.credit_unpriced !== 0,
       encryptedAdminKey: row.admin_key,
+      enabled: row.enabled !== 0,
     };
   }
 

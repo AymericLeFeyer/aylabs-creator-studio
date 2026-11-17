@@ -4,24 +4,23 @@ import { TaskRouting } from '../components/ai/TaskRouting.tsx';
 
 /**
  * Paramètres → API → Assistant IA : tout ce qui touche aux IA du studio, au même endroit.
- * Les fournisseurs (clé, modèle, crédits, images), puis qui fait quoi.
+ * Les fournisseurs (activation, clé, modèle, crédits, images), puis qui fait quoi.
  */
 export const AiSettingsPage = () => {
   const { data } = useAiSettings();
   return (
-    <div className="space-y-4">
-      <div>
+    <div className="space-y-5">
+      <div className="max-w-3xl">
         <h2 className="text-lg font-semibold">Assistant IA</h2>
         <p className="text-sm text-muted-foreground">
-          Utilisé par la boîte mail (résumés, traductions, brouillons, vérification des dates), par
-          les fiches de vidéo (script, titres, tags, description) et, côté OpenAI, par les
-          miniatures. Le contenu concerné est transmis au fournisseur lors de la demande. L’envoi
-          d’un mail demande toujours ta confirmation.
+          Sert à la boîte mail, aux fiches de vidéo et aux miniatures. Le contenu concerné n’est
+          transmis au fournisseur qu’à la demande, et l’envoi d’un mail demande toujours ta
+          confirmation. Désactive un fournisseur que tu n’utilises pas : il disparaît des choix.
         </p>
       </div>
       {data ? (
         <>
-          <div className="grid items-start gap-4 lg:grid-cols-2">
+          <div className="grid items-start gap-4 xl:grid-cols-2">
             {data.providers.map((provider) => (
               <ProviderCard
                 key={provider.provider}

@@ -90,6 +90,11 @@ export class ManageAi {
     return this.storedAdminKey() === null ? 'unreadable' : 'app';
   }
 
+  /** OpenAI est-il activé ? Les miniatures s'y plient : même fournisseur, même interrupteur. */
+  openAiEnabled(): boolean {
+    return this.settings.get('openai').enabled;
+  }
+
   /**
    * La clé OpenAI **propre** à l'assistant (environnement ou écran), sans repli : c'est ce
    * que les miniatures lui empruntent, et un repli dans les deux sens bouclerait.
@@ -136,28 +141,35 @@ export class ManageAi {
       envKey: AI_PROVIDER_SETTINGS[provider].envKey,
       keySource,
       model: settings.model ?? AI_PROVIDER_SETTINGS[provider].model,
-      configured: this.ready(provider),
+      enabled: settings.enabled,
+      configured: this.hasKey(provider),
       credit: this.credit(settings),
       adminKeySource: this.adminKeySource(provider),
     };
   }
 
-  private ready(provider: AiProvider): boolean {
+  private hasKey(provider: AiProvider): boolean {
     const source = this.keySource(provider, this.settings.get(provider).encryptedApiKey);
     return source === 'env' || source === 'app' || source === 'shared';
   }
 
+  /** Utilisable : activé **et** muni d'une clé. Un fournisseur désactivé n'est répondant nulle part. */
+  private ready(provider: AiProvider): boolean {
+    return this.settings.get(provider).enabled && this.hasKey(provider);
+  }
+
   /**
    * Le fournisseur qui répond à une tâche : son choix s'il est prêt, sinon le défaut, sinon
-   * n'importe lequel qui l'est. Un choix dont la clé a disparu ne doit pas couper la tâche.
+   * n'importe lequel qui l'est, sinon `null`. Un choix dont la clé a disparu, ou qu'on a
+   * désactivé, ne doit pas couper la tâche.
    */
-  private resolve(task: AiTask | undefined): AiProvider {
+  private resolve(task: AiTask | undefined): AiProvider | null {
     const fallback = this.settings.activeProvider();
     const chosen = task ? this.settings.routes()[task] : undefined;
     return (
       [chosen, fallback, ...AI_PROVIDERS].find(
         (provider): provider is AiProvider => !!provider && this.ready(provider),
-      ) ?? fallback
+      ) ?? null
     );
   }
 
@@ -165,7 +177,7 @@ export class ManageAi {
     const defaultProvider = this.settings.activeProvider();
     const routes = this.settings.routes();
     const providers = AI_PROVIDERS.map((provider) => this.providerView(provider));
-    const ready = providers.filter((entry) => entry.configured);
+    const ready = providers.filter((entry) => entry.enabled && entry.configured);
     const byId = (provider: AiProvider) => providers.find((entry) => entry.provider === provider)!;
     return {
       defaultProvider,
@@ -175,8 +187,14 @@ export class ManageAi {
         group: task.group,
         label: task.label,
         description: task.description,
-        provider: routes[task.id] ?? null,
-        effectiveProvider: this.resolve(task.id),
+        provider: 'fixedProvider' in task ? task.fixedProvider : (routes[task.id] ?? null),
+        fixedProvider: 'fixedProvider' in task ? task.fixedProvider : null,
+        effectiveProvider:
+          'fixedProvider' in task
+            ? this.ready(task.fixedProvider)
+              ? task.fixedProvider
+              : null
+            : this.resolve(task.id),
       })),
       secretsKeyConfigured: this.cipher.available,
       configured: ready.length > 0,
@@ -249,6 +267,10 @@ export class ManageAi {
       patch.creditUnpriced = false;
       this.spendCache = null;
     }
+    if (input.enabled !== undefined) {
+      patch.enabled = input.enabled;
+      this.spendCache = null;
+    }
     if (input.adminKey !== undefined) {
       if (provider !== 'openai') throw badRequest('Seul OpenAI a une clé admin.');
       if (this.adminKeyEnv) {
@@ -262,6 +284,9 @@ export class ManageAi {
       this.spendCache = null;
     }
     for (const [task, chosen] of Object.entries(input.routes ?? {})) {
+      if (AI_TASKS.some((entry) => entry.id === task && 'fixedProvider' in entry)) {
+        throw badRequest('Cette tâche n’a qu’un fournisseur possible.');
+      }
       if (chosen && !this.ready(chosen)) {
         throw badRequest(
           `${AI_PROVIDER_SETTINGS[chosen].label} n’a pas de clé : renseigne-la avant de lui confier une tâche.`,
@@ -269,7 +294,26 @@ export class ManageAi {
       }
       this.settings.setRoute(task as AiTask, chosen ?? null);
     }
-    this.settings.update(provider, patch, input.defaultProvider);
+    let defaultProvider = input.defaultProvider;
+    if (defaultProvider && defaultProvider !== this.settings.activeProvider()) {
+      const enabled =
+        defaultProvider === provider && input.enabled !== undefined
+          ? input.enabled
+          : this.settings.get(defaultProvider).enabled;
+      if (!enabled)
+        throw badRequest('Ce fournisseur est désactivé : active-le avant d’en faire le défaut.');
+    }
+    // Désactiver le fournisseur par défaut passe le défaut à l'autre, s'il est activé.
+    if (
+      input.enabled === false &&
+      !defaultProvider &&
+      provider === this.settings.activeProvider()
+    ) {
+      defaultProvider = AI_PROVIDERS.find(
+        (other) => other !== provider && this.settings.get(other).enabled,
+      );
+    }
+    this.settings.update(provider, patch, defaultProvider);
     return this.view();
   }
 
@@ -346,12 +390,17 @@ export class ManageAi {
    */
   credentials(task?: AiTask): AiCredentials {
     const provider = this.resolve(task);
-    const apiKey = this.apiKeyOf(provider);
-    if (!apiKey) {
+    if (!provider) {
+      const fallback = this.settings.activeProvider();
       throw badRequest(
-        `Aucune clé API ${AI_PROVIDER_SETTINGS[provider].label} : renseigne-la dans Paramètres → API → Assistant IA.`,
+        AI_PROVIDERS.every((entry) => !this.settings.get(entry).enabled)
+          ? 'Tous les fournisseurs IA sont désactivés : active-en un dans Paramètres → API → Assistant IA.'
+          : `Aucune clé API ${AI_PROVIDER_SETTINGS[fallback].label} : renseigne-la dans Paramètres → API → Assistant IA.`,
       );
     }
+    const apiKey = this.apiKeyOf(provider);
+    if (!apiKey)
+      throw badRequest('Aucune clé API : renseigne-la dans Paramètres → API → Assistant IA.');
     const { model } = this.settings.get(provider);
     return { provider, apiKey, model: model ?? AI_PROVIDER_SETTINGS[provider].model };
   }

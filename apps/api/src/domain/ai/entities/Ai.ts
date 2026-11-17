@@ -35,6 +35,8 @@ export interface StoredAiSettings {
   creditUnpriced: boolean;
   /** Clé admin OpenAI, chiffrée : lit la dépense réelle de l'organisation. */
   encryptedAdminKey: string | null;
+  /** Désactivé : n'est proposé nulle part et ne répond à rien. Les clés sont conservées. */
+  enabled: boolean;
 }
 
 /** Sous ce reste, l'écran et le menu préviennent (2 $). */
@@ -90,6 +92,14 @@ export const AI_TASKS = [
     description: 'Rédiger la description de la vidéo.',
   },
   {
+    id: 'thumbnails',
+    group: 'Images',
+    label: 'Miniatures',
+    description: 'Générer les miniatures d’une vidéo à partir de son script et de tes images.',
+    /** Seul OpenAI génère des images : la tâche n'est pas confiable à un autre fournisseur. */
+    fixedProvider: 'openai',
+  },
+  {
     id: 'mail_reply',
     group: 'Boîte mail',
     label: 'Rédaction',
@@ -113,6 +123,9 @@ export interface AiProviderView {
   envKey: string;
   keySource: AiKeySource;
   model: string;
+  /** Activé : un fournisseur qu'on n'utilise pas se désactive, sans perdre ses réglages. */
+  enabled: boolean;
+  /** Une clé est disponible (indépendamment de l'activation). */
   configured: boolean;
   credit: AiCreditView;
   /** La clé admin, seule à lire la dépense réelle. `null` : le fournisseur n'en a pas l'usage. */
@@ -143,8 +156,10 @@ export interface AiTaskView {
   description: string;
   /** Le choix enregistré ; `null` = le fournisseur par défaut. */
   provider: AiProvider | null;
-  /** Celui qui répondra vraiment (le choix s'il est configuré, sinon le défaut). */
-  effectiveProvider: AiProvider;
+  /** Non `null` : la tâche n'a qu'un fournisseur possible, le choix est verrouillé. */
+  fixedProvider: AiProvider | null;
+  /** Celui qui répondra vraiment ; `null` si aucun fournisseur n'est utilisable. */
+  effectiveProvider: AiProvider | null;
 }
 
 export interface AiSettingsView {
@@ -162,6 +177,8 @@ export interface AiSettingsView {
 export interface AiSettingsInput {
   /** Fournisseur dont les réglages (clé, modèle, solde) sont modifiés. */
   provider?: AiProvider;
+  /** Active ou désactive le fournisseur visé par `provider`. */
+  enabled?: boolean;
   /** Change le fournisseur par défaut. */
   defaultProvider?: AiProvider;
   /** Fournisseur choisi par tâche ; `null` rend la tâche au fournisseur par défaut. */

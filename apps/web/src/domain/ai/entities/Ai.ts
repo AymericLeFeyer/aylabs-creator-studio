@@ -8,7 +8,8 @@
 /** `shared` : la clé OpenAI des miniatures, réutilisée par l'assistant. */
 export type AiKeySource = 'env' | 'app' | 'shared' | 'unreadable' | null;
 export type AiProvider = 'anthropic' | 'openai';
-export type AiTask = 'script' | 'titles' | 'tags' | 'description' | 'mail_reply' | 'mail_analysis';
+export type AiTask =
+  'script' | 'titles' | 'tags' | 'description' | 'thumbnails' | 'mail_reply' | 'mail_analysis';
 
 /**
  * Le solde de crédits, **estimé** : le montant relevé dans la Console, moins ce que le
@@ -31,6 +32,9 @@ export interface AiProviderView {
   envKey: string;
   keySource: AiKeySource;
   model: string;
+  /** Désactivé : n'est proposé nulle part et ne répond à rien. Les clés sont conservées. */
+  enabled: boolean;
+  /** Une clé est disponible (indépendamment de l'activation). */
   configured: boolean;
   credit: AiCreditView;
   /** Clé admin (OpenAI seulement) : seule à lire la dépense réelle. */
@@ -54,8 +58,10 @@ export interface AiTaskView {
   description: string;
   /** Le choix enregistré ; `null` = le fournisseur par défaut. */
   provider: AiProvider | null;
-  /** Celui qui répondra vraiment. */
-  effectiveProvider: AiProvider;
+  /** Non `null` : un seul fournisseur possible, le choix est verrouillé. */
+  fixedProvider: AiProvider | null;
+  /** Celui qui répondra vraiment ; `null` si aucun fournisseur n'est utilisable. */
+  effectiveProvider: AiProvider | null;
 }
 
 export interface AiSettingsView {
@@ -72,6 +78,8 @@ export interface AiSettingsView {
 export interface AiSettingsInput {
   /** Fournisseur dont la clé, le modèle ou le solde est modifié. */
   provider?: AiProvider;
+  /** Active ou désactive le fournisseur visé par `provider`. */
+  enabled?: boolean;
   defaultProvider?: AiProvider;
   routes?: Partial<Record<AiTask, AiProvider | null>>;
   /** Absent = conservée, `null` = effacée. */
@@ -93,6 +101,8 @@ export const formatDollars = (cents: number): string =>
 export const AI_PROVIDERS = {
   anthropic: {
     label: 'Claude (Anthropic)',
+    short: 'Claude',
+    accent: '#d97757',
     envKey: 'ANTHROPIC_API_KEY',
     keyExample: 'sk-ant-…',
     billingUrl: 'https://platform.claude.com/settings/billing',
@@ -104,6 +114,8 @@ export const AI_PROVIDERS = {
   },
   openai: {
     label: 'GPT (OpenAI)',
+    short: 'GPT',
+    accent: '#10a37f',
     envKey: 'OPENAI_ASSISTANT_API_KEY',
     keyExample: 'sk-proj-…',
     billingUrl: 'https://platform.openai.com/settings/organization/billing/overview',
@@ -117,6 +129,8 @@ export const AI_PROVIDERS = {
   AiProvider,
   {
     label: string;
+    short: string;
+    accent: string;
     envKey: string;
     keyExample: string;
     billingUrl: string;

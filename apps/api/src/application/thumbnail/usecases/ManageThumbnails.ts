@@ -50,6 +50,7 @@ export class ManageThumbnails {
   private readonly cipher: SecretCipher;
   private readonly envKey: string | null;
   private readonly assistantKey: () => string | null;
+  private readonly enabled: () => boolean;
 
   constructor(
     thumbnails: ThumbnailRepository,
@@ -60,6 +61,8 @@ export class ManageThumbnails {
     cipher: SecretCipher,
     envKey: string | null,
     assistantKey: () => string | null = () => null,
+    /** OpenAI désactivé dans l'assistant IA : les miniatures le sont aussi. */
+    enabled: () => boolean = () => true,
   ) {
     this.thumbnails = thumbnails;
     this.productions = productions;
@@ -69,6 +72,7 @@ export class ManageThumbnails {
     this.cipher = cipher;
     this.envKey = envKey;
     this.assistantKey = assistantKey;
+    this.enabled = enabled;
   }
 
   /**
@@ -101,7 +105,8 @@ export class ManageThumbnails {
       quality: settings.quality,
       generalPrompt: settings.generalPrompt,
       secretsKeyConfigured: this.cipher.available,
-      configured: keySource === 'env' || keySource === 'app' || keySource === 'shared',
+      configured:
+        this.enabled() && (keySource === 'env' || keySource === 'app' || keySource === 'shared'),
     };
   }
 
@@ -125,6 +130,9 @@ export class ManageThumbnails {
   }
 
   private credentials(): ThumbnailCredentials {
+    if (!this.enabled()) {
+      throw badRequest('OpenAI est désactivé : active-le dans Paramètres → API → Assistant IA.');
+    }
     const apiKey = this.ownKey() ?? this.assistantKey();
     if (!apiKey) {
       throw badRequest('Aucune clé OpenAI : renseigne-la dans Paramètres → API → Assistant IA.');

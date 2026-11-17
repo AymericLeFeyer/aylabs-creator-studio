@@ -1418,6 +1418,7 @@ export const sendMailSchema = z.object({
 
 export const updateAiSettingsSchema = z.object({
   provider: z.enum(AI_PROVIDERS).optional(),
+  enabled: z.boolean().optional(),
   adminKey: z.string().trim().max(500).nullable().optional(),
   defaultProvider: z.enum(AI_PROVIDERS).optional(),
   routes: z.record(z.enum(AI_TASK_IDS), z.enum(AI_PROVIDERS).nullable()).optional(),
