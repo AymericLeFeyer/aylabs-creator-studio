@@ -216,6 +216,7 @@ export class ManageThumbnails {
 
   async generate(input: GenerateThumbnailInput): Promise<Thumbnail> {
     const { productionId, format, prompt, assetIds, images, useWorkspace } = input;
+    const chosenTitle = input.title?.trim() || null;
     const production = productionId ? this.productions.findById(productionId) : null;
     if (productionId && !production) throw notFound('Vidéo');
     if (!production && !prompt.trim()) {
@@ -233,7 +234,7 @@ export class ManageThumbnails {
     const credentials = this.credentials();
     const bank = assetIds.map((id) => this.assetImage(id));
     const extras = images.map(toImage);
-    const title = production ? production.publishTitle || production.title : null;
+    const title = chosenTitle ?? (production ? production.publishTitle || production.title : null);
 
     const image = await this.client.generate(credentials, {
       prompt: composeThumbnailPrompt({

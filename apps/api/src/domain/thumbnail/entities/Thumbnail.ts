@@ -92,6 +92,8 @@ export interface GenerateThumbnailInput {
   images: Uint8Array[];
   /** Envoie la tête et le produit de l'espace de travail de la vidéo (défaut : oui). */
   useWorkspace: boolean;
+  /** Le titre à donner au modèle (A, B ou C du test A/B) ; absent = le titre public. */
+  title: string | null;
 }
 
 export interface ThumbnailCredentials {

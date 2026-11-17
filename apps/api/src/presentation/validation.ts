@@ -1442,6 +1442,7 @@ export const generateThumbnailSchema = z.object({
   assetIds: z.array(z.string().min(1)).max(16).default([]),
   images: z.array(thumbnailImageSchema).max(16).default([]),
   useWorkspace: z.boolean().default(true),
+  title: z.string().trim().max(200).nullable().default(null),
 });
 
 export const setWorkspaceImageSchema = z.object({ image: thumbnailImageSchema });

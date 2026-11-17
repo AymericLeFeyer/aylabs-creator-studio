@@ -52,6 +52,8 @@ export const ThumbnailsPage = () => {
   const [productionId, setProductionId] = useState<string | null>(searchParams.get('video'));
   const [format, setFormat] = useState<ThumbnailFormat>('16:9');
   const [prompt, setPrompt] = useState('');
+  // L'indice de la variante de titre choisie : 0 = A (titre public), 1 = B, 2 = C.
+  const [variant, setVariant] = useState(0);
   // Les images de la banque sont **décochées par défaut** : on coche celles qu'on veut.
   const [selected, setSelected] = useState<string[]>([]);
   const [images, setImages] = useState<string[]>([]);
@@ -110,7 +112,23 @@ export const ThumbnailsPage = () => {
     }
   };
 
-  const submit = () => generate.mutate({ productionId, format, prompt, assetIds, images });
+  const production = productions.find((entry) => entry.id === productionId) ?? null;
+  const titleChoices = production
+    ? [production.publishTitle || production.title, ...production.abTest.titles]
+        .map((text, index) => ({ letter: 'ABC'[index]!, text: text.trim() }))
+        .filter((choice) => choice.text)
+    : [];
+  const chosenTitle = titleChoices.find((choice) => choice.letter === 'ABC'[variant]) ?? null;
+
+  const submit = () =>
+    generate.mutate({
+      productionId,
+      format,
+      prompt,
+      assetIds,
+      images,
+      title: chosenTitle?.text ?? null,
+    });
 
   return (
     <div className="flex flex-col gap-4">
@@ -175,6 +193,29 @@ export const ThumbnailsPage = () => {
             </div>
 
             {productionId && <WorkspaceCard productionId={productionId} />}
+
+            {titleChoices.length > 1 && (
+              <div className="space-y-1.5">
+                <Label>Titre donné au modèle</Label>
+                <div className="space-y-1">
+                  {titleChoices.map((choice) => (
+                    <button
+                      key={choice.letter}
+                      type="button"
+                      aria-pressed={chosenTitle?.letter === choice.letter}
+                      onClick={() => setVariant('ABC'.indexOf(choice.letter))}
+                      className={cn(
+                        'flex w-full items-start gap-2 rounded-md border border-border px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50',
+                        chosenTitle?.letter === choice.letter && 'border-primary bg-accent/50',
+                      )}
+                    >
+                      <span className="font-semibold">{choice.letter}</span>
+                      <span className="min-w-0">{choice.text}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>
