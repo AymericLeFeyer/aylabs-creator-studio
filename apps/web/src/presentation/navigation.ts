@@ -91,7 +91,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/production', label: 'Vidéos', icon: FORMAT_ICONS.video, end: false },
       // Les shorts à venir (ex-Publications) : titre, vidéo, heure, puis mise en ligne
       // automatique. De la préparation, donc ici, et non sous Audience.
-      { to: '/shorts', label: 'Shorts', icon: Smartphone, end: false },
+      { to: '/shorts', label: 'Verticaux', icon: Smartphone, end: false },
       { to: '/miniatures', label: 'Miniatures', icon: ImagePlus, end: false },
     ],
   },
@@ -267,7 +267,7 @@ export const resolveMobileNav = (
 const TITLES: Array<[string, string]> = [
   ['/production/', 'Fiche'],
   ['/production', 'Vidéos'],
-  ['/shorts', 'Shorts'],
+  ['/shorts', 'Verticaux'],
   ['/miniatures', 'Miniatures'],
   ['/planning', 'Planning'],
   ['/youtube', 'YouTube'],

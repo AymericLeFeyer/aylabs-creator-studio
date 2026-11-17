@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Clapperboard, Copy, Trash2 } from 'lucide-react';
 import {
   useCreatePostDraft,
   useDeletePostDraft,
@@ -42,6 +43,7 @@ import { Label } from '../ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { useThumbnails } from '../../../application/thumbnail/usecases/useThumbnails.ts';
 import { CoverPicker } from './CoverPicker.tsx';
+import { ShortStrip } from './ShortStrip.tsx';
 import { suggestedCover, type PickedCover } from './coverChoice.ts';
 
 interface PostDraftDialogProps {
@@ -50,6 +52,9 @@ interface PostDraftDialogProps {
   draft?: PostDraft | null;
   /** Date pré-remplie d'une création : celle du jour sur lequel on a cliqué « + ». */
   defaultDate?: string | null;
+  /** Le jour local et l'ouverture de la programmation : sans eux, pas de section « Mise en ligne ». */
+  today?: string;
+  onSchedule?: () => void;
 }
 
 const EMPTY = { title: '', description: '', plannedDate: '' };
@@ -151,6 +156,8 @@ export const PostDraftDialog = ({
   onOpenChange,
   draft,
   defaultDate,
+  today,
+  onSchedule,
 }: PostDraftDialogProps) => {
   const create = useCreatePostDraft();
   const update = useUpdatePostDraft();
@@ -274,6 +281,14 @@ export const PostDraftDialog = ({
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4">
+          {draft && today && onSchedule && (
+            <Section
+              title="Mise en ligne"
+              hint="La vidéo, l’heure de départ et l’état de chaque plateforme."
+            >
+              <ShortStrip draft={draft} today={today} onSchedule={onSchedule} />
+            </Section>
+          )}
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_11rem]">
             <div className="space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
@@ -541,6 +556,29 @@ export const PostDraftDialog = ({
                 <Trash2 className="h-4 w-4" />
                 Supprimer
               </Button>
+            )}
+            {draft && (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="Copier la légende (description et hashtags)"
+                  disabled={!caption}
+                  onClick={() =>
+                    void navigator.clipboard?.writeText(caption).catch(() => undefined)
+                  }
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+                {draft.productionId && (
+                  <Button type="button" variant="ghost" size="icon" title="Voir la vidéo" asChild>
+                    <Link to={`/production/${draft.productionId}`}>
+                      <Clapperboard className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                )}
+              </>
             )}
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Annuler

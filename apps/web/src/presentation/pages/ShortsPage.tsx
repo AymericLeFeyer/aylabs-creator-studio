@@ -1,14 +1,13 @@
-import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Check, Clapperboard, Copy, GripVertical, Pencil, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import {
   usePostDrafts,
   useUpdatePostDraft,
 } from '../../application/postDraft/usecases/usePostDrafts.ts';
 import { localToday, shiftDate } from '../../application/planning/usecases/usePlanning.ts';
 import {
-  captionWithHashtags,
   localDateOf,
   rescheduleOnDay,
   type PostDraft,
@@ -20,7 +19,7 @@ import { Fab } from '../components/Fab.tsx';
 import { PageAlerts } from '../components/PageAlerts.tsx';
 import { PostDraftDialog } from '../components/publications/PostDraftDialog.tsx';
 import { ScheduleShortDialog } from '../components/publications/ScheduleShortDialog.tsx';
-import { PlatformBadges, ShortStrip } from '../components/publications/ShortStrip.tsx';
+import { ShortTile } from '../components/publications/ShortTile.tsx';
 import { useDraftDrag } from '../components/publications/useDraftDrag.ts';
 
 /** Jours toujours affichés de part et d'autre d'aujourd'hui, même sans rien dedans. */
@@ -47,7 +46,7 @@ const daysBetween = (from: string, to: string): string[] => {
 };
 
 /**
- * Production → Shorts (ex-Publications) : **un couloir par jour**, dans l'ordre du calendrier.
+ * Production → Verticaux (ex-Shorts, ex-Publications) : **un couloir par jour**, dans l'ordre du calendrier.
  *
  * Un short se prépare en deux temps : le **titre**, noté en vitesse pour savoir à peu près
  * ce qui sort quand, puis la **vidéo** — glissée sur la ligne, ou envoyée par l'outil de
@@ -82,7 +81,6 @@ export const ShortsPage = () => {
   const [createFor, setCreateFor] = useState<string | null | undefined>(undefined);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [schedulingId, setSchedulingId] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const today = localToday();
   /** `?publication=<id>` : venu d'une fiche de vidéo, on s'ouvre sur cette publication. */
   const [searchParams] = useSearchParams();
@@ -166,45 +164,32 @@ export const ShortsPage = () => {
   });
   const dropHighlight = 'bg-primary/10 ring-2 ring-inset ring-primary';
 
-  const copy = async (draft: PostDraft) => {
-    try {
-      // La légende complète, hashtags compris : c'est elle qu'on colle dans TikTok.
-      await navigator.clipboard.writeText(
-        captionWithHashtags(draft.description, draft.options.hashtags),
-      );
-      setCopiedId(draft.id);
-      window.setTimeout(
-        () => setCopiedId((current) => (current === draft.id ? null : current)),
-        1500,
-      );
-    } catch {
-      // Presse-papier refusé (contexte non sécurisé) : le texte reste dans le formulaire.
-    }
-  };
-
-  const row = (draft: PostDraft) => (
-    <DraftRow
-      key={draft.id}
-      draft={draft}
-      copied={copiedId === draft.id}
-      onCopy={() => void copy(draft)}
-      onEdit={() => setEditingId(draft.id)}
-      today={today}
-      onSchedule={() => setSchedulingId(draft.id)}
-      highlighted={targetIds.includes(draft.id)}
-      dragging={drag?.id === draft.id}
-      onDragStart={draft.archivedAt ? undefined : (event) => start(event, draft)}
-    />
+  /** Les tuiles d'un couloir : elles passent à la ligne, même à cinq verticaux le même jour. */
+  const tiles = (items: PostDraft[], laneDay: string | null) => (
+    <div className="flex flex-wrap gap-2 p-2">
+      {items.map((draft) => (
+        <ShortTile
+          key={draft.id}
+          draft={draft}
+          laneDay={laneDay}
+          onEdit={() => setEditingId(draft.id)}
+          highlighted={targetIds.includes(draft.id)}
+          dragging={drag?.id === draft.id}
+          onDragStart={draft.archivedAt ? undefined : (event) => start(event, draft)}
+        />
+      ))}
+    </div>
   );
 
   return (
     <div className={cn('space-y-4', drag && 'cursor-grabbing select-none')}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="hidden lg:block">
-          <h1 className="text-lg font-semibold">Shorts</h1>
+          <h1 className="text-lg font-semibold">Verticaux</h1>
           <p className="text-sm text-muted-foreground">
-            Un couloir par jour. Note le titre, glisse la vidéo sur sa ligne, choisis l’heure : elle
-            part toute seule sur YouTube, Instagram et TikTok. Ce qui est paru se lit dans{' '}
+            Un couloir par jour, une tuile par vertical. Survole pour lire le titre, clique pour
+            modifier, glisse la vidéo sur la tuile : elle part toute seule sur YouTube, Instagram et
+            TikTok à l’heure choisie. Ce qui est paru se lit dans{' '}
             <Link to="/instagram" className="underline underline-offset-2">
               Audience → Instagram
             </Link>
@@ -225,7 +210,7 @@ export const ShortsPage = () => {
           </Button>
           <Button size="sm" className="hidden lg:inline-flex" onClick={() => setCreateFor(null)}>
             <Plus className="h-4 w-4" />
-            Nouveau short
+            Nouveau vertical
           </Button>
         </div>
       </div>
@@ -240,7 +225,7 @@ export const ShortsPage = () => {
           <p className="border-b border-border px-4 py-2 text-xs font-medium text-muted-foreground">
             Sans date ({undated.length})
           </p>
-          <div className="divide-y divide-border">{undated.map(row)}</div>
+          tiles(undated, null)
         </Card>
       )}
 
@@ -281,7 +266,7 @@ export const ShortsPage = () => {
 
               <div className="group min-w-0 flex-1">
                 {items.length > 0 ? (
-                  <div className="divide-y divide-border">{items.map(row)}</div>
+                  tiles(items, day)
                 ) : (
                   // Un jour vide est l'information que l'écran doit donner : orange s'il
                   // est encore temps d'y mettre quelque chose, en creux sinon.
@@ -301,7 +286,7 @@ export const ShortsPage = () => {
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 text-muted-foreground"
-                  title={`Ajouter une publication le ${DAY_MONTH.format(at(day))}`}
+                  title={`Ajouter un vertical le ${DAY_MONTH.format(at(day))}`}
                   onClick={() => setCreateFor(day)}
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -332,7 +317,7 @@ export const ShortsPage = () => {
           document.body,
         )}
 
-      <Fab label="Nouveau short" icon={Plus} onClick={() => setCreateFor(today)} />
+      <Fab label="Nouveau vertical" icon={Plus} onClick={() => setCreateFor(today)} />
 
       <PostDraftDialog
         open={createFor !== undefined}
@@ -343,114 +328,16 @@ export const ShortsPage = () => {
         open={editing !== null}
         onOpenChange={(value) => !value && setEditingId(null)}
         draft={editing}
+        today={today}
+        onSchedule={() => {
+          setSchedulingId(editingId);
+          setEditingId(null);
+        }}
       />
       <ScheduleShortDialog
         draft={scheduling}
         onOpenChange={(value) => !value && setSchedulingId(null)}
       />
-    </div>
-  );
-};
-
-interface DraftRowProps {
-  draft: PostDraft;
-  copied: boolean;
-  onCopy: () => void;
-  onEdit: () => void;
-  /** Le jour local, pour dire « aujourd'hui 18:00 ». */
-  today: string;
-  onSchedule: () => void;
-  dragging: boolean;
-  /** Celle qu'on est venu voir depuis une fiche de vidéo. */
-  highlighted: boolean;
-  /** Absent sur une publication archivée : elle ne se déplace pas. */
-  onDragStart?: (event: PointerEvent) => void;
-}
-
-/**
- * Une publication dans son couloir : titre, six cases, actions, et en dessous le short
- * (vidéo, heure, plateformes). Archivée, elle reste là, grisée et figée — seul
- * « Restaurer » la remet en jeu.
- */
-const DraftRow = ({
-  draft,
-  copied,
-  onCopy,
-  onEdit,
-  today,
-  onSchedule,
-  highlighted,
-  dragging,
-  onDragStart,
-}: DraftRowProps) => {
-  const isArchived = draft.archivedAt !== null;
-  return (
-    <div
-      data-publication-id={draft.id}
-      className={cn(
-        'space-y-1.5 px-4 py-2',
-        highlighted && 'bg-primary/10 ring-2 ring-inset ring-primary',
-        isArchived && 'opacity-55',
-        dragging && 'opacity-40',
-      )}
-    >
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
-        <div className="flex min-w-0 flex-1 items-center gap-1">
-          {/* `touch-none` sur la seule poignée : au doigt, le reste de la ligne fait défiler. */}
-          {onDragStart ? (
-            <span
-              role="button"
-              aria-label="Déplacer vers un autre jour"
-              title="Glisser vers un autre jour"
-              onPointerDown={onDragStart}
-              className="-ml-2 flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground/60 hover:text-foreground active:cursor-grabbing"
-            >
-              <GripVertical className="h-4 w-4" />
-            </span>
-          ) : (
-            <span className="-ml-2 w-6 shrink-0" />
-          )}
-          <button
-            type="button"
-            onClick={onEdit}
-            className="min-w-0 flex-1 text-left"
-            title="Modifier"
-          >
-            <p className="truncate text-sm font-medium">{draft.title}</p>
-            {draft.description && (
-              <p className="truncate text-xs text-muted-foreground">{draft.description}</p>
-            )}
-          </button>
-        </div>
-
-        <PlatformBadges draft={draft} />
-
-        <div className="flex shrink-0 items-center gap-1 self-end lg:self-auto">
-          {draft.productionId && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" title="Voir la vidéo" asChild>
-              <Link to={`/production/${draft.productionId}`}>
-                <Clapperboard className="h-3.5 w-3.5" />
-              </Link>
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            title="Copier la légende (description et hashtags)"
-            disabled={!draft.description && !draft.options.hashtags}
-            onClick={onCopy}
-          >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" title="Modifier" onClick={onEdit}>
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-      <div className="pl-5">
-        <ShortStrip draft={draft} today={today} onSchedule={onSchedule} />
-      </div>
     </div>
   );
 };
