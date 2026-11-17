@@ -76,6 +76,12 @@ export interface Thumbnail {
  */
 export const THUMBNAIL_STEP_ID = 'miniature';
 
+export type WorkspaceSlot = 'head' | 'product';
+export const WORKSPACE_SLOTS: WorkspaceSlot[] = ['head', 'product'];
+
+/** L'espace de travail d'une vidéo : `null` = emplacement vide, sinon la version de l'image. */
+export type ThumbnailWorkspace = Record<WorkspaceSlot, { version: string } | null>;
+
 export interface GenerateThumbnailInput {
   productionId: string | null;
   format: ThumbnailFormat;
@@ -84,6 +90,10 @@ export interface GenerateThumbnailInput {
   assetIds: string[];
   /** Les images ajoutées pour cette génération : envoyées à OpenAI, jamais conservées. */
   images: Uint8Array[];
+  /** Envoie la tête et le produit de l'espace de travail de la vidéo (défaut : oui). */
+  useWorkspace: boolean;
+  /** Le titre à donner au modèle (A, B ou C du test A/B) ; absent = le titre public. */
+  title: string | null;
 }
 
 export interface ThumbnailCredentials {

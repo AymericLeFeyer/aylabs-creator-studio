@@ -11,7 +11,7 @@ import { badRequest, notFound, upstream } from '../../../shared/errors.ts';
 import type { ManageAi } from '../../ai/usecases/ManageAi.ts';
 
 const BASE_SYSTEM =
-  'Tu assistes un créateur de vidéos YouTube. Tu écris dans la langue du script, à défaut dans celle de la demande. Tu gardes le ton du créateur. Tu n’inventes jamais un chiffre, un prix, une caractéristique ou un fait : ce que tu ne sais pas devient « [à compléter] ».';
+  'Tu assistes un créateur de vidéos YouTube. Tu écris dans la langue du script, à défaut dans celle de la demande. Tu gardes le ton du créateur. Tu écris toujours à la première personne (« je ») : jamais « Aymeric fait… » ni son prénom à la troisième personne. Tu n’inventes jamais un chiffre, un prix, une caractéristique ou un fait : ce que tu ne sais pas devient « [à compléter] ».';
 
 const SCRIPT_SYSTEM = `${BASE_SYSTEM}
 

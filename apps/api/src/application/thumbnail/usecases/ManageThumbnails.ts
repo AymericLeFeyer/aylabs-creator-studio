@@ -18,6 +18,8 @@ import {
   type ThumbnailKeySource,
   type ThumbnailSettingsInput,
   type ThumbnailSettingsView,
+  type ThumbnailWorkspace,
+  type WorkspaceSlot,
 } from '../../../domain/thumbnail/entities/Thumbnail.ts';
 import type {
   ThumbnailImageClient,
@@ -136,6 +138,32 @@ export class ManageThumbnails {
     if (!this.thumbnails.deleteAsset(id)) throw notFound('Image');
   }
 
+  workspace(productionId: string): ThumbnailWorkspace {
+    if (!this.productions.findById(productionId)) throw notFound('Vidéo');
+    return this.thumbnails.workspace(productionId);
+  }
+
+  setWorkspaceImage(
+    productionId: string,
+    slot: WorkspaceSlot,
+    data: Uint8Array,
+  ): ThumbnailWorkspace {
+    if (!this.productions.findById(productionId)) throw notFound('Vidéo');
+    this.thumbnails.setWorkspaceImage(productionId, slot, toImage(data));
+    return this.thumbnails.workspace(productionId);
+  }
+
+  removeWorkspaceImage(productionId: string, slot: WorkspaceSlot): ThumbnailWorkspace {
+    this.thumbnails.deleteWorkspaceImage(productionId, slot);
+    return this.thumbnails.workspace(productionId);
+  }
+
+  workspaceImage(productionId: string, slot: WorkspaceSlot): ThumbnailImage {
+    const image = this.thumbnails.workspaceImage(productionId, slot);
+    if (!image) throw notFound('Image');
+    return image;
+  }
+
   list(filter: { productionId?: string; saved?: boolean } = {}): Thumbnail[] {
     return this.thumbnails.list(filter);
   }
@@ -187,20 +215,26 @@ export class ManageThumbnails {
   }
 
   async generate(input: GenerateThumbnailInput): Promise<Thumbnail> {
-    const { productionId, format, prompt, assetIds, images } = input;
+    const { productionId, format, prompt, assetIds, images, useWorkspace } = input;
+    const chosenTitle = input.title?.trim() || null;
     const production = productionId ? this.productions.findById(productionId) : null;
     if (productionId && !production) throw notFound('Vidéo');
     if (!production && !prompt.trim()) {
       throw badRequest('Choisis une vidéo ou écris un prompt.');
     }
-    if (assetIds.length + images.length > MAX_THUMBNAIL_IMAGES) {
+    const head =
+      production && useWorkspace ? this.thumbnails.workspaceImage(production.id, 'head') : null;
+    const product =
+      production && useWorkspace ? this.thumbnails.workspaceImage(production.id, 'product') : null;
+    const fromWorkspace = [head, product].filter((image) => image !== null);
+    if (fromWorkspace.length + assetIds.length + images.length > MAX_THUMBNAIL_IMAGES) {
       throw badRequest(`OpenAI accepte ${MAX_THUMBNAIL_IMAGES} images au maximum.`);
     }
 
     const credentials = this.credentials();
     const bank = assetIds.map((id) => this.assetImage(id));
     const extras = images.map(toImage);
-    const title = production ? production.publishTitle || production.title : null;
+    const title = chosenTitle ?? (production ? production.publishTitle || production.title : null);
 
     const image = await this.client.generate(credentials, {
       prompt: composeThumbnailPrompt({
@@ -209,11 +243,12 @@ export class ManageThumbnails {
         title,
         script: production?.script ?? '',
         format,
+        workspace: { head: head !== null, product: product !== null },
         bankImages: bank.length,
         extraImages: extras.length,
       }),
       size: THUMBNAIL_SIZES[format],
-      images: [...bank, ...extras],
+      images: [...fromWorkspace, ...bank, ...extras],
     });
 
     return this.thumbnails.add({ productionId, title, format, prompt: prompt.trim() }, image);

@@ -86,7 +86,11 @@ export const ShortsPage = () => {
   const today = localToday();
   /** `?publication=<id>` : venu d'une fiche de vidéo, on s'ouvre sur cette publication. */
   const [searchParams] = useSearchParams();
-  const targetId = searchParams.get('publication');
+  const targetIds = useMemo(
+    () => (searchParams.get('publication') ?? '').split(',').filter(Boolean),
+    [searchParams],
+  );
+  const targetId = targetIds[0] ?? null;
 
   // Une même publication peut figurer dans les deux listes le temps d'un aller-retour
   // (archivée à l'instant) : la première occurrence l'emporte.
@@ -187,7 +191,7 @@ export const ShortsPage = () => {
       onEdit={() => setEditingId(draft.id)}
       today={today}
       onSchedule={() => setSchedulingId(draft.id)}
-      highlighted={draft.id === targetId}
+      highlighted={targetIds.includes(draft.id)}
       dragging={drag?.id === draft.id}
       onDragStart={draft.archivedAt ? undefined : (event) => start(event, draft)}
     />

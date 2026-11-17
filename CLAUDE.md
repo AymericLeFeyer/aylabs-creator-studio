@@ -462,6 +462,19 @@ le remet à `null`** (`SqliteProductionRepository.update`). Réglages dans la so
 membres n'en a pas besoin. La miniature est `i.ytimg.com/vi/<code>/maxresdefault.jpg`, sans
 appel à YouTube : elle n'existe pas sur une vidéo sous 720p.
 
+**Les fiches du site aylabs.fr** (`ProposeAylabsCards`, `GET /api/productions/:id/aylabs-cards`,
+bouton « Créer les fiches sur aylabs.fr » sur une fiche rattachée à une sortie,
+`AylabsCardsDialog`). Le studio **n'écrit rien** dans le dépôt du site : il prépare ce qu'il
+sait (titre, accroche et durée lus sur YouTube avec `YOUTUBE_API_KEY`, sortie visée (à défaut le jour de mise en ligne YouTube)
+à 17 h (Paris), produits rattachés avec leurs liens d'achat — un `🛒 nom : lien` par produit dans le
+corps de la fiche vidéo) et la modale ouvre l'**Aylabs Content Studio**
+(`https://aylabs-content.aycorp.dev`, `AYLABS_CONTENT_STUDIO_URL` côté code front) avec ces
+valeurs **dans l'URL** : `?creer=video|produit` + les champs du brouillon (`title`, `pubDate`,
+`pubTime`, `code`, `duration`, `body`, `price`, `videoCode`…), listes répétées (`tag`,
+`buyLink`). Une fiche par ouverture (vidéo, puis chaque produit). Le contrat est lu par
+`shared/prefill.ts` côté Content Studio : à garder aligné des deux côtés
+(`web/src/domain/aylabs/services/contentStudioUrl.ts`).
+
 ### `productionNote` — les notes d'une vidéo, en fichiers
 
 `ProductionNote { id, productionId, title, content, createdAt, updatedAt }` — table
@@ -2673,12 +2686,18 @@ les listes ne lisent jamais.
   déchiffrée.** Port `ThumbnailRepository` (mêmes opérations, plus `settings`,
   `updateSettings`), `ThumbnailImageClient.generate(credentials, { prompt, size, images })`.
 - **Le prompt** (`composeThumbnailPrompt`, pur) : format, prompt général, rôle des images,
-  titre public (`publishTitle || title`), 6 000 caractères du script sans balises, puis le
+  titre (`publishTitle || title`, ou la variante A, B ou C du test A/B choisie à l'écran, `title` dans le corps), 6 000 caractères du script sans balises, puis le
   prompt personnalisé, en dernier pour pouvoir nuancer le général. Une vidéo **ou** un prompt
   est obligatoire (400).
-- **Images envoyées** : la banque d'abord, les images ajoutées ensuite, 16 au maximum (limite
-  d'OpenAI). À l'écran, on retient les images **écartées** : une image ajoutée à la banque
-  arrive cochée. Les images ajoutées ne sont **jamais conservées**. `prepareImage` les réduit
+- **Espace de travail d'une vidéo** (`production_workspace_images`, migration 69, cascade ;
+  `WorkspaceCard`, dans l'onglet Miniatures de la fiche et sur `/miniatures` une fois la vidéo
+  choisie) : deux emplacements, `head` (ma tête) et `product` (photo du produit). Ils sont
+  **envoyés par défaut** à chaque génération pour cette vidéo (`useWorkspace`, défaut `true`),
+  **avant** la banque, avec leur rôle écrit dans le prompt (`workspace` de
+  `composeThumbnailPrompt`). Routes `/api/thumbnails/workspace/:productionId[/:slot[/image]]`.
+- **Images envoyées** : l'espace de travail, puis la banque, puis les images ajoutées, 16 au
+  maximum (limite d'OpenAI), espace de travail compris. À l'écran, les images de la banque
+  sont **décochées par défaut** : on coche celles qu'on veut. Les images ajoutées ne sont **jamais conservées**. `prepareImage` les réduit
   à 1 536 px en WebP avant l'envoi ; l'API lit le vrai type dans les octets (`imageMimeType`,
   Safari écrit du PNG).
 - **Une image par son adresse** (champ sous la grille d'images de `/miniatures`) :

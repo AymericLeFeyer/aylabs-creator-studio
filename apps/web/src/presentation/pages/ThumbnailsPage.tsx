@@ -8,6 +8,7 @@ import {
   useThumbnailAssets,
   useThumbnails,
   useThumbnailSettings,
+  useThumbnailWorkspace,
 } from '../../application/thumbnail/usecases/useThumbnails.ts';
 import {
   MAX_THUMBNAIL_IMAGES,
@@ -18,6 +19,7 @@ import {
 import { cn } from '../../shared/cn.ts';
 import { fromSelectValue, NONE, toSelectValue } from '../components/forms/selectNone.ts';
 import { prepareDataUrl, prepareImage } from '../components/thumbnails/prepareImage.ts';
+import { WorkspaceCard } from '../components/thumbnails/WorkspaceCard.tsx';
 import { ThumbnailCard } from '../components/thumbnails/ThumbnailCard.tsx';
 import { THUMBNAIL_RATIO } from '../components/thumbnails/thumbnailRatio.ts';
 import { Button } from '../components/ui/button.tsx';
@@ -50,8 +52,10 @@ export const ThumbnailsPage = () => {
   const [productionId, setProductionId] = useState<string | null>(searchParams.get('video'));
   const [format, setFormat] = useState<ThumbnailFormat>('16:9');
   const [prompt, setPrompt] = useState('');
-  // On retient les **écartées** : une image ajoutée à la banque arrive cochée.
-  const [excluded, setExcluded] = useState<string[]>([]);
+  // L'indice de la variante de titre choisie : 0 = A (titre public), 1 = B, 2 = C.
+  const [variant, setVariant] = useState(0);
+  // Les images de la banque sont **décochées par défaut** : on coche celles qu'on veut.
+  const [selected, setSelected] = useState<string[]>([]);
   const [images, setImages] = useState<string[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState('');
@@ -66,14 +70,16 @@ export const ThumbnailsPage = () => {
     [productions],
   );
 
-  const assetIds = assets.map((asset) => asset.id).filter((id) => !excluded.includes(id));
-  const total = assetIds.length + images.length;
+  const { data: workspace } = useThumbnailWorkspace(productionId);
+  const workspaceCount = workspace ? [workspace.head, workspace.product].filter(Boolean).length : 0;
+  const assetIds = assets.map((asset) => asset.id).filter((id) => selected.includes(id));
+  const total = workspaceCount + assetIds.length + images.length;
   const tooMany = total > MAX_THUMBNAIL_IMAGES;
   const ready =
     Boolean(settings?.configured) && !tooMany && (Boolean(productionId) || Boolean(prompt.trim()));
 
   const toggleAsset = (id: string) =>
-    setExcluded((current) =>
+    setSelected((current) =>
       current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id],
     );
 
@@ -106,7 +112,23 @@ export const ThumbnailsPage = () => {
     }
   };
 
-  const submit = () => generate.mutate({ productionId, format, prompt, assetIds, images });
+  const production = productions.find((entry) => entry.id === productionId) ?? null;
+  const titleChoices = production
+    ? [production.publishTitle || production.title, ...production.abTest.titles]
+        .map((text, index) => ({ letter: 'ABC'[index]!, text: text.trim() }))
+        .filter((choice) => choice.text)
+    : [];
+  const chosenTitle = titleChoices.find((choice) => choice.letter === 'ABC'[variant]) ?? null;
+
+  const submit = () =>
+    generate.mutate({
+      productionId,
+      format,
+      prompt,
+      assetIds,
+      images,
+      title: chosenTitle?.text ?? null,
+    });
 
   return (
     <div className="flex flex-col gap-4">
@@ -170,18 +192,43 @@ export const ThumbnailsPage = () => {
               </div>
             </div>
 
+            {productionId && <WorkspaceCard productionId={productionId} />}
+
+            {titleChoices.length > 1 && (
+              <div className="space-y-1.5">
+                <Label>Titre donné au modèle</Label>
+                <div className="space-y-1">
+                  {titleChoices.map((choice) => (
+                    <button
+                      key={choice.letter}
+                      type="button"
+                      aria-pressed={chosenTitle?.letter === choice.letter}
+                      onClick={() => setVariant('ABC'.indexOf(choice.letter))}
+                      className={cn(
+                        'flex w-full items-start gap-2 rounded-md border border-border px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50',
+                        chosenTitle?.letter === choice.letter && 'border-primary bg-accent/50',
+                      )}
+                    >
+                      <span className="font-semibold">{choice.letter}</span>
+                      <span className="min-w-0">{choice.text}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label>
                 Images ({total}/{MAX_THUMBNAIL_IMAGES})
               </Label>
               <div className="grid grid-cols-5 gap-1.5">
                 {assets.map((asset) => {
-                  const selected = !excluded.includes(asset.id);
+                  const isSelected = selected.includes(asset.id);
                   return (
                     <button
                       key={asset.id}
                       type="button"
-                      aria-pressed={selected}
+                      aria-pressed={isSelected}
                       aria-label={asset.label}
                       onClick={() => toggleAsset(asset.id)}
                       className="relative aspect-square"
@@ -191,10 +238,10 @@ export const ThumbnailsPage = () => {
                         alt=""
                         className={cn(
                           'h-full w-full rounded-md border object-cover',
-                          selected ? 'ring-2 ring-primary' : 'opacity-40',
+                          isSelected ? 'ring-2 ring-primary' : 'opacity-40',
                         )}
                       />
-                      {selected && (
+                      {isSelected && (
                         <Check className="absolute right-0.5 top-0.5 h-4 w-4 rounded-full bg-primary p-0.5 text-primary-foreground" />
                       )}
                     </button>

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { thumbnailApi } from '../../../infrastructure/thumbnail/api/thumbnailApi.ts';
 import type {
   GenerateThumbnailInput,
+  WorkspaceSlot,
   ThumbnailSettingsInput,
 } from '../../../domain/thumbnail/entities/Thumbnail.ts';
 import { PRODUCTION_ROOTS, queryKeys } from '../../queryKeys.ts';
@@ -94,3 +95,30 @@ export const useSaveThumbnail = () => {
 
 /** Retirer l'enregistrement ne décoche rien : seule la liste bouge. */
 export const useUnsaveThumbnail = () => useListMutation((id: string) => thumbnailApi.unsave(id));
+
+/** L'espace de travail d'une vidéo : sa tête et son produit, envoyés par défaut. */
+export const useThumbnailWorkspace = (productionId: string | null) =>
+  useQuery({
+    queryKey: queryKeys.thumbnailWorkspace(productionId ?? ''),
+    queryFn: () => thumbnailApi.workspace(productionId!),
+    enabled: Boolean(productionId),
+  });
+
+export const useSetWorkspaceImage = (productionId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ slot, image }: { slot: WorkspaceSlot; image: string }) =>
+      thumbnailApi.setWorkspaceImage(productionId, slot, image),
+    onSuccess: (workspace) =>
+      queryClient.setQueryData(queryKeys.thumbnailWorkspace(productionId), workspace),
+  });
+};
+
+export const useRemoveWorkspaceImage = (productionId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (slot: WorkspaceSlot) => thumbnailApi.removeWorkspaceImage(productionId, slot),
+    onSuccess: (workspace) =>
+      queryClient.setQueryData(queryKeys.thumbnailWorkspace(productionId), workspace),
+  });
+};

@@ -8,8 +8,11 @@ import {
   fetchThumbnailImageSchema,
   generateThumbnailSchema,
   saveThumbnailSchema,
+  setWorkspaceImageSchema,
   updateThumbnailSettingsSchema,
 } from '../validation.ts';
+import { WORKSPACE_SLOTS, type WorkspaceSlot } from '../../domain/thumbnail/entities/Thumbnail.ts';
+import { badRequest } from '../../shared/errors.ts';
 import { param } from '../helpers.ts';
 
 const querySchema = z.object({
@@ -69,6 +72,39 @@ export const thumbnailsRouter = (container: Container): Router => {
   router.delete('/assets/:id', (req, res) => {
     thumbnails.deleteAsset(param(req, 'id'));
     res.status(204).end();
+  });
+
+  const slotOf = (value: string): WorkspaceSlot => {
+    const slot = WORKSPACE_SLOTS.find((entry) => entry === value);
+    if (!slot) throw badRequest('Emplacement inconnu : « head » ou « product ».');
+    return slot;
+  };
+
+  // L'espace de travail d'une vidéo : la tête et le produit, envoyés par défaut. Déclaré
+  // avant `/:id`.
+  router.get('/workspace/:productionId', (req, res) => {
+    res.json(thumbnails.workspace(param(req, 'productionId')));
+  });
+
+  router.put('/workspace/:productionId/:slot', (req, res) => {
+    const { image } = setWorkspaceImageSchema.parse(req.body);
+    res.json(
+      thumbnails.setWorkspaceImage(param(req, 'productionId'), slotOf(param(req, 'slot')), image),
+    );
+  });
+
+  router.delete('/workspace/:productionId/:slot', (req, res) => {
+    res.json(
+      thumbnails.removeWorkspaceImage(param(req, 'productionId'), slotOf(param(req, 'slot'))),
+    );
+  });
+
+  // L'adresse porte `?v=` : l'image d'une version ne change jamais.
+  router.get('/workspace/:productionId/:slot/image', (req, res) => {
+    sendImage(
+      res,
+      thumbnails.workspaceImage(param(req, 'productionId'), slotOf(param(req, 'slot'))),
+    );
   });
 
   router.get('/', (req, res) => {

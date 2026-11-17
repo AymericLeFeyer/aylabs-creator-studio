@@ -2238,6 +2238,22 @@ const migrations: Migration[] = [
   },
   {
     version: 69,
+    name: 'miniatures : espace de travail par video (tete et produit)',
+    up: `
+      -- Les deux images qu'une video envoie par defaut a la generation de miniature : la
+      -- tete et la photo du produit. Une ligne par emplacement, a part des listes.
+      CREATE TABLE production_workspace_images (
+        production_id TEXT NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+        slot          TEXT NOT NULL CHECK (slot IN ('head', 'product')),
+        mime_type     TEXT NOT NULL,
+        data          BLOB NOT NULL,
+        updated_at    TEXT NOT NULL,
+        PRIMARY KEY (production_id, slot)
+      );
+    `,
+  },
+  {
+    version: 70,
     name: 'assistant IA : réglages par fournisseur',
     up: `
       ALTER TABLE ai_settings ADD COLUMN active_provider TEXT NOT NULL DEFAULT 'anthropic'
@@ -2248,7 +2264,7 @@ const migrations: Migration[] = [
     `,
   },
   {
-    version: 70,
+    version: 71,
     name: 'mails : connexion Gmail via OAuth',
     up: `
       ALTER TABLE mail_settings ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'password'

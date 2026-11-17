@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Download, LoaderCircle, Megaphone, RefreshCw, Save, WandSparkles, X } from 'lucide-react';
-import type { Production } from '../../../domain/production/entities/Production.ts';
+import type { AbTest, Production } from '../../../domain/production/entities/Production.ts';
 import { resolvePaidPromotion } from '../../../domain/production/entities/Production.ts';
 import {
   usePreviousPublication,
@@ -294,17 +294,48 @@ export const PublicationPanel = ({ production }: PublicationPanelProps) => {
                 {titleIdeas.length > 0 && (
                   <ul className="space-y-1">
                     {titleIdeas.map((idea) => (
-                      <li key={idea}>
+                      <li key={idea} className="flex items-stretch gap-1">
                         <button
                           type="button"
                           onClick={() => edit(setTitle)(idea)}
                           className={cn(
-                            'w-full rounded-md border border-border px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50',
+                            'min-w-0 flex-1 rounded-md border border-border px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50',
                             idea === title && 'border-primary bg-accent/50',
                           )}
                         >
                           {idea}
                         </button>
+                        {(['A', 'B', 'C'] as const).map((variant, index) => {
+                          const current = index === 0 ? title : production.abTest.titles[index - 1];
+                          return (
+                            <Button
+                              key={variant}
+                              type="button"
+                              variant={current === idea ? 'default' : 'outline'}
+                              className="h-auto w-9 px-0"
+                              title={
+                                index === 0
+                                  ? 'Utiliser comme titre A (à enregistrer)'
+                                  : `Enregistrer comme titre ${variant} du test A/B`
+                              }
+                              disabled={update.isPending}
+                              onClick={() => {
+                                if (index === 0) {
+                                  edit(setTitle)(idea);
+                                  return;
+                                }
+                                const titles: AbTest['titles'] = [...production.abTest.titles];
+                                titles[index - 1] = idea;
+                                update.mutate({
+                                  id: production.id,
+                                  input: { abTest: { ...production.abTest, titles } },
+                                });
+                              }}
+                            >
+                              {variant}
+                            </Button>
+                          );
+                        })}
                       </li>
                     ))}
                   </ul>

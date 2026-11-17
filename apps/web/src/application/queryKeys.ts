@@ -50,6 +50,7 @@ export const queryKeys = {
   sharedPreferences: () => ['sharedPreferences'] as const,
   // Les miniatures : tout sous une racine, qui ne croise aucune autre.
   thumbnailSettings: () => ['thumbnails', 'settings'] as const,
+  thumbnailWorkspace: (productionId: string) => ['thumbnails', 'workspace', productionId] as const,
   thumbnailAssets: () => ['thumbnails', 'assets'] as const,
   thumbnails: (productionId: string | null, saved?: boolean) =>
     ['thumbnails', 'list', productionId, saved ?? 'all'] as const,

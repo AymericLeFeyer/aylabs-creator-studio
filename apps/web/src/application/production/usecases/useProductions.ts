@@ -89,6 +89,21 @@ export const useUpdateProduction = () =>
 export const useDeleteProduction = () =>
   useProductionMutation((id: string) => productionApi.remove(id), true);
 
+/**
+ * Ce que le studio sait des fiches du site, **à l'ouverture de la modale seulement** : la
+ * proposition appelle YouTube. Jamais relue d'elle-même, sans quoi elle
+ * écraserait ce qu'on est en train de corriger.
+ */
+export const useAylabsCardsProposal = (id: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ['aylabsCards', id],
+    queryFn: () => productionApi.aylabsCards(id),
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  });
+
 export const useAnnounceOnDiscord = () =>
   useProductionMutation(({ id, date }: { id: string; date: string }) =>
     productionApi.announceOnDiscord(id, date),

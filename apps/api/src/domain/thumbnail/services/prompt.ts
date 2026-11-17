@@ -27,7 +27,9 @@ export interface ThumbnailPromptParts {
   title: string | null;
   script: string;
   format: ThumbnailFormat;
-  /** Images de la banque, envoyées en premier. */
+  /** L'espace de travail de la vidéo, envoyé tout en premier : la tête, puis le produit. */
+  workspace?: { head: boolean; product: boolean };
+  /** Images de la banque, envoyées ensuite. */
   bankImages: number;
   /** Images ajoutées pour cette génération, envoyées ensuite. */
   extraImages: number;
@@ -42,6 +44,7 @@ export interface ThumbnailPromptParts {
  */
 export const composeThumbnailPrompt = (parts: ThumbnailPromptParts): string => {
   const { generalPrompt, customPrompt, title, script, format, bankImages, extraImages } = parts;
+  const workspace = parts.workspace ?? { head: false, product: false };
   const orientation =
     format === '16:9'
       ? 'une miniature YouTube horizontale au format 16:9'
@@ -49,9 +52,20 @@ export const composeThumbnailPrompt = (parts: ThumbnailPromptParts): string => {
   const sections = [`Crée ${orientation}, lisible même en très petit.`];
 
   if (generalPrompt.trim()) sections.push(`Consignes générales :\n${generalPrompt.trim()}`);
+  const roles: string[] = [];
+  if (workspace.head)
+    roles.push('la tête de la personne à représenter (garde son visage reconnaissable)');
+  if (workspace.product) roles.push('la photo du produit de la vidéo, à mettre en avant');
+  if (roles.length > 0) {
+    sections.push(
+      `Les images sont envoyées dans cet ordre. ${roles
+        .map((role, index) => `Image ${index + 1} : ${role}.`)
+        .join(' ')}`,
+    );
+  }
   if (bankImages > 0) {
     sections.push(
-      `Les ${bankImages} première(s) image(s) montrent la personne à représenter : garde son visage reconnaissable.`,
+      `Les ${bankImages} image(s) suivante(s) de la banque montrent la personne à représenter : garde son visage reconnaissable.`,
     );
   }
   if (extraImages > 0) {
