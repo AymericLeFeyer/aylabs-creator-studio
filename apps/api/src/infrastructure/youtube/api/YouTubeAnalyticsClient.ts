@@ -249,6 +249,8 @@ export class YouTubeAnalyticsClient {
         batch,
         from,
         to,
+        // Le tri doit porter sur une métrique demandée, sinon YouTube refuse la requête.
+        '-peakConcurrentViewers',
       );
       for (const row of rows) {
         if (typeof row[0] !== 'string') continue;
@@ -278,6 +280,7 @@ export class YouTubeAnalyticsClient {
     videoIds: string[],
     from: IsoDate,
     to: IsoDate,
+    sort = '-views',
   ): Promise<unknown[][]> {
     const analytics = google.youtubeAnalytics({ version: 'v2', auth: this.buildAuth() });
     const response = await analytics.reports.query({
@@ -288,7 +291,7 @@ export class YouTubeAnalyticsClient {
       dimensions: 'video',
       filters: `video==${videoIds.join(',')}`,
       maxResults: MAX_VIDEOS_PER_QUERY,
-      sort: '-views',
+      sort,
     });
     return (response.data.rows ?? []) as unknown[][];
   }
