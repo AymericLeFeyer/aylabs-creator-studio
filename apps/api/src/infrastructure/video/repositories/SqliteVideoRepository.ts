@@ -210,7 +210,8 @@ export class SqliteVideoRepository implements VideoRepository {
               comments = ?,
               estimated_revenue_cents = ?,
               stats_updated_at = ?,
-              live_started_at = COALESCE(?, live_started_at),
+              live_started_at = CASE WHEN live_excluded_at IS NOT NULL THEN NULL
+                                 ELSE COALESCE(?, live_started_at) END,
               updated_at = ?
         WHERE channel_id = ? AND external_id = ?`,
     );
@@ -443,6 +444,26 @@ export class SqliteVideoRepository implements VideoRepository {
     const result = this.db
       .prepare('UPDATE videos SET hidden_at = ?, updated_at = ? WHERE id = ?')
       .run(hidden ? new Date().toISOString() : null, new Date().toISOString(), id);
+    if (Number(result.changes) === 0) throw notFound('Vidéo');
+    const [view] = this.findAllWithChannel({ ids: [id] });
+    if (!view) throw notFound('Vidéo');
+    return view;
+  }
+
+  /**
+   * « Ce n'est pas un direct » (une première, par exemple). Retire la vidéo de Directs et
+   * la garde dehors : la collecte ne repose plus `live_started_at` (voir `upsertStats`).
+   */
+  setNotLive(id: string): VideoView {
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE videos
+            SET live_started_at = NULL, live_peak_viewers = NULL, live_avg_viewers = NULL,
+                live_excluded_at = ?, updated_at = ?
+          WHERE id = ?`,
+      )
+      .run(now, now, id);
     if (Number(result.changes) === 0) throw notFound('Vidéo');
     const [view] = this.findAllWithChannel({ ids: [id] });
     if (!view) throw notFound('Vidéo');

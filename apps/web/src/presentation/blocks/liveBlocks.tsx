@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { ExternalLink, Radio, Users, TrendingUp } from 'lucide-react';
-import { useVideos } from '../../application/video/usecases/useVideos.ts';
+import { ExternalLink, Radio, Users, TrendingUp, X } from 'lucide-react';
+import { useSetVideoNotLive, useVideos } from '../../application/video/usecases/useVideos.ts';
 import { youtubeUrl, type Video } from '../../domain/video/entities/Video.ts';
 import { formatDate, formatNumber, toIsoDate } from '../../shared/format.ts';
 import { useFilters } from '../hooks/useFilters.tsx';
@@ -126,6 +126,7 @@ export const LivesAverageCard = () => {
 export const LivesHistoryTable = () => {
   const { lives, loading } = useLivesInPeriod();
   const privacy = usePrivacy();
+  const notLive = useSetVideoNotLive();
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -148,6 +149,7 @@ export const LivesHistoryTable = () => {
                 <TableHead className="text-right">Moyenne</TableHead>
                 <TableHead className="text-right">Vues</TableHead>
                 <TableHead className="text-right">J’aime</TableHead>
+                <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -180,6 +182,25 @@ export const LivesHistoryTable = () => {
                     </TableCell>
                     <TableCell className="text-right tabular">
                       {measured ? privacy.count(live.stats.likes, 'views') : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        type="button"
+                        title="Ce n’est pas un direct (une première, par exemple)"
+                        disabled={notLive.isPending}
+                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `« ${live.title} » n’est pas un direct ? Il sera retiré de cette liste.`,
+                            )
+                          )
+                            notLive.mutate(live.id);
+                        }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        <span className="sr-only">Retirer des directs</span>
+                      </button>
                     </TableCell>
                   </TableRow>
                 );

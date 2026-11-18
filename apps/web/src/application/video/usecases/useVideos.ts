@@ -41,6 +41,17 @@ export const useLatestVideos = (channelIds: string[], limit: number) =>
     },
   });
 
+/** « Ce n'est pas un direct » (une première) : la vidéo sort de Directs pour de bon. */
+export const useSetVideoNotLive = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => videoApi.setNotLive(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['videos'] });
+    },
+  });
+};
+
 /**
  * Masquer ou réafficher une vidéo dans « Dernières sorties ». Seules les listes de vidéos
  * repartent : le drapeau n'agit sur aucun chiffre, aucun graphique.

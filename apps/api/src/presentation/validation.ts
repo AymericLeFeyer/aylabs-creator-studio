@@ -168,7 +168,9 @@ export const videoQuerySchema = z.object({
 });
 
 /** `PATCH /api/videos/:id` : masquer ou réafficher dans « Dernières sorties ». */
-export const setVideoHiddenSchema = z.object({ hidden: z.boolean() });
+export const setVideoHiddenSchema = z
+  .object({ hidden: z.boolean().optional(), notLive: z.literal(true).optional() })
+  .refine((v) => v.hidden !== undefined || v.notLive, 'Rien à modifier');
 
 export const liveVideosSchema = z.object({
   channelIds: z.array(z.string()).default([]),

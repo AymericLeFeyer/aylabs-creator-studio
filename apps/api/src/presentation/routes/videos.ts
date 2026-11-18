@@ -34,7 +34,12 @@ export const videosRouter = (container: Container): Router => {
   /** Masquer / réafficher dans « Dernières sorties » — rien d'autre ne lit ce drapeau. */
   router.patch('/:id', (req, res) => {
     const { hidden } = setVideoHiddenSchema.parse(req.body);
-    res.json(container.videos.setHidden(param(req, 'id'), hidden));
+    const id = param(req, 'id');
+    if (hidden === undefined) {
+      res.json(container.videos.setNotLive(id));
+      return;
+    }
+    res.json(container.videos.setHidden(id, hidden));
   });
 
   return router;

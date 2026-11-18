@@ -2350,6 +2350,15 @@ const migrations: Migration[] = [
       ALTER TABLE videos ADD COLUMN live_avg_viewers INTEGER;
     `,
   },
+  {
+    version: 77,
+    name: 'directs : exclusion manuelle (premieres)',
+    up: `
+      -- Une premiere porte les memes liveStreamingDetails qu un direct : YouTube ne les
+      -- distingue pas. L exclusion est manuelle et survit aux collectes.
+      ALTER TABLE videos ADD COLUMN live_excluded_at TEXT;
+    `,
+  },
 ];
 
 /**

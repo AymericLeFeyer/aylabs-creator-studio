@@ -58,5 +58,7 @@ export interface VideoRepository {
   findLatestDate(channelId: string): IsoDate | null;
   /** Masque (ou réaffiche) une vidéo de « Dernières sorties ». 404 si elle n'existe pas. */
   setHidden(id: string, hidden: boolean): VideoView;
+  /** Retire la vidéo des directs, pour de bon (une première n'est pas un direct). */
+  setNotLive(id: string): VideoView;
   countByChannel(channelId: string): number;
 }
