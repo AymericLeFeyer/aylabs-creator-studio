@@ -26,8 +26,8 @@ import { PRODUCTION_COPY } from '../blocks/productionCopy.ts';
  */
 export const ProductionPage = ({ format }: { format: ProductionFormat }) => {
   const copy = PRODUCTION_COPY[format];
-  const { data: overview, isLoading } = useProductionOverview(format);
-  const { data: done = [] } = useProductions({ statuses: ['done'], formats: [format] });
+  const { data: overview, isLoading } = useProductionOverview();
+  const { data: done = [] } = useProductions({ statuses: ['done'] });
   const { preferences, set } = usePreferences();
   const [dialogOpen, setDialogOpen] = useState(false);
 

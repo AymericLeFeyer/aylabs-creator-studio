@@ -16,6 +16,7 @@ import { cn } from '../../shared/cn.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card } from '../components/ui/card.tsx';
 import { Fab } from '../components/Fab.tsx';
+import { Block } from '../dashboard/Block.tsx';
 import { PageAlerts } from '../components/PageAlerts.tsx';
 import { PostDraftDialog } from '../components/publications/PostDraftDialog.tsx';
 import { ScheduleShortDialog } from '../components/publications/ScheduleShortDialog.tsx';
@@ -171,7 +172,6 @@ export const ShortsPage = () => {
         <ShortTile
           key={draft.id}
           draft={draft}
-          laneDay={laneDay}
           onEdit={() => setEditingId(draft.id)}
           highlighted={targetIds.includes(draft.id)}
           dragging={drag?.id === draft.id}
@@ -266,6 +266,10 @@ export const ShortsPage = () => {
       </div>
 
       <PageAlerts path="/shorts" />
+
+      {/* Les verticaux qui demandent du travail se préparent dans Vidéos (format « Vertical ») :
+          ce planning ne montre qu'eux. Ici, ce sont surtout les verticaux générés. */}
+      <Block id="production.short.gantt" />
 
       {undated.length > 0 && (
         <Card

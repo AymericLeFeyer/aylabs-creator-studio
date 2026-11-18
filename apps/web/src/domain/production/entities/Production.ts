@@ -22,7 +22,7 @@ export const PRODUCTION_FORMATS: ProductionFormat[] = ['video', 'short'];
 /** Libellés du format, à un seul endroit comme ceux du statut. */
 export const FORMAT_LABELS: Record<ProductionFormat, string> = {
   video: 'Vidéo',
-  short: 'Short / Réel',
+  short: 'Vertical',
 };
 
 /**

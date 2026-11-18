@@ -156,10 +156,8 @@ export const buildNavBadges = (
     // Une seule file depuis le retrait de « Shorts & Réels » : la pastille compte les
     // vidéos, et un short restant ne doit pas écraser la pastille en partageant l'adresse.
     badges[FORMAT_ROUTES.video] = badge(
-      overview.queue.filter((production) => production.format === 'video').length,
-      reasonsOf(
-        (alert) => PRODUCTION_KINDS.includes(alert.kind) && alert.productionFormat === 'video',
-      ),
+      overview.queue.length,
+      reasonsOf((alert) => PRODUCTION_KINDS.includes(alert.kind)),
     );
 
     const products = reasonsOf((alert) => alert.kind === 'product_late');

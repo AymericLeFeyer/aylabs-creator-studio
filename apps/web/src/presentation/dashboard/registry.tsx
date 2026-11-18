@@ -264,6 +264,12 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     <prod.ProductionQueueCountCard />
   )),
   ...productionBlocks('video'),
+  'production.short.gantt': {
+    label: 'Planning (verticaux travaillés)',
+    group: 'Verticaux',
+    width: FULL,
+    render: () => <prod.ProductionGanttBlock format="short" />,
+  },
 
   // --- Produits ---
   'products.pending': metric('Produits attendus', 'Produits', () => (

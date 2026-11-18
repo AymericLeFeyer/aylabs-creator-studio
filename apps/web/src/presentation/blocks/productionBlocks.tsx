@@ -51,6 +51,15 @@ import { PRODUCTION_COPY } from './productionCopy.ts';
  */
 type FormatProps = { format: ProductionFormat };
 
+/**
+ * « Vidéos » regroupe **tous** les formats : un vertical qui demande du travail se prépare
+ * ici, avec les mêmes outils, et la fiche dit s'il s'agit d'une vidéo ou d'un vertical.
+ * Seul « short » borne : c'est le planning de la page Verticaux, qui ne montre que les
+ * verticaux travaillés. `undefined` = pas de borne.
+ */
+const scopeOf = (format: ProductionFormat): ProductionFormat | undefined =>
+  format === 'short' ? 'short' : undefined;
+
 const PENDING = '…';
 
 /** « 4 h 30 » — la charge d'une semaine se lit en heures, pas en minutes. */
@@ -98,7 +107,7 @@ export const ProductionStatCard = ({ format, stat }: FormatProps & { stat: Produ
 };
 
 const InQueueCard = ({ format }: FormatProps) => {
-  const { data: overview } = useProductionOverview(format);
+  const { data: overview } = useProductionOverview(scopeOf(format));
   const stats = overview?.stats;
   const queue = overview?.queue ?? [];
   return (
@@ -131,7 +140,7 @@ const InQueueCard = ({ format }: FormatProps) => {
 };
 
 const ProgressCard = ({ format }: FormatProps) => {
-  const { data: overview } = useProductionOverview(format);
+  const { data: overview } = useProductionOverview(scopeOf(format));
   const stats = overview?.stats;
   const queue = useMemo(
     () =>
@@ -165,7 +174,7 @@ const ProgressCard = ({ format }: FormatProps) => {
 };
 
 const NextReleaseCard = ({ format }: FormatProps) => {
-  const { data: overview } = useProductionOverview(format);
+  const { data: overview } = useProductionOverview(scopeOf(format));
   const stats = overview?.stats;
   // Terminées comprises : une vidéo prête avant sa date sort quand même ce jour-là.
   const upcoming = overview?.upcomingReleases ?? [];
@@ -202,7 +211,7 @@ const NextReleaseCard = ({ format }: FormatProps) => {
  * donne que le total, et c'est « sur quoi est parti ce temps » qu'on vient chercher.
  */
 const WeekTimeCard = ({ format }: FormatProps) => {
-  const { data: overview } = useProductionOverview(format);
+  const { data: overview } = useProductionOverview(scopeOf(format));
   const stats = overview?.stats;
   const today = localToday();
   const { data: entries = [] } = useTimeEntries({ from: shiftDate(today, -6), to: today });
@@ -212,7 +221,7 @@ const WeekTimeCard = ({ format }: FormatProps) => {
     const totals = new Map<string, number>();
     for (const entry of entries) {
       const production = byId.get(entry.productionId);
-      if (production && production.format !== format) continue;
+      if (production && scopeOf(format) && production.format !== format) continue;
       totals.set(entry.productionId, (totals.get(entry.productionId) ?? 0) + entryMinutes(entry));
     }
     return [...totals.entries()]
@@ -249,7 +258,7 @@ const WeekTimeCard = ({ format }: FormatProps) => {
 };
 
 const LateCard = ({ format }: FormatProps) => {
-  const { data: overview } = useProductionOverview(format);
+  const { data: overview } = useProductionOverview(scopeOf(format));
   const stats = overview?.stats;
   const today = localToday();
   const weekEnd = shiftDate(today, 6);
@@ -300,7 +309,7 @@ const LateCard = ({ format }: FormatProps) => {
 };
 
 const PausedCard = ({ format }: FormatProps) => {
-  const { data: overview } = useProductionOverview(format);
+  const { data: overview } = useProductionOverview(scopeOf(format));
   const stats = overview?.stats;
   const paused = (overview?.queue ?? []).filter((production) => production.status === 'paused');
   return (
@@ -369,8 +378,11 @@ export const ProductionQueueCountCard = () => {
 
 /** « Qu'est-ce qui sort quand » : la file et les terminées, sur un même calendrier. */
 export const ProductionGanttBlock = ({ format }: FormatProps) => {
-  const { data: overview } = useProductionOverview(format);
-  const { data: done = [] } = useProductions({ statuses: ['done'], formats: [format] });
+  const { data: overview } = useProductionOverview(scopeOf(format));
+  const { data: done = [] } = useProductions({
+    statuses: ['done'],
+    formats: scopeOf(format) ? [format] : undefined,
+  });
   // La file porte aussi les terminées pas encore sorties : sans dédoublonnage, elles
   // auraient deux barres.
   const queue = overview?.queue ?? [];
@@ -384,7 +396,7 @@ export const ProductionGanttBlock = ({ format }: FormatProps) => {
 
 /** Les créneaux à venir du format, tous projets confondus : ce que dit l'agenda. */
 export const UpcomingSlotsBlock = ({ format }: FormatProps) => {
-  const { data: overview } = useProductionOverview(format);
+  const { data: overview } = useProductionOverview(scopeOf(format));
   const today = toIsoDate(new Date());
   const slots = overview?.upcomingSlots ?? [];
   return (
@@ -429,7 +441,7 @@ export const UpcomingSlotsBlock = ({ format }: FormatProps) => {
 };
 
 export const StepAveragesBlock = ({ format }: FormatProps) => {
-  const { data: overview } = useProductionOverview(format);
+  const { data: overview } = useProductionOverview(scopeOf(format));
   return (
     <StepAveragesCard
       averages={overview?.stepAverages ?? []}
@@ -489,7 +501,7 @@ const sortQueueByStatus = (queue: Production[]): Production[] =>
   [...queue].sort((a, b) => QUEUE_STATUS_RANK[a.status] - QUEUE_STATUS_RANK[b.status]);
 
 export const ProductionQueueBlock = ({ format }: FormatProps) => {
-  const { data: overview } = useProductionOverview(format);
+  const { data: overview } = useProductionOverview(scopeOf(format));
   const { data: steps = [] } = useProductionSteps();
   const { preferences } = usePreferences();
 
@@ -592,7 +604,10 @@ const releaseDateOf = (production: Production): string =>
   production.videoDate ?? production.plannedDate ?? '';
 
 export const ProductionDoneBlock = ({ format }: FormatProps) => {
-  const { data } = useProductions({ statuses: ['done'], formats: [format] });
+  const { data } = useProductions({
+    statuses: ['done'],
+    formats: scopeOf(format) ? [format] : undefined,
+  });
   // La plus récente d'abord : on revient sur ce qu'on vient de sortir, pas sur l'historique.
   const done = useMemo(
     () => [...(data ?? [])].sort((a, b) => releaseDateOf(b).localeCompare(releaseDateOf(a))),

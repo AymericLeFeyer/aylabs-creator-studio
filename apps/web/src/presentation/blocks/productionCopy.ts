@@ -24,7 +24,8 @@ export const PRODUCTION_COPY: Record<
     title: 'Vidéos',
     group: 'Vidéos',
     published: 'Une vidéo publiée',
-    subtitle: 'Ce qui est en cours, ce qui sort quand, et le temps que ça prend vraiment.',
+    subtitle:
+      'Vidéos et verticaux : ce qui est en cours, ce qui sort quand, et le temps que ça prend vraiment.',
     create: 'Nouvelle vidéo',
     empty: 'Aucune vidéo en production',
     emptyDone: "Aucune vidéo publiée depuis l'outil pour l'instant.",

@@ -33,8 +33,6 @@ const DAY_MONTH = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'sho
 
 interface ShortTileProps {
   draft: PostDraft;
-  /** Le couloir où la tuile est posée : l'heure n'y répète pas le jour, sauf s'il diffère. */
-  laneDay: string | null;
   onEdit: () => void;
   /** Celle qu'on est venu voir depuis une fiche de vidéo. */
   highlighted: boolean;
@@ -54,7 +52,6 @@ interface ShortTileProps {
  */
 export const ShortTile = ({
   draft,
-  laneDay,
   onEdit,
   highlighted,
   dragging,
@@ -77,9 +74,8 @@ export const ShortTile = ({
     ({ attempt }) => attempt?.status === 'published' || attempt?.status === 'ready',
   );
 
-  const sameDay = draft.scheduledAt && laneDay && localDateOf(draft.scheduledAt) === laneDay;
   const when = draft.scheduledAt
-    ? `${sameDay ? '' : `${DAY_MONTH.format(new Date(`${localDateOf(draft.scheduledAt)}T12:00:00`)).replace('.', '')} `}${localTimeOf(draft.scheduledAt)}`
+    ? `${DAY_MONTH.format(new Date(`${localDateOf(draft.scheduledAt)}T12:00:00`)).replace('.', '')} ${localTimeOf(draft.scheduledAt)}`
     : null;
 
   const dropProps = canDrop
