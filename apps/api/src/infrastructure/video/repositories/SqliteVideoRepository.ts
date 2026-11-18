@@ -6,6 +6,7 @@ import type {
   Video,
   VideoRangeStats,
   VideoLiveStatsUpdate,
+  VideoLiveViewersUpdate,
   VideoStatsUpdate,
   VideoView,
 } from '../../../domain/video/entities/Video.ts';
@@ -27,6 +28,8 @@ interface VideoRow {
   thumbnail_url: string | null;
   hidden_at: string | null;
   live_started_at: string | null;
+  live_peak_viewers: number | null;
+  live_avg_viewers: number | null;
   views: number;
   watch_minutes: number;
   subscribers_gained: number;
@@ -51,6 +54,8 @@ const toDomain = (row: VideoRow): Video => ({
   thumbnailUrl: row.thumbnail_url,
   hiddenAt: row.hidden_at,
   liveStartedAt: row.live_started_at,
+  livePeakViewers: row.live_peak_viewers,
+  liveAverageViewers: row.live_avg_viewers,
   stats: {
     views: row.views,
     watchMinutes: row.watch_minutes,
@@ -255,6 +260,21 @@ export class SqliteVideoRepository implements VideoRepository {
         now,
         update.channelId,
         update.externalId,
+      );
+    }
+    return count;
+  }
+
+  setLiveViewers(updates: VideoLiveViewersUpdate[]): number {
+    const stmt = this.db.prepare(
+      `UPDATE videos SET live_peak_viewers = ?, live_avg_viewers = ?, updated_at = ?
+        WHERE channel_id = ? AND external_id = ?`,
+    );
+    const now = new Date().toISOString();
+    let count = 0;
+    for (const update of updates) {
+      count += Number(
+        stmt.run(update.peak, update.average, now, update.channelId, update.externalId).changes,
       );
     }
     return count;

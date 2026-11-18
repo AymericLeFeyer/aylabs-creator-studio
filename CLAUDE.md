@@ -1811,8 +1811,14 @@ Graph.
 - **Les directs passés** : des `videos` ordinaires, repérées par `videos.live_started_at`
   (migration 75), lu dans `liveStreamingDetails.actualStartTime` de `videos.list` — la seule
   source que YouTube documente. Posé par `collectVideoStats` (fenêtre `VIDEO_STATS_WINDOW_DAYS`,
-  jamais effacé : `COALESCE`), donc un direct de plus d'un an n'est pas repéré. Lus par
-  `GET /api/videos?live=true`, affichés dans `LatestVideoCard` comme « Dernières sorties ».
+  jamais effacé : `COALESCE`), donc un direct de plus d'un an n'est pas repéré. Pic et moyenne
+  de spectateurs simultanés : `live_peak_viewers` / `live_avg_viewers` (migration 76), lus dans
+  YouTube Analytics (`averageConcurrentViewers`, `peakConcurrentViewers`, OAuth seulement) par
+  `CollectMetrics.collectLiveViewers` ; `null` = pas mesuré (« — »). Lus par
+  `GET /api/videos?live=true`. L'écran montre, sur la période du `PeriodPicker`, trois chiffres
+  (nombre de directs, pic moyen, viewers moyens — moyennes sur les seuls directs mesurés) et
+  l'historique en **liste** (`LivesHistoryTable`). Blocs ajoutables : `live.count`, `live.peak`,
+  `live.average`, `live.history`, `live.ideas` (`blocks/liveBlocks.tsx`).
 - **Les directs à faire** : `LiveIdea { id, title, notes, plannedDate, startTime, durationMinutes,
   channelId }`, table `live_ideas`, CRUD nu (`/api/live-ideas`). Date et heure facultatives.
   `ManagePlanning.board` les rend dans `PlanningDay.lives` ; avec une heure, ils occupent leur

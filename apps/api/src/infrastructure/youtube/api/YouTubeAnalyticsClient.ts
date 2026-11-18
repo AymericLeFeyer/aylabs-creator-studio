@@ -231,6 +231,37 @@ export class YouTubeAnalyticsClient {
     return rows;
   }
 
+  /**
+   * Pic et moyenne de spectateurs simultanés des directs (`averageConcurrentViewers`,
+   * `peakConcurrentViewers`). N'existe qu'en Analytics, donc en OAuth ; disponible dans
+   * les minutes qui suivent la fin du direct. Une vidéo sans ces mesures est absente.
+   */
+  async fetchLiveViewers(
+    videoIds: string[],
+    from: IsoDate,
+    to: IsoDate,
+  ): Promise<Array<{ externalId: string; average: number; peak: number }>> {
+    const out: Array<{ externalId: string; average: number; peak: number }> = [];
+    for (let offset = 0; offset < videoIds.length; offset += MAX_VIDEOS_PER_QUERY) {
+      const batch = videoIds.slice(offset, offset + MAX_VIDEOS_PER_QUERY);
+      const rows = await this.queryVideos(
+        'averageConcurrentViewers,peakConcurrentViewers',
+        batch,
+        from,
+        to,
+      );
+      for (const row of rows) {
+        if (typeof row[0] !== 'string') continue;
+        out.push({
+          externalId: row[0],
+          average: Math.round(Number(row[1]) || 0),
+          peak: Math.round(Number(row[2]) || 0),
+        });
+      }
+    }
+    return out;
+  }
+
   /** Compteurs publics, quasi instantanés, là où `fetchVideoStats` a plusieurs jours de retard. */
   async fetchPublicVideoStats(videoIds: string[]): Promise<VideoStatRow[]> {
     try {

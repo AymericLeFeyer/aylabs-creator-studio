@@ -31,6 +31,10 @@ export interface Video {
   hiddenAt: string | null;
   /** Début réel du direct, `null` pour une vidéo classique. */
   liveStartedAt: string | null;
+  /** Pic de spectateurs simultanés du direct, `null` : pas mesuré. */
+  livePeakViewers: number | null;
+  /** Moyenne de spectateurs simultanés du direct, `null` : pas mesuré. */
+  liveAverageViewers: number | null;
   stats: VideoStats;
 }
 

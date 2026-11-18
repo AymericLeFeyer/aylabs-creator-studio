@@ -5,6 +5,7 @@ import * as yt from '../blocks/youtubeBlocks.tsx';
 import * as money from '../blocks/moneyBlocks.tsx';
 import * as partner from '../blocks/partnerBlocks.tsx';
 import * as social from '../blocks/socialBlocks.tsx';
+import * as live from '../blocks/liveBlocks.tsx';
 import * as prod from '../blocks/productionBlocks.tsx';
 import * as legal from '../blocks/legalBlocks.tsx';
 import * as comment from '../blocks/commentBlocks.tsx';
@@ -186,6 +187,15 @@ export const BLOCKS: Record<string, BlockDefinition> = {
     <yt.YouTubePeriodTable />
   )),
   'youtube.catalog': panel('Catalogue', 'YouTube', FULL, () => <yt.YouTubeCatalogTable />),
+
+  // --- Directs ---
+  'live.count': metric('Nombre de directs', 'Directs', () => <live.LivesCountCard />),
+  'live.peak': metric('Pic moyen de viewers', 'Directs', () => <live.LivesPeakCard />),
+  'live.average': metric('Viewers moyens', 'Directs', () => <live.LivesAverageCard />),
+  'live.history': panel('Historique des directs', 'Directs', FULL, () => (
+    <live.LivesHistoryTable />
+  )),
+  'live.ideas': panel('Directs à faire', 'Directs', HALF, () => <live.LiveIdeasBlock />),
 
   // --- Instagram ---
   'instagram.stories': metric('Stories', 'Instagram', () => <social.InstagramStoriesCard />),

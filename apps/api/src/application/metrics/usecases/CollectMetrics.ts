@@ -196,6 +196,10 @@ export class CollectMetrics {
       return overlayPublicStats(analytics, publicRows);
     });
 
+    await this.collectLiveViewers(channel.id, (ids, since) =>
+      client.fetchLiveViewers(ids, since, to),
+    );
+
     return {
       ...base,
       status: 'ok',
@@ -400,6 +404,38 @@ export class CollectMetrics {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[collect] stats vidéo non collectées (${channelId}) : ${message}`);
       return 0;
+    }
+  }
+
+  /**
+   * Pic et moyenne de spectateurs des directs de la chaîne. Échec avalé, comme les autres
+   * enrichissements : un direct sans ces chiffres reste affiché avec « — ».
+   */
+  private async collectLiveViewers(
+    channelId: string,
+    fetch: (
+      ids: string[],
+      since: IsoDate,
+    ) => Promise<Array<{ externalId: string; average: number; peak: number }>>,
+  ): Promise<void> {
+    const lives = this.videos.findAll({ channelIds: [channelId], live: true });
+    if (lives.length === 0) return;
+    try {
+      const rows = await fetch(
+        lives.map((video) => video.externalId),
+        lives[0]!.date,
+      );
+      this.videos.setLiveViewers(
+        rows.map((row) => ({
+          channelId,
+          externalId: row.externalId,
+          peak: row.peak,
+          average: row.average,
+        })),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[collect] spectateurs des directs non collectés (${channelId}) : ${message}`);
     }
   }
 

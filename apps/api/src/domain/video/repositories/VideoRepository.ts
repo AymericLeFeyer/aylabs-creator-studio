@@ -5,6 +5,7 @@ import type {
   Video,
   VideoLiveStatsUpdate,
   VideoRangeStats,
+  VideoLiveViewersUpdate,
   VideoStatsUpdate,
   VideoView,
 } from '../entities/Video.ts';
@@ -35,6 +36,8 @@ export interface VideoRepository {
   upsertMany(videos: UpsertVideoInput[]): number;
   /** Remplace les compteurs d'une vidéo. Les compteurs sont des cumuls, jamais additionnés. */
   upsertStats(updates: VideoStatsUpdate[]): number;
+  /** Pic et moyenne de spectateurs d'un direct. */
+  setLiveViewers(updates: VideoLiveViewersUpdate[]): number;
   /** Relevé en direct : vues, likes et commentaires seulement, sans relevé daté. */
   updateLiveStats(updates: VideoLiveStatsUpdate[]): number;
   /**

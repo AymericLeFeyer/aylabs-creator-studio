@@ -50,6 +50,10 @@ export interface Video {
    * `null` sinon. C'est la seule source que YouTube documente pour les distinguer.
    */
   liveStartedAt: string | null;
+  /** Pic de spectateurs simultanés du direct. `null` : pas mesuré (OAuth seulement). */
+  livePeakViewers: number | null;
+  /** Moyenne de spectateurs simultanés. `null` : pas mesuré. */
+  liveAverageViewers: number | null;
   stats: VideoStats;
 }
 
@@ -59,7 +63,10 @@ export interface VideoView extends Video {
   channelColor: string;
 }
 
-export type UpsertVideoInput = Omit<Video, 'id' | 'stats' | 'hiddenAt' | 'liveStartedAt'>;
+export type UpsertVideoInput = Omit<
+  Video,
+  'id' | 'stats' | 'hiddenAt' | 'liveStartedAt' | 'livePeakViewers' | 'liveAverageViewers'
+>;
 
 /** Mise à jour des compteurs, adressée par la clé naturelle `(channelId, externalId)`. */
 export interface VideoStatsUpdate {
@@ -68,6 +75,14 @@ export interface VideoStatsUpdate {
   stats: Omit<VideoStats, 'updatedAt'>;
   /** Posé seulement quand YouTube dit que c'est un direct ; jamais effacé. */
   liveStartedAt?: string | null;
+}
+
+/** Spectateurs simultanés d'un direct, adressés par la clé naturelle. */
+export interface VideoLiveViewersUpdate {
+  channelId: string;
+  externalId: string;
+  peak: number;
+  average: number;
 }
 
 /** Ce qu'un relevé en direct peut savoir : le reste n'existe que dans YouTube Analytics. */

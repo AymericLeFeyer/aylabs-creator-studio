@@ -2340,6 +2340,16 @@ const migrations: Migration[] = [
       CREATE INDEX idx_live_ideas_date ON live_ideas (planned_date);
     `,
   },
+  {
+    version: 76,
+    name: 'directs : pic et moyenne de spectateurs simultanes',
+    up: `
+      -- YouTube Analytics (averageConcurrentViewers, peakConcurrentViewers), OAuth seulement.
+      -- NULL = pas mesure : distinct de 0 spectateur.
+      ALTER TABLE videos ADD COLUMN live_peak_viewers INTEGER;
+      ALTER TABLE videos ADD COLUMN live_avg_viewers INTEGER;
+    `,
+  },
 ];
 
 /**
