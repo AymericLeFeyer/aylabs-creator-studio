@@ -245,24 +245,50 @@ export class YouTubeAnalyticsClient {
     const analytics = google.youtubeAnalytics({ version: 'v2', auth: this.buildAuth() });
     const out: Array<{ externalId: string; average: number; peak: number }> = [];
     for (const live of lives) {
+      const base = {
+        ids: 'channel==MINE',
+        startDate: live.from,
+        endDate: to,
+        metrics: 'averageConcurrentViewers,peakConcurrentViewers',
+        filters: `video==${live.externalId}`,
+      };
       try {
-        const response = await analytics.reports.query({
-          ids: 'channel==MINE',
-          startDate: live.from,
-          endDate: to,
-          metrics: 'averageConcurrentViewers,peakConcurrentViewers',
-          filters: `video==${live.externalId}`,
-        });
-        const row = (response.data.rows ?? [])[0] as unknown[] | undefined;
+        // Variante agrégée : une ligne, `[moyenne, pic]`.
+        const row = ((await analytics.reports.query(base)).data.rows ?? [])[0] as
+          unknown[] | undefined;
         if (!row) continue;
         out.push({
           externalId: live.externalId,
           average: Math.round(Number(row[0]) || 0),
           peak: Math.round(Number(row[1]) || 0),
         });
+        continue;
       } catch (error) {
         console.warn(
-          `[youtube] spectateurs du direct ${live.externalId} indisponibles : ${this.describe(error)}`,
+          `[youtube] spectateurs du direct ${live.externalId} (agrégé) : ${this.describe(error)}`,
+        );
+      }
+
+      // Repli : une ligne par minute de direct (`[position, moyenne, pic]`) — on en tire le
+      // pic le plus haut et la moyenne des minutes.
+      try {
+        const response = await analytics.reports.query({
+          ...base,
+          dimensions: 'livestreamPosition',
+          sort: 'livestreamPosition',
+        });
+        const rows = (response.data.rows ?? []) as unknown[][];
+        if (rows.length === 0) continue;
+        const averages = rows.map((row) => Number(row[1]) || 0);
+        const peaks = rows.map((row) => Number(row[2]) || 0);
+        out.push({
+          externalId: live.externalId,
+          average: Math.round(averages.reduce((sum, v) => sum + v, 0) / averages.length),
+          peak: Math.max(...peaks),
+        });
+      } catch (error) {
+        console.warn(
+          `[youtube] spectateurs du direct ${live.externalId} (par minute) : ${this.describe(error)}`,
         );
       }
     }
