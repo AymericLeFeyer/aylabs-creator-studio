@@ -12,6 +12,7 @@ import {
   Link2,
   ListOrdered,
   Music2,
+  HardDrive,
   Palette,
   SlidersHorizontal,
   Wallet,
@@ -52,6 +53,7 @@ import { DiscordSettingsPage } from './DiscordSettingsPage.tsx';
 import { AffiliationSettingsPage } from './AffiliationSettingsPage.tsx';
 import { CompanyPage } from './CompanyPage.tsx';
 import { ApiSettingsPage } from './ApiSettingsPage.tsx';
+import { StorageSettingsPage } from './StorageSettingsPage.tsx';
 import { ExternalAppsSettingsPage } from './ExternalAppsSettingsPage.tsx';
 import { PrivacySettings } from '../components/PrivacySettings.tsx';
 import { DiscordIcon } from '../components/icons/DiscordIcon.tsx';
@@ -104,6 +106,7 @@ const GROUPS: SettingsGroup[] = [
         icon: Palette,
         render: () => <BrandingSettings />,
       },
+      { id: 'stockage', label: 'Stockage', icon: HardDrive, render: () => <StorageSettingsPage /> },
     ],
   },
   {

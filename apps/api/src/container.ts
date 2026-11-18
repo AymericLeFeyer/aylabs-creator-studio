@@ -120,6 +120,8 @@ import { OpenAiCostClient } from './infrastructure/ai/api/OpenAiCostClient.ts';
 import { OpenAiTextClient } from './infrastructure/ai/api/OpenAiTextClient.ts';
 import { ProductionAssistant } from './application/production/usecases/ProductionAssistant.ts';
 import { ManageThumbnails } from './application/thumbnail/usecases/ManageThumbnails.ts';
+import { ManageStorage } from './application/storage/usecases/ManageStorage.ts';
+import { SqliteStorageRepository } from './infrastructure/storage/repositories/SqliteStorageRepository.ts';
 import { SqliteThumbnailRepository } from './infrastructure/thumbnail/repositories/SqliteThumbnailRepository.ts';
 import { OpenAiImageClient } from './infrastructure/thumbnail/api/OpenAiImageClient.ts';
 
@@ -281,6 +283,8 @@ export interface Container {
   /** Production → Shorts : vidéo, heure et mise en ligne des publications. */
   manageShorts: ManageShorts;
   manageAutoDm: ManageAutoDm;
+  /** Paramètres → Stockage : tailles et purges. */
+  manageStorage: ManageStorage;
 }
 
 /** Assemble les implémentations concrètes derrière les interfaces du domaine. */
@@ -453,6 +457,11 @@ export const buildContainer = (config: Config): Container => {
     (): boolean => manageAi.openAiEnabled(),
   );
 
+  const uploadsDir =
+    config.databasePath === ':memory:'
+      ? join(process.cwd(), 'data', 'publish-uploads')
+      : join(dirname(config.databasePath), 'publish-uploads');
+
   const managePublishing = new ManagePublishing(
     new SqlitePublishRepository(db),
     channels,
@@ -460,10 +469,7 @@ export const buildContainer = (config: Config): Container => {
     manageTikTokConnection,
     new S3PublishStaging(config.publishS3),
     {
-      storageDir:
-        config.databasePath === ':memory:'
-          ? join(process.cwd(), 'data', 'publish-uploads')
-          : join(dirname(config.databasePath), 'publish-uploads'),
+      storageDir: uploadsDir,
       gcpClientId: config.gcpClientId,
       gcpClientSecret: config.gcpClientSecret,
     },
@@ -483,6 +489,9 @@ export const buildContainer = (config: Config): Container => {
       manageThumbnails.image(id),
     ),
     manageAutoDm: new ManageAutoDm(postDrafts, new SqliteAutoDmRepository(db), instagramAccounts),
+    manageStorage: new ManageStorage(
+      new SqliteStorageRepository(db, config.databasePath, uploadsDir),
+    ),
     manageThumbnails,
     productionAssistant: new ProductionAssistant({
       productions,

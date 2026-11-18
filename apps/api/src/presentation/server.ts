@@ -48,6 +48,7 @@ import { aiRouter } from './routes/ai.ts';
 import { mcpRouter } from './routes/mcp.ts';
 import { thumbnailsRouter } from './routes/thumbnails.ts';
 import { publishRouter } from './routes/publish.ts';
+import { storageRouter } from './routes/storage.ts';
 
 export const createServer = (container: Container): express.Express => {
   const app = express();
@@ -64,6 +65,8 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/thumbnails', thumbnailsRouter(container));
   app.use('/api/publish', publishRouter(container));
   app.use(express.json({ limit: '1mb' }));
+
+  app.use('/api/storage', storageRouter(container));
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });

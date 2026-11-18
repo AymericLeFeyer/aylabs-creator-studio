@@ -2888,6 +2888,30 @@ Deux gestes seulement l'envoient :
 échec SMTP rend le brouillon. Un brouillon vit 7 jours. La carte parle le protocole à la main
 (JSON-RPC sur `postMessage`), sans le paquet `ext-apps` : une page, pas d'étape de build.
 
+### `storage` — ce que le studio garde (Paramètres → Stockage)
+
+Aucune table : `GET /api/storage` mesure à chaque lecture (`ManageStorage.overview`,
+`SqliteStorageRepository`). Tailles de tables par `dbstat` (pages réelles, index compris),
+base + journal WAL, fichiers du dossier `publish-uploads`, espace disque (`statfsSync`), puis
+des **catégories** (miniatures générées / enregistrées, banque, têtes et produits, couvertures,
+logo, pièces jointes en cache, messages, vidéos, fichiers orphelins), regroupées en Images /
+Mails / Vidéos.
+
+`POST /api/storage/purge` `{ kind, olderThanDays, compact }` — quatre purges, **chaque règle
+vit dans le dépôt à côté de la requête qui la compte** (le chiffre annoncé est celui retiré) :
+
+| `kind`              | Retire                                                             | Garde toujours                                                                            |
+| ------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `thumbnail_history` | miniatures non enregistrées (seuil d'âge 0 / 30 / 90 j)            | enregistrées (`saved_at`) et celles d'un test A/B (`productions.ab_test`)                 |
+| `mail_attachments`  | contenu en cache (`data = NULL`, la ligne reste, retéléchargeable) | pièces dont le mail a disparu du serveur (`removed_at`) : irrécupérables                  |
+| `published_videos`  | **fichier** des vidéos dont la mise en ligne est partie            | lignes et tentatives (l'état « en ligne » ne bouge pas) ; tout short en cours ou en échec |
+| `orphan_files`      | fichiers sans ligne `publish_uploads`                              | —                                                                                         |
+
+Supprimer des BLOB ne rétrécit pas le fichier SQLite : `compact` (défaut vrai) lance `VACUUM`
+
+- `wal_checkpoint(TRUNCATE)` après une purge de base. `POST /api/storage/compact` seul. Une
+  opération à la fois (409). Le stockage éphémère R2 n'est pas mesuré (il s'efface seul en 24 h).
+
 ### `analytics`
 
 `GetAnalytics.execute(query)` renvoie `{ query, series, totals, byCategory, byExpenseCategory, byChannel, videos, videoPerformance, previousTotals }`. `byCategory` = répartition des revenus (AdSense inclus), `byExpenseCategory` = celle des dépenses. `previousTotals` couvre la période précédente de même longueur, pour les variations en %.
