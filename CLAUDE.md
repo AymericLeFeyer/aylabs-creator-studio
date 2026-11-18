@@ -1804,6 +1804,16 @@ dernières ; « +N sur la période » compté dans `tiktok_videos`, donc depuis 
 comptes (archiver/supprimer) — exactement l'ancien `InstagramSettingsPage` d'avant l'API
 Graph.
 
+### Vidéos et verticaux : un seul lieu de travail
+
+`/production` (« Vidéos ») regroupe **tous les formats** : un vertical qui demande du travail se
+prépare ici, avec script, créneaux et planning. Le champ **Format** de `ProductionDialog` (Vidéo
+par défaut / Vertical, `FORMAT_LABELS`) est toujours proposé. `scopeOf(format)`
+(`productionBlocks.tsx`) ne borne que pour `short` : la page **Verticaux** monte
+`production.short.gantt`, le planning des seuls verticaux travaillés (la file de Vidéos, ses
+pastilles et ses chiffres comptent les deux formats). Les tuiles de Verticaux affichent toujours
+date et heure de sortie. Une production n'a qu'une date de sortie, sans heure.
+
 ### `live` — les directs (Production → Directs)
 
 Écran `/directs` (`LivePage`, libellé « Directs »). Deux moitiés :

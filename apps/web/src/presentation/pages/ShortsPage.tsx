@@ -166,7 +166,7 @@ export const ShortsPage = () => {
   const dropHighlight = 'bg-primary/10 ring-2 ring-inset ring-primary';
 
   /** Une grille de grandes tuiles : de 2 colonnes au téléphone à 6 sur grand écran. */
-  const tiles = (items: PostDraft[], laneDay: string | null) => (
+  const tiles = (items: PostDraft[]) => (
     <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
       {items.map((draft) => (
         <ShortTile
@@ -279,7 +279,7 @@ export const ShortsPage = () => {
           <p className="border-b border-border px-4 py-2 text-xs font-medium text-muted-foreground">
             Sans date ({undated.length})
           </p>
-          {tiles(undated, null)}
+          {tiles(undated)}
         </Card>
       )}
 
@@ -326,7 +326,7 @@ export const ShortsPage = () => {
                   <Plus className="h-3.5 w-3.5" />
                 </Button>
               </div>
-              {tiles(items, day)}
+              {tiles(items)}
             </section>
           );
         })}
