@@ -232,33 +232,38 @@ export class YouTubeAnalyticsClient {
   }
 
   /**
-   * Pic et moyenne de spectateurs simultanés des directs (`averageConcurrentViewers`,
-   * `peakConcurrentViewers`). N'existe qu'en Analytics, donc en OAuth ; disponible dans
-   * les minutes qui suivent la fin du direct. Une vidéo sans ces mesures est absente.
+   * Pic et moyenne de spectateurs simultanés d'un direct (`averageConcurrentViewers`,
+   * `peakConcurrentViewers`). Le rapport « Concurrent viewers » n'accepte **ni dimension
+   * de vidéo ni filtre multiple** : une requête par vidéo (`video==<id>`), sans tri.
+   * OAuth seulement ; disponible dans les minutes qui suivent la fin du direct. Un direct
+   * qu'YouTube refuse ou ne connaît pas est simplement absent du résultat.
    */
   async fetchLiveViewers(
-    videoIds: string[],
-    from: IsoDate,
+    lives: Array<{ externalId: string; from: IsoDate }>,
     to: IsoDate,
   ): Promise<Array<{ externalId: string; average: number; peak: number }>> {
+    const analytics = google.youtubeAnalytics({ version: 'v2', auth: this.buildAuth() });
     const out: Array<{ externalId: string; average: number; peak: number }> = [];
-    for (let offset = 0; offset < videoIds.length; offset += MAX_VIDEOS_PER_QUERY) {
-      const batch = videoIds.slice(offset, offset + MAX_VIDEOS_PER_QUERY);
-      const rows = await this.queryVideos(
-        'averageConcurrentViewers,peakConcurrentViewers',
-        batch,
-        from,
-        to,
-        // Le tri doit porter sur une métrique demandée, sinon YouTube refuse la requête.
-        '-peakConcurrentViewers',
-      );
-      for (const row of rows) {
-        if (typeof row[0] !== 'string') continue;
-        out.push({
-          externalId: row[0],
-          average: Math.round(Number(row[1]) || 0),
-          peak: Math.round(Number(row[2]) || 0),
+    for (const live of lives) {
+      try {
+        const response = await analytics.reports.query({
+          ids: 'channel==MINE',
+          startDate: live.from,
+          endDate: to,
+          metrics: 'averageConcurrentViewers,peakConcurrentViewers',
+          filters: `video==${live.externalId}`,
         });
+        const row = (response.data.rows ?? [])[0] as unknown[] | undefined;
+        if (!row) continue;
+        out.push({
+          externalId: live.externalId,
+          average: Math.round(Number(row[0]) || 0),
+          peak: Math.round(Number(row[1]) || 0),
+        });
+      } catch (error) {
+        console.warn(
+          `[youtube] spectateurs du direct ${live.externalId} indisponibles : ${this.describe(error)}`,
+        );
       }
     }
     return out;
@@ -280,7 +285,6 @@ export class YouTubeAnalyticsClient {
     videoIds: string[],
     from: IsoDate,
     to: IsoDate,
-    sort = '-views',
   ): Promise<unknown[][]> {
     const analytics = google.youtubeAnalytics({ version: 'v2', auth: this.buildAuth() });
     const response = await analytics.reports.query({
@@ -291,7 +295,7 @@ export class YouTubeAnalyticsClient {
       dimensions: 'video',
       filters: `video==${videoIds.join(',')}`,
       maxResults: MAX_VIDEOS_PER_QUERY,
-      sort,
+      sort: '-views',
     });
     return (response.data.rows ?? []) as unknown[][];
   }

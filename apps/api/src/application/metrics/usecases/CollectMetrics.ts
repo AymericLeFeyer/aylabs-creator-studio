@@ -196,9 +196,7 @@ export class CollectMetrics {
       return overlayPublicStats(analytics, publicRows);
     });
 
-    await this.collectLiveViewers(channel.id, (ids, since) =>
-      client.fetchLiveViewers(ids, since, to),
-    );
+    await this.collectLiveViewers(channel.id, (lives) => client.fetchLiveViewers(lives, to));
 
     return {
       ...base,
@@ -414,16 +412,14 @@ export class CollectMetrics {
   private async collectLiveViewers(
     channelId: string,
     fetch: (
-      ids: string[],
-      since: IsoDate,
+      lives: Array<{ externalId: string; from: IsoDate }>,
     ) => Promise<Array<{ externalId: string; average: number; peak: number }>>,
   ): Promise<void> {
     const lives = this.videos.findAll({ channelIds: [channelId], live: true });
     if (lives.length === 0) return;
     try {
       const rows = await fetch(
-        lives.map((video) => video.externalId),
-        lives[0]!.date,
+        lives.map((video) => ({ externalId: video.externalId, from: video.date })),
       );
       this.videos.setLiveViewers(
         rows.map((row) => ({
