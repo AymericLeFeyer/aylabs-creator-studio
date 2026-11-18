@@ -20,6 +20,8 @@ export interface VideoFilter {
    * qu'elles, absent ne filtre pas (les sélecteurs doivent tout voir).
    */
   hidden?: boolean;
+  /** `true` : seulement les directs (`live_started_at` posé). */
+  live?: boolean;
   /** Restreint à ces identifiants internes. */
   ids?: string[];
 }

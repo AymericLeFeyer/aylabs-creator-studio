@@ -1804,6 +1804,21 @@ dernières ; « +N sur la période » compté dans `tiktok_videos`, donc depuis 
 comptes (archiver/supprimer) — exactement l'ancien `InstagramSettingsPage` d'avant l'API
 Graph.
 
+### `live` — les directs (Production → Directs)
+
+Écran `/directs` (`LivePage`, libellé « Directs »). Deux moitiés :
+
+- **Les directs passés** : des `videos` ordinaires, repérées par `videos.live_started_at`
+  (migration 75), lu dans `liveStreamingDetails.actualStartTime` de `videos.list` — la seule
+  source que YouTube documente. Posé par `collectVideoStats` (fenêtre `VIDEO_STATS_WINDOW_DAYS`,
+  jamais effacé : `COALESCE`), donc un direct de plus d'un an n'est pas repéré. Lus par
+  `GET /api/videos?live=true`, affichés dans `LatestVideoCard` comme « Dernières sorties ».
+- **Les directs à faire** : `LiveIdea { id, title, notes, plannedDate, startTime, durationMinutes,
+  channelId }`, table `live_ideas`, CRUD nu (`/api/live-ideas`). Date et heure facultatives.
+  `ManagePlanning.board` les rend dans `PlanningDay.lives` ; avec une heure, ils occupent leur
+  plage pour le moteur (`liveBusy`), sans heure ils étiquettent le jour. Les mutations
+  invalident `liveIdeas` **et** `planningBoard`.
+
 ### `comment` — ce que les gens écrivent, et ce qu'on en fait
 
 `Comment { id, channelId, externalId, videoId, videoExternalId, authorName, authorAvatarUrl,

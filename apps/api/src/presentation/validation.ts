@@ -155,6 +155,11 @@ export const videoQuerySchema = z.object({
         .filter(Boolean),
     ),
   limit: z.coerce.number().int().min(1).max(500).default(200),
+  // `true` : seulement les directs.
+  live: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
   // `false` : sans les vidéos masquées (« Dernières sorties ») ; `true` : elles seules.
   hidden: z
     .enum(['true', 'false'])
@@ -467,6 +472,28 @@ export const createIdeaSchema = z.object({
 });
 
 export const updateIdeaSchema = createIdeaSchema.partial();
+
+/** Un live à faire. Le titre seul est obligatoire : la date vient quand on la connaît. */
+export const createLiveIdeaSchema = z.object({
+  title: z.string().trim().min(1, 'Le titre est obligatoire').max(200),
+  notes: z.string().trim().max(5000).optional(),
+  plannedDate: optionalIsoDate,
+  startTime: time,
+  durationMinutes: z
+    .number()
+    .int()
+    .min(15)
+    .max(24 * 60)
+    .optional(),
+  channelId: z.string().nullable().optional(),
+});
+
+export const updateLiveIdeaSchema = createLiveIdeaSchema.partial();
+
+export const liveIdeaQuerySchema = z.object({
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+});
 
 /**
  * Une note d'une vidéo. Tout est facultatif : « Nouvelle note » crée une note vide, le

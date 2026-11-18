@@ -21,6 +21,7 @@ export const videosRouter = (container: Container): Router => {
         channelIds: query.channelIds,
         limit: query.limit,
         hidden: query.hidden,
+        live: query.live || undefined,
       }),
     );
   });

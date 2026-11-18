@@ -20,6 +20,7 @@ import { recurringExpensesRouter } from './routes/recurringExpenses.ts';
 import { productsRouter } from './routes/products.ts';
 import { sponsorshipsRouter } from './routes/sponsorships.ts';
 import { ideasRouter } from './routes/ideas.ts';
+import { liveIdeasRouter } from './routes/liveIdeas.ts';
 import { postDraftsRouter } from './routes/postDrafts.ts';
 import { dashboardRouter } from './routes/dashboard.ts';
 import { preferencesRouter } from './routes/preferences.ts';
@@ -93,6 +94,7 @@ export const createServer = (container: Container): express.Express => {
   app.use('/api/products', productsRouter(container));
   app.use('/api/sponsorships', sponsorshipsRouter(container));
   app.use('/api/ideas', ideasRouter(container));
+  app.use('/api/live-ideas', liveIdeasRouter(container));
   app.use('/api/post-drafts', postDraftsRouter(container));
   app.use('/api/dashboard', dashboardRouter(container));
   app.use('/api/preferences', preferencesRouter(container));

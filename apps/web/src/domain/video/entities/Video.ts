@@ -29,6 +29,8 @@ export interface Video {
   thumbnailUrl: string | null;
   /** Masquée de « Dernières sorties » (et de cette liste seulement). `null` sinon. */
   hiddenAt: string | null;
+  /** Début réel du direct, `null` pour une vidéo classique. */
+  liveStartedAt: string | null;
   stats: VideoStats;
 }
 

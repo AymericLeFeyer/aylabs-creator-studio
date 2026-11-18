@@ -45,6 +45,11 @@ export interface Video {
    * un direct ou une rediffusion n'a rien à y faire.
    */
   hiddenAt: string | null;
+  /**
+   * Début réel du direct, quand la vidéo en est un (`liveStreamingDetails.actualStartTime`).
+   * `null` sinon. C'est la seule source que YouTube documente pour les distinguer.
+   */
+  liveStartedAt: string | null;
   stats: VideoStats;
 }
 
@@ -54,13 +59,15 @@ export interface VideoView extends Video {
   channelColor: string;
 }
 
-export type UpsertVideoInput = Omit<Video, 'id' | 'stats' | 'hiddenAt'>;
+export type UpsertVideoInput = Omit<Video, 'id' | 'stats' | 'hiddenAt' | 'liveStartedAt'>;
 
 /** Mise à jour des compteurs, adressée par la clé naturelle `(channelId, externalId)`. */
 export interface VideoStatsUpdate {
   channelId: string;
   externalId: string;
   stats: Omit<VideoStats, 'updatedAt'>;
+  /** Posé seulement quand YouTube dit que c'est un direct ; jamais effacé. */
+  liveStartedAt?: string | null;
 }
 
 /** Ce qu'un relevé en direct peut savoir : le reste n'existe que dans YouTube Analytics. */

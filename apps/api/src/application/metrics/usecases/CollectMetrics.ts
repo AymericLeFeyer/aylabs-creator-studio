@@ -393,6 +393,7 @@ export class CollectMetrics {
             comments: row.comments,
             estimatedRevenueCents: row.estimatedRevenueCents,
           },
+          liveStartedAt: row.liveStartedAt ?? null,
         })),
       );
     } catch (error) {

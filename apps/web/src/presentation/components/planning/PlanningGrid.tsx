@@ -816,7 +816,11 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
           )}
 
           {/* Les événements « journée entière » : ils étiquettent le jour sans l'occuper. */}
-          {days.some((day) => day.events.some((event) => event.allDay)) && (
+          {days.some(
+            (day) =>
+              day.events.some((event) => event.allDay) ||
+              day.lives.some((live) => live.startTime === null),
+          ) && (
             <div className="flex border-b border-border bg-muted/30">
               <div className="sticky left-0 z-10 w-14 shrink-0 bg-card px-1 py-1 text-[10px] text-muted-foreground">
                 journée
@@ -834,6 +838,18 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                             title={event.summary}
                           >
                             {event.summary}
+                          </p>
+                        ))}
+                      {/* Un direct sans heure étiquette le jour, comme une journée entière. */}
+                      {day.lives
+                        .filter((live) => live.startTime === null)
+                        .map((live) => (
+                          <p
+                            key={live.id}
+                            className="truncate rounded bg-destructive/15 px-1 text-[11px] font-medium text-destructive"
+                            title={`Direct : ${live.title}`}
+                          >
+                            ● {live.title}
                           </p>
                         ))}
                     </div>
@@ -1127,6 +1143,28 @@ ${window}${span.plannedDate ? ` · sortie le ${span.plannedDate.slice(8, 10)}/${
                         </p>
                       </div>
                     ))}
+
+                  {/* Les directs à faire (Production → Directs), avec une heure. */}
+                  {day.lives
+                    .filter((live) => live.startTime !== null)
+                    .map((live) => {
+                      const start = toMinutes(live.startTime!);
+                      return (
+                        <div
+                          key={live.id}
+                          className="pointer-events-none absolute inset-x-0.5 overflow-hidden rounded border border-destructive/50 bg-destructive/15 px-1 py-0.5"
+                          style={{
+                            top: yOf(start),
+                            height: Math.max(14, yOf(start + live.durationMinutes) - yOf(start)),
+                          }}
+                          title={`Direct : ${live.title}`}
+                        >
+                          <p className="truncate text-[11px] font-medium text-destructive">
+                            ● {live.title}
+                          </p>
+                        </div>
+                      );
+                    })}
 
                   {day.slots
                     .filter((slot) => slot.startTime && slot.endTime)

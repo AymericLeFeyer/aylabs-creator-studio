@@ -1,4 +1,5 @@
 import type { ProductionFormat, ProductionStatus } from '../../production/entities/Production.ts';
+import type { LiveIdea } from '../../live/entities/LiveIdea.ts';
 import type { ProductionSlot } from '../../production/entities/ProductionSlot.ts';
 
 /**
@@ -181,6 +182,8 @@ export interface PlanningDay {
   events: CalendarEvent[];
   /** Les tâches Todo de ce jour, placées ou à caler. Celles en retard sont sous aujourd'hui. */
   tasks: TodoTask[];
+  /** Les lives prévus ce jour-là (Production → Live), avec ou sans heure. */
+  lives: LiveIdea[];
   suggestedMinutes: number;
   approvedMinutes: number;
 }

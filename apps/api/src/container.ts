@@ -21,6 +21,7 @@ import { SqliteProductionNoteRepository } from './infrastructure/production/repo
 import { SqliteRecurringExpenseRepository } from './infrastructure/expense/repositories/SqliteRecurringExpenseRepository.ts';
 import { SqliteProductRepository } from './infrastructure/product/repositories/SqliteProductRepository.ts';
 import { SqliteSponsorshipRepository } from './infrastructure/sponsorship/repositories/SqliteSponsorshipRepository.ts';
+import { SqliteLiveIdeaRepository } from './infrastructure/live/repositories/SqliteLiveIdeaRepository.ts';
 import { SqliteIdeaRepository } from './infrastructure/idea/repositories/SqliteIdeaRepository.ts';
 import { SqlitePublishRepository } from './infrastructure/publish/repositories/SqlitePublishRepository.ts';
 import { ManagePublishing } from './application/publish/usecases/ManagePublishing.ts';
@@ -151,6 +152,8 @@ export interface Container {
   products: SqliteProductRepository;
   sponsorships: SqliteSponsorshipRepository;
   ideas: SqliteIdeaRepository;
+  /** Les lives à faire, datés ou non — relus par le planning. */
+  liveIdeas: SqliteLiveIdeaRepository;
   postDrafts: SqlitePostDraftRepository;
   dashboardWidgets: SqliteDashboardWidgetRepository;
   sharedPreferences: SqliteSharedPreferenceRepository;
@@ -313,6 +316,7 @@ export const buildContainer = (config: Config): Container => {
   const products = new SqliteProductRepository(db);
   const sponsorships = new SqliteSponsorshipRepository(db);
   const ideas = new SqliteIdeaRepository(db);
+  const liveIdeas = new SqliteLiveIdeaRepository(db);
   const postDrafts = new SqlitePostDraftRepository(db);
   const dashboardWidgets = new SqliteDashboardWidgetRepository(db);
   const sharedPreferences = new SqliteSharedPreferenceRepository(db);
@@ -521,6 +525,7 @@ export const buildContainer = (config: Config): Container => {
     products,
     sponsorships,
     ideas,
+    liveIdeas,
     postDrafts,
     dashboardWidgets,
     sharedPreferences,
@@ -569,6 +574,7 @@ export const buildContainer = (config: Config): Container => {
       trackTime,
       (baseUrl, token) => new HomeAssistantClient(baseUrl, token),
       manageTodoTasks,
+      liveIdeas,
     ),
     syncRecurringExpenses,
     getLegalOverview,

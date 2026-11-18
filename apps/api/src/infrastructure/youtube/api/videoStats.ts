@@ -13,6 +13,8 @@ export interface VideoStatRow {
   likes: number;
   comments: number;
   estimatedRevenueCents: Cents;
+  /** Début réel du direct (`liveStreamingDetails`), absent pour une vidéo classique. */
+  liveStartedAt?: string | null;
 }
 
 /** `videos.list` n'accepte que 50 identifiants par appel. */
@@ -38,7 +40,10 @@ export const fetchPublicVideoStats = async (
 
   for (let offset = 0; offset < videoIds.length; offset += MAX_IDS_PER_CALL) {
     const batch = videoIds.slice(offset, offset + MAX_IDS_PER_CALL);
-    const response = await client.videos.list({ part: ['statistics'], id: batch });
+    const response = await client.videos.list({
+      part: ['statistics', 'liveStreamingDetails'],
+      id: batch,
+    });
 
     for (const item of response.data.items ?? []) {
       if (!item.id) continue;
@@ -50,6 +55,7 @@ export const fetchPublicVideoStats = async (
         likes: num(item.statistics?.likeCount),
         comments: num(item.statistics?.commentCount),
         estimatedRevenueCents: 0,
+        liveStartedAt: item.liveStreamingDetails?.actualStartTime ?? null,
       });
     }
   }
@@ -81,6 +87,7 @@ export const overlayPublicStats = (
             views: Math.max(row.views, live.views),
             likes: Math.max(row.likes, live.likes),
             comments: Math.max(row.comments, live.comments),
+            liveStartedAt: live.liveStartedAt ?? null,
           }
         : row,
     );

@@ -4,6 +4,7 @@ import type { ProductionSlotView } from '../../production/entities/ProductionSlo
 import type { CalendarEvent } from './CalendarEvent.ts';
 import type { PlanningItemView } from './PlanningItem.ts';
 import type { Interval } from '../services/scheduler.ts';
+import type { LiveIdea } from '../../live/entities/LiveIdea.ts';
 import type { TodoTaskView } from '../../todoApp/entities/TodoTask.ts';
 
 /**
@@ -25,6 +26,8 @@ export interface PlanningDay {
    * caler ». Celles en retard sont rangées sous aujourd'hui.
    */
   tasks: TodoTaskView[];
+  /** Les lives prévus ce jour-là (Production → Live), avec ou sans heure. */
+  lives: LiveIdea[];
   /** Minutes de travail suggérées et pas encore approuvées. */
   suggestedMinutes: number;
   /** Minutes approuvées : du temps réellement passé. */

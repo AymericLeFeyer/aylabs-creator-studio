@@ -39,6 +39,7 @@ const ROUTES_WITHOUT_FILTERS = [
   '/production',
   '/miniatures',
   '/shorts',
+  '/directs',
   '/produits',
   '/sponsors',
   '/affiliations',

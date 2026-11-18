@@ -8,6 +8,8 @@ export interface VideoListParams {
   limit?: number;
   /** `false` : sans les vidéos masquées ; `true` : elles seules ; absent : toutes. */
   hidden?: boolean;
+  /** `true` : seulement les directs. */
+  live?: boolean;
 }
 
 export const videoApi = {
@@ -19,6 +21,7 @@ export const videoApi = {
         channelIds: params.channelIds?.length ? params.channelIds.join(',') : undefined,
         limit: params.limit,
         hidden: params.hidden === undefined ? undefined : String(params.hidden),
+        live: params.live ? 'true' : undefined,
       },
     }),
 

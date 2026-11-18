@@ -2315,6 +2315,31 @@ const migrations: Migration[] = [
       CREATE INDEX idx_ig_auto_dm_log_draft ON ig_auto_dm_log (draft_id, commenter_key);
     `,
   },
+  {
+    version: 75,
+    name: 'lives : reperage des directs et carnet d idees de lives',
+    up: `
+      -- Date de debut reelle d un direct, lue dans liveStreamingDetails (videos.list).
+      -- NULL = pas un direct (ou pas encore releve) : YouTube est la seule source fiable.
+      ALTER TABLE videos ADD COLUMN live_started_at TEXT;
+      CREATE INDEX idx_videos_live ON videos (live_started_at) WHERE live_started_at IS NOT NULL;
+
+      -- Les lives a faire. La date est facultative (une idee se note avant d avoir un jour),
+      -- l heure aussi ; avec une date, le live apparait dans le planning.
+      CREATE TABLE live_ideas (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        planned_date TEXT,
+        start_time TEXT,
+        duration_minutes INTEGER NOT NULL DEFAULT 120,
+        channel_id TEXT REFERENCES channels (id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_live_ideas_date ON live_ideas (planned_date);
+    `,
+  },
 ];
 
 /**

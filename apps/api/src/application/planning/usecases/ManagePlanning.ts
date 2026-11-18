@@ -39,6 +39,8 @@ import type { SqliteTodoRepository } from '../../../infrastructure/production/re
 import type { HomeAssistantClient } from '../../../infrastructure/planning/api/HomeAssistantClient.ts';
 import type { TrackTime } from '../../production/usecases/TrackTime.ts';
 import type { ManageTodos } from '../../production/usecases/ManageTodos.ts';
+import type { LiveIdea } from '../../../domain/live/entities/LiveIdea.ts';
+import type { LiveIdeaRepository } from '../../../domain/live/repositories/LiveIdeaRepository.ts';
 
 /** Durée retenue quand ni la tâche ni son étape n'en donnent une. */
 const FALLBACK_MINUTES = 60;
@@ -150,6 +152,7 @@ export class ManagePlanning {
   private readonly makeClient: (baseUrl: string, token: string) => HomeAssistantClient;
   /** Les tâches de l'app Todo : affichées dans la grille, et leurs heures posées occupent. */
   private readonly todoTasks: ManageTodoTasks;
+  private readonly liveIdeas: LiveIdeaRepository;
 
   constructor(
     items: PlanningItemRepository,
@@ -163,6 +166,7 @@ export class ManagePlanning {
     trackTime: TrackTime,
     makeClient: (baseUrl: string, token: string) => HomeAssistantClient,
     todoTasks: ManageTodoTasks,
+    liveIdeas: LiveIdeaRepository,
   ) {
     this.items = items;
     this.workHours = workHours;
@@ -175,6 +179,7 @@ export class ManagePlanning {
     this.trackTime = trackTime;
     this.makeClient = makeClient;
     this.todoTasks = todoTasks;
+    this.liveIdeas = liveIdeas;
   }
 
   // --- Réglages -------------------------------------------------------------
@@ -538,6 +543,8 @@ export class ManagePlanning {
       ...external.blocks,
       ...this.immovableBusy(from, to, mode),
       ...this.todoTasks.busyBlocks(from, to),
+      // Un live a une heure et une durée : on ne monte pas pendant qu'on est en direct.
+      ...this.liveBusy(from, to),
     ];
 
     const result = schedule({
@@ -1125,6 +1132,13 @@ export class ManagePlanning {
       slotsByDate.set(slot.date, list);
     }
 
+    const livesByDate = new Map<IsoDate, LiveIdea[]>();
+    for (const live of this.liveIdeas.findInRange(from, to)) {
+      const list = livesByDate.get(live.plannedDate!) ?? [];
+      list.push(live);
+      livesByDate.set(live.plannedDate!, list);
+    }
+
     const days: PlanningDay[] = [];
     for (let cursor = from; cursor <= to; cursor = addDays(cursor, 1)) {
       const daySlots = slotsByDate.get(cursor) ?? [];
@@ -1135,6 +1149,7 @@ export class ManagePlanning {
         slots: daySlots,
         events: eventsByDate.get(cursor) ?? [],
         tasks: todo.byDate.get(cursor) ?? [],
+        lives: livesByDate.get(cursor) ?? [],
         suggestedMinutes: daySlots
           .filter((slot) => !slot.done)
           .reduce((sum, slot) => sum + slotMinutes(slot), 0),
@@ -1155,6 +1170,22 @@ export class ManagePlanning {
       hasWorkHours: workHours.size > 0,
       todo: { connected: todo.connected, error: todo.error },
     };
+  }
+
+  /** Les lives qui ont une heure occupent leur plage, comme un rendez-vous. */
+  private liveBusy(from: IsoDate, to: IsoDate): BusyBlock[] {
+    return this.liveIdeas
+      .findInRange(from, to)
+      .filter((live) => live.startTime !== null)
+      .map((live) => {
+        const [h, m] = live.startTime!.split(':').map(Number);
+        const start = (h ?? 0) * 60 + (m ?? 0);
+        return {
+          date: live.plannedDate!,
+          start,
+          end: Math.min(24 * 60, start + live.durationMinutes),
+        };
+      });
   }
 
   /**

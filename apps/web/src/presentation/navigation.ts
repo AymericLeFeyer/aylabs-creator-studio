@@ -11,6 +11,7 @@ import {
   Trophy,
   MessagesSquare,
   Music2,
+  Radio,
   ScrollText,
   Smartphone,
   Wallet,
@@ -92,6 +93,7 @@ export const NAV_SECTIONS: NavSection[] = [
       // Les shorts à venir (ex-Publications) : titre, vidéo, heure, puis mise en ligne
       // automatique. De la préparation, donc ici, et non sous Audience.
       { to: '/shorts', label: 'Verticaux', icon: Smartphone, end: false },
+      { to: '/directs', label: 'Directs', icon: Radio, end: false },
       { to: '/miniatures', label: 'Miniatures', icon: ImagePlus, end: false },
     ],
   },
@@ -268,6 +270,7 @@ const TITLES: Array<[string, string]> = [
   ['/production/', 'Fiche'],
   ['/production', 'Vidéos'],
   ['/shorts', 'Verticaux'],
+  ['/directs', 'Directs'],
   ['/miniatures', 'Miniatures'],
   ['/planning', 'Planning'],
   ['/youtube', 'YouTube'],

@@ -20,6 +20,7 @@ import { SponsorsPage } from './presentation/pages/SponsorsPage.tsx';
 import { AffiliationsPage } from './presentation/pages/AffiliationsPage.tsx';
 import { CommentsPage } from './presentation/pages/CommentsPage.tsx';
 import { ExternalAppPage } from './presentation/pages/ExternalAppPage.tsx';
+import { LivePage } from './presentation/pages/LivePage.tsx';
 import { ShortsPage } from './presentation/pages/ShortsPage.tsx';
 import { ThumbnailsPage } from './presentation/pages/ThumbnailsPage.tsx';
 import { MailsPage } from './presentation/pages/MailsPage.tsx';
@@ -80,6 +81,7 @@ export const App = () => (
               {/* « Publications » est devenu « Shorts » : l'ancienne adresse garde ses paramètres. */}
               <Route path="shorts" element={<ShortsPage />} />
               <Route path="publications" element={<LegacyPublicationsRedirect />} />
+              <Route path="directs" element={<LivePage />} />
               <Route path="miniatures" element={<ThumbnailsPage />} />
               <Route path="publish" element={<Navigate to="/shorts" replace />} />
               <Route path="production/:id" element={<ProductionDetailPage />} />

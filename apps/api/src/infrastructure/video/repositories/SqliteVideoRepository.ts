@@ -26,6 +26,7 @@ interface VideoRow {
   date: string;
   thumbnail_url: string | null;
   hidden_at: string | null;
+  live_started_at: string | null;
   views: number;
   watch_minutes: number;
   subscribers_gained: number;
@@ -49,6 +50,7 @@ const toDomain = (row: VideoRow): Video => ({
   date: row.date,
   thumbnailUrl: row.thumbnail_url,
   hiddenAt: row.hidden_at,
+  liveStartedAt: row.live_started_at,
   stats: {
     views: row.views,
     watchMinutes: row.watch_minutes,
@@ -95,6 +97,8 @@ export class SqliteVideoRepository implements VideoRepository {
     if (filter.hidden !== undefined) {
       conditions.push(`${alias}.hidden_at IS ${filter.hidden ? 'NOT NULL' : 'NULL'}`);
     }
+
+    if (filter.live) conditions.push(`${alias}.live_started_at IS NOT NULL`);
 
     return { clause: `WHERE ${conditions.join(' AND ')}`, params };
   }
@@ -201,6 +205,7 @@ export class SqliteVideoRepository implements VideoRepository {
               comments = ?,
               estimated_revenue_cents = ?,
               stats_updated_at = ?,
+              live_started_at = COALESCE(?, live_started_at),
               updated_at = ?
         WHERE channel_id = ? AND external_id = ?`,
     );
@@ -232,6 +237,7 @@ export class SqliteVideoRepository implements VideoRepository {
         update.stats.comments,
         update.stats.estimatedRevenueCents,
         now,
+        update.liveStartedAt ?? null,
         now,
         update.channelId,
         update.externalId,
