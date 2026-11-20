@@ -18,7 +18,41 @@ const TONES: Record<BadgeTone, string> = {
  * `dot` force le point : la barre repliée et les onglets du bas n'ont pas la place d'un
  * nombre à côté de l'icône.
  */
-export const NavBadgePill = ({
+export const NavBadgePill = (props: {
+  badge: NavBadge | undefined;
+  dot?: boolean;
+  className?: string;
+}) => {
+  const ready = props.badge?.ready ?? 0;
+  if (ready === 0) return <MainPill {...props} />;
+  const label = `${ready} terminée${ready > 1 ? 's' : ''}, en attente de publication`;
+  return (
+    <>
+      <MainPill {...props} />
+      {props.dot ? (
+        <span
+          className={cn(
+            'h-2 w-2 shrink-0 rounded-full bg-[var(--in-kind)]',
+            props.className,
+            props.badge?.count || props.badge?.reasons.length ? 'translate-x-2.5' : '',
+          )}
+          title={label}
+          aria-label={label}
+        />
+      ) : (
+        <span
+          className="flex h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-full bg-[var(--in-kind)] px-1 text-[10px] font-semibold tabular leading-none text-white"
+          title={label}
+          aria-label={label}
+        >
+          {ready}
+        </span>
+      )}
+    </>
+  );
+};
+
+const MainPill = ({
   badge,
   dot = false,
   className,

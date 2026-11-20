@@ -67,6 +67,8 @@ export interface BadgeReason {
 export interface NavBadge {
   /** Le nombre affiché. À zéro, la pastille devient un point s'il reste des raisons. */
   count: number;
+  /** Vidéos terminées en attente de publication : seconde pastille, en violet. */
+  ready?: number;
   /** Affiché à la place du nombre quand il n'est pas un compte (« -3 » jours). */
   text?: string;
   /** Ce que dit la pastille aux lecteurs d'écran, sans raison à lister (« 3 non lus »). */
@@ -155,10 +157,15 @@ export const buildNavBadges = (
 
     // Une seule file depuis le retrait de « Shorts & Réels » : la pastille compte les
     // vidéos, et un short restant ne doit pas écraser la pastille en partageant l'adresse.
-    badges[FORMAT_ROUTES.video] = badge(
-      overview.queue.length,
-      reasonsOf((alert) => PRODUCTION_KINDS.includes(alert.kind)),
-    );
+    // Deux pastilles : le travail en cours, et les terminées qui attendent leur sortie.
+    // Les idées (pas commencées) et les pauses ne comptent plus.
+    badges[FORMAT_ROUTES.video] = {
+      ...badge(
+        overview.queue.filter((production) => production.status === 'in_progress').length,
+        reasonsOf((alert) => PRODUCTION_KINDS.includes(alert.kind)),
+      ),
+      ready: overview.queue.filter((production) => production.status === 'done').length,
+    };
 
     const products = reasonsOf((alert) => alert.kind === 'product_late');
     badges['/produits'] = badge(products.length, products);
@@ -266,9 +273,9 @@ export const aiCreditBadge = (credit: AiCreditView | undefined): NavBadge | unde
  * soustraire, c'est un point à traiter) ou pour un simple point, 0 si rien ne s'affiche.
  */
 export const badgeWeight = (badge: NavBadge | undefined): number => {
-  if (!badge || (badge.count === 0 && badge.reasons.length === 0)) return 0;
-  if (badge.text !== undefined || badge.count === 0) return 1;
-  return badge.count;
+  if (!badge || (badge.count === 0 && badge.reasons.length === 0 && !badge.ready)) return 0;
+  if (badge.text !== undefined || badge.count === 0) return 1 + (badge.ready ?? 0);
+  return badge.count + (badge.ready ?? 0);
 };
 
 const TONE_RANK: Record<BadgeTone, number> = { neutral: 0, warning: 1, danger: 2 };
