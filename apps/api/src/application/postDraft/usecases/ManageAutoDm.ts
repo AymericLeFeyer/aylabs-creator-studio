@@ -120,22 +120,7 @@ export class ManageAutoDm {
         dm = { status: 'failed', error: errorMessage(error) };
       }
 
-      // La rotation suit le nombre de réponses déjà postées sur ce reel : 1, 2, 3, 1, 2…
-      const replies = rule.publicReplies.map((text) => text.trim()).filter(Boolean);
-      let reply: { status: 'sent' | 'failed' | null; error: string | null } = {
-        status: null,
-        error: null,
-      };
-      if (replies.length > 0) {
-        const text = replies[this.log.repliesSent(draft.id) % replies.length]!;
-        try {
-          await client.replyToComment(comment.id, renderDmMessage(text, comment.username));
-          reply = { status: 'sent', error: null };
-        } catch (error) {
-          reply = { status: 'failed', error: errorMessage(error) };
-        }
-      }
-
+      // Journalisé AVANT la réponse publique : plus rien ne doit pouvoir faire renvoyer ce DM.
       this.log.record({
         draftId: draft.id,
         commentId: comment.id,
@@ -143,9 +128,21 @@ export class ManageAutoDm {
         commenterUsername: comment.username,
         status: dm.status,
         error: dm.error,
-        replyStatus: reply.status,
-        replyError: reply.error,
+        replyStatus: null,
+        replyError: null,
       });
+
+      // La rotation suit le nombre de réponses déjà postées sur ce reel : 1, 2, 3, 1, 2…
+      const replies = rule.publicReplies.map((text) => text.trim()).filter(Boolean);
+      if (replies.length > 0) {
+        const text = replies[this.log.repliesSent(draft.id) % replies.length]!;
+        try {
+          await client.replyToComment(comment.id, renderDmMessage(text, comment.username));
+          this.log.setReply(comment.id, 'sent', null);
+        } catch (error) {
+          this.log.setReply(comment.id, 'failed', errorMessage(error));
+        }
+      }
     }
   }
 }

@@ -2359,6 +2359,15 @@ const migrations: Migration[] = [
       ALTER TABLE videos ADD COLUMN live_excluded_at TEXT;
     `,
   },
+  {
+    version: 78,
+    name: 'instagram : reponses publiques automatiques',
+    up: `
+      -- Etat de la reponse publique postee sous le commentaire (NULL = aucune prevue).
+      ALTER TABLE ig_auto_dm_log ADD COLUMN reply_status TEXT;
+      ALTER TABLE ig_auto_dm_log ADD COLUMN reply_error TEXT;
+    `,
+  },
 ];
 
 /**

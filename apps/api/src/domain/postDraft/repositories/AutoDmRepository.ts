@@ -25,6 +25,7 @@ export interface AutoDmRepository {
   hasHandled(draftId: string, commentId: string, commenterKey: string): boolean;
   record(entry: AutoDmLogEntry): void;
   /** Combien de réponses publiques ce reel a déjà reçues : le rang de la prochaine dans la rotation. */
+  setReply(commentId: string, status: 'sent' | 'failed', error: string | null): void;
   repliesSent(draftId: string): number;
   stats(draftId: string): AutoDmStats;
 }

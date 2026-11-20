@@ -3997,7 +3997,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
-- **Migration 75** ajoute `ig_auto_dm_log.reply_status` / `reply_error` (réponses publiques automatiques).
+- **Migration 78** ajoute `ig_auto_dm_log.reply_status` / `reply_error` (réponses publiques automatiques).
 - **Migration 74** ajoute `ig_auto_dm_log` (DM automatiques envoyés ou refusés).
 - **Migration 73** ajoute `ai_settings.enabled` (désactiver un fournisseur IA sans perdre ses réglages).
 - **Migration 72** ajoute `ai_task_routes` (le fournisseur IA choisi par tâche) et `ai_settings.admin_key` (clé admin OpenAI, chiffrée).

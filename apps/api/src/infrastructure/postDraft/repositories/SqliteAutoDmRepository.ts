@@ -46,6 +46,12 @@ export class SqliteAutoDmRepository implements AutoDmRepository {
       );
   }
 
+  setReply(commentId: string, status: 'sent' | 'failed', error: string | null): void {
+    this.db
+      .prepare(`UPDATE ig_auto_dm_log SET reply_status = ?, reply_error = ? WHERE comment_id = ?`)
+      .run(status, error, commentId);
+  }
+
   repliesSent(draftId: string): number {
     const row = this.db
       .prepare(
