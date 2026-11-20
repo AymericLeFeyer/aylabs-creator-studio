@@ -582,17 +582,50 @@ export const PostDraftDialog = ({
                       dans les 7 jours qui suivent son commentaire, une fois le reel en ligne.
                     </p>
                   </div>
-                  {autoDmStats && (autoDmStats.sent > 0 || autoDmStats.failed > 0) && (
+                  <div className="space-y-1.5">
+                    <Label>Réponses publiques sous le commentaire</Label>
+                    {[0, 1, 2].map((index) => (
+                      <Input
+                        key={index}
+                        placeholder={
+                          index === 0
+                            ? 'Envoyé en DM, regarde tes messages ! 📩'
+                            : 'Autre variante (facultatif)'
+                        }
+                        value={options.instagram.autoDm.publicReplies[index] ?? ''}
+                        onChange={(event) => {
+                          const next = [0, 1, 2].map(
+                            (i) => options.instagram.autoDm.publicReplies[i] ?? '',
+                          );
+                          next[index] = event.target.value;
+                          autoDm({ publicReplies: next.filter((text, i) => text || i < index) });
+                        }}
+                      />
+                    ))}
                     <p className="text-xs text-muted-foreground">
-                      {autoDmStats.sent} envoyé(s)
-                      {autoDmStats.failed > 0 && (
-                        <span className="text-destructive">
-                          {' '}
-                          · {autoDmStats.failed} refusé(s) — {autoDmStats.lastError}
-                        </span>
-                      )}
+                      Une réponse visible sous chaque commentaire qui déclenche le DM, les variantes
+                      servies à tour de rôle (1, 2, 3, 1…). Vide : aucune réponse publique.{' '}
+                      {'{prenom}'} y fonctionne aussi.
                     </p>
-                  )}
+                  </div>
+                  {autoDmStats &&
+                    (autoDmStats.sent > 0 ||
+                      autoDmStats.failed > 0 ||
+                      autoDmStats.replied > 0 ||
+                      autoDmStats.replyFailed > 0) && (
+                      <p className="text-xs text-muted-foreground">
+                        {autoDmStats.sent} DM envoyé(s)
+                        {autoDmStats.replied > 0 &&
+                          ` · ${autoDmStats.replied} réponse(s) publique(s)`}
+                        {autoDmStats.failed + autoDmStats.replyFailed > 0 && (
+                          <span className="text-destructive">
+                            {' '}
+                            · {autoDmStats.failed + autoDmStats.replyFailed} refusé(s) —{' '}
+                            {autoDmStats.lastError}
+                          </span>
+                        )}
+                      </p>
+                    )}
                 </>
               )}
             </div>

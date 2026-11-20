@@ -5,6 +5,9 @@ import { matchesKeywords, renderDmMessage } from '../../../domain/postDraft/serv
 import type { InstagramAccountRepository } from '../../../domain/instagram/repositories/InstagramRepository.ts';
 import { InstagramClient } from '../../../infrastructure/instagram/api/InstagramClient.ts';
 
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : 'Envoi impossible';
+
 const TICK_MS = 2 * 60_000;
 /** Meta n'admet une réponse privée que dans les 7 jours qui suivent le commentaire. */
 const REPLY_WINDOW_MS = 7 * 24 * 3_600_000;
@@ -104,30 +107,45 @@ export class ManageAutoDm {
       const key = comment.userId ?? comment.username ?? comment.id;
       if (this.log.hasHandled(draft.id, comment.id, key)) continue;
 
+      // Le DM et la réponse publique sont indépendants : l'un refusé n'empêche pas l'autre.
+      let dm: { status: 'sent' | 'failed'; error: string | null };
       try {
         await client.sendPrivateReply(
           account.igUserId,
           comment.id,
           renderDmMessage(rule.message, comment.username),
         );
-        this.log.record({
-          draftId: draft.id,
-          commentId: comment.id,
-          commenterKey: key,
-          commenterUsername: comment.username,
-          status: 'sent',
-          error: null,
-        });
+        dm = { status: 'sent', error: null };
       } catch (error) {
-        this.log.record({
-          draftId: draft.id,
-          commentId: comment.id,
-          commenterKey: `${key}#${comment.id}`,
-          commenterUsername: comment.username,
-          status: 'failed',
-          error: error instanceof Error ? error.message : 'Envoi impossible',
-        });
+        dm = { status: 'failed', error: errorMessage(error) };
       }
+
+      // La rotation suit le nombre de réponses déjà postées sur ce reel : 1, 2, 3, 1, 2…
+      const replies = rule.publicReplies.map((text) => text.trim()).filter(Boolean);
+      let reply: { status: 'sent' | 'failed' | null; error: string | null } = {
+        status: null,
+        error: null,
+      };
+      if (replies.length > 0) {
+        const text = replies[this.log.repliesSent(draft.id) % replies.length]!;
+        try {
+          await client.replyToComment(comment.id, renderDmMessage(text, comment.username));
+          reply = { status: 'sent', error: null };
+        } catch (error) {
+          reply = { status: 'failed', error: errorMessage(error) };
+        }
+      }
+
+      this.log.record({
+        draftId: draft.id,
+        commentId: comment.id,
+        commenterKey: dm.status === 'sent' ? key : `${key}#${comment.id}`,
+        commenterUsername: comment.username,
+        status: dm.status,
+        error: dm.error,
+        replyStatus: reply.status,
+        replyError: reply.error,
+      });
     }
   }
 }

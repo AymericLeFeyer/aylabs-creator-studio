@@ -619,6 +619,7 @@ export const updatePostDraftSchema = createPostDraftSchema.partial().extend({
           keywords: z.string().max(500),
           message: z.string().max(1000),
           captionOverride: z.string().max(2200).default(''),
+          publicReplies: z.array(z.string().max(300)).max(3).default([]),
           enabledAt: z
             .string()
             .refine((value) => !Number.isNaN(Date.parse(value)), 'Horodatage invalide')

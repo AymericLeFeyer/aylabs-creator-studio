@@ -1830,7 +1830,7 @@ date et heure de sortie. Une production n'a qu'une date de sortie, sans heure.
   l'historique en **liste** (`LivesHistoryTable`). Blocs ajoutables : `live.count`, `live.peak`,
   `live.average`, `live.history`, `live.ideas` (`blocks/liveBlocks.tsx`).
 - **Les directs à faire** : `LiveIdea { id, title, notes, plannedDate, startTime, durationMinutes,
-  channelId }`, table `live_ideas`, CRUD nu (`/api/live-ideas`). Date et heure facultatives.
+channelId }`, table `live_ideas`, CRUD nu (`/api/live-ideas`). Date et heure facultatives.
   `ManagePlanning.board` les rend dans `PlanningDay.lives` ; avec une heure, ils occupent leur
   plage pour le moteur (`liveBusy`), sans heure ils étiquettent le jour. Les mutations
   invalident `liveIdeas` **et** `planningBoard`.
@@ -3997,6 +3997,7 @@ vrai — supprimer une occurrence à la main ne touche pas la règle.
 - **Migration 36** ajoute `channels.export_enabled` et `ig_accounts.export_enabled`
   (`DEFAULT 1`) : ce qui compte dans `/api/export`, indépendamment de l'archivage. Un
   simple `ALTER ADD COLUMN` avec défaut constant, comme la migration 25.
+- **Migration 75** ajoute `ig_auto_dm_log.reply_status` / `reply_error` (réponses publiques automatiques).
 - **Migration 74** ajoute `ig_auto_dm_log` (DM automatiques envoyés ou refusés).
 - **Migration 73** ajoute `ai_settings.enabled` (désactiver un fournisseur IA sans perdre ses réglages).
 - **Migration 72** ajoute `ai_task_routes` (le fournisseur IA choisi par tâche) et `ai_settings.admin_key` (clé admin OpenAI, chiffrée).

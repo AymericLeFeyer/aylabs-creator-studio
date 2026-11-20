@@ -28,8 +28,9 @@ export class SqliteAutoDmRepository implements AutoDmRepository {
     this.db
       .prepare(
         `INSERT INTO ig_auto_dm_log
-           (id, draft_id, comment_id, commenter_key, commenter_username, status, error, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (comment_id) DO NOTHING`,
+           (id, draft_id, comment_id, commenter_key, commenter_username, status, error,
+            reply_status, reply_error, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (comment_id) DO NOTHING`,
       )
       .run(
         newId(),
@@ -39,25 +40,40 @@ export class SqliteAutoDmRepository implements AutoDmRepository {
         entry.commenterUsername,
         entry.status,
         entry.error,
+        entry.replyStatus,
+        entry.replyError,
         new Date().toISOString(),
       );
   }
 
-  stats(draftId: string): AutoDmStats {
-    const rows = this.db
+  repliesSent(draftId: string): number {
+    const row = this.db
       .prepare(
-        `SELECT status, COUNT(*) AS n FROM ig_auto_dm_log WHERE draft_id = ? GROUP BY status`,
+        `SELECT COUNT(*) AS n FROM ig_auto_dm_log WHERE draft_id = ? AND reply_status = 'sent'`,
       )
-      .all(draftId) as Array<{ status: string; n: number }>;
+      .get(draftId) as { n: number };
+    return row.n;
+  }
+
+  stats(draftId: string): AutoDmStats {
+    const count = (column: 'status' | 'reply_status', value: string): number =>
+      (
+        this.db
+          .prepare(`SELECT COUNT(*) AS n FROM ig_auto_dm_log WHERE draft_id = ? AND ${column} = ?`)
+          .get(draftId, value) as { n: number }
+      ).n;
     const last = this.db
       .prepare(
-        `SELECT error FROM ig_auto_dm_log
-         WHERE draft_id = ? AND status = 'failed' ORDER BY created_at DESC LIMIT 1`,
+        `SELECT COALESCE(error, reply_error) AS error FROM ig_auto_dm_log
+         WHERE draft_id = ? AND (status = 'failed' OR reply_status = 'failed')
+         ORDER BY created_at DESC LIMIT 1`,
       )
       .get(draftId) as { error: string | null } | undefined;
     return {
-      sent: rows.find((row) => row.status === 'sent')?.n ?? 0,
-      failed: rows.find((row) => row.status === 'failed')?.n ?? 0,
+      sent: count('status', 'sent'),
+      failed: count('status', 'failed'),
+      replied: count('reply_status', 'sent'),
+      replyFailed: count('reply_status', 'failed'),
       lastError: last?.error ?? null,
     };
   }

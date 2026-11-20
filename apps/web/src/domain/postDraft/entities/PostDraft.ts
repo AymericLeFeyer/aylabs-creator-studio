@@ -40,6 +40,8 @@ export interface AutoDmOptions {
   message: string;
   /** Légende Instagram **à la place** de la description (« Écris LIEN… ») ; vide = la description. */
   captionOverride: string;
+  /** Réponses publiques (3 au plus), servies à tour de rôle ; `{prenom}` = pseudo. */
+  publicReplies: string[];
   /** Instant UTC de l'activation : les commentaires d'avant ne déclenchent rien. */
   enabledAt: string | null;
 }
@@ -49,12 +51,15 @@ export const DEFAULT_AUTO_DM: AutoDmOptions = {
   keywords: '',
   message: '',
   captionOverride: '',
+  publicReplies: [],
   enabledAt: null,
 };
 
 export interface AutoDmStats {
   sent: number;
   failed: number;
+  replied: number;
+  replyFailed: number;
   lastError: string | null;
 }
 

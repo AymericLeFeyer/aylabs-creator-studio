@@ -480,6 +480,11 @@ export class InstagramClient {
     );
   }
 
+  /** Une réponse **publique** sous un commentaire (`instagram_business_manage_comments`). */
+  async replyToComment(commentId: string, text: string): Promise<void> {
+    await this.call(`/${PUBLISH_API_VERSION}/${commentId}/replies`, { message: text }, 'POST');
+  }
+
   async mediaPermalink(mediaId: string): Promise<string | null> {
     const row = await this.call<{ permalink?: string }>(`/${mediaId}`, { fields: 'permalink' });
     return row.permalink ?? null;
